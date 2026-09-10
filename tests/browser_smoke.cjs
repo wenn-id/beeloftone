@@ -130,7 +130,27 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByText('Sudah dibalik',{exact:false}).waitFor();
   assert.equal((await apiGet('/api/orders/'+orderId)).totals.planned,50);
 
+  await page.getByRole('button',{name:'Catat kendala',exact:true}).first().click();
+  await page.getByLabel('Tahap yang terkendala').selectOption('sewing');
+  await page.getByLabel('PIC kendala').selectOption(creds.users[1].id);
+  await page.getByLabel('Apa kendalanya?').fill('Jarum <rusak> & menunggu pengganti');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByRole('heading',{name:'Kendala produksi · 1 terbuka',exact:true}).waitFor();
+  assert.equal(await page.locator('.issue-item .reason').first().innerText(),'Jarum <rusak> & menunggu pengganti');
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
+  await page.locator('#issues-summary').click();
+  await page.waitForFunction(() => document.getElementById('status').value === 'blocked' && !document.getElementById('order-list').hidden && document.querySelectorAll('.order-row').length === 1);
+  await page.getByRole('button',{name:new RegExp('DEMO-UI-ORDER-'+unique)}).click();
+  await page.getByRole('button',{name:'Selesaikan kendala',exact:true}).click();
+  await page.getByLabel('Tindakan penyelesaian').fill('Jarum diganti, mesin diuji');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByRole('heading',{name:'Kendala produksi · 0 terbuka',exact:true}).waitFor();
+  await page.getByText('Jarum diganti, mesin diuji',{exact:true}).waitFor();
+  assert.equal((await apiGet('/api/orders/'+orderId)).totals.planned,50);
+  assert.equal((await apiGet('/api/orders/'+orderId+'/issues')).length,1);
+
+  await page.getByRole('button',{name:'Semua order',exact:false}).click();
+  await page.getByLabel('Status',{exact:true}).selectOption('all');
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
   await page.getByRole('heading',{name:'Posisi barang sekarang'}).waitFor();
   await page.evaluate(()=>document.getElementById('notice').hidden=true);
@@ -158,6 +178,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('heading',{name:'Posisi barang sekarang'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Catat perpindahan',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Koreksi',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Catat kendala',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Selesaikan kendala',exact:true}).count(),0);
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(operator);
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();

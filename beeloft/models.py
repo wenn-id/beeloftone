@@ -64,3 +64,14 @@ class MovementCreate(Input):
 
 class ReversalCreate(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class IssueCreate(Input):
+    line_id: Text
+    stage: Stage
+    owner_id: Text
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class IssueResolve(Input):
+    resolution: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

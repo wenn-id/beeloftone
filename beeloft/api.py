@@ -7,12 +7,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import MovementCreate, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.store import DomainError, Store
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.2.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.3.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -86,7 +86,7 @@ def create_app(database_path):
     @app.get("/api/production-board", tags=["Production"])
     def production_board(user: Actor, limit: Limit = 25, offset: Offset = 0,
                          q: Annotated[str, Query(max_length=160)] = "",
-                         status: Literal["all", "active", "overdue", "closed"] = "all"):
+                         status: Literal["all", "active", "overdue", "closed", "blocked"] = "all"):
         return store.production_board(limit, offset, q, status)
 
     @app.get("/api/orders/{order_id}", tags=["Production"])
@@ -104,5 +104,18 @@ def create_app(database_path):
     @app.post("/api/movements/{movement_id}/reverse", status_code=201, tags=["Production"])
     def reverse(movement_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse(movement_id, body.model_dump(mode="json"), user, key)
+
+    @app.get("/api/orders/{order_id}/issues", tags=["Issues"])
+    def issues(order_id: str, user: Actor, limit: Limit = 100, offset: Offset = 0,
+               before: Annotated[int | None, Query(ge=1)] = None):
+        return store.issues(order_id, limit, offset, before)
+
+    @app.post("/api/issues", status_code=201, tags=["Issues"])
+    def create_issue(body: IssueCreate, user: Actor, key: RequestKey):
+        return store.create_issue(body.model_dump(mode="json"), user, key)
+
+    @app.post("/api/issues/{issue_id}/resolve", status_code=201, tags=["Issues"])
+    def resolve_issue(issue_id: str, body: IssueResolve, user: Actor, key: RequestKey):
+        return store.resolve_issue(issue_id, body.model_dump(mode="json"), user, key)
 
     return app

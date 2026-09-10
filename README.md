@@ -127,7 +127,7 @@ Koreksi: `POST /api/movements/{id}/reverse` dengan `{"reason":"Salah input jumla
 
 Daftar SKU/order/riwayat memakai `?limit=100&offset=0`, maksimal 500 per halaman. Riwayat diurutkan dari yang paling lama. Tenggat dinilai menurut tanggal Jakarta; timestamp audit memakai UTC. `401` berarti key hilang/tidak valid, `403` role salah, `404` objek hilang, `409` konflik, `422` input tidak sah, `503` database sibuk (retry key yang sama).
 
-Penghubung dashboard: `GET /api/production-board?q=luna&status=active&limit=25&offset=0`. Status dapat berupa `all`, `active`, `overdue`, atau `closed`. Respons berisi `summary` seluruh order (tidak terpengaruh filter/pagination), `total` hasil pencarian, dan `orders` pada halaman tersebut. `in_progress` menghitung cutting, sewing, finishing, QC dan rework; `rework` merupakan bagian dari angka tersebut. Pencarian mencakup referensi, judul, SKU dan nama produk. `closed` mencakup order selesai dengan reject. Endpoint ini tetap mewajibkan API key.
+Penghubung dashboard: `GET /api/production-board?q=luna&status=active&limit=25&offset=0`. Status dapat berupa `all`, `active`, `overdue`, `closed`, atau `blocked` (ada kendala terbuka). Respons berisi `summary` seluruh order (tidak terpengaruh filter/pagination), `total` hasil pencarian, dan `orders` pada halaman tersebut. `in_progress` menghitung cutting, sewing, finishing, QC dan rework; `rework` merupakan bagian dari angka tersebut. Pencarian mencakup referensi, judul, SKU dan nama produk. `closed` mencakup order selesai dengan reject. Endpoint ini tetap mewajibkan API key.
 
 Kontrak request tersedia di `docs/openapi.json` dan `/openapi.json`. Skema respons belum diberi model OpenAPI khusus; contoh dan acceptance test menjadi acuan struktur respons versi ini.
 
@@ -157,6 +157,35 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan target/tenggat/PIC setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Migrasi schema tetap versi 1; upgrade dashboard ini tidak mengubah data lama. Perubahan berikutnya harus menambah migrasi yang menjaga data lama.
+Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan target/tenggat/PIC setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 2. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dalam satu transaksi, tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade tersedia lokal di `data/backups/demo-before-v03.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
+
+
+## Kendala produksi (v0.3)
+
+Buka order → pada SKU pilih **Catat kendala** → pilih tahap, PIC, dan isi hambatan.
+Admin/operator dapat mencatat serta menyelesaikan kendala; viewer hanya membaca.
+PIC harus aktif saat ditugaskan. Akun PIC yang kemudian dinonaktifkan tetap terlihat dan diberi keterangan.
+Admin/operator lain dapat menyelesaikan kendala tersebut; nama pelaku dan waktu tersimpan.
+
+Pilih **Selesaikan kendala**, lalu isi tindakan yang sudah dilakukan. Deskripsi awal dan
+penyelesaian pertama tidak bisa ditimpa atau dihapus. Jika catatan keliru, jelaskan koreksi
+dalam penyelesaian dan buat catatan baru jika perlu. Belum ada ubah PIC, buka ulang, atau lampiran.
+Kendala adalah catatan tindak lanjut; tidak memindahkan saldo, mengunci perpindahan, atau mengubah status selesai order.
+Order selesai yang masih punya kendala tetap muncul dalam filter kendala terbuka.
+
+Papan produksi menampilkan jumlah kendala terbuka global dan badge per order. Klik jumlahnya
+untuk melihat semua order terkait. Detail menampilkan catatan terbaru dahulu, 100 per halaman.
+Gunakan Muat ulang order untuk melihat catatan atau penyelesaian baru dari pengguna lain.
+
+API tambahan (autentikasi dan Idempotency-Key mengikuti transaksi lain):
+
+- `POST /api/issues`: `line_id`, `stage`, `owner_id`, `description` (1–1000 karakter).
+- `POST /api/issues/{id}/resolve`: `resolution` (1–1000 karakter).
+- `GET /api/orders/{id}/issues?limit=100`: daftar beserta PIC, pencatat dan penyelesaian.
+  Halaman berikutnya memakai `before=sequence_terakhir` agar catatan baru tidak menggeser halaman.
+- `GET /api/production-board?status=blocked`: order dengan kendala terbuka.
+  `open_issues` pada respons board adalah jumlah global; pada setiap order adalah jumlah per order.
+
+Laporan pengujian: `docs/issues-verification.md`.

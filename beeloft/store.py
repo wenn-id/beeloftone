@@ -27,11 +27,13 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
                 db.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+            if version < 2:
+                db.executescript(Path(__file__).with_name("issues.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -145,6 +147,8 @@ class Store:
         result["status"] = "active" if pending else ("closed_with_reject" if totals["reject"] else "completed")
         today = datetime.now(timezone(timedelta(hours=7))).date().isoformat()
         result["overdue"] = pending > 0 and result["due_date"] < today
+        result["open_issues"] = db.execute("""SELECT COUNT(*) FROM issues i JOIN order_lines l ON l.id=i.line_id
+            WHERE l.order_id=? AND i.resolved_at IS NULL""", (order_id,)).fetchone()[0]
         return result
 
     def order(self, order_id):
@@ -168,7 +172,9 @@ class Store:
         filters = """ FROM production p WHERE
             (:status='all' OR (:status='active' AND p.pending>0)
                 OR (:status='overdue' AND p.pending>0 AND p.due_date<:today)
-                OR (:status='closed' AND p.pending=0))
+                OR (:status='closed' AND p.pending=0)
+                OR (:status='blocked' AND EXISTS(SELECT 1 FROM issues i JOIN order_lines l ON l.id=i.line_id
+                    WHERE l.order_id=p.id AND i.resolved_at IS NULL)))
             AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
                 OR EXISTS(SELECT 1 FROM order_lines l JOIN products s ON s.id=l.product_id
                     WHERE l.order_id=p.id AND (instr(lower(s.sku),:query)>0 OR instr(lower(s.name),:query)>0))) """
@@ -184,7 +190,46 @@ class Store:
             ids = [r[0] for r in db.execute(totals + "SELECT p.id" + filters +
                                            "ORDER BY p.due_date,p.created_at,p.id LIMIT :limit OFFSET :offset", params)]
             return {"summary": summary, "total": count, "limit": limit, "offset": offset,
+                    "open_issues": db.execute("SELECT COUNT(*) FROM issues WHERE resolved_at IS NULL").fetchone()[0],
                     "orders": [self._order(db, order_id) for order_id in ids]}
+
+    def create_issue(self, payload, actor, key):
+        def perform(db):
+            if not db.execute("SELECT 1 FROM order_lines WHERE id=?", (payload["line_id"],)).fetchone():
+                raise DomainError(404, "Baris produksi tidak ditemukan.")
+            if not db.execute("SELECT 1 FROM users WHERE id=? AND active=1 AND role IN ('admin','operator')",
+                              (payload["owner_id"],)).fetchone():
+                raise DomainError(422, "PIC kendala harus akun admin/operator yang aktif.")
+            record = {"id": str(uuid4()), **payload, "created_by": actor["id"], "created_at": now(),
+                      "resolution": None, "resolved_by": None, "resolved_at": None}
+            db.execute("""INSERT INTO issues(id,line_id,stage,description,owner_id,created_by,created_at)
+                VALUES(:id,:line_id,:stage,:description,:owner_id,:created_by,:created_at)""", record)
+            return record
+        return self._write(actor, ("admin", "operator"), key, "issue", payload, perform)
+
+    def resolve_issue(self, issue_id, payload, actor, key):
+        def perform(db):
+            issue = db.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
+            if not issue:
+                raise DomainError(404, "Kendala tidak ditemukan.")
+            if issue["resolved_at"]:
+                raise DomainError(409, "Kendala sudah selesai. Muat ulang untuk melihat catatannya.")
+            record = dict(issue) | payload | {"resolved_by": actor["id"], "resolved_at": now()}
+            db.execute("UPDATE issues SET resolution=:resolution,resolved_by=:resolved_by,resolved_at=:resolved_at WHERE id=:id", record)
+            return record
+        return self._write(actor, ("admin", "operator"), key, "resolve-issue:" + issue_id, payload, perform)
+
+    def issues(self, order_id, limit=100, offset=0, before=None):
+        with self.transaction() as db:
+            if not db.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone():
+                raise DomainError(404, "Order produksi tidak ditemukan.")
+            return [dict(row) for row in db.execute("""SELECT i.*,p.sku,u.name AS owner_name,
+                u.active AS owner_active,c.name AS creator_name,r.name AS resolver_name
+                FROM issues i JOIN order_lines l ON l.id=i.line_id JOIN products p ON p.id=l.product_id
+                JOIN users u ON u.id=i.owner_id JOIN users c ON c.id=i.created_by
+                LEFT JOIN users r ON r.id=i.resolved_by
+                WHERE l.order_id=? AND (? IS NULL OR i.sequence<?)
+                ORDER BY i.sequence DESC LIMIT ? OFFSET ?""", (order_id, before, before, limit, offset))]
 
     def _transfer(self, db, payload, actor, reversal_of=None):
         line = db.execute("SELECT quantity FROM order_lines WHERE id=?", (payload["line_id"],)).fetchone()

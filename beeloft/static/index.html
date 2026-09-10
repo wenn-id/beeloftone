@@ -25,8 +25,9 @@
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
+        <button id="issues-summary" class="issues-summary" type="button" hidden></button>
         <div class="ledger-heading"><h2>Order produksi</h2><span id="updated" class="hint"></span></div>
-        <form id="search-form" class="filters"><label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label><label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="closed">Selesai / ditutup</option></select></label><button type="submit">Cari order</button></form>
+        <form id="search-form" class="filters"><label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label><label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="blocked">Ada kendala terbuka</option><option value="closed">Selesai / ditutup</option></select></label><button type="submit">Cari order</button></form>
         <div id="board-message" role="status" class="state" hidden></div>
         <div id="order-list"></div>
         <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>

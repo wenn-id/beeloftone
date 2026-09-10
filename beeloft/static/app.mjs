@@ -9,6 +9,7 @@ const stages = ['planned','cutting','sewing','finishing','qc','warehouse'];
 let user = null, transitions = [], boardData = null, selected = null, history = [], historyOffset = 0;
 let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', modalBusy = false, unresolved = false;
 let dialogVersion = 0;
+let issues = [], issuesMore = false;
 let noticeTimer;
 
 function theme(value) {
@@ -63,6 +64,9 @@ function statusHTML(order) {
   if (order.status === 'closed_with_reject') return '<span class="status-label done">Ditutup · ada reject</span>';
   return '<span class="status-label">Dalam produksi</span>';
 }
+function issueBadge(order) {
+  return order.open_issues ? `<span class="status-label late">${n(order.open_issues)} kendala terbuka</span>` : '';
+}
 function showBoard() {
   view = 'board'; detailRequest++; selected = null;
   $('board-view').hidden = false; $('detail-view').hidden = true; loadBoard();
@@ -70,6 +74,7 @@ function showBoard() {
 $('brand').onclick = event => { event.preventDefault(); if (user) showBoard(); };
 $('back').onclick = () => { showBoard(); $('search').focus(); };
 $('refresh').onclick = () => loadBoard();
+$('issues-summary').onclick = () => { $('status').value = 'blocked'; $('search').value = ''; offset = 0; loadBoard(); };
 $('search-form').onsubmit = event => { event.preventDefault(); offset = 0; loadBoard(); };
 $('status').onchange = () => { offset = 0; loadBoard(); };
 $('previous').onclick = () => { offset = Math.max(0, offset - 25); loadBoard(); };
@@ -85,6 +90,8 @@ async function loadBoard() {
     const result = await api.get('/api/production-board?' + query);
     if (version !== epoch || request !== boardRequest || view !== 'board') return;
     boardData = result;
+    $('issues-summary').textContent = `${n(result.open_issues)} kendala terbuka · lihat order terkait`;
+    $('issues-summary').hidden = false;
     const s = result.summary;
     $('summary').innerHTML = [['Order aktif',s.active,'order'],['Lewat target',s.overdue,'order'],['Dalam proses',s.in_progress,'pcs'],['Perlu rework',s.rework,'pcs']]
       .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
@@ -100,12 +107,12 @@ async function loadBoard() {
         const progress = Math.round(order.totals.warehouse / order.target_quantity * 100);
         return `<article class="order-grid order-row"><div class="cell"><button class="order-title" data-action="detail" data-id="${e(order.id)}"><span class="reference">${e(order.reference)}</span>${e(order.title)}</button><span class="hint">${order.lines.length} SKU · target ${n(order.target_quantity)} pcs</span></div>
           <div class="cell"><span class="cell-label">PIC</span>${e(order.owner_name)}</div><div class="cell"><span class="cell-label">Target selesai</span>${date(order.due_date)}</div>
-          <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}</div></article>`;
+          <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}${issueBadge(order)}</div></article>`;
       }).join('');
     }
     $('page-count').textContent = result.total ? `${offset + 1}–${Math.min(offset + 25,result.total)} dari ${n(result.total)} order` : '0 order';
     $('previous').disabled = offset === 0; $('next').disabled = offset + 25 >= result.total;
-  } catch (error) { if (version === epoch && request === boardRequest) { $('summary').replaceChildren(); $('updated').textContent = ''; fail(error, 'board-message'); } }
+  } catch (error) { if (version === epoch && request === boardRequest) { $('summary').replaceChildren(); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
 }
 
 async function openDetail(id) {
@@ -113,9 +120,9 @@ async function openDetail(id) {
   const version = epoch, request = ++detailRequest;
   message('detail-message', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
   try {
-    const [order, movements] = await Promise.all([api.get('/api/orders/' + encodeURIComponent(id)), api.get(`/api/orders/${encodeURIComponent(id)}/movements?limit=100`)]);
+    const [order, movements, blockers] = await Promise.all([api.get('/api/orders/' + encodeURIComponent(id)), api.get(`/api/orders/${encodeURIComponent(id)}/movements?limit=100`), api.get(`/api/orders/${encodeURIComponent(id)}/issues?limit=100`)]);
     if (version !== epoch || request !== detailRequest || view !== 'detail') return;
-    selected = order; history = movements; historyOffset = movements.length;
+    selected = order; issues = blockers; issuesMore = blockers.length === 100; history = movements; historyOffset = movements.length;
     message('detail-message', ''); $('detail-content').hidden = false; renderDetail(movements.length === 100);
   } catch (error) { if (version === epoch && request === detailRequest) fail(error, 'detail-message'); }
 }
@@ -125,9 +132,10 @@ function renderDetail(more) {
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
-    <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
+    <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
+    <section class="history-section" aria-labelledby="issues-heading"><div class="history-heading"><h2 id="issues-heading">Kendala produksi · ${n(o.open_issues)} terbuka</h2><span class="hint">Catatan terbaru dahulu · waktu Jakarta</span></div><div id="issue-list"></div><button id="more-issues" data-action="more-issues" ${issuesMore ? '' : 'hidden'}>Muat kendala sebelumnya</button></section>
     <section class="history-section"><div class="history-heading"><h2>Riwayat perpindahan</h2><span class="hint">Urutan pencatatan terlama · waktu Jakarta</span></div><div id="history-list"></div><button id="more-history" data-action="more-history" ${more ? '' : 'hidden'}>Muat riwayat berikutnya</button></section>`;
-  renderHistory();
+  renderHistory(); renderIssues();
 }
 function renderHistory() {
   const reversed = new Set(history.map(item => item.reversal_of).filter(Boolean));
@@ -289,7 +297,49 @@ document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id;
   const actions = {detail:() => openDetail(id),move:() => moveForm(id),reverse:() => reverseForm(id),
+    'new-issue':() => issueForm(id),'resolve-issue':() => resolveIssueForm(id),'more-issues':() => moreIssues(button),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
     products:productsDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
+
+function renderIssues() {
+  const timestamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
+  $('issue-list').innerHTML = issues.length ? issues.map(item => `<article class="issue-item">
+    <div class="issue-heading"><strong>${e(item.sku)} · ${labels[item.stage]}</strong><span class="status-label ${item.resolved_at ? 'done' : 'late'}">${item.resolved_at ? 'Selesai' : 'Terbuka'}</span></div>
+    <p class="reason">${e(item.description)}</p><p class="hint">PIC: ${e(item.owner_name)}${item.owner_active ? '' : ' (akun nonaktif)'} · dicatat ${e(item.creator_name)} · ${timestamp(item.created_at)}</p>
+    ${item.resolved_at ? `<div class="issue-resolution"><strong>Penyelesaian</strong><p class="reason">${e(item.resolution)}</p><p class="hint">${e(item.resolver_name)} · ${timestamp(item.resolved_at)}</p></div>` : user.role !== 'viewer' ? `<button data-action="resolve-issue" data-id="${e(item.id)}">Selesaikan kendala</button>` : ''}
+    </article>`).join('') : '<p class="state">Belum ada kendala yang dicatat untuk order ini.</p>';
+}
+async function moreIssues(button) {
+  const version = epoch, request = detailRequest, id = selected.id;
+  button.disabled = true;
+  try {
+    const rows = await api.get(`/api/orders/${id}/issues?limit=100&before=${issues.at(-1).sequence}`);
+    if (version !== epoch || request !== detailRequest) return;
+    const known = new Set(issues.map(i => i.id));
+    issues.push(...rows.filter(i => !known.has(i.id))); issuesMore = rows.length === 100;
+    renderIssues(); button.hidden = !issuesMore;
+  } catch (error) { if (version === epoch && request === detailRequest) notify(error.message); }
+  finally { button.disabled = false; }
+}
+async function issueForm(lineId) {
+  if (guardPending()) return;
+  const version = epoch, order = selected, line = order.lines.find(item => item.id === lineId);
+  openDialog('Catat kendala', '<p class="state">Memuat penanggung jawab…</p>');
+  const modalVersion = dialogVersion;
+  try {
+    const users = await api.get('/api/users');
+    if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
+    formDialog('Catat kendala', `<div><label for="issue-stage">Tahap yang terkendala</label><select id="issue-stage" name="stage">${Object.keys(labels).map(stage => option(stage,labels[stage])).join('')}</select></div>
+      <div><label for="issue-owner">PIC kendala</label><select id="issue-owner" name="owner_id" required>${users.filter(u => u.active && u.role !== 'viewer').map(u => option(u.id,u.name)).join('')}</select></div>
+      <label class="full">Apa kendalanya?<textarea name="description" required maxlength="1000"></textarea></label>`, form => ({line_id:line.id,...Object.fromEntries(new FormData(form))}), '/api/issues', `${order.reference} · ${line.sku}\nCatat hambatan dan orang yang akan menindaklanjutinya.`);
+    if (users.some(u => u.id === order.owner_id && u.active && u.role !== 'viewer')) $('issue-owner').value = order.owner_id;
+  } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-issue" data-id="${e(lineId)}">Coba lagi</button>`; }
+}
+function resolveIssueForm(id) {
+  if (guardPending()) return;
+  const issue = issues.find(item => item.id === id);
+  formDialog('Selesaikan kendala', '<label class="full">Tindakan penyelesaian<textarea name="resolution" required maxlength="1000"></textarea></label>', form => Object.fromEntries(new FormData(form)),
+    `/api/issues/${id}/resolve`, `${issue.sku} · ${labels[issue.stage]}\n${issue.description}\nCatatan penyelesaian akan tersimpan beserta nama pencatatnya.`);
+}

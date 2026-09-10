@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/health": {
@@ -383,7 +383,8 @@
                 "all",
                 "active",
                 "overdue",
-                "closed"
+                "closed",
+                "blocked"
               ],
               "type": "string",
               "default": "all",
@@ -650,6 +651,216 @@
           }
         }
       }
+    },
+    "/api/orders/{order_id}/issues": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Issues",
+        "operationId": "issues_api_orders__order_id__issues_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Create Issue",
+        "operationId": "create_issue_api_issues_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/{issue_id}/resolve": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Resolve Issue",
+        "operationId": "resolve_issue_api_issues__issue_id__resolve_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueResolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -666,6 +877,67 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IssueCreate": {
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Line Id"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "cutting",
+              "sewing",
+              "finishing",
+              "qc",
+              "rework",
+              "reject",
+              "warehouse"
+            ],
+            "title": "Stage"
+          },
+          "owner_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Owner Id"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "line_id",
+          "stage",
+          "owner_id",
+          "description"
+        ],
+        "title": "IssueCreate"
+      },
+      "IssueResolve": {
+        "properties": {
+          "resolution": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Resolution"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resolution"
+        ],
+        "title": "IssueResolve"
       },
       "MovementCreate": {
         "properties": {
