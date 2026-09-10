@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "paths": {
     "/health": {
@@ -389,6 +389,38 @@
               "type": "string",
               "default": "all",
               "title": "Status"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 160,
+              "default": "",
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "planned",
+                "cutting",
+                "sewing",
+                "finishing",
+                "qc",
+                "rework",
+                "reject",
+                "warehouse"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Stage"
             }
           }
         ],

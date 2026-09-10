@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.6.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.7.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -285,3 +285,33 @@ Pagination memakai rentang/jenis yang sama beserta cursor sebelumnya.
 Semua role membutuhkan X-API-Key seperti laporan JSON. Tidak ada perubahan schema atau data.
 
 Verifikasi rilis: `docs/export-verification.md`.
+
+
+## Filter PIC dan posisi barang (v0.7)
+
+Papan produksi sekarang memiliki **PIC order** dan **Posisi barang**. Gabungkan keduanya dengan
+status dan pencarian. Contoh: PIC Produksi Demo, posisi Sewing, status Aktif akan menampilkan
+order PIC tersebut yang masih memiliki pcs di sewing. Order dengan banyak tahap dapat muncul
+di beberapa pilihan posisi, karena filter membaca saldo positif saat ini, bukan riwayat lewat tahap.
+
+Pilihan PIC berasal dari seluruh order, termasuk PIC nonaktif yang masih tercantum pada order.
+Label akun nonaktif ditampilkan. Ini PIC order, bukan PIC kendala atau akun yang mencatat perpindahan.
+Jika PIC order berubah, order mengikuti PIC terbaru setelah muat ulang. Pilihan yang sedang dipakai
+tetap terlihat meski PIC itu tidak lagi memiliki order, dengan hasil kosong sampai filter diganti.
+
+Kembali dari detail order mempertahankan filter. Ganti filter memulai dari halaman pertama.
+**Reset filter** mengosongkan pencarian dan mengembalikan semua status, PIC serta posisi.
+Klik ringkasan kendala terbuka menghapus filter lain lalu menampilkan semua order berkendala.
+Ringkasan angka di atas selalu mencakup seluruh database, bukan hanya hasil filter.
+
+Filter posisi bekerja pada order: minimal satu SKU order harus memiliki saldo di tahap tersebut.
+Pencarian SKU dan filter posisi dicocokkan pada order yang sama, tidak harus pada baris SKU yang sama.
+Saldo nol tidak cocok. Gudang/reject dapat dipilih, termasuk pada order selesai.
+
+API `GET /api/production-board` menambah `owner_id` (kosong berarti semua) dan `stage`
+(`all`, `planned`, `cutting`, `sewing`, `finishing`, `qc`, `rework`, `reject`, `warehouse`).
+Respons menambah `owners` berisi id, name dan active dari seluruh PIC yang memiliki order,
+tanpa dipengaruhi filter/pagination. Ketentuan autentikasi dan role baca tetap sama.
+Tidak ada perubahan schema/database atau dependency baru.
+
+Verifikasi: `docs/board-filters-verification.md`.

@@ -31,6 +31,7 @@ function message(id, text, error = false) {
   $(id).classList.toggle('error', error);
 }
 function logout() {
+  $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; user = null; selected = null; boardData = null;
@@ -79,9 +80,11 @@ function showBoard() {
 $('brand').onclick = event => { event.preventDefault(); if (user) showBoard(); };
 $('back').onclick = () => { showBoard(); $('search').focus(); };
 $('refresh').onclick = () => loadBoard();
-$('issues-summary').onclick = () => { $('status').value = 'blocked'; $('search').value = ''; offset = 0; loadBoard(); };
+$('issues-summary').onclick = () => { resetBoardFilters(); $('status').value = 'blocked'; loadBoard(); };
 $('search-form').onsubmit = event => { event.preventDefault(); offset = 0; loadBoard(); };
-$('status').onchange = () => { offset = 0; loadBoard(); };
+$('status').onchange = $('board-owner').onchange = $('board-stage').onchange = () => { offset = 0; loadBoard(); };
+function resetBoardFilters() { $('search').value = ''; $('status').value = 'all'; $('board-owner').value = ''; $('board-stage').value = 'all'; offset = 0; }
+$('reset-board').onclick = () => { resetBoardFilters(); loadBoard(); };
 $('previous').onclick = () => { offset = Math.max(0, offset - 25); loadBoard(); };
 $('next').onclick = () => { offset += 25; loadBoard(); };
 
@@ -91,10 +94,14 @@ async function loadBoard() {
   $('order-list').hidden = true; $('previous').disabled = true; $('next').disabled = true;
   $('summary').setAttribute('aria-busy', 'true');
   try {
-    const query = new URLSearchParams({q:$('search').value.trim(), status:$('status').value, limit:25, offset});
+    const query = new URLSearchParams({q:$('search').value.trim(), status:$('status').value, owner_id:$('board-owner').value, stage:$('board-stage').value, limit:25, offset});
     const result = await api.get('/api/production-board?' + query);
     if (version !== epoch || request !== boardRequest || view !== 'board') return;
     boardData = result;
+    const ownerId = query.get('owner_id'), previousOwnerLabel = $('board-owner').selectedOptions[0]?.textContent;
+    $('board-owner').innerHTML = '<option value="">Semua PIC</option>' + result.owners.map(owner => option(owner.id,owner.name + (owner.active ? '' : ' (akun nonaktif)'))).join('');
+    if (ownerId && !result.owners.some(owner => owner.id === ownerId)) $('board-owner').insertAdjacentHTML('beforeend',option(ownerId,previousOwnerLabel || 'PIC tidak lagi memiliki order'));
+    $('board-owner').value = ownerId;
     $('issues-summary').textContent = `${n(result.open_issues)} kendala terbuka · lihat order terkait`;
     $('issues-summary').hidden = false;
     const s = result.summary;

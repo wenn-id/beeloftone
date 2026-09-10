@@ -17,7 +17,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.6.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.7.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -91,8 +91,10 @@ def create_app(database_path):
     @app.get("/api/production-board", tags=["Production"])
     def production_board(user: Actor, limit: Limit = 25, offset: Offset = 0,
                          q: Annotated[str, Query(max_length=160)] = "",
-                         status: Literal["all", "active", "overdue", "closed", "blocked"] = "all"):
-        return store.production_board(limit, offset, q, status)
+                         status: Literal["all", "active", "overdue", "closed", "blocked"] = "all",
+                         owner_id: Annotated[str, Query(max_length=160)] = "",
+                         stage: Literal["all", "planned", "cutting", "sewing", "finishing", "qc", "rework", "reject", "warehouse"] = "all"):
+        return store.production_board(limit, offset, q, status, owner_id, stage)
 
     @app.get("/api/orders/{order_id}", tags=["Production"])
     def order(order_id: str, user: Actor):

@@ -195,9 +195,9 @@ class Store:
             ids = [row[0] for row in db.execute("SELECT id FROM orders ORDER BY due_date,created_at,id LIMIT ? OFFSET ?", (limit, offset))]
             return [self._order(db, order_id) for order_id in ids]
 
-    def production_board(self, limit=25, offset=0, query="", status="all"):
+    def production_board(self, limit=25, offset=0, query="", status="all", owner_id="", stage="all"):
         totals = """WITH production AS (
-            SELECT o.id,o.reference,o.title,o.due_date,o.created_at,
+            SELECT o.id,o.reference,o.title,o.due_date,o.created_at,o.owner_id,
                 SUM(CASE WHEN b.stage NOT IN ('warehouse','reject') THEN b.quantity ELSE 0 END) AS pending,
                 SUM(CASE WHEN b.stage IN ('cutting','sewing','finishing','qc','rework') THEN b.quantity ELSE 0 END) AS in_progress,
                 SUM(CASE WHEN b.stage='rework' THEN b.quantity ELSE 0 END) AS rework
@@ -210,11 +210,15 @@ class Store:
                 OR (:status='closed' AND p.pending=0)
                 OR (:status='blocked' AND EXISTS(SELECT 1 FROM issues i JOIN order_lines l ON l.id=i.line_id
                     WHERE l.order_id=p.id AND i.resolved_at IS NULL)))
+            AND (:owner_id='' OR p.owner_id=:owner_id)
+            AND (:stage='all' OR EXISTS(SELECT 1 FROM order_lines l JOIN balances b ON b.line_id=l.id
+                WHERE l.order_id=p.id AND b.stage=:stage AND b.quantity>0))
             AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
                 OR EXISTS(SELECT 1 FROM order_lines l JOIN products s ON s.id=l.product_id
                     WHERE l.order_id=p.id AND (instr(lower(s.sku),:query)>0 OR instr(lower(s.name),:query)>0))) """
         params = {"today": datetime.now(timezone(timedelta(hours=7))).date().isoformat(),
-                  "query": query.strip().lower(), "status": status, "limit": limit, "offset": offset}
+                  "query": query.strip().lower(), "status": status, "limit": limit, "offset": offset,
+                  "owner_id": owner_id, "stage": stage}
         with self.transaction() as db:
             row = db.execute(totals + """SELECT COUNT(*) AS orders,
                 SUM(pending>0) AS active,SUM(pending>0 AND due_date<:today) AS overdue,
@@ -225,6 +229,8 @@ class Store:
             ids = [r[0] for r in db.execute(totals + "SELECT p.id" + filters +
                                            "ORDER BY p.due_date,p.created_at,p.id LIMIT :limit OFFSET :offset", params)]
             return {"summary": summary, "total": count, "limit": limit, "offset": offset,
+                    "owners": [dict(row) for row in db.execute("""SELECT u.id,u.name,u.active FROM users u
+                        WHERE EXISTS(SELECT 1 FROM orders o WHERE o.owner_id=u.id) ORDER BY u.name,u.id""")],
                     "open_issues": db.execute("SELECT COUNT(*) FROM issues WHERE resolved_at IS NULL").fetchone()[0],
                     "orders": [self._order(db, order_id) for order_id in ids]}
 

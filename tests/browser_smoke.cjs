@@ -33,6 +33,22 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal((await page.locator('.order-row').innerText()).includes('DEMO-PROD-002'),true);
   await page.getByLabel('Status',{exact:true}).selectOption('all');
   await page.waitForFunction(() => document.querySelectorAll('.order-row').length === 3 && !document.getElementById('order-list').hidden);
+  const globalSummary = await page.locator('#summary').innerText();
+  await page.getByLabel('PIC order',{exact:true}).selectOption(creds.users[1].id);
+  await page.getByLabel('Posisi barang',{exact:true}).selectOption('sewing');
+  await page.waitForFunction(() => document.querySelectorAll('.order-row').length === 1 && !document.getElementById('order-list').hidden);
+  assert.ok((await page.locator('.order-row').innerText()).includes('DEMO-PROD-001'));
+  assert.equal(await page.locator('#summary').innerText(),globalSummary);
+  await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
+  await page.getByRole('heading',{name:'Posisi barang sekarang'}).waitFor();
+  await page.getByRole('button',{name:'Semua order',exact:false}).click();
+  assert.equal(await page.getByLabel('Posisi barang',{exact:true}).inputValue(),'sewing');
+  await page.getByLabel('Posisi barang',{exact:true}).selectOption('qc');
+  await page.getByText('Tidak ada order yang cocok.',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'Reset filter',exact:true}).click();
+  await page.waitForFunction(() => document.querySelectorAll('.order-row').length === 3 && !document.getElementById('order-list').hidden);
+  assert.equal(await page.getByLabel('PIC order',{exact:true}).inputValue(),'');
+  assert.equal(await page.getByLabel('Posisi barang',{exact:true}).inputValue(),'all');
   let failBoard = true;
   await page.route('**/api/production-board?*',async route => {
     if (failBoard) { failBoard=false; await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Simulasi koneksi terputus'})}); }
@@ -152,7 +168,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).click();
   assert.equal(await page.getByLabel('Target selesai baru').inputValue(),'2099-01-01');
   await page.getByLabel('Target selesai baru').fill('2099-02-01');
-  await page.getByLabel('PIC order',{exact:true}).selectOption(creds.users[1].id);
+  await page.locator('dialog').getByLabel('PIC order',{exact:true}).selectOption(creds.users[1].id);
   await page.getByLabel('Alasan perubahan').fill('Mesin <dipindah> & jadwal diperbarui');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
