@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.2.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.4.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -73,8 +73,8 @@ planned -> cutting -> sewing -> finishing -> qc -> warehouse
 
 | Role | Hak |
 |---|---|
-| admin | Membaca, membuat SKU/order, memindahkan barang, membalik transaksi |
-| operator | Membaca dan mencatat perpindahan barang |
+| admin | Membaca, membuat SKU/order, mengubah tenggat/PIC order, memindahkan barang, membalik transaksi, mencatat/menyelesaikan kendala |
+| operator | Membaca, mencatat perpindahan barang, mencatat/menyelesaikan kendala |
 | viewer | Membaca saja |
 
 Semua akun dalam database ini dapat melihat semua order. PIC ditentukan per order, bukan per bundle atau per tahap. Akun pencatat perpindahan tidak otomatis berarti penerima barang. Belum ada konfirmasi serah-terima dua pihak.
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan target/tenggat/PIC setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 2. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dalam satu transaksi, tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade tersedia lokal di `data/backups/demo-before-v03.sqlite3`.
+Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 3. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -189,3 +189,31 @@ API tambahan (autentikasi dan Idempotency-Key mengikuti transaksi lain):
   `open_issues` pada respons board adalah jumlah global; pada setiap order adalah jumlah per order.
 
 Laporan pengujian: `docs/issues-verification.md`.
+
+
+## Ubah tenggat dan PIC order (v0.4)
+
+Admin membuka order → **Ubah tenggat / PIC** → isi tenggat/PIC baru dan alasan perubahan.
+Nilai saat ini sudah terisi. PIC harus akun admin/operator aktif. Satu atau kedua nilai boleh
+diubah; perubahan tanpa perbedaan ditolak. Jumlah target, posisi barang, dan PIC pada kendala
+tidak ikut berubah. Order yang sudah selesai juga dapat dikoreksi, dengan riwayat yang sama.
+Penanda lewat target pada dashboard mengikuti tenggat terbaru.
+
+Semua role dapat membuka **Riwayat tenggat / PIC**. Riwayat menampilkan nilai sebelum/sesudah,
+alasan, akun pengubah dan waktu Jakarta; terbaru dahulu dengan tombol memuat 100 catatan berikutnya.
+Tidak ada hapus atau edit riwayat. Jika perlu mengembalikan nilai, buat perubahan baru dengan alasannya.
+
+Jika muncul pesan jadwal/PIC sudah diubah, tutup form, muat ulang order, periksa nilai terbaru,
+lalu ajukan perubahan lagi. Ini mencegah draft dari tab lama menimpa perubahan orang lain.
+Jika hasil penyimpanan belum pasti karena koneksi terputus, gunakan **Coba ulang penyimpanan**.
+
+API: `POST /api/orders/{id}/changes` dengan `owner_id`, `due_date`, `reason` (1–1000 karakter),
+dan `expected_revision` dari `GET /api/orders/{id}`. Respons adalah order terbaru (HTTP 201).
+Revision tidak harus berurutan per order; gunakan persis angka yang diterima.
+Idempotency-Key dan payload yang sama mengembalikan hasil pertama meski order sudah berubah lagi.
+Revision yang tertinggal ditolak 409; role selain admin ditolak 403.
+`GET /api/orders/{id}/changes?limit=100&before=SEQUENCE_TERAKHIR` membaca riwayat.
+Parameter `before` dihilangkan pada halaman pertama. Migrasi menetapkan revision awal 0
+pada order lama melalui riwayat kosong; catatan perubahan hanya dibuat untuk edit setelah upgrade.
+
+Verifikasi rilis: `docs/order-changes-verification.md`.

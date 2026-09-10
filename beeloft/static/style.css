@@ -6,3 +6,5 @@
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .12s,border-color .12s}}
 
 .issues-summary{margin-bottom:20px;text-align:left;color:var(--danger);border-color:var(--danger);white-space:normal}.issue-item{padding:20px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.issue-heading{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.issue-item p{margin:10px 0}.issue-resolution{border-left:3px solid var(--success);padding-left:16px;margin-top:16px}.sku-heading .actions{flex-wrap:wrap}.status-cell .status-label{white-space:normal}.status-cell{gap:8px}
+
+.order-settings{flex-wrap:wrap;margin:16px 0 28px}

@@ -149,6 +149,35 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal((await apiGet('/api/orders/'+orderId)).totals.planned,50);
   assert.equal((await apiGet('/api/orders/'+orderId+'/issues')).length,1);
 
+  await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).click();
+  assert.equal(await page.getByLabel('Target selesai baru').inputValue(),'2099-01-01');
+  await page.getByLabel('Target selesai baru').fill('2099-02-01');
+  await page.getByLabel('PIC order',{exact:true}).selectOption(creds.users[1].id);
+  await page.getByLabel('Alasan perubahan').fill('Mesin <dipindah> & jadwal diperbarui');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.locator('dialog').waitFor({state:'hidden'});
+  await page.locator('.detail-meta').getByText('1 Feb 2099',{exact:true}).waitFor();
+  const revised = await apiGet('/api/orders/'+orderId);
+  assert.equal(revised.owner_id,creds.users[1].id);
+  assert.equal(revised.totals.planned,50);
+  await page.getByRole('button',{name:'Riwayat tenggat / PIC',exact:true}).click();
+  await page.getByText('Mesin <dipindah> & jadwal diperbarui',{exact:true}).waitFor();
+  assert.equal(await page.locator('#order-change-list .issue-item').count(),1);
+  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).click();
+  const otherEdit = await fetch(base+'/api/orders/'+orderId+'/changes',{method:'POST',headers:{
+    'X-API-Key':admin,'Idempotency-Key':'concurrent-browser-edit','Content-Type':'application/json'},
+    body:JSON.stringify({owner_id:revised.owner_id,due_date:'2099-03-01',expected_revision:revised.revision,reason:'Perubahan dari tab lain'})});
+  assert.equal(otherEdit.status,201);
+  await page.getByLabel('Target selesai baru').fill('2099-04-01');
+  await page.getByLabel('Alasan perubahan').fill('Draft lama');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('Jadwal atau PIC sudah diubah.',{exact:false}).waitFor();
+  assert.equal((await apiGet('/api/orders/'+orderId)).due_date,'2099-03-01');
+  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  await page.getByRole('button',{name:'Muat ulang order',exact:true}).click();
+  await page.locator('.detail-meta').getByText('1 Mar 2099',{exact:true}).waitFor();
+
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
   await page.getByLabel('Status',{exact:true}).selectOption('all');
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
@@ -180,10 +209,12 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.getByRole('button',{name:'Koreksi',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Catat kendala',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Selesaikan kendala',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).count(),0);
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(operator);
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
   await page.getByRole('button',{name:'Catat perpindahan',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Koreksi',exact:true}).count(),0);
   assert.deepEqual(errors,[]);
   await browser.close();

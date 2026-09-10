@@ -27,13 +27,15 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
                 db.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
             if version < 2:
                 db.executescript(Path(__file__).with_name("issues.sql").read_text(encoding="utf-8"))
+            if version < 3:
+                db.executescript(Path(__file__).with_name("order_changes.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -133,6 +135,7 @@ class Store:
         if not row:
             raise DomainError(404, "Order produksi tidak ditemukan.")
         result = dict(row)
+        result["revision"] = db.execute("SELECT COALESCE(MAX(sequence),0) FROM order_changes WHERE order_id=?", (order_id,)).fetchone()[0]
         result["lines"] = []
         totals = dict.fromkeys(STAGES, 0)
         for row in db.execute("SELECT l.*,p.sku,p.name,p.color,p.size FROM order_lines l JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY p.sku", (order_id,)):
@@ -154,6 +157,36 @@ class Store:
     def order(self, order_id):
         with self.transaction() as db:
             return self._order(db, order_id)
+
+    def change_order(self, order_id, payload, actor, key):
+        def perform(db):
+            original = self._order(db, order_id)
+            if original["revision"] != payload["expected_revision"]:
+                raise DomainError(409, "Jadwal atau PIC sudah diubah. Tutup form, muat ulang order, lalu periksa perubahan terbaru.")
+            if not db.execute("SELECT 1 FROM users WHERE id=? AND active=1 AND role IN ('admin','operator')",
+                              (payload["owner_id"],)).fetchone():
+                raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
+            if original["due_date"] == payload["due_date"] and original["owner_id"] == payload["owner_id"]:
+                raise DomainError(422, "Belum ada perubahan tenggat atau PIC.")
+            record = {"id": str(uuid4()), "order_id": order_id, "old_due_date": original["due_date"],
+                      "new_due_date": payload["due_date"], "old_owner_id": original["owner_id"],
+                      "new_owner_id": payload["owner_id"], "reason": payload["reason"],
+                      "actor_id": actor["id"], "created_at": now()}
+            db.execute("UPDATE orders SET due_date=?,owner_id=? WHERE id=?", (payload["due_date"], payload["owner_id"], order_id))
+            db.execute("""INSERT INTO order_changes(id,order_id,old_due_date,new_due_date,old_owner_id,new_owner_id,reason,actor_id,created_at)
+                VALUES(:id,:order_id,:old_due_date,:new_due_date,:old_owner_id,:new_owner_id,:reason,:actor_id,:created_at)""", record)
+            return self._order(db, order_id)
+        return self._write(actor, ("admin",), key, "change-order:" + order_id, payload, perform)
+
+    def order_changes(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone():
+                raise DomainError(404, "Order produksi tidak ditemukan.")
+            return [dict(row) for row in db.execute("""SELECT c.*,a.name AS actor_name,
+                old.name AS old_owner_name,new.name AS new_owner_name FROM order_changes c
+                JOIN users a ON a.id=c.actor_id JOIN users old ON old.id=c.old_owner_id
+                JOIN users new ON new.id=c.new_owner_id WHERE c.order_id=? AND (? IS NULL OR c.sequence<?)
+                ORDER BY c.sequence DESC LIMIT ?""", (order_id, before, before, limit))]
 
     def orders(self, limit=100, offset=0):
         with self.transaction() as db:

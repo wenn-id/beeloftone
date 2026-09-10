@@ -75,3 +75,10 @@ class IssueCreate(Input):
 
 class IssueResolve(Input):
     resolution: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class OrderChange(Input):
+    owner_id: Text
+    due_date: date
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

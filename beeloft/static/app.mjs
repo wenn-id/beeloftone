@@ -130,6 +130,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button></div>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
     <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
@@ -298,6 +299,7 @@ document.addEventListener('click', event => {
   const id = button.dataset.id;
   const actions = {detail:() => openDetail(id),move:() => moveForm(id),reverse:() => reverseForm(id),
     'new-issue':() => issueForm(id),'resolve-issue':() => resolveIssueForm(id),'more-issues':() => moreIssues(button),
+    'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
     products:productsDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
@@ -342,4 +344,52 @@ function resolveIssueForm(id) {
   const issue = issues.find(item => item.id === id);
   formDialog('Selesaikan kendala', '<label class="full">Tindakan penyelesaian<textarea name="resolution" required maxlength="1000"></textarea></label>', form => Object.fromEntries(new FormData(form)),
     `/api/issues/${id}/resolve`, `${issue.sku} · ${labels[issue.stage]}\n${issue.description}\nCatatan penyelesaian akan tersimpan beserta nama pencatatnya.`);
+}
+
+async function editOrderForm() {
+  if (guardPending()) return;
+  const version = epoch, order = selected;
+  openDialog('Ubah tenggat / PIC', '<p class="state">Memuat penanggung jawab…</p>');
+  const modalVersion = dialogVersion;
+  try {
+    const users = await api.get('/api/users');
+    if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
+    const owners = users.filter(u => u.active && u.role !== 'viewer');
+    formDialog('Ubah tenggat / PIC', field('due_date','Target selesai baru','date','required id="edit-due"') +
+      `<div><label for="edit-owner">PIC order</label><select id="edit-owner" name="owner_id" required><option value="">Pilih PIC aktif</option>${owners.map(u => option(u.id,u.name)).join('')}</select></div>
+      <label class="full">Alasan perubahan<textarea name="reason" required maxlength="1000"></textarea></label>`, form => ({...Object.fromEntries(new FormData(form)),expected_revision:order.revision}),
+      `/api/orders/${order.id}/changes`, `${order.reference}\nSaat ini: ${date(order.due_date)} · ${order.owner_name}\nPerubahan ini berlaku untuk order. PIC kendala yang sudah dicatat tetap mengikuti catatannya masing-masing.`);
+    $('edit-due').value = order.due_date;
+    $('edit-owner').value = owners.some(u => u.id === order.owner_id) ? order.owner_id : '';
+  } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="edit-order">Coba lagi</button>`; }
+}
+async function orderChangesDialog() {
+  if (guardPending()) return;
+  const version = epoch, order = selected;
+  openDialog('Riwayat tenggat / PIC', `<p class="form-info">${e(order.reference)} · Catatan terbaru dahulu · waktu Jakarta</p><div id="order-change-list"></div><p id="changes-message" role="status"></p><button id="more-changes" type="button" hidden>Muat perubahan sebelumnya</button>`);
+  const modalVersion = dialogVersion;
+  let before = null;
+  const current = () => version === epoch && modalVersion === dialogVersion && $('dialog').open;
+  async function load() {
+    if (!current()) return;
+    const button = $('more-changes'); button.disabled = true;
+    message('changes-message','Memuat riwayat…');
+    try {
+      const rows = await api.get(`/api/orders/${order.id}/changes?limit=100${before ? '&before=' + before : ''}`);
+      if (!current()) return;
+      message('changes-message', rows.length || before ? '' : 'Belum ada perubahan. Tenggat dan PIC masih sesuai saat order dibuat.');
+      $('order-change-list').insertAdjacentHTML('beforeend', rows.map(item => {
+        const timestamp = new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
+        return `<article class="issue-item"><strong>${timestamp}</strong>
+          ${item.old_due_date !== item.new_due_date ? `<p>Tenggat: ${date(item.old_due_date)} → ${date(item.new_due_date)}</p>` : ''}
+          ${item.old_owner_id !== item.new_owner_id ? `<p>PIC: ${e(item.old_owner_name)} → ${e(item.new_owner_name)}</p>` : ''}
+          <p class="reason">${e(item.reason)}</p><p class="hint">Diubah oleh ${e(item.actor_name)}</p></article>`;
+      }).join(''));
+      if (rows.length) before = rows.at(-1).sequence;
+      button.textContent = 'Muat perubahan sebelumnya'; button.hidden = rows.length < 100;
+    } catch (error) { if (current()) { message('changes-message',error.message,true); button.hidden = false; button.textContent = 'Coba lagi'; } }
+    finally { if (current()) button.disabled = false; }
+  }
+  $('more-changes').onclick = load;
+  await load();
 }
