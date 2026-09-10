@@ -21,3 +21,11 @@ await assert.rejects(denied.get('/api/orders'), error => error.status === 403 &&
 const invalid = new Api(async () => new Response(JSON.stringify({detail: [{loc: ['body', 'quantity'], msg: 'Invalid quantity'}]}), {status: 422}));
 await assert.rejects(invalid.get('/api/orders'), error => error.message.includes('quantity'));
 console.log('Client checks PASS: escaping, date, exact retry after uncertain response, auth header, structured errors.');
+const exported = new Api(async (path, options) => {
+  assert.equal(options.headers['X-API-Key'],'test-csv-key');
+  return new Response('ID,Catatan\r\n1,"Uji, CSV"\r\n',{headers:{'Content-Type':'text/csv'}});
+});
+exported.key = 'test-csv-key';
+assert.equal(await (await exported.download('/api/activity.csv')).text(),'ID,Catatan\r\n1,"Uji, CSV"\r\n');
+await assert.rejects(denied.download('/api/activity.csv'), error => error.status === 403 && !error.uncertain);
+console.log('CSV client checks PASS: authenticated blob and JSON access errors.');

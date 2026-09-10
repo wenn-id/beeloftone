@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.5.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.6.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -221,7 +221,7 @@ Verifikasi rilis: `docs/order-changes-verification.md`.
 
 ## Aktivitas harian (v0.5)
 
-Klik **Aktivitas harian** di navigasi. Halaman membuka tanggal hari ini menurut Jakarta;
+Klik **Laporan aktivitas** di navigasi. Halaman membuka tanggal hari ini menurut Jakarta;
 pilih tanggal dan jenis aktivitas untuk menelusuri pencatatan. Semua role dapat membaca.
 Setiap catatan menampilkan waktu, akun pencatat, referensi order, SKU bila terkait, dan alasan.
 Klik nama order untuk melihat posisi barang serta riwayat lengkapnya.
@@ -252,3 +252,36 @@ Laporan membaca catatan yang sudah ada tanpa menulis data atau mengubah schema v
 Untuk order lama, perubahan tenggat/PIC hanya tercatat sejak fitur v0.4 digunakan.
 
 Verifikasi: `docs/activity-verification.md`.
+
+
+## Rentang tanggal dan CSV (v0.6)
+
+Pada **Laporan aktivitas**, isi **Dari tanggal** dan **Sampai tanggal**, pilih jenis aktivitas,
+lalu **Tampilkan aktivitas**. Kedua tanggal ikut dihitung menurut waktu Jakarta. Gunakan tanggal
+yang sama untuk satu hari. Rentang maksimal 366 hari. Waktu pada setiap baris sekarang menyertakan
+tanggal agar catatan lintas hari dapat dibedakan.
+
+**Unduh CSV** mengambil seluruh hasil yang sesuai filter yang telah dimuat, bukan hanya 50 baris
+di layar. Maksimal 10.000 catatan; hasil lebih besar ditolak dengan petunjuk mempersempit filter,
+tanpa mengunduh file parsial. Setiap unduhan membaca satu snapshot database; catatan baru yang masuk
+sesudah laporan ditampilkan dapat ikut unduhan. Unduhan yang masih diproses dibatalkan dari UI bila
+pengguna mengubah filter, keluar akun atau berpindah halaman.
+
+CSV memakai UTF-8 dengan BOM, pemisah koma, dan kolom berbahasa Indonesia. Jika Excel menampilkan
+satu kolom, impor lewat **Data → From Text/CSV**, pilih UTF-8 dan pemisah koma. Kolom jumlah tetap
+numerik; teks yang diawali tanda formula diberi awalan apostrof. Catatan dengan koma, kutip,
+baris baru, serta aksen tetap terjaga. File kosong tetap memuat header kolom.
+
+Kolom: ID kejadian, waktu Jakarta, jenis, referensi/nama order, SKU, jumlah, tahap asal/tujuan,
+gudang bersih per kejadian, catatan, pencatat, PIC/kendala asal, tenggat dan PIC sebelum/sesudah.
+Ringkasan layar mencakup semua jenis dalam rentang. CSV hanya berisi kejadian sesuai filter jenis;
+jumlahkan kolom Gudang bersih pcs untuk arus gudang pada baris yang diekspor.
+
+API lama `day=YYYY-MM-DD` tetap didukung. Untuk rentang gunakan kedua parameter
+`start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`; jangan gabungkan dengan `day`.
+Respons JSON menambah `start_date` dan `end_date`; `day` dipertahankan sebagai tanggal awal.
+Pagination memakai rentang/jenis yang sama beserta cursor sebelumnya.
+`GET /api/activity.csv` menerima tanggal/rentang dan `kind` yang sama, tanpa pagination.
+Semua role membutuhkan X-API-Key seperti laporan JSON. Tidak ada perubahan schema atau data.
+
+Verifikasi rilis: `docs/export-verification.md`.

@@ -316,12 +316,19 @@ class Store:
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",
                 (order_id, limit, offset))]
 
-    def activity(self, day=None, kind="all", limit=50, before_time=None, before_id=None):
+    def activity(self, day=None, kind="all", limit=50, before_time=None, before_id=None, start_date=None, end_date=None):
         jakarta = timezone(timedelta(hours=7))
-        day = day or datetime.now(jakarta).date()
+        if day and (start_date or end_date):
+            raise DomainError(422, "Gunakan day atau rentang start_date/end_date, bukan keduanya.")
+        if bool(start_date) != bool(end_date):
+            raise DomainError(422, "Tanggal awal dan akhir harus diisi bersama.")
+        start_date = start_date or day or datetime.now(jakarta).date()
+        end_date = end_date or start_date
+        if not 0 <= (end_date - start_date).days < 366:
+            raise DomainError(422, "Rentang tanggal harus berurutan dan maksimal 366 hari.")
         try:
-            start = datetime.combine(day, time(), jakarta).astimezone(timezone.utc)
-            end = start + timedelta(days=1)
+            start = datetime.combine(start_date, time(), jakarta).astimezone(timezone.utc)
+            end = start + timedelta(days=(end_date - start_date).days + 1)
         except (OverflowError, ValueError):
             raise DomainError(422, "Tanggal di luar jangkauan laporan.")
         if bool(before_time) != bool(before_id):
@@ -347,7 +354,8 @@ class Store:
             rows = rows[:limit]
             for row in rows:
                 row["details"] = json.loads(row["details"])
-            return {"day": day.isoformat(), "timezone": "Asia/Jakarta", "summary": summary,
+            return {"day": start_date.isoformat(), "start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
+                    "timezone": "Asia/Jakarta", "summary": summary,
                     "total": total, "items": rows,
                     "next_before": {"before_time": rows[-1]["created_at"], "before_id": rows[-1]["event_id"]} if more else None}
 

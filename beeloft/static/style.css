@@ -11,3 +11,5 @@
 
 .workspace-nav .actions{flex-wrap:wrap;justify-content:flex-end}.activity-item{grid-template-columns:90px minmax(0,1fr)}.activity-item p{margin:8px 0}.activity-item .order-title{font-size:inherit}.activity-item{overflow-wrap:anywhere}@media(max-width:600px){.workspace-nav{align-items:flex-start;gap:12px;flex-wrap:wrap}.activity-item{grid-template-columns:1fr}}
 @media(max-width:650px){#activity-form{grid-template-columns:minmax(0,1fr)}#activity-form button{width:100%}}
+
+#activity-form{flex-wrap:wrap}.activity-item{grid-template-columns:135px minmax(0,1fr)}@media(max-width:600px){.activity-item{grid-template-columns:1fr}}

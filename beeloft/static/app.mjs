@@ -11,6 +11,7 @@ let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', 
 let dialogVersion = 0;
 let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
+let exportBusy = false;
 let noticeTimer;
 
 function theme(value) {
@@ -31,7 +32,7 @@ function message(id, text, error = false) {
 }
 function logout() {
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
-  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-kind').value = 'all';
+  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; user = null; selected = null; boardData = null;
   dialogVersion++; modalBusy = false; unresolved = false; $('dialog').close();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
@@ -407,30 +408,30 @@ $('activity').onclick = () => {
 };
 $('activity-back').onclick = showBoard;
 $('activity-form').onsubmit = event => { event.preventDefault(); loadActivity(); };
-$('activity-day').onchange = $('activity-kind').onchange = () => { if ($('activity-form').reportValidity()) loadActivity(); };
+$('activity-day').onchange = $('activity-end').onchange = $('activity-kind').onchange = () => { if ($('activity-form').reportValidity()) loadActivity(); };
 $('activity-more').onclick = () => loadActivity(true);
 async function loadActivity(more = false) {
   if (more && !activityCursor) return;
   const version = epoch, request = ++activityRequest;
   const query = more ? {...activityQuery,...activityCursor} : {kind:$('activity-kind').value,limit:50};
-  if (!more && $('activity-day').value) query.day = $('activity-day').value;
+  if (!more && ($('activity-day').value || $('activity-end').value)) { query.start_date = $('activity-day').value; query.end_date = $('activity-end').value; }
   if (!more) {
     activityRows = []; activityCursor = null; activityQuery = null;
     $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-count').textContent = '';
     $('activity-more').hidden = true;
   }
-  $('activity-more').disabled = true; message('activity-message','Memuat aktivitas…');
+  $('activity-export').disabled = true; $('activity-more').disabled = true; message('activity-message','Memuat aktivitas…');
   try {
     const result = await api.get('/api/activity?' + new URLSearchParams(query));
     if (version !== epoch || request !== activityRequest || view !== 'activity') return;
-    if (!more) { activityQuery = {day:result.day,kind:query.kind,limit:50}; $('activity-day').value = result.day; }
+    if (!more) { activityQuery = {start_date:result.start_date,end_date:result.end_date,kind:query.kind,limit:50}; $('activity-day').value = result.start_date; $('activity-end').value = result.end_date; }
     activityRows.push(...result.items); activityCursor = result.next_before;
     const s = result.summary;
     $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan'],['Gudang bersih',s.warehouse_net,'pcs'],['Kendala dicatat',s.issues_opened,'catatan'],['Kendala selesai',s.issues_resolved,'catatan']]
       .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
-    message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada tanggal ini.');
+    message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada rentang ini.');
     $('activity-list').innerHTML = activityRows.map(item => {
-      const stamp = new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
+      const stamp = new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
       let detail = '';
       if (['movement','reversal'].includes(item.kind)) detail = `${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}`;
       if (item.kind === 'issue_opened') detail = `${labels[item.to_stage]} · PIC: ${item.details.owner_name}`;
@@ -445,5 +446,25 @@ async function loadActivity(more = false) {
     $('activity-more').hidden = !activityCursor;
   } catch (error) {
     if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message');
-  } finally { if (version === epoch && request === activityRequest) $('activity-more').disabled = false; }
+  } finally { if (version === epoch && request === activityRequest) { $('activity-more').disabled = false; $('activity-export').disabled = !activityQuery || exportBusy; } }
 }
+
+for (const id of ['activity-day','activity-end','activity-kind']) $(id).addEventListener('input', () => {
+  activityRequest++; activityQuery = null; activityCursor = null; activityRows = [];
+  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-count').textContent = '';
+  $('activity-more').hidden = true; $('activity-export').disabled = true;
+});
+$('activity-export').onclick = async () => {
+  if (!activityQuery || exportBusy) return;
+  const version = epoch, request = activityRequest, query = {...activityQuery}; delete query.limit;
+  exportBusy = true; $('activity-export').disabled = true; $('activity-export').textContent = 'Menyiapkan CSV…';
+  try {
+    const blob = await api.download('/api/activity.csv?' + new URLSearchParams(query));
+    if (version !== epoch || request !== activityRequest || view !== 'activity') return;
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = `beeloft-aktivitas-${query.start_date}-${query.end_date}-${query.kind}.csv`;
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),1000);
+    notify('CSV siap diunduh. Semua hasil filter disertakan.');
+  } catch (error) { if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message'); }
+  finally { exportBusy = false; $('activity-export').textContent = 'Unduh CSV'; $('activity-export').disabled = !activityQuery; }
+};

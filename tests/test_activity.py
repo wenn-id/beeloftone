@@ -43,6 +43,8 @@ class ActivityTest(TestCase):
         tomorrow = self.client.get('/api/activity?day=2026-09-11').json()
         self.assertEqual(tomorrow['summary']['warehouse_net'], -10)
         self.assertEqual(tomorrow['items'][0]['kind'], 'reversal')
+        period = self.client.get('/api/activity?start_date=2026-09-10&end_date=2026-09-11').json()
+        self.assertEqual(period['summary']['warehouse_net'],0)
         filtered = self.client.get('/api/activity?day=2026-09-10&kind=issue_opened').json()
         self.assertEqual(filtered['total'], 1)
         self.assertEqual(filtered['summary'], today['summary'])

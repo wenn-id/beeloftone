@@ -4,16 +4,20 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.store import DomainError, Store
+from beeloft.reports import activity_csv
+
+ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
+MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.5.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.6.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -129,8 +133,8 @@ def create_app(database_path):
         return store.order_changes(order_id, limit, before)
 
     @app.get("/api/activity", tags=["Reports"])
-    def activity(user: Actor, day: date | None = None, limit: Limit = 50,
-                 kind: Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"] = "all",
+    def activity(user: Actor, day: date | None = None, limit: Limit = 50, kind: ActivityKind = "all",
+                 start_date: date | None = None, end_date: date | None = None,
                  before_time: datetime | None = None,
                  before_id: Annotated[str | None, Query(min_length=1, max_length=100)] = None):
         if before_time:
@@ -140,6 +144,17 @@ def create_app(database_path):
                 before_time = before_time.astimezone(timezone.utc).isoformat()
             except (OverflowError, ValueError):
                 raise DomainError(422, "Waktu cursor di luar jangkauan.")
-        return store.activity(day, kind, limit, before_time, before_id)
+        return store.activity(day, kind, limit, before_time, before_id, start_date, end_date)
+
+    @app.get("/api/activity.csv", tags=["Reports"], response_class=Response,
+             responses={200: {"content": {"text/csv": {}}, "description": "CSV UTF-8, seluruh hasil filter (maksimal 10.000 catatan)."}})
+    def export_activity(user: Actor, day: date | None = None, kind: ActivityKind = "all",
+                        start_date: date | None = None, end_date: date | None = None):
+        report = store.activity(day, kind, MAX_EXPORT_ROWS, start_date=start_date, end_date=end_date)
+        if report["next_before"]:
+            raise DomainError(422, "Hasil melebihi 10.000 catatan. Persempit tanggal atau jenis aktivitas, lalu unduh lagi.")
+        filename = f'beeloft-aktivitas-{report["start_date"]}-{report["end_date"]}-{kind}.csv'
+        return Response(activity_csv(report["items"]), media_type="text/csv", headers={
+            "Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
 
     return app

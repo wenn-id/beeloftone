@@ -10,8 +10,9 @@ export class Api {
   constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; }
   transaction(path, body) { return {path, body: JSON.stringify(body), key: crypto.randomUUID()}; }
   get(path) { return this.request(path); }
+  download(path) { return this.request(path, null, true); }
   save(transaction) { return this.request(transaction.path, transaction); }
-  async request(path, transaction) {
+  async request(path, transaction, download = false) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -19,7 +20,7 @@ export class Api {
       if (transaction) Object.assign(headers, {'Content-Type':'application/json', 'Idempotency-Key': transaction.key});
       const response = await this.fetcher(path, {method:transaction ? 'POST' : 'GET', headers,
         body:transaction?.body, signal:controller.signal, cache:'no-store'});
-      const data = await response.json();
+      const data = response.ok && download ? await response.blob() : await response.json();
       if (!response.ok) {
         const detail = Array.isArray(data.detail) ? data.detail.map(item => `${item.loc.at(-1)}: ${item.msg}`).join('; ') : data.detail;
         throw Object.assign(new Error(detail || 'Permintaan gagal.'), {status:response.status, uncertain:Boolean(transaction && response.status >= 500)});
