@@ -21,3 +21,7 @@ Lingkungan: Windows, Python 3.12.14; dependencies dipasang di virtual environmen
 ## Batas verifikasi
 
 Belum diuji dengan data riil Beeloft, operator lapangan, perangkat pemindai, beban produksi besar, atau layanan vendor. Tidak ada klaim kesiapan deployment bersama. Belum ada dashboard khusus; Swagger dipakai untuk mencoba API.
+
+## Langkah 2: penghubung dashboard
+
+Endpoint `/api/production-board` ditambahkan dan diuji dengan API/database sungguhan. Suite saat ini **20 tes lulus** (3.293 detik): dua tes tambahan memeriksa ringkasan lintas halaman, pencarian referensi/SKU, filter status, database kosong, order yang ditutup dengan reject, serta akses tanpa key valid. Ini catatan checkpoint backend sebelum UI. Dashboard v0.2.0 kini sudah selesai; hasil terbaru berada di `docs/dashboard-verification.md`.

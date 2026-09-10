@@ -1,6 +1,6 @@
 # Beeloft One
 
-Fondasi pelacakan produksi internal, versi 0.1.0. Backend sudah menyimpan data di database lokal; antarmuka yang tersedia adalah dokumentasi API interaktif. Belum ada dashboard untuk operator.
+Pelacakan produksi internal, versi 0.2.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -12,7 +12,21 @@ Buka PowerShell di folder proyek ini, kemudian:
 
 Script memasang dependencies ke `.venv`, membuat `data/demo.sqlite3` jika belum ada, dan menjalankan server lokal. Pada pembuatan database, terminal menampilkan API key admin, operator, dan viewer. Simpan key tersebut; database hanya menyimpan hash-nya.
 
-Buka [dokumentasi API lokal](http://127.0.0.1:8000/docs), klik **Authorize**, masukkan API key admin, lalu coba `GET /api/orders`. Data contoh berisi satu order 500 pcs dengan posisi: planned 100, cutting 100, sewing 150, finishing 50, QC 0, rework 20, warehouse 80, reject 0. Jumlah tetap 500 pcs.
+Buka [dashboard lokal](http://127.0.0.1:8000/), masukkan API key pada kolom **Kunci akses**, lalu buka order dari daftar. Data contoh berisi satu order 500 pcs dengan posisi: planned 100, cutting 100, sewing 150, finishing 50, QC 0, rework 20, warehouse 80, reject 0. Jumlah tetap 500 pcs. [Dokumentasi API](http://127.0.0.1:8000/docs) tetap tersedia untuk pengembangan.
+
+## Memakai dashboard
+
+1. Admin: buka **Master SKU → Tambah SKU**. Gunakan kode berbeda untuk setiap kombinasi warna/ukuran.
+2. Pilih **Buat order produksi**, isi PIC, target selesai, dan satu atau beberapa baris SKU.
+3. Buka order dari daftar untuk melihat saldo per tahap. Admin/operator memilih **Catat perpindahan** pada SKU yang dikerjakan.
+4. Isi tahap asal, tahap tujuan dan jumlah aktual yang diserahkan. Rework/reject wajib menyertakan alasan.
+5. Periksa **Riwayat perpindahan**. Admin dapat memilih **Koreksi** untuk pembalikan seluruh transaksi yang keliru.
+
+Daftar mendukung pencarian referensi/judul/SKU/produk dan filter aktif, lewat target, atau selesai. Ringkasan di atas selalu menghitung seluruh database. Muat ulang untuk mengambil data terbaru; belum ada pembaruan otomatis dari perangkat lain. Mode gelap/terang tersedia dan layout menyesuaikan layar HP.
+
+Kunci akses hanya berada di memori halaman, sehingga reload meminta masuk kembali. Preferensi tema disimpan di localStorage. Draft request yang sedang disimpan disimpan di sessionStorage **tanpa API key** agar reload tab yang sama dapat memulihkan request dengan identitas yang sama. Setelah masuk dengan akun pencatat yang sama, pilih **Coba ulang penyimpanan** jika hasil sebelumnya belum pasti. Data request dihapus setelah terkonfirmasi. Browser harus mengizinkan sessionStorage untuk menyimpan.
+
+Jangan membuat ulang transaksi yang belum terkonfirmasi dengan akun lain. Jika akun dicabut saat hasil simpan belum pasti, minta admin mencocokkan riwayat sebelum melakukan tindakan baru. Pemulihan otomatis terbatas pada tab/sessionStorage yang masih tersedia; menutup tab permanen atau menghapus penyimpanan browser dapat menghilangkan draft pemulihan. Login ini menggunakan API key lokal, belum login email/password atau SSO.
 
 Hentikan server dengan Ctrl+C. Menjalankan script lagi memakai database yang sama. Semua data contoh diberi nama DEMO/CONTOH. Untuk database kosong terpisah, jalankan `./start.ps1` tanpa `-Demo`.
 
@@ -113,6 +127,8 @@ Koreksi: `POST /api/movements/{id}/reverse` dengan `{"reason":"Salah input jumla
 
 Daftar SKU/order/riwayat memakai `?limit=100&offset=0`, maksimal 500 per halaman. Riwayat diurutkan dari yang paling lama. Tenggat dinilai menurut tanggal Jakarta; timestamp audit memakai UTC. `401` berarti key hilang/tidak valid, `403` role salah, `404` objek hilang, `409` konflik, `422` input tidak sah, `503` database sibuk (retry key yang sama).
 
+Penghubung dashboard: `GET /api/production-board?q=luna&status=active&limit=25&offset=0`. Status dapat berupa `all`, `active`, `overdue`, atau `closed`. Respons berisi `summary` seluruh order (tidak terpengaruh filter/pagination), `total` hasil pencarian, dan `orders` pada halaman tersebut. `in_progress` menghitung cutting, sewing, finishing, QC dan rework; `rework` merupakan bagian dari angka tersebut. Pencarian mencakup referensi, judul, SKU dan nama produk. `closed` mencakup order selesai dengan reject. Endpoint ini tetap mewajibkan API key.
+
 Kontrak request tersedia di `docs/openapi.json` dan `/openapi.json`. Skema respons belum diberi model OpenAPI khusus; contoh dan acceptance test menjadi acuan struktur respons versi ini.
 
 ## Backup dan pemulihan
@@ -135,10 +151,12 @@ Untuk mencoba pemulihan: hentikan server, lalu jalankan `python -m beeloft --db 
 
 Tes memakai database sementara dan API/CLI sungguhan. Mencakup konservasi jumlah, concurrent transfers, retry ganda, rollback kegagalan penyimpanan, izin pengguna, input tidak sah, QC, pembalikan, persistence dan backup. Tidak memakai data bisnis.
 
+Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk pengujian browser opsional, gunakan Playwright yang tersedia di komputer dan Edge: `python tests/run_browser.py --node PATH_NODE --playwright-module PATH_MODUL_PLAYWRIGHT`. Runner membuat database/server sementara, melakukan uji melalui browser, kemudian menghentikan server dan membersihkan data. Gunakan `--channel chrome` bila memakai Chrome. Playwright hanya alat QA, bukan dependency aplikasi.
+
 ## Batas fondasi ini
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan target/tenggat/PIC setelah order dibuat, bundle/barcode, attachment kendala, integrasi Jubelio/Mekari, atau dashboard khusus. Migrasi schema saat ini versi 1; perubahan berikutnya harus menambah migrasi yang menjaga data lama.
+Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan target/tenggat/PIC setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Migrasi schema tetap versi 1; upgrade dashboard ini tidak mengubah data lama. Perubahan berikutnya harus menambah migrasi yang menjaga data lama.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.

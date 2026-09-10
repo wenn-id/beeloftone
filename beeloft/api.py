@@ -1,8 +1,10 @@
 import sqlite3
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import MovementCreate, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
@@ -10,10 +12,16 @@ from beeloft.store import DomainError, Store
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.1.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.2.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
+    static = Path(__file__).with_name("static")
+    app.mount("/static", StaticFiles(directory=static), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def dashboard():
+        return FileResponse(static / "index.html", headers={"Cache-Control": "no-store"})
     auth_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
     def actor(api_key=Depends(auth_header)):
@@ -74,6 +82,12 @@ def create_app(database_path):
     @app.get("/api/orders", tags=["Production"])
     def orders(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.orders(limit, offset)
+
+    @app.get("/api/production-board", tags=["Production"])
+    def production_board(user: Actor, limit: Limit = 25, offset: Offset = 0,
+                         q: Annotated[str, Query(max_length=160)] = "",
+                         status: Literal["all", "active", "overdue", "closed"] = "all"):
+        return store.production_board(limit, offset, q, status)
 
     @app.get("/api/orders/{order_id}", tags=["Production"])
     def order(order_id: str, user: Actor):

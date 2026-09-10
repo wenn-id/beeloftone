@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {Api, escapeHTML, displayDate} from '../beeloft/static/client.mjs';
+
+assert.equal(escapeHTML('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
+assert.equal(displayDate('2026-09-30').includes('30'), true);
+const requests = [];
+const api = new Api(async (path, options) => {
+  requests.push({path, options});
+  if (requests.length === 1) throw new TypeError('Network failed after server commit');
+  return new Response(JSON.stringify({id: 'saved-once'}), {status: 201});
+});
+api.key = 'test-only-key';
+const transaction = api.transaction('/api/movements', {quantity: 20});
+await assert.rejects(api.save(transaction), error => error.uncertain === true);
+assert.deepEqual(await api.save(transaction), {id: 'saved-once'});
+assert.equal(requests[0].options.headers['Idempotency-Key'], requests[1].options.headers['Idempotency-Key']);
+assert.equal(requests[0].options.body, requests[1].options.body);
+assert.equal(requests[0].options.headers['X-API-Key'], 'test-only-key');
+const denied = new Api(async () => new Response(JSON.stringify({detail: 'Tidak diizinkan'}), {status: 403}));
+await assert.rejects(denied.get('/api/orders'), error => error.status === 403 && !error.uncertain);
+const invalid = new Api(async () => new Response(JSON.stringify({detail: [{loc: ['body', 'quantity'], msg: 'Invalid quantity'}]}), {status: 422}));
+await assert.rejects(invalid.get('/api/orders'), error => error.message.includes('quantity'));
+console.log('Client checks PASS: escaping, date, exact retry after uncertain response, auth header, structured errors.');

@@ -262,6 +262,42 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/orders?offset=1").json(), [])
         self.assertEqual(self.client.get("/api/orders?limit=1000").status_code, 422)
 
+    def test_board_summary_covers_all_pages_and_filters_by_reference_or_sku(self):
+        first = self.order(100, reference="BATCH-A")
+        second = self.order(200, reference="BATCH-B", due_date="2099-01-01")
+        self.move(first["lines"][0]["id"], "planned", "cutting", 30)
+        response = self.client.get("/api/production-board?limit=1")
+        self.assertEqual(response.status_code, 200, response.text)
+        board = response.json()
+        self.assertEqual(board["total"], 2)
+        self.assertEqual(len(board["orders"]), 1)
+        self.assertEqual(board["summary"], {"orders": 2, "active": 2, "overdue": 1,
+                         "closed": 0, "in_progress": 30, "rework": 0})
+        self.assertEqual(self.client.get("/api/production-board?q=batch-b").json()["orders"][0]["id"], second["id"])
+        self.assertEqual(self.client.get("/api/production-board?q=luna-blue-m").json()["total"], 2)
+        self.assertEqual(self.client.get("/api/production-board?status=overdue").json()["total"], 1)
+        self.assertEqual(self.client.get("/api/production-board?q=missing").json()["total"], 0)
+        self.assertEqual(self.client.get("/api/production-board?limit=1&offset=1").json()["orders"][0]["id"], second["id"])
+        self.assertEqual(self.client.get("/api/production-board?status=invalid").status_code, 422)
+        self.assertEqual(self.client.get("/api/production-board", headers={"X-API-Key": "invalid"}).status_code, 401)
+
+    def test_empty_board_and_closed_order_counts(self):
+        response = self.client.get("/api/production-board")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["summary"]["orders"], 0)
+        self.assertEqual(response.json()["orders"], [])
+        order = self.order(10)
+        line = order["lines"][0]["id"]
+        for source, target in [("planned", "cutting"), ("cutting", "sewing"), ("sewing", "finishing"),
+                               ("finishing", "qc")]:
+            self.move(line, source, target, 10)
+        self.move(line, "qc", "warehouse", 9)
+        self.move(line, "qc", "reject", 1, reason="Sobek")
+        board = self.client.get("/api/production-board?status=closed").json()
+        self.assertEqual(board["summary"], {"orders": 1, "active": 0, "overdue": 0,
+                         "closed": 1, "in_progress": 0, "rework": 0})
+        self.assertEqual(board["total"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

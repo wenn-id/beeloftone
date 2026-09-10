@@ -39,9 +39,9 @@ try {
             & $runtime -m beeloft --db $database user --name 'Pemilik' --role admin
         }
         if ($LASTEXITCODE -ne 0) { throw 'Inisialisasi database gagal.' }
-        Write-Host 'Simpan API key di atas. Masukkan lewat tombol Authorize di dokumentasi API.'
+        Write-Host 'Simpan API key di atas. Masukkan pada kolom Kunci akses di dashboard.'
     }
-    Write-Host "Beeloft API: http://127.0.0.1:$Port/docs | Database: $database | Ctrl+C untuk berhenti"
+    Write-Host "Beeloft dashboard: http://127.0.0.1:$Port/ | API: /docs | Database: $database | Ctrl+C untuk berhenti"
     & $runtime -m beeloft --db $database serve --port $Port
     if ($LASTEXITCODE -ne 0) { throw 'Server berhenti dengan error.' }
 } finally {

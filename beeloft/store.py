@@ -156,6 +156,36 @@ class Store:
             ids = [row[0] for row in db.execute("SELECT id FROM orders ORDER BY due_date,created_at,id LIMIT ? OFFSET ?", (limit, offset))]
             return [self._order(db, order_id) for order_id in ids]
 
+    def production_board(self, limit=25, offset=0, query="", status="all"):
+        totals = """WITH production AS (
+            SELECT o.id,o.reference,o.title,o.due_date,o.created_at,
+                SUM(CASE WHEN b.stage NOT IN ('warehouse','reject') THEN b.quantity ELSE 0 END) AS pending,
+                SUM(CASE WHEN b.stage IN ('cutting','sewing','finishing','qc','rework') THEN b.quantity ELSE 0 END) AS in_progress,
+                SUM(CASE WHEN b.stage='rework' THEN b.quantity ELSE 0 END) AS rework
+            FROM orders o JOIN order_lines l ON l.order_id=o.id
+            JOIN balances b ON b.line_id=l.id GROUP BY o.id
+        ) """
+        filters = """ FROM production p WHERE
+            (:status='all' OR (:status='active' AND p.pending>0)
+                OR (:status='overdue' AND p.pending>0 AND p.due_date<:today)
+                OR (:status='closed' AND p.pending=0))
+            AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
+                OR EXISTS(SELECT 1 FROM order_lines l JOIN products s ON s.id=l.product_id
+                    WHERE l.order_id=p.id AND (instr(lower(s.sku),:query)>0 OR instr(lower(s.name),:query)>0))) """
+        params = {"today": datetime.now(timezone(timedelta(hours=7))).date().isoformat(),
+                  "query": query.strip().lower(), "status": status, "limit": limit, "offset": offset}
+        with self.transaction() as db:
+            row = db.execute(totals + """SELECT COUNT(*) AS orders,
+                SUM(pending>0) AS active,SUM(pending>0 AND due_date<:today) AS overdue,
+                SUM(pending=0) AS closed,SUM(in_progress) AS in_progress,SUM(rework) AS rework
+                FROM production""", params).fetchone()
+            summary = {key: value or 0 for key, value in dict(row).items()}
+            count = db.execute(totals + "SELECT COUNT(*)" + filters, params).fetchone()[0]
+            ids = [r[0] for r in db.execute(totals + "SELECT p.id" + filters +
+                                           "ORDER BY p.due_date,p.created_at,p.id LIMIT :limit OFFSET :offset", params)]
+            return {"summary": summary, "total": count, "limit": limit, "offset": offset,
+                    "orders": [self._order(db, order_id) for order_id in ids]}
+
     def _transfer(self, db, payload, actor, reversal_of=None):
         line = db.execute("SELECT quantity FROM order_lines WHERE id=?", (payload["line_id"],)).fetchone()
         if not line:

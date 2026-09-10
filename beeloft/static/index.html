@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Produksi · Beeloft One</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Lewati ke konten</a>
+  <header class="masthead">
+    <a class="brand" href="#" id="brand"><span>beeloft<span class="brand-dot">.</span></span><small>ONE / PRODUKSI</small></a>
+    <div class="account"><span id="account-name"></span><button id="theme" class="quiet" type="button">Mode gelap</button><button id="logout" class="quiet" type="button" hidden>Keluar</button></div>
+  </header>
+  <main id="main" tabindex="-1">
+    <section id="login-view" class="login-view">
+      <div class="login-intro"><p class="eyebrow">Ruang kerja produksi internal</p><h1>Setiap tahap. <br>Setiap jumlah. <br><em>Tercatat.</em></h1><p>Lacak order dari cutting hingga diterima gudang, bersama tim Beeloft.</p><div class="process-label">Cutting <span>→</span> Sewing <span>→</span> QC <span>→</span> Gudang</div></div>
+      <form id="login-form" class="login-form"><h2>Masuk ke produksi</h2><p>Gunakan kunci akses akun yang dibuat di server Beeloft.</p><label for="access-key">Kunci akses</label><input id="access-key" type="password" required autocomplete="off" spellcheck="false"><p class="hint">Kunci hanya digunakan selama halaman ini terbuka.</p><p id="login-error" class="error" role="alert" hidden></p><button class="primary" type="submit">Buka ruang produksi</button></form>
+    </section>
+    <section id="workspace" hidden>
+      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><button id="products" class="quiet" type="button">Master SKU</button></div>
+      <section id="board-view">
+        <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
+        <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
+        <div class="ledger-heading"><h2>Order produksi</h2><span id="updated" class="hint"></span></div>
+        <form id="search-form" class="filters"><label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label><label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="closed">Selesai / ditutup</option></select></label><button type="submit">Cari order</button></form>
+        <div id="board-message" role="status" class="state" hidden></div>
+        <div id="order-list"></div>
+        <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
+      </section>
+      <section id="detail-view" hidden><button id="back" class="quiet back" type="button">← Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+  </main>
+  <dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="quiet" type="button" aria-label="Tutup dialog">Tutup</button></div><div id="dialog-content"></div></dialog>
+  <noscript>Aktifkan JavaScript untuk membuka dashboard produksi.</noscript>
+</body>
+</html>
