@@ -3,11 +3,13 @@ import json
 import secrets
 import sqlite3
 from contextlib import closing, contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
+
+ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
 
 
 def now():
@@ -313,6 +315,41 @@ class Store:
                 JOIN order_lines l ON l.id=m.line_id JOIN users u ON u.id=m.actor_id
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",
                 (order_id, limit, offset))]
+
+    def activity(self, day=None, kind="all", limit=50, before_time=None, before_id=None):
+        jakarta = timezone(timedelta(hours=7))
+        day = day or datetime.now(jakarta).date()
+        try:
+            start = datetime.combine(day, time(), jakarta).astimezone(timezone.utc)
+            end = start + timedelta(days=1)
+        except (OverflowError, ValueError):
+            raise DomainError(422, "Tanggal di luar jangkauan laporan.")
+        if bool(before_time) != bool(before_id):
+            raise DomainError(422, "Cursor membutuhkan before_time dan before_id.")
+        params = {"start": start.isoformat(), "end": end.isoformat(), "kind": kind,
+                  "limit": limit + 1, "before_time": before_time, "before_id": before_id}
+        filtered = " FROM daily d WHERE (:kind='all' OR d.kind=:kind) "
+        with self.transaction() as db:
+            summary = dict(db.execute(ACTIVITY_SQL + """SELECT COUNT(*) AS events,
+                COALESCE(SUM(CASE WHEN kind IN ('movement','reversal') THEN
+                    CASE WHEN to_stage='warehouse' THEN quantity WHEN from_stage='warehouse' THEN -quantity ELSE 0 END ELSE 0 END),0) AS warehouse_net,
+                COALESCE(SUM(kind='issue_opened'),0) AS issues_opened,
+                COALESCE(SUM(kind='issue_resolved'),0) AS issues_resolved FROM daily""", params).fetchone())
+            total = db.execute(ACTIVITY_SQL + "SELECT COUNT(*)" + filtered, params).fetchone()[0]
+            rows = [dict(row) for row in db.execute(ACTIVITY_SQL + """SELECT d.*,o.reference,o.title,
+                u.name AS actor_name,p.sku FROM daily d JOIN orders o ON o.id=d.order_id
+                JOIN users u ON u.id=d.actor_id LEFT JOIN order_lines l ON l.id=d.line_id
+                LEFT JOIN products p ON p.id=l.product_id WHERE (:kind='all' OR d.kind=:kind)
+                AND (:before_time IS NULL OR d.created_at<:before_time
+                    OR (d.created_at=:before_time AND d.event_id<:before_id))
+                ORDER BY d.created_at DESC,d.event_id DESC LIMIT :limit""", params)]
+            more = len(rows) > limit
+            rows = rows[:limit]
+            for row in rows:
+                row["details"] = json.loads(row["details"])
+            return {"day": day.isoformat(), "timezone": "Asia/Jakarta", "summary": summary,
+                    "total": total, "items": rows,
+                    "next_before": {"before_time": rows[-1]["created_at"], "before_id": rows[-1]["event_id"]} if more else None}
 
     def backup(self, destination):
         destination = Path(destination).resolve()

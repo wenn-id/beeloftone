@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -12,7 +13,7 @@ from beeloft.store import DomainError, Store
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.4.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.5.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -126,5 +127,19 @@ def create_app(database_path):
     def order_changes(order_id: str, user: Actor, limit: Limit = 100,
                       before: Annotated[int | None, Query(ge=1)] = None):
         return store.order_changes(order_id, limit, before)
+
+    @app.get("/api/activity", tags=["Reports"])
+    def activity(user: Actor, day: date | None = None, limit: Limit = 50,
+                 kind: Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"] = "all",
+                 before_time: datetime | None = None,
+                 before_id: Annotated[str | None, Query(min_length=1, max_length=100)] = None):
+        if before_time:
+            if before_time.utcoffset() is None:
+                raise DomainError(422, "Waktu cursor harus menyertakan zona waktu.")
+            try:
+                before_time = before_time.astimezone(timezone.utc).isoformat()
+            except (OverflowError, ValueError):
+                raise DomainError(422, "Waktu cursor di luar jangkauan.")
+        return store.activity(day, kind, limit, before_time, before_id)
 
     return app

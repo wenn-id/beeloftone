@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.4.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.5.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -217,3 +217,38 @@ Parameter `before` dihilangkan pada halaman pertama. Migrasi menetapkan revision
 pada order lama melalui riwayat kosong; catatan perubahan hanya dibuat untuk edit setelah upgrade.
 
 Verifikasi rilis: `docs/order-changes-verification.md`.
+
+
+## Aktivitas harian (v0.5)
+
+Klik **Aktivitas harian** di navigasi. Halaman membuka tanggal hari ini menurut Jakarta;
+pilih tanggal dan jenis aktivitas untuk menelusuri pencatatan. Semua role dapat membaca.
+Setiap catatan menampilkan waktu, akun pencatat, referensi order, SKU bila terkait, dan alasan.
+Klik nama order untuk melihat posisi barang serta riwayat lengkapnya.
+
+Jenis yang tersedia: order dibuat, perpindahan barang, koreksi perpindahan, kendala dicatat,
+kendala selesai, serta tenggat/PIC diubah. Bukan log administrasi akun atau master SKU.
+Ringkasan tanggal selalu mencakup semua jenis, meski daftar difilter atau dipaginasi.
+
+**Gudang bersih** adalah jumlah masuk gudang dikurangi pembalikan penerimaan yang dicatat
+pada tanggal tersebut. Misalnya masuk 10 pcs Senin, dibalik Selasa: Senin tetap +10,
+Selasa -10. Angka ini bukan stok gudang saat ini, bukan target, dan bukan jumlah barang unik
+yang pernah bergerak di semua tahap. Posisi saat ini tersedia di papan produksi.
+Kendala dicatat/selesai adalah jumlah kejadian pada tanggal pilihan, bukan sisa kendala terbuka.
+Hari kosong menampilkan nol dan pesan tidak ada aktivitas.
+
+`GET /api/activity?day=2026-09-10&kind=all&limit=50` memerlukan X-API-Key.
+Hari dihitung dari 00:00 Jakarta (17:00 UTC hari sebelumnya), sampai sebelum 00:00 berikutnya.
+`day` yang dihilangkan berarti hari ini. Jenis: `all`, `movement`, `reversal`, `issue_opened`,
+`issue_resolved`, `order_created`, `order_changed`. `limit` 1–500, default 50.
+Respons berisi `day`, `timezone`, `summary`, `total` yang cocok dengan jenis, `items`, dan
+`next_before`. Untuk halaman berikutnya, sertakan kedua nilai `before_time`/`before_id` dari
+`next_before` beserta tanggal/jenis yang sama; berhenti jika null. Waktu cursor harus menyertakan
+zona waktu. Urutan terbaru dahulu, dengan event ID sebagai pembeda timestamp yang sama.
+
+Gunakan **Tampilkan aktivitas** untuk memuat ulang catatan baru. Halaman lanjutan tidak menyisipkan
+catatan terbaru ke awal daftar; ringkasan dan jumlah total diperbarui ketika dimuat.
+Laporan membaca catatan yang sudah ada tanpa menulis data atau mengubah schema versi 3.
+Untuk order lama, perubahan tenggat/PIC hanya tercatat sejak fitur v0.4 digunakan.
+
+Verifikasi: `docs/activity-verification.md`.

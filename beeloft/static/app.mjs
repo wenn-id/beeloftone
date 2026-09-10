@@ -10,6 +10,7 @@ let user = null, transitions = [], boardData = null, selected = null, history = 
 let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', modalBusy = false, unresolved = false;
 let dialogVersion = 0;
 let issues = [], issuesMore = false;
+let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
 let noticeTimer;
 
 function theme(value) {
@@ -29,6 +30,8 @@ function message(id, text, error = false) {
   $(id).classList.toggle('error', error);
 }
 function logout() {
+  activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
+  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; user = null; selected = null; boardData = null;
   dialogVersion++; modalBusy = false; unresolved = false; $('dialog').close();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
@@ -68,6 +71,7 @@ function issueBadge(order) {
   return order.open_issues ? `<span class="status-label late">${n(order.open_issues)} kendala terbuka</span>` : '';
 }
 function showBoard() {
+  activityRequest++; $('activity-view').hidden = true;
   view = 'board'; detailRequest++; selected = null;
   $('board-view').hidden = false; $('detail-view').hidden = true; loadBoard();
 }
@@ -116,6 +120,7 @@ async function loadBoard() {
 }
 
 async function openDetail(id) {
+  activityRequest++; $('activity-view').hidden = true;
   view = 'detail'; boardRequest++; $('board-view').hidden = true; $('detail-view').hidden = false;
   const version = epoch, request = ++detailRequest;
   message('detail-message', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
@@ -392,4 +397,53 @@ async function orderChangesDialog() {
   }
   $('more-changes').onclick = load;
   await load();
+}
+
+const activityLabels = {movement:'Perpindahan barang',reversal:'Koreksi perpindahan',issue_opened:'Kendala dicatat',issue_resolved:'Kendala selesai',order_created:'Order dibuat',order_changed:'Tenggat / PIC diubah'};
+$('activity').onclick = () => {
+  view = 'activity'; boardRequest++; detailRequest++; selected = null;
+  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = false;
+  loadActivity();
+};
+$('activity-back').onclick = showBoard;
+$('activity-form').onsubmit = event => { event.preventDefault(); loadActivity(); };
+$('activity-day').onchange = $('activity-kind').onchange = () => { if ($('activity-form').reportValidity()) loadActivity(); };
+$('activity-more').onclick = () => loadActivity(true);
+async function loadActivity(more = false) {
+  if (more && !activityCursor) return;
+  const version = epoch, request = ++activityRequest;
+  const query = more ? {...activityQuery,...activityCursor} : {kind:$('activity-kind').value,limit:50};
+  if (!more && $('activity-day').value) query.day = $('activity-day').value;
+  if (!more) {
+    activityRows = []; activityCursor = null; activityQuery = null;
+    $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-count').textContent = '';
+    $('activity-more').hidden = true;
+  }
+  $('activity-more').disabled = true; message('activity-message','Memuat aktivitas…');
+  try {
+    const result = await api.get('/api/activity?' + new URLSearchParams(query));
+    if (version !== epoch || request !== activityRequest || view !== 'activity') return;
+    if (!more) { activityQuery = {day:result.day,kind:query.kind,limit:50}; $('activity-day').value = result.day; }
+    activityRows.push(...result.items); activityCursor = result.next_before;
+    const s = result.summary;
+    $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan'],['Gudang bersih',s.warehouse_net,'pcs'],['Kendala dicatat',s.issues_opened,'catatan'],['Kendala selesai',s.issues_resolved,'catatan']]
+      .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada tanggal ini.');
+    $('activity-list').innerHTML = activityRows.map(item => {
+      const stamp = new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
+      let detail = '';
+      if (['movement','reversal'].includes(item.kind)) detail = `${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}`;
+      if (item.kind === 'issue_opened') detail = `${labels[item.to_stage]} · PIC: ${item.details.owner_name}`;
+      if (item.kind === 'issue_resolved') detail = `${labels[item.to_stage]} · ${item.details.description}`;
+      if (item.kind === 'order_changed') detail = `Tenggat: ${date(item.details.old_due_date)} → ${date(item.details.new_due_date)} · PIC: ${item.details.old_owner_name} → ${item.details.new_owner_name}`;
+      return `<article class="history-item activity-item"><time datetime="${e(item.created_at)}">${stamp}</time><div><strong>${activityLabels[item.kind]}</strong>
+        <p><button class="order-title" data-action="detail" data-id="${e(item.order_id)}">${e(item.reference)} · ${e(item.title)}</button></p>
+        ${item.sku ? `<p class="hint">${e(item.sku)}</p>` : ''}${detail ? `<p>${e(detail)}</p>` : ''}
+        ${item.reason ? `<p class="reason">${e(item.reason)}</p>` : ''}<p class="hint">Dicatat ${e(item.actor_name)}</p></div></article>`;
+    }).join('');
+    $('activity-count').textContent = `${n(activityRows.length)} catatan ditampilkan · ${n(result.total)} cocok saat dimuat`;
+    $('activity-more').hidden = !activityCursor;
+  } catch (error) {
+    if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message');
+  } finally { if (version === epoch && request === activityRequest) $('activity-more').disabled = false; }
 }

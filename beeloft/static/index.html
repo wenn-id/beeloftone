@@ -21,7 +21,7 @@
       <form id="login-form" class="login-form"><h2>Masuk ke produksi</h2><p>Gunakan kunci akses akun yang dibuat di server Beeloft.</p><label for="access-key">Kunci akses</label><input id="access-key" type="password" required autocomplete="off" spellcheck="false"><p class="hint">Kunci hanya digunakan selama halaman ini terbuka.</p><p id="login-error" class="error" role="alert" hidden></p><button class="primary" type="submit">Buka ruang produksi</button></form>
     </section>
     <section id="workspace" hidden>
-      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><button id="products" class="quiet" type="button">Master SKU</button></div>
+      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><div class="actions"><button id="activity" class="quiet" type="button">Aktivitas harian</button><button id="products" class="quiet" type="button">Master SKU</button></div></div>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
@@ -31,6 +31,16 @@
         <div id="board-message" role="status" class="state" hidden></div>
         <div id="order-list"></div>
         <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
+      </section>
+      <section id="activity-view" hidden>
+        <button id="activity-back" class="quiet back" type="button">← Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Aktivitas harian · waktu Jakarta</p><h1>Catatan produksi harian.</h1></div></div>
+        <form id="activity-form" class="filters"><label>Tanggal aktivitas<input id="activity-day" type="date" required></label><label>Jenis aktivitas<select id="activity-kind"><option value="all">Semua aktivitas</option><option value="movement">Perpindahan barang</option><option value="reversal">Koreksi perpindahan</option><option value="issue_opened">Kendala dicatat</option><option value="issue_resolved">Kendala selesai</option><option value="order_created">Order dibuat</option><option value="order_changed">Tenggat / PIC diubah</option></select></label><button type="submit">Tampilkan aktivitas</button></form>
+        <dl id="activity-summary" class="summary" aria-label="Ringkasan seluruh aktivitas pada tanggal terpilih"></dl>
+        <p class="hint">Ringkasan mencakup semua jenis pada tanggal terpilih. Gudang bersih = barang masuk dikurangi pembalikannya pada tanggal pencatatan; angkanya bisa negatif. Posisi barang saat ini ada di papan produksi.</p>
+        <p id="activity-message" class="state" role="status" hidden></p>
+        <div id="activity-list"></div>
+        <div class="pagination"><span id="activity-count" class="hint"></span><button id="activity-more" type="button" hidden>Muat aktivitas sebelumnya</button></div>
       </section>
       <section id="detail-view" hidden><button id="back" class="quiet back" type="button">← Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
     </section>
