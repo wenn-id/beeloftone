@@ -31,6 +31,7 @@ function message(id, text, error = false) {
   $(id).classList.toggle('error', error);
 }
 function logout() {
+  $('backup').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
@@ -56,7 +57,7 @@ $('login-form').onsubmit = async event => {
     user = me; transitions = workflow.transitions; $('access-key').value = '';
     $('account-name').textContent = `${me.name} · ${me.role}`;
     $('login-view').hidden = true; $('workspace').hidden = false; $('logout').hidden = false;
-    $('new-order').hidden = me.role !== 'admin'; offset = 0; showBoard();
+    $('new-order').hidden = me.role !== 'admin'; $('backup').hidden = me.role !== 'admin'; offset = 0; showBoard();
     const pending = readPending();
     if (pending) recover(pending);
   } catch (error) { if (version === epoch) { api.key = ''; message('login-error', error.message, true); } }
@@ -468,10 +469,36 @@ $('activity-export').onclick = async () => {
   try {
     const blob = await api.download('/api/activity.csv?' + new URLSearchParams(query));
     if (version !== epoch || request !== activityRequest || view !== 'activity') return;
-    const url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = `beeloft-aktivitas-${query.start_date}-${query.end_date}-${query.kind}.csv`;
-    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),1000);
+    saveDownload(blob,`beeloft-aktivitas-${query.start_date}-${query.end_date}-${query.kind}.csv`);
     notify('CSV siap diunduh. Semua hasil filter disertakan.');
   } catch (error) { if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message'); }
   finally { exportBusy = false; $('activity-export').textContent = 'Unduh CSV'; $('activity-export').disabled = !activityQuery; }
+};
+
+function saveDownload(blob, filename) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = filename;
+  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),1000);
+}
+$('backup').onclick = () => {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Cadangan data', `<p>Unduh salinan lengkap database Beeloft: order, posisi barang, riwayat, kendala, perubahan jadwal, dan akun.</p>
+    <p class="form-info">File ini memuat seluruh data produksi dan hash kunci akses akun. Simpan di folder pribadi atau drive cadangan yang hanya bisa diakses orang yang berwenang.</p>
+    <p class="hint">Kunci akses asli tidak disertakan. Simpan kunci yang sudah lu miliki untuk masuk setelah pemulihan. Salinan diambil saat unduhan diminta; perubahan setelahnya masuk cadangan berikutnya.</p>
+    <p class="hint">Setelah unduhan selesai, pastikan file .sqlite3 ada di lokasi pilihan lu. Untuk memeriksa cadangan, ikuti langkah pemulihan di README proyek.</p>
+    <p id="backup-message" role="status" hidden></p><button id="download-backup" type="button" class="primary">Unduh cadangan database</button>`);
+  const modalVersion = dialogVersion;
+  const current = () => version === epoch && modalVersion === dialogVersion && $('dialog').open;
+  $('download-backup').onclick = async () => {
+    const button = $('download-backup'); if (button.disabled) return;
+    button.disabled = true; button.textContent = 'Menyiapkan cadangan…'; message('backup-message','');
+    try {
+      const blob = await api.download('/api/backup');
+      if (!current()) return;
+      saveDownload(blob,`beeloft-backup-${new Date().toISOString().replace(/[:.]/g,'-')}.sqlite3`);
+      message('backup-message','Unduhan dimulai. Periksa daftar unduhan browser untuk memastikan file sudah tersimpan.');
+    } catch (error) { if (current()) fail(error,'backup-message'); }
+    finally { if (current()) { button.disabled = false; button.textContent = 'Unduh cadangan database'; } }
+  };
 };

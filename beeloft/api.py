@@ -1,4 +1,5 @@
 import sqlite3
+import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
@@ -17,7 +18,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.7.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.8.0",
                   description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -158,5 +159,22 @@ def create_app(database_path):
         filename = f'beeloft-aktivitas-{report["start_date"]}-{report["end_date"]}-{kind}.csv'
         return Response(activity_csv(report["items"]), media_type="text/csv", headers={
             "Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
+
+    @app.get("/api/backup", tags=["System"], response_class=Response,
+             responses={200: {"content": {"application/vnd.sqlite3": {}}, "description": "Salinan database konsisten; khusus admin."}})
+    def download_backup(user: Actor):
+        if user["role"] != "admin":
+            raise DomainError(403, "Hanya admin yang dapat mengunduh cadangan database.")
+        try:
+            with tempfile.TemporaryDirectory(prefix="beeloft-backup-") as folder:
+                target = Path(folder) / "backup.sqlite3"
+                store.backup(target)
+                content = target.read_bytes()
+        except (OSError, sqlite3.Error):
+            raise DomainError(503, "Cadangan belum dapat dibuat. Periksa ruang penyimpanan server lalu coba lagi.")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        return Response(content, media_type="application/vnd.sqlite3", headers={
+            "Content-Disposition": f'attachment; filename="beeloft-backup-{stamp}.sqlite3"',
+            "Cache-Control": "no-store"})
 
     return app

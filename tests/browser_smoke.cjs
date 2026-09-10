@@ -28,6 +28,22 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
   await page.locator('#login-error:not([hidden])').waitFor();
   await login(admin);
+  await page.getByRole('button',{name:'Cadangan data',exact:true}).click();
+  let failBackup = true;
+  await page.route('**/api/backup',async route => {
+    if (failBackup) { failBackup=false; await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Cadangan uji belum tersedia'})}); }
+    else await route.continue();
+  });
+  await page.getByRole('button',{name:'Unduh cadangan database',exact:true}).click();
+  await page.getByText('Cadangan uji belum tersedia',{exact:true}).waitFor();
+  const backupDownloadPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Unduh cadangan database',exact:true}).click();
+  const backupDownload=await backupDownloadPromise;
+  assert.match(backupDownload.suggestedFilename(),/^beeloft-backup-.*\.sqlite3$/);
+  const backupBytes=fs.readFileSync(await backupDownload.path());
+  assert.equal(backupBytes.subarray(0,16).toString(),'SQLite format 3\x00');
+  assert.ok(!backupBytes.includes(Buffer.from(admin)));
+  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
   await page.getByLabel('Status',{exact:true}).selectOption('overdue');
   await page.waitForFunction(() => document.querySelectorAll('.order-row').length === 1 && !document.getElementById('order-list').hidden);
   assert.equal((await page.locator('.order-row').innerText()).includes('DEMO-PROD-002'),true);
@@ -218,6 +234,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.locator('dialog').waitFor({state:'hidden'});
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(viewer);
+  assert.equal(await page.getByRole('button',{name:'Cadangan data',exact:true}).isVisible(),false);
   assert.equal(await page.getByRole('button',{name:'Buat order produksi',exact:true}).isVisible(),false);
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
   await page.getByRole('heading',{name:'Posisi barang sekarang'}).waitFor();
@@ -228,6 +245,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).count(),0);
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(operator);
+  assert.equal(await page.getByRole('button',{name:'Cadangan data',exact:true}).isVisible(),false);
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
   await page.getByRole('button',{name:'Catat perpindahan',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Ubah tenggat / PIC',exact:true}).count(),0);
@@ -266,6 +284,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('heading',{name:'CONTOH - Uji dashboard '+unique,exact:true}).waitFor();
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(viewer);
+  assert.equal(await page.getByRole('button',{name:'Cadangan data',exact:true}).isVisible(),false);
   await page.getByRole('button',{name:'Laporan aktivitas',exact:true}).click();
   await page.locator('#activity-list .activity-item').first().waitFor();
   assert.equal(await page.locator('#activity-view [data-action="move"]').count(),0);

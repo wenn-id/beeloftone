@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "paths": {
     "/health": {
@@ -1288,6 +1288,28 @@
             }
           }
         }
+      }
+    },
+    "/api/backup": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Download Backup",
+        "operationId": "download_backup_api_backup_get",
+        "responses": {
+          "200": {
+            "description": "Salinan database konsisten; khusus admin.",
+            "content": {
+              "application/vnd.sqlite3": {}
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     }
   },

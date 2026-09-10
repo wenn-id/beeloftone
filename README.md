@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.7.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.8.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -315,3 +315,38 @@ tanpa dipengaruhi filter/pagination. Ketentuan autentikasi dan role baca tetap s
 Tidak ada perubahan schema/database atau dependency baru.
 
 Verifikasi: `docs/board-filters-verification.md`.
+
+
+## Cadangan dari dashboard (v0.8)
+
+Masuk sebagai admin → **Cadangan data** → **Unduh cadangan database**. Periksa unduhan browser
+untuk memastikan file `.sqlite3` telah tersimpan. Nama file memuat waktu UTC. Simpan salinan di
+lokasi pribadi yang berbeda dari disk produksi agar tetap tersedia jika disk utama rusak.
+
+Cadangan mencakup seluruh database: order, produk, saldo, perpindahan, kendala, riwayat perubahan,
+akun, hash kunci akses dan receipt transaksi. Kunci asli tidak ada dalam file; simpan kunci yang
+sudah dimiliki agar dapat masuk setelah pemulihan. Operator/viewer tidak boleh mengunduh database
+utuh, meskipun dapat membaca data produksi lewat halaman biasa.
+
+Cadangan memakai SQLite backup API, termasuk perubahan yang sudah commit di WAL, dan dapat
+diambil saat server berjalan. Data setelah snapshot tidak masuk file tersebut. Tidak ada perubahan
+data sumber. File sementara server dibersihkan setelah isinya siap dikirim, juga saat operasi gagal.
+Setiap klik menghasilkan snapshot baru; tidak membutuhkan Idempotency-Key. Kegagalan ruang disk
+atau pembuatan salinan menghasilkan 503, tanpa file parsial. UI dapat dicoba ulang.
+
+### Memeriksa cadangan tanpa mengganti database produksi
+
+1. Salin file unduhan ke lokasi uji baru, misalnya `data/restore-check.sqlite3`. Jangan menimpa database aktif atau satu-satunya arsip cadangan.
+2. Dari folder proyek jalankan `.\.venv\Scripts\python.exe -m beeloft --db data/restore-check.sqlite3 serve --port 8766`.
+3. Buka `http://127.0.0.1:8766/`, masuk dengan kunci yang aktif saat snapshot diambil, lalu cocokkan order, saldo dan riwayat penting. Gunakan salinan uji karena menjalankan versi aplikasi lebih baru dapat memigrasikan schema.
+4. Hentikan server uji dengan Ctrl+C setelah selesai. File produksi tidak diganti oleh proses ini.
+
+API: `GET /api/backup` memakai X-API-Key admin aktif. Respons `application/vnd.sqlite3`,
+Content-Disposition attachment dan Cache-Control no-store; role lain 403, key invalid/nonaktif 401.
+Endpoint tidak menerima pilihan path atau nama database dari pemanggil.
+
+Untuk database besar, gunakan CLI `backup` pada server: unduhan dashboard menampung file di memori
+server dan browser serta mengikuti timeout client 15 detik. Rilis ini belum menyediakan pemulihan
+langsung melalui dashboard, penjadwalan otomatis, enkripsi arsip atau sinkronisasi ke cloud.
+
+Verifikasi: `docs/backup-download-verification.md`.
