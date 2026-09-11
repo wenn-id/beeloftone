@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.20.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.21.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 15. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 16. Migrasi 15 → 16 menambahkan ledger finishing, lima checklist wajib, lineage hasil sewing, perpindahan ke QC, koreksi atomik, dan guard alokasi. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -911,8 +911,45 @@ pembayaran, penerimaan sebagian, keputusan rework, attachment, atau pemindaian b
 diselesaikan satu kali untuk seluruh jumlahnya; jika dikoreksi, catat job pengganti.
 
 Schema 14 → 15 menambahkan ledger job, hasil, koreksi, hubungan perpindahan WIP, dan guard SQLite.
-Migrasi tidak mengarang job untuk bundle lama. Roadmap berikutnya adalah finishing: trimming
-benang, setrika, label, hangtag, packaging, dan jumlah selesai.
+Migrasi tidak mengarang job untuk bundle lama. Alur finishing tersedia pada bagian berikutnya.
 
 Rencana: [sewing/makloon plan](docs/sewing-makloon-plan.md).
 Bukti pengujian: [sewing/makloon verification](docs/sewing-makloon-verification.md).
+
+## Finishing (v0.21)
+
+Buka detail job sewing yang sudah selesai, lalu pilih **Catat finishing**. Isi referensi unik,
+jumlah selesai, tanggal selesai, alasan, dan konfirmasi lima langkah: benang dirapikan, disetrika,
+label terpasang, hangtag terpasang, serta sudah dikemas. Semua konfirmasi wajib lengkap sebelum
+disimpan. Jumlah yang dicatat langsung berpindah dari finishing ke QC.
+
+Satu job sewing dapat menghasilkan beberapa catatan finishing parsial. Total catatan aktif tidak
+boleh melebihi jumlah selesai dari job sewing, dan tanggal finishing tidak boleh mendahului tanggal
+hasil sewing diterima. Rincian mempertahankan hubungan ke job sewing, bundle, hasil cutting, serta
+batch bahan asal. Menu **Finishing** pada order menampilkan seluruh catatan terbaru dahulu.
+
+Semua role aktif dapat membaca. Admin/operator dapat mencatat; hanya admin dapat memilih
+**Koreksi finishing**. Koreksi mengembalikan seluruh jumlah catatan dari QC ke finishing secara
+atomik dan mempertahankan checklist serta riwayat asli. Job sewing tidak dapat dikoreksi selama
+masih memiliki catatan finishing aktif. Perpindahan finishing juga tidak dapat dikoreksi sendiri
+dari riwayat order.
+
+API baru memakai `X-API-Key`; semua POST juga memakai `Idempotency-Key`:
+
+- `POST /api/sewing-jobs/{id}/finishing-records`: `reference`, `quantity`, lima nilai checklist,
+  `completed_date`, dan `reason`.
+- `GET /api/orders/{id}/finishing-records?limit=100&before=sequence`.
+- `GET /api/finishing-records/{id}`.
+- `POST /api/finishing-records/{id}/reverse`: `reason` (admin).
+
+Versi ini mencatat konfirmasi selesai, belum timestamp setiap aktivitas atau status checkbox
+parsial. Belum ada pekerja/stasiun per langkah, bahan habis pakai finishing, SKU kemasan, durasi
+per aktivitas, attachment, pemindaian barcode, atau defect/rework khusus finishing. Pengecualian
+tetap dapat dicatat melalui kendala dan alur QC yang sudah ada.
+
+Schema 15 → 16 menambahkan ledger finishing/koreksi, hubungan movement, guard SQLite, dan migrasi
+tanpa mengarang catatan historis. Roadmap berikutnya adalah final QC: pengukuran, pemeriksaan visual,
+pass, rework, reject, dan jumlah diterima.
+
+Rencana: [finishing plan](docs/finishing-plan.md).
+Bukti pengujian: [finishing verification](docs/finishing-verification.md).
