@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -57,6 +57,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("incoming_qc.sql").read_text(encoding="utf-8"))
             if version < 12:
                 db.executescript(Path(__file__).with_name("supplier_returns.sql").read_text(encoding="utf-8"))
+            if version < 13:
+                db.executescript(Path(__file__).with_name("cutting.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -354,20 +356,24 @@ class Store:
         return record
 
     def consume_material(self, payload, actor, key):
-        def perform(db):
-            issue=self._issue_consumption(db,payload['issue_id'])
-            if issue['reversed_by']:
-                raise DomainError(409,'Pengeluaran sudah dibalik, tidak dapat dicatat pemakaiannya.')
-            amounts=[0 if Decimal(payload[field])==0 else self._material_amount(payload[field],issue['unit']) for field in ('used','waste')]
-            if sum(amounts)==0:
-                raise DomainError(422,'Isi jumlah terpakai atau waste lebih dari nol.')
-            if sum(amounts)>Decimal(issue['unreported'])*1000:
-                raise DomainError(409,'Terpakai + waste melebihi jumlah yang belum dilaporkan. Muat ulang dan periksa catatan terbaru.')
-            return self._consumption_event(db,issue['issue_id'],*amounts,payload['reason'],actor['id'])
-        return self._write(actor,('admin','operator'),key,'material-consumption',payload,perform)
+        return self._write(actor,('admin','operator'),key,'material-consumption',payload,
+                           lambda db: self._consume_material(db,payload,actor))
+
+    def _consume_material(self, db, payload, actor):
+        issue=self._issue_consumption(db,payload['issue_id'])
+        if issue['reversed_by']:
+            raise DomainError(409,'Pengeluaran sudah dibalik, tidak dapat dicatat pemakaiannya.')
+        amounts=[0 if Decimal(payload[field])==0 else self._material_amount(payload[field],issue['unit']) for field in ('used','waste')]
+        if sum(amounts)==0:
+            raise DomainError(422,'Isi jumlah terpakai atau waste lebih dari nol.')
+        if sum(amounts)>Decimal(issue['unreported'])*1000:
+            raise DomainError(409,'Terpakai + waste melebihi jumlah yang belum dilaporkan. Muat ulang dan periksa catatan terbaru.')
+        return self._consumption_event(db,issue['issue_id'],*amounts,payload['reason'],actor['id'])
 
     def reverse_consumption(self, consumption_id, payload, actor, key):
         def perform(db):
+            if db.execute('SELECT 1 FROM cutting_runs WHERE consumption_id=?',(consumption_id,)).fetchone():
+                raise DomainError(409,'Pemakaian terhubung hasil cutting. Gunakan koreksi hasil cutting agar pcs dan bahan dikoreksi bersama.')
             row=db.execute('SELECT * FROM material_consumption WHERE id=?',(consumption_id,)).fetchone()
             if not row:
                 raise DomainError(404,'Catatan pemakaian tidak ditemukan.')
@@ -381,6 +387,7 @@ class Store:
             if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
                 raise DomainError(404,'Order produksi tidak ditemukan.')
             rows=db.execute('''SELECT c.*,b.reference AS batch_reference,s.code,s.unit,u.name AS actor_name,
+                (SELECT id FROM cutting_runs WHERE consumption_id=c.id) AS cutting_run_id,
                 (SELECT id FROM material_consumption WHERE reversal_of=c.id) AS reversed_by
                 FROM material_consumption c JOIN material_movements m ON m.id=c.issue_id
                 JOIN material_batches b ON b.id=m.batch_id JOIN materials s ON s.id=b.material_id JOIN users u ON u.id=c.actor_id
@@ -389,6 +396,76 @@ class Store:
             for row in rows:
                 record=dict(row);record['used']=self._material_decimal(record.pop('used_milli'));record['waste']=self._material_decimal(record.pop('waste_milli'));result.append(record)
             return result
+
+    def _cutting_run(self, db, run_id):
+        row=db.execute('''SELECT r.*,o.reference AS order_reference,c.issue_id,c.used_milli,c.waste_milli,
+            b.id AS batch_id,b.reference AS batch_reference,s.code,s.unit,u.name AS actor_name
+            FROM cutting_runs r JOIN orders o ON o.id=r.order_id JOIN material_consumption c ON c.id=r.consumption_id
+            JOIN material_movements i ON i.id=c.issue_id JOIN material_batches b ON b.id=i.batch_id
+            JOIN materials s ON s.id=b.material_id JOIN users u ON u.id=r.actor_id WHERE r.id=?''',(run_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Hasil cutting tidak ditemukan.')
+        record=dict(row)
+        record['used']=self._material_decimal(record.pop('used_milli'))
+        record['waste']=self._material_decimal(record.pop('waste_milli'))
+        record['outputs']=[dict(row) for row in db.execute('''SELECT m.*,p.sku,p.size,p.color,
+            (SELECT id FROM movements WHERE reversal_of=m.id) AS reversed_by
+            FROM movements m JOIN order_lines l ON l.id=m.line_id JOIN products p ON p.id=l.product_id
+            WHERE m.id IN (SELECT value FROM json_each(?)) ORDER BY p.sku''',(record.pop('movement_ids'),))]
+        record['total_output']=sum(row['quantity'] for row in record['outputs'])
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM cutting_run_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.run_id=?''',(run_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        return record
+
+    def cutting_run(self, run_id):
+        with self.transaction() as db:
+            return self._cutting_run(db,run_id)
+
+    def cutting_runs(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT id FROM cutting_runs WHERE order_id=? AND (? IS NULL OR sequence<?)
+                ORDER BY sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
+            return [self._cutting_run(db,row[0]) for row in ids]
+
+    def create_cutting_run(self, order_id, payload, actor, key):
+        def perform(db):
+            order=self._order(db,order_id)
+            issue=self._issue_consumption(db,payload['issue_id'])
+            if issue['order_id']!=order_id:
+                raise DomainError(422,'Pengeluaran bahan harus berasal dari order hasil cutting ini.')
+            line_ids={line['id'] for line in order['lines']}
+            if any(row['line_id'] not in line_ids for row in payload['outputs']):
+                raise DomainError(422,'Seluruh SKU hasil cutting harus berasal dari order ini.')
+            consumption=self._consume_material(db,payload,actor)
+            outputs=[self._transfer(db,dict(line_id=row['line_id'],quantity=row['quantity'],from_stage='cutting',
+                                           to_stage='sewing',reason=payload['reason']),actor)['id'] for row in payload['outputs']]
+            run_id=str(uuid4())
+            db.execute('''INSERT INTO cutting_runs(id,reference,order_id,consumption_id,movement_ids,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''',(run_id,payload['reference'],order_id,consumption['id'],json.dumps(outputs),
+                                          payload['reason'],actor['id'],now()))
+            return self._cutting_run(db,run_id)
+        return self._write(actor,('admin','operator'),key,'cutting-run:'+order_id,payload,perform)
+
+    def reverse_cutting_run(self, run_id, payload, actor, key):
+        def perform(db):
+            run=self._cutting_run(db,run_id)
+            if run['reversal']:
+                raise DomainError(409,'Hasil cutting sudah dikoreksi.')
+            for row in run['outputs']:
+                if row['reversed_by']:
+                    raise DomainError(409,'Perpindahan hasil cutting sudah dikoreksi terpisah; periksa riwayat.')
+                self._transfer(db,dict(line_id=row['line_id'],quantity=row['quantity'],from_stage='sewing',
+                                       to_stage='cutting',reason=payload['reason']),actor,reversal_of=row['id'])
+            consumption=db.execute('SELECT * FROM material_consumption WHERE id=?',(run['consumption_id'],)).fetchone()
+            self._consumption_event(db,consumption['issue_id'],-consumption['used_milli'],-consumption['waste_milli'],
+                                    payload['reason'],actor['id'],consumption['id'])
+            db.execute('INSERT INTO cutting_run_reversals(run_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
+                       (run_id,payload['reason'],actor['id'],now()))
+            return self._cutting_run(db,run_id)
+        return self._write(actor,('admin',),key,'cutting-reverse:'+run_id,payload,perform)
 
     def _purchase_request(self, db, request_id):
         row = db.execute('''SELECT p.*,u.name AS actor_name,o.reference AS order_reference
@@ -1048,6 +1125,8 @@ class Store:
 
     def reverse(self, movement_id, payload, actor, key):
         def perform(db):
+            if db.execute('SELECT 1 FROM cutting_runs r,json_each(r.movement_ids) x WHERE x.value=?',(movement_id,)).fetchone():
+                raise DomainError(409,'Perpindahan berasal dari hasil cutting. Gunakan koreksi hasil cutting agar bahan ikut dikoreksi.')
             original = db.execute("SELECT * FROM movements WHERE id=?", (movement_id,)).fetchone()
             if not original:
                 raise DomainError(404, "Perpindahan tidak ditemukan.")
@@ -1062,7 +1141,8 @@ class Store:
         with self.transaction() as db:
             if not db.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone():
                 raise DomainError(404, "Order produksi tidak ditemukan.")
-            return [dict(row) for row in db.execute("""SELECT m.*,u.name AS actor_name,p.sku FROM movements m
+            return [dict(row) for row in db.execute("""SELECT m.*,u.name AS actor_name,p.sku,
+                (SELECT r.id FROM cutting_runs r,json_each(r.movement_ids) x WHERE x.value=m.id) AS cutting_run_id FROM movements m
                 JOIN order_lines l ON l.id=m.line_id JOIN users u ON u.id=m.actor_id
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",
                 (order_id, limit, offset))]

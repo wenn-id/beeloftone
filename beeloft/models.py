@@ -169,6 +169,29 @@ class MaterialConsumption(Input):
         return format(amount,'.3f')
 
 
+class CuttingOutput(Input):
+    line_id: Text
+    quantity: Quantity
+
+
+class CuttingRunCreate(MaterialConsumption):
+    reference: Text
+    outputs: list[CuttingOutput] = Field(min_length=1, max_length=100)
+
+    @field_validator('outputs')
+    @classmethod
+    def unique_output_lines(cls, outputs):
+        if len({row.line_id for row in outputs}) != len(outputs):
+            raise ValueError('Gabungkan hasil untuk SKU yang sama menjadi satu baris.')
+        return sorted(outputs, key=lambda row: row.line_id)
+
+    @model_validator(mode='after')
+    def require_used_material(self):
+        if Decimal(self.used)<=0:
+            raise ValueError('Hasil cutting memerlukan bahan terpakai lebih dari nol.')
+        return self
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

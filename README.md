@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.17.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.18.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 12. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 13. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -804,3 +804,38 @@ pembayaran, cetak surat retur, konfirmasi pemasok, atau pengiriman pesan ke pema
 
 Rencana: [supplier returns plan](docs/supplier-returns-plan.md).
 Bukti pengujian: [supplier returns verification](docs/supplier-returns-verification.md).
+
+## Hasil cutting dan bahan asal (v0.18)
+
+Di detail order, pilih **Hasil cutting** lalu **Catat hasil cutting**. Pilih satu pengeluaran
+bahan order yang masih punya jumlah belum dilaporkan, isi referensi, bahan terpakai, waste,
+alasan, dan hasil pcs per SKU. Sistem memindahkan hasil itu dari tahap cutting ke sewing,
+menyimpan batch bahan asal, dan mencatat pemakaian serta waste dalam transaksi yang sama.
+Jumlah bahan tidak otomatis dikonversi menjadi pcs; operator tetap memasukkan hasil nyata.
+
+Satu hasil cutting memakai satu pengeluaran bahan. Hasil untuk beberapa ukuran/SKU dalam order
+boleh dicatat bersama. SKU harus berasal dari order yang sama dan jumlahnya tidak boleh melebihi
+saldo cutting. Bahan terpakai + waste tidak boleh melebihi jumlah pengeluaran yang belum
+dilaporkan. Pengeluaran, pemakaian, atau perpindahan yang sudah dihubungkan ke hasil cutting
+tidak dapat dikoreksi sendiri; gunakan **Koreksi hasil cutting** agar output pcs dan catatan
+bahan kembali bersama-sama. Koreksi membutuhkan saldo sewing yang cukup untuk seluruh output.
+
+Operator dapat mencatat, admin dapat mencatat dan mengoreksi, viewer hanya membaca. Riwayat
+hasil cutting bisa dibuka dari detail order, riwayat perpindahan, riwayat pemakaian, dan batch
+bahan asal. Referensi hasil cutting unik. Retry memakai Idempotency-Key yang sama, termasuk
+ketika respons hilang setelah server sudah menyimpan.
+
+API baru:
+
+- `POST /api/orders/{id}/cutting-runs`: `reference`, `issue_id`, `used`, `waste`, `reason`, `outputs[]`.
+- `GET /api/orders/{id}/cutting-runs?limit=100&before=sequence`.
+- `GET /api/cutting-runs/{id}`.
+- `POST /api/cutting-runs/{id}/reverse`: `reason` (admin).
+
+Schema 12 → 13 menambahkan ledger hasil cutting/koreksi serta guard database untuk sumber
+material, output yang belum dibalik, koreksi atomik, dan riwayat immutable. Belum ada
+alokasi biaya per ukuran, multi-material dalam satu run, identitas bundle, barcode, scrap
+valuation, atau alur vendor/makloon.
+
+Rencana: [cutting plan](docs/cutting-plan.md).
+Bukti pengujian: [cutting verification](docs/cutting-verification.md).
