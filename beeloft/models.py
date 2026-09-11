@@ -241,6 +241,22 @@ class FinishingRecordCreate(ReversalCreate):
         return self
 
 
+class FinalQcRecordCreate(ReversalCreate):
+    reference: Text
+    measurement_notes: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    visual_notes: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    accepted_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    rework_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    reject_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    inspection_date: date
+
+    @model_validator(mode='after')
+    def positive_total(self):
+        if self.accepted_quantity + self.rework_quantity + self.reject_quantity < 1:
+            raise ValueError('Isi setidaknya satu hasil QC dengan jumlah lebih dari nol.')
+        return self
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

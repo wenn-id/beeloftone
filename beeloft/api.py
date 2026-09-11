@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -276,6 +276,23 @@ def create_app(database_path):
     @app.post('/api/finishing-records/{record_id}/reverse', status_code=201, tags=['Finishing'])
     def reverse_finishing_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_finishing_record(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/finishing-records/{record_id}/qc-records', status_code=201, tags=['Final QC'])
+    def create_final_qc_record(record_id: str, body: FinalQcRecordCreate, user: Actor, key: RequestKey):
+        return store.create_final_qc_record(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/final-qc-records', tags=['Final QC'])
+    def final_qc_records(order_id: str, user: Actor, limit: Limit = 100,
+                         before: Annotated[int | None, Query(ge=1)] = None):
+        return store.final_qc_records(order_id, limit, before)
+
+    @app.get('/api/final-qc-records/{record_id}', tags=['Final QC'])
+    def final_qc_record(record_id: str, user: Actor):
+        return store.final_qc_record(record_id)
+
+    @app.post('/api/final-qc-records/{record_id}/reverse', status_code=201, tags=['Final QC'])
+    def reverse_final_qc_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_final_qc_record(record_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
