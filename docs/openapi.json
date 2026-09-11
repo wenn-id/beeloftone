@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.14.0"
+    "version": "0.15.0"
   },
   "paths": {
     "/health": {
@@ -796,6 +796,73 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ReversalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/purchase-orders/{order_id}/receipts": {
+      "post": {
+        "tags": [
+          "Purchasing"
+        ],
+        "summary": "Receive Purchase Order",
+        "operationId": "receive_purchase_order_api_purchase_orders__order_id__receipts_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseOrderReceipt"
               }
             }
           }
@@ -3493,12 +3560,6 @@
             "minLength": 1,
             "title": "Reference"
           },
-          "supplier": {
-            "type": "string",
-            "maxLength": 160,
-            "minLength": 1,
-            "title": "Supplier"
-          },
           "location": {
             "type": "string",
             "maxLength": 160,
@@ -3515,6 +3576,12 @@
             "maxLength": 1000,
             "minLength": 1,
             "title": "Reason"
+          },
+          "supplier": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Supplier"
           }
         },
         "additionalProperties": false,
@@ -3523,10 +3590,10 @@
           "quantity",
           "material_id",
           "reference",
-          "supplier",
           "location",
           "received_date",
-          "reason"
+          "reason",
+          "supplier"
         ],
         "title": "MaterialReceipt"
       },
@@ -3839,6 +3906,56 @@
           "prices"
         ],
         "title": "PurchaseOrderCreate"
+      },
+      "PurchaseOrderReceipt": {
+        "properties": {
+          "quantity": {
+            "type": "string",
+            "maxLength": 11,
+            "pattern": "^[0-9]{1,7}(\\.[0-9]{1,3})?$",
+            "title": "Quantity"
+          },
+          "material_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Material Id"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Location"
+          },
+          "received_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Received Date"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "quantity",
+          "material_id",
+          "reference",
+          "location",
+          "received_date",
+          "reason"
+        ],
+        "title": "PurchaseOrderReceipt"
       },
       "PurchasePrice": {
         "properties": {

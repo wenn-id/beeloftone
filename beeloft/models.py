@@ -111,13 +111,16 @@ class MaterialQuantity(Input):
         return format(quantity, '.3f')
 
 
-class MaterialReceipt(MaterialQuantity):
+class PurchaseOrderReceipt(MaterialQuantity):
     material_id: Text
     reference: Text
-    supplier: Text
     location: Text
     received_date: date
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class MaterialReceipt(PurchaseOrderReceipt):
+    supplier: Text
 
 
 class MaterialIssue(MaterialQuantity):

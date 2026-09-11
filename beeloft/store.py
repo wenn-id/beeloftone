@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -51,6 +51,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("purchase_requests.sql").read_text(encoding="utf-8"))
             if version < 9:
                 db.executescript(Path(__file__).with_name("purchase_orders.sql").read_text(encoding="utf-8"))
+            if version < 10:
+                db.executescript(Path(__file__).with_name("po_receipts.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -159,6 +161,10 @@ class Store:
         if not row:
             raise DomainError(404, 'Batch bahan tidak ditemukan.')
         record = dict(row)
+        source = db.execute('''SELECT p.id,p.reference FROM purchase_order_receipts r
+            JOIN purchase_orders p ON p.id=r.purchase_order_id WHERE r.batch_id=?''', (batch_id,)).fetchone()
+        record['purchase_order_id'] = source['id'] if source else None
+        record['purchase_order_reference'] = source['reference'] if source else None
         balance = record.pop('balance_milli')
         reserved = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (batch_id,)).fetchone()[0]
         own = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=? AND order_id=?', (batch_id,order_id)).fetchone()[0]
@@ -187,18 +193,20 @@ class Store:
         return record
 
     def receive_material(self, payload, actor, key):
-        def perform(db):
-            material = db.execute('SELECT unit FROM materials WHERE id=?', (payload['material_id'],)).fetchone()
-            if not material:
-                raise DomainError(404, 'Bahan tidak ditemukan.')
-            quantity = self._material_amount(payload['quantity'], material['unit'])
-            record = {k:v for k,v in payload.items() if k not in ('quantity','reason')}
-            record.update(id=str(uuid4()), created_by=actor['id'], created_at=now())
-            db.execute('''INSERT INTO material_batches VALUES(:id,:material_id,:reference,:supplier,:location,
-                :received_date,:created_by,:created_at)''', record)
-            self._material_movement(db, record['id'], 'receipt', quantity, None, payload['reason'], actor['id'])
-            return self._material_batch(db, record['id'])
-        return self._write(actor, ('admin','operator'), key, 'material-receipt', payload, perform)
+        return self._write(actor, ('admin','operator'), key, 'material-receipt', payload,
+                           lambda db: self._receive_material(db, payload, actor))
+
+    def _receive_material(self, db, payload, actor):
+        material = db.execute('SELECT unit FROM materials WHERE id=?', (payload['material_id'],)).fetchone()
+        if not material:
+            raise DomainError(404, 'Bahan tidak ditemukan.')
+        quantity = self._material_amount(payload['quantity'], material['unit'])
+        record = {k:v for k,v in payload.items() if k not in ('quantity','reason')}
+        record.update(id=str(uuid4()), created_by=actor['id'], created_at=now())
+        db.execute('''INSERT INTO material_batches VALUES(:id,:material_id,:reference,:supplier,:location,
+            :received_date,:created_by,:created_at)''', record)
+        self._material_movement(db, record['id'], 'receipt', quantity, None, payload['reason'], actor['id'])
+        return self._material_batch(db, record['id'])
 
     def issue_material(self, payload, actor, key):
         def perform(db):
@@ -466,6 +474,26 @@ class Store:
             JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
         record['cancellation'] = dict(cancelled) if cancelled else None
         record['status'] = 'cancelled' if cancelled else 'issued'
+        record['receipts'] = []
+        received = {}
+        for row in db.execute('''SELECT b.id AS batch_id,b.reference,b.material_id,b.location,b.received_date,
+            m.id AS receipt_id,m.quantity_milli,m.reason,m.created_at,u.name AS actor_name,
+            (SELECT id FROM material_movements WHERE reversal_of=m.id) AS reversed_by
+            FROM purchase_order_receipts x JOIN material_batches b ON b.id=x.batch_id
+            JOIN material_movements m ON m.batch_id=b.id AND m.kind='receipt'
+            JOIN users u ON u.id=m.actor_id WHERE x.purchase_order_id=? ORDER BY m.sequence DESC''', (order_id,)):
+            receipt = dict(row)
+            quantity = receipt.pop('quantity_milli')
+            receipt['quantity'] = self._material_decimal(quantity)
+            record['receipts'].append(receipt)
+            if not receipt['reversed_by']:
+                received[receipt['material_id']] = received.get(receipt['material_id'],0)+quantity
+        for line in record['lines']:
+            amount = received.get(line['material_id'],0)
+            line['received'] = self._material_decimal(amount)
+            line['remaining'] = self._material_decimal(int(Decimal(line['quantity'])*1000)-amount)
+        record['fulfillment'] = ('received' if all(l['remaining']=='0.000' for l in record['lines'])
+                                 else 'partial' if received else 'pending')
         return record
 
     def purchase_order(self, order_id):
@@ -517,10 +545,28 @@ class Store:
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO sudah dibatalkan.')
+            if po['fulfillment'] != 'pending':
+                raise DomainError(409, 'PO memiliki penerimaan aktif. Koreksi penerimaan terlebih dahulu sebelum membatalkan PO.')
             db.execute('''INSERT INTO purchase_order_cancellations(id,order_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?)''', (str(uuid4()),order_id,payload['reason'],actor['id'],now()))
             return self._purchase_order(db, order_id)
         return self._write(actor, ('admin',), key, 'purchase-order-cancel:'+order_id, payload, perform)
+
+    def receive_purchase_order(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            if po['status'] != 'issued':
+                raise DomainError(409, 'PO sudah dibatalkan; penerimaan tidak diizinkan.')
+            line = next((l for l in po['lines'] if l['material_id']==payload['material_id']), None)
+            if not line:
+                raise DomainError(422, 'Bahan tidak tercantum pada PO.')
+            quantity = self._material_amount(payload['quantity'], line['unit'])
+            if quantity > int(Decimal(line['remaining'])*1000):
+                raise DomainError(409, 'Jumlah penerimaan melebihi sisa PO. Muat ulang rincian PO.')
+            batch = self._receive_material(db, payload | {'supplier':po['supplier']['name']}, actor)
+            db.execute('INSERT INTO purchase_order_receipts(batch_id,purchase_order_id) VALUES(?,?)', (batch['id'],order_id))
+            return self._material_batch(db, batch['id'])
+        return self._write(actor, ('admin','operator'), key, 'purchase-order-receipt:'+order_id, payload, perform)
 
     def _bom(self, db, product_id, before=None):
         product = db.execute('SELECT id,sku,name FROM products WHERE id=?', (product_id,)).fetchone()
