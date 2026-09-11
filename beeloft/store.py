@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -59,6 +59,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("supplier_returns.sql").read_text(encoding="utf-8"))
             if version < 13:
                 db.executescript(Path(__file__).with_name("cutting.sql").read_text(encoding="utf-8"))
+            if version < 14:
+                db.executescript(Path(__file__).with_name("bundles.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -413,6 +415,16 @@ class Store:
             FROM movements m JOIN order_lines l ON l.id=m.line_id JOIN products p ON p.id=l.product_id
             WHERE m.id IN (SELECT value FROM json_each(?)) ORDER BY p.sku''',(record.pop('movement_ids'),))]
         record['total_output']=sum(row['quantity'] for row in record['outputs'])
+        record['bundles']=[self._bundle(db,row['id']) for row in db.execute(
+            'SELECT id FROM bundles WHERE cutting_run_id=? ORDER BY sequence DESC',(run_id,))]
+        active={}
+        for bundle in record['bundles']:
+            if bundle['status']=='active':
+                output_id=bundle['output_movement_id']
+                active[output_id]=active.get(output_id,0)+bundle['quantity']
+        for output in record['outputs']:
+            output['bundled_quantity']=active.get(output['id'],0)
+            output['unbundled_quantity']=output['quantity']-output['bundled_quantity']
         reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM cutting_run_reversals r
             JOIN users u ON u.id=r.actor_id WHERE r.run_id=?''',(run_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
@@ -429,6 +441,56 @@ class Store:
             ids=db.execute('''SELECT id FROM cutting_runs WHERE order_id=? AND (? IS NULL OR sequence<?)
                 ORDER BY sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
             return [self._cutting_run(db,row[0]) for row in ids]
+
+    def _bundle(self, db, bundle_id):
+        row=db.execute('''SELECT b.*,r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
+            m.line_id,p.sku,p.name AS product_name,p.color,p.size,source.id AS batch_id,
+            source.reference AS batch_reference,s.code AS material_code,s.unit,u.name AS actor_name
+            FROM bundles b JOIN cutting_runs r ON r.id=b.cutting_run_id JOIN orders o ON o.id=r.order_id
+            JOIN movements m ON m.id=b.output_movement_id JOIN order_lines l ON l.id=m.line_id
+            JOIN products p ON p.id=l.product_id JOIN material_consumption c ON c.id=r.consumption_id
+            JOIN material_movements i ON i.id=c.issue_id JOIN material_batches source ON source.id=i.batch_id
+            JOIN materials s ON s.id=source.material_id JOIN users u ON u.id=b.actor_id WHERE b.id=?''',(bundle_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Bundle tidak ditemukan.')
+        record=dict(row)
+        reversal=db.execute('''SELECT x.*,u.name AS actor_name FROM bundle_reversals x
+            JOIN users u ON u.id=x.actor_id WHERE x.bundle_id=?''',(bundle_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        return record
+
+    def bundle(self, bundle_id):
+        with self.transaction() as db:
+            return self._bundle(db,bundle_id)
+
+    def bundles(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT b.id FROM bundles b JOIN cutting_runs r ON r.id=b.cutting_run_id
+                WHERE r.order_id=? AND (? IS NULL OR b.sequence<?)
+                ORDER BY b.sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
+            return [self._bundle(db,row['id']) for row in ids]
+
+    def create_bundle(self, run_id, payload, actor, key):
+        def perform(db):
+            run=self._cutting_run(db,run_id)
+            if run['reversal']:
+                raise DomainError(409,'Hasil cutting sudah dikoreksi.')
+            output=next((row for row in run['outputs'] if row['id']==payload['output_movement_id']),None)
+            if not output:
+                raise DomainError(422,'Output cutting tidak berasal dari hasil cutting ini.')
+            if output['reversed_by']:
+                raise DomainError(409,'Output cutting sudah dikoreksi.')
+            if payload['quantity']>output['unbundled_quantity']:
+                raise DomainError(409,'Jumlah bundle melebihi hasil cutting yang belum dibundel. Muat ulang dan periksa data terbaru.')
+            bundle_id=str(uuid4())
+            db.execute('''INSERT INTO bundles(id,reference,cutting_run_id,output_movement_id,quantity,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''',(bundle_id,payload['reference'],run_id,payload['output_movement_id'],
+                                            payload['quantity'],payload['reason'],actor['id'],now()))
+            return self._bundle(db,bundle_id)
+        return self._write(actor,('admin','operator'),key,'bundle:'+run_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

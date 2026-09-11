@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import CuttingRunCreate
+from beeloft.models import BundleCreate, CuttingRunCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -221,6 +221,19 @@ def create_app(database_path):
     @app.post('/api/cutting-runs/{run_id}/reverse', status_code=201, tags=['Cutting'])
     def reverse_cutting_run(run_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_cutting_run(run_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/cutting-runs/{run_id}/bundles', status_code=201, tags=['Bundling'])
+    def create_bundle(run_id: str, body: BundleCreate, user: Actor, key: RequestKey):
+        return store.create_bundle(run_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/bundles', tags=['Bundling'])
+    def bundles(order_id: str, user: Actor, limit: Limit = 100,
+                before: Annotated[int | None, Query(ge=1)] = None):
+        return store.bundles(order_id, limit, before)
+
+    @app.get('/api/bundles/{bundle_id}', tags=['Bundling'])
+    def bundle(bundle_id: str, user: Actor):
+        return store.bundle(bundle_id)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
