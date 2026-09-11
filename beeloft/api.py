@@ -12,6 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
+from beeloft.models import SupplierCreate, PurchaseOrderCreate
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -20,7 +21,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.13.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.14.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -99,6 +100,32 @@ def create_app(database_path):
     @app.get('/api/orders/{order_id}/material-requirements', tags=['BOM'])
     def material_requirements(order_id: str, user: Actor):
         return store.material_requirements(order_id)
+
+    @app.get('/api/suppliers', tags=['Purchasing'])
+    def suppliers(user: Actor, limit: Limit = 100, offset: Offset = 0):
+        return store.suppliers(limit, offset)
+
+    @app.post('/api/suppliers', status_code=201, tags=['Purchasing'])
+    def create_supplier(body: SupplierCreate, user: Actor, key: RequestKey):
+        return store.create_supplier(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/purchase-orders', tags=['Purchasing'])
+    def purchase_orders(user: Actor, limit: Limit = 100, before: Annotated[int | None, Query(ge=1)] = None,
+                        status: Literal['all','issued','cancelled'] = 'all',
+                        request_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
+        return store.purchase_orders(limit, before, status, request_id)
+
+    @app.get('/api/purchase-orders/{order_id}', tags=['Purchasing'])
+    def purchase_order(order_id: str, user: Actor):
+        return store.purchase_order(order_id)
+
+    @app.post('/api/purchase-orders', status_code=201, tags=['Purchasing'])
+    def create_purchase_order(body: PurchaseOrderCreate, user: Actor, key: RequestKey):
+        return store.create_purchase_order(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/cancel', status_code=201, tags=['Purchasing'])
+    def cancel_purchase_order(order_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.cancel_purchase_order(order_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/purchase-requests', status_code=201, tags=['Purchasing'])
     def create_purchase_request(body: PurchaseRequestCreate, user: Actor, key: RequestKey):

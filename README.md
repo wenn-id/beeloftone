@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.13.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.14.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 8. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 9. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -610,7 +610,7 @@ Untuk operasi sendiri, admin dapat menyetujui pengajuannya sendiri. Semua nilai 
 keputusan admin; belum ada aturan ambang nilai atau pemisahan pemohon dan pemberi persetujuan.
 Pengaturan tersebut dan antrean persetujuan lintas modul masuk Phase 4.
 
-PR yang disetujui **belum menjadi PO ke pemasok**. Pengajuan tidak mengubah stok, reservasi,
+PR yang disetujui **belum otomatis menjadi PO ke pemasok**. Pengajuan tidak mengubah stok, reservasi,
 WIP atau hasil perhitungan kekurangan BOM. Buka daftar PR yang masih aktif sebelum mengajukan
 bahan lagi; dua pengajuan dengan referensi berbeda tidak otomatis dianggap duplikat.
 Ringkasan kebutuhan tetap memakai BOM terbaru, sedangkan rincian PR menyimpan bahan/jumlah yang
@@ -632,3 +632,54 @@ Migrasi 7 → 8 mempertahankan data lama; PR historis tidak dibuat otomatis. Bac
 mencakup PR dan seluruh keputusan. Rencana: [PR](docs/purchase-requests-plan.md).
 Hasil pengujian: [verifikasi PR](docs/purchase-requests-verification.md).
 Tahap berikutnya: master pemasok dan PO yang merujuk PR disetujui, termasuk harga dan tanggal datang.
+
+## Pemasok dan PO (v0.14 — Phase 2 roadmap)
+
+Dari **Permintaan pembelian → Master pemasok**, admin memilih **Tambah pemasok** dan mengisi
+kode unik, nama, kontak/alamat opsional serta alasan. Kode dinormalisasi ke huruf besar.
+Identitas master disimpan permanen; jika salah, buat kode baru untuk pembelian berikutnya.
+Semua role aktif dapat membaca master pemasok dan daftar/rincian PO.
+
+Buka PR yang sudah disetujui → **Buat PO dari PR**. Pilih satu pemasok, isi referensi PO unik,
+perkiraan tanggal datang, syarat pembelian, harga satuan setiap bahan dan alasan.
+Seluruh bahan dan jumlah mengikuti PR. Harga, identitas pemasok, revisi PR, jumlah dan syarat
+terkunci saat dicatat. **Daftar PO** menyediakan filter aktif/dibatalkan; rincian PR juga
+menautkan semua PO terkait termasuk yang pernah dibatalkan.
+
+Harga satuan berupa rupiah positif, maksimal Rp1.000.000.000,00, dua desimal.
+Nilai baris = jumlah PR × harga satuan, dibulatkan half-up ke 0,01 rupiah; total adalah
+penjumlahan nilai baris yang sudah dibulatkan. Tiap nilai baris setelah pembulatan minimal Rp0,01.
+Form menampilkan total selama harga diisi; server menghitung ulang dengan aritmetika desimal.
+Contoh 2,125 m × Rp12,34 = Rp26,22. Tidak ada penjumlahan jumlah lintas satuan.
+
+**Total PO tidak boleh melebihi estimasi PR yang sudah disetujui.** Jika nilainya perlu naik,
+buat pengajuan baru dengan estimasi yang sesuai dan persetujuan baru. PO yang sudah ada harus
+dibatalkan dahulu sebelum PR asalnya dapat dibatalkan. Belum ada pajak, ongkir, diskon, kurs,
+atau persetujuan harga PO secara terpisah; syarat pembelian berupa catatan bebas.
+
+Hanya admin membuat pemasok, mencatat PO dan membatalkan PO. Maksimal satu PO aktif untuk satu PR.
+Untuk koreksi PO, **Batalkan PO** dengan alasan lalu buat PO pengganti dengan referensi baru.
+PO asli dan pembatalan tetap utuh. PR tetap disetujui setelah PO dibatalkan, sehingga dapat dipakai
+untuk pengganti atau dibatalkan tersendiri. Tidak ada pembatalan sebagian atau pembukaan ulang PO.
+Retry dengan key/payload sama mempertahankan respons awal meskipun status sesudahnya berubah.
+
+Status aktif/issued berarti **tercatat internal**. Aplikasi tidak mengirim PO atau pembatalan ke pemasok.
+PO belum menambah stok maupun mengurangi kekurangan BOM; belum ada penerimaan, saldo belum diterima,
+pembayaran, split pemasok atau split PR. Batch penerimaan manual yang ada belum terkait PO.
+Pencatatan barang datang terhadap PO adalah increment berikutnya.
+
+API memakai X-API-Key; POST juga Idempotency-Key:
+
+- `POST /api/suppliers`: `code`, `name`, `contact`/ `address` opsional, `reason`.
+- `GET /api/suppliers?limit=100&offset=0`.
+- `POST /api/purchase-orders`: `reference`, `request_id`, `expected_revision` dari PR,
+  `supplier_id`, `expected_date`, `terms`, `reason` dan `prices` berisi
+  `material_id`/`unit_price` string untuk tepat semua bahan PR. Quantity diambil server dari PR.
+- `GET /api/purchase-orders?limit=100&before=SEQUENCE&status=all&request_id=ID`:
+  before dan request_id opsional; status all/issued/cancelled.
+- `GET /api/purchase-orders/{id}`: snapshot pemasok, baris, total, sumber PR dan pembatalan.
+- `POST /api/purchase-orders/{id}/cancel`: `reason`.
+
+Rincian PR menambahkan `purchase_orders` dengan id/referensi/status. Schema 8 → 9 bersifat
+tambahan, tanpa mengarang pemasok dari teks batch lama. Backup/restore mencakup tabel baru.
+Rencana dan batas: [PO](docs/purchase-orders-plan.md); hasil uji: [verifikasi PO](docs/purchase-orders-verification.md).

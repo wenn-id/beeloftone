@@ -178,6 +178,48 @@ class PurchaseRequestDecision(ReversalCreate):
     expected_revision: Annotated[int, Field(strict=True, ge=1)]
 
 
+class SupplierCreate(ReversalCreate):
+    code: Text
+    name: Text
+    contact: str = Field(default='', max_length=500)
+    address: str = Field(default='', max_length=1000)
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class PurchasePrice(Input):
+    material_id: Text
+    unit_price: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,10}(\.[0-9]{1,2})?$", max_length=13)]
+
+    @field_validator('unit_price')
+    @classmethod
+    def normalize_price(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000:
+            raise ValueError('Harga satuan harus positif dan maksimal Rp1.000.000.000.')
+        return format(amount, '.2f')
+
+
+class PurchaseOrderCreate(ReversalCreate):
+    reference: Text
+    request_id: Text
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    supplier_id: Text
+    expected_date: date
+    terms: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    prices: list[PurchasePrice] = Field(min_length=1, max_length=100)
+
+    @field_validator('prices')
+    @classmethod
+    def unique_prices(cls, prices):
+        if len({price.material_id for price in prices}) != len(prices):
+            raise ValueError('Harga setiap bahan harus diisi tepat satu kali.')
+        return sorted(prices, key=lambda price: price.material_id)
+
+
 class BomSave(Input):
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

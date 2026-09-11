@@ -219,6 +219,8 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
+      else if (path === '/api/suppliers') suppliersDialog();
+      else if (path.startsWith('/api/purchase-orders')) purchaseOrderDialog(result.id);
       else if (path.startsWith('/api/purchase-requests')) purchaseRequestDialog(result.id);
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
       else if (view === 'materials') loadMaterials();
@@ -324,6 +326,8 @@ document.addEventListener('click', event => {
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'purchase-requests':()=>purchaseRequestsDialog(),'order-purchases':()=>purchaseRequestsDialog(selected.id),
     'purchase-request':()=>purchaseRequestDialog(id),'new-purchase-request':()=>purchaseRequestForm(id || null),
+    suppliers:suppliersDialog,'new-supplier':supplierForm,'purchase-orders':purchaseOrdersDialog,
+    'new-purchase-order':()=>purchaseOrderForm(id),'purchase-order':()=>purchaseOrderDialog(id),
     'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
     bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
     consumption:consumptionDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
@@ -681,7 +685,7 @@ async function purchaseRequestsDialog(orderId=null) {
   if (guardPending()) return;
   const version=epoch;
   openDialog(orderId ? 'PR untuk order ini' : 'Permintaan pembelian',
-    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button id="pr-refresh">Muat ulang PR</button></div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
+    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
   const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null, generation=0;
   async function load(reset=false) {
@@ -744,9 +748,11 @@ async function purchaseRequestDialog(id) {
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const decisions=[];
     if(user.role==='admin' && p.status==='submitted')decisions.push(['approved','Setujui PR'],['rejected','Tolak PR']);
-    if((user.role==='admin' && ['submitted','approved'].includes(p.status)) ||
+    if((user.role==='admin' && ['submitted','approved'].includes(p.status) && !p.purchase_orders.some(po=>po.status==='issued')) ||
        (user.role==='operator' && p.actor_id===user.id && p.status==='submitted'))decisions.push(['cancelled','Batalkan PR']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. PR ini belum menjadi PO ke pemasok.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO aktif harus membatalkan PO sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').querySelector('.actions').insertAdjacentHTML('beforeend',
+      `${user.role==='admin' && p.status==='approved' && !p.purchase_orders.some(po=>po.status==='issued') ? `<button data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>` : ''}${p.purchase_orders.map(po=>`<button data-action="purchase-order" data-id="${e(po.id)}">PO ${e(po.reference)} · ${po.status==='issued'?'Aktif':'Dibatalkan'}</button>`).join('')}`);
     $('dialog-content').querySelectorAll('[data-pr-decision]').forEach(button=>{
       button.onclick=()=>{if(guardPending())return;
         formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:button.dataset.prDecision,expected_revision:p.revision}),
@@ -755,6 +761,87 @@ async function purchaseRequestDialog(id) {
       };
     });
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="purchase-request" data-id="${e(id)}">Coba lagi</button>`;}
+}
+
+async function suppliersDialog() {
+  if(guardPending())return;
+  const version=epoch;openDialog('Master pemasok','<p class="state">Memuat pemasok…</p>');const modal=dialogVersion;
+  try{
+    const suppliers=await allRows('/api/suppliers');
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    $('dialog-content').innerHTML=`<p class="hint">Identitas pemasok yang dipakai saat membuat PO.</p>${suppliers.map(s=>`<article class="material-event"><h3>${e(s.code)} · ${e(s.name)}</h3><p>${e(s.contact || 'Kontak belum diisi')}</p><p>${e(s.address || 'Alamat belum diisi')}</p><p class="reason">${e(s.reason)}</p><p class="hint">${e(s.actor_name)} · ${purchaseStamp(s.created_at)}</p></article>`).join('') || '<p class="state">Belum ada pemasok.</p>'}${user.role==='admin'?'<button data-action="new-supplier">Tambah pemasok</button>':''}<button data-action="purchase-requests">Semua PR</button>`;
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="suppliers">Coba lagi</button>`;}
+}
+function supplierForm() {
+  if(guardPending())return;
+  formDialog('Tambah pemasok',field('code','Kode pemasok','text','required maxlength="160"')+
+    field('name','Nama pemasok','text','required maxlength="160"')+field('contact','Kontak pemasok','text','maxlength="500"')+
+    '<label class="full">Alamat pemasok<textarea name="address" maxlength="1000"></textarea></label>'+materialReason,
+    form=>Object.fromEntries(new FormData(form)),'/api/suppliers',
+    'Kode dan identitas pemasok disimpan permanen. Jika keliru, buat kode pemasok baru untuk PO berikutnya.');
+}
+
+async function purchaseOrdersDialog() {
+  if(guardPending())return;
+  const version=epoch;
+  openDialog('Daftar PO','<p class="hint">PO tercatat internal. Pengiriman ke pemasok dan penerimaan barang masih dilakukan terpisah.</p><label>Status PO<select id="po-status"><option value="all">Semua status</option><option value="issued">Aktif</option><option value="cancelled">Dibatalkan</option></select></label><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
+  const modal=dialogVersion,current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  let before=null,generation=0;
+  async function load(reset=false){
+    if(reset){generation++;before=null;$('po-list').replaceChildren();}
+    const gen=generation,button=$('po-more');button.disabled=true;message('po-error','');
+    try{
+      const rows=await api.get('/api/purchase-orders?'+new URLSearchParams({limit:25,status:$('po-status').value,...(before?{before}:{})}));
+      if(!current() || gen!==generation)return;
+      $('po-list').insertAdjacentHTML('beforeend',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${p.status==='issued'?'Aktif':'Dibatalkan'}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
+      if(!before && !rows.length)$('po-list').innerHTML='<p class="state">Belum ada PO yang sesuai filter.</p>';
+      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
+    }catch(error){if(current() && gen===generation){message('po-error',error.message,true);button.hidden=false;}}
+    finally{if(current() && gen===generation)button.disabled=false;}
+  }
+  $('po-status').onchange=$('po-refresh').onclick=()=>load(true);$('po-more').onclick=()=>load();await load();
+}
+
+async function purchaseOrderForm(requestId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Buat PO dari PR','<p class="state">Memuat PR dan pemasok…</p>');const modal=dialogVersion;
+  try{
+    const [pr,suppliers]=await Promise.all([api.get('/api/purchase-requests/'+encodeURIComponent(requestId)),allRows('/api/suppliers')]);
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    if(pr.status!=='approved' || pr.purchase_orders.some(po=>po.status==='issued')){$('dialog-content').innerHTML='<p>PR belum disetujui atau sudah memiliki PO aktif. Buka ulang rincian PR.</p>';return;}
+    if(!suppliers.length){$('dialog-content').innerHTML='<p>Tambahkan pemasok sebelum membuat PO.</p><button data-action="new-supplier">Tambah pemasok</button>';return;}
+    formDialog('Buat PO dari PR',field('reference','Referensi PO','text','required maxlength="160"')+
+      `<label>Pemasok PO<select name="supplier_id" required>${suppliers.map(s=>option(s.id,s.code+' · '+s.name)).join('')}</select></label>`+
+      field('expected_date','Perkiraan tanggal datang','date','required')+
+      '<label class="full">Syarat pembelian<textarea name="terms" required maxlength="1000"></textarea></label>'+
+      `<div class="full" id="po-prices">${pr.lines.map(l=>`<article class="material-event"><h3>${e(l.code)} · ${e(materialQty(l.quantity,l.unit))}</h3><label>Harga satuan ${e(l.code)} (Rp/${e(l.unit)})<input data-price-material="${e(l.material_id)}" type="number" required min="0.01" max="1000000000" step="0.01"></label></article>`).join('')}<p id="po-total" role="status">Isi harga semua bahan untuk melihat total.</p></div>`+materialReason,
+      form=>({...Object.fromEntries(new FormData(form)),request_id:pr.id,expected_revision:pr.revision,
+        prices:[...form.querySelectorAll('[data-price-material]')].map(input=>({material_id:input.dataset.priceMaterial,unit_price:input.value}))}),
+      '/api/purchase-orders',`${pr.reference} · batas nilai ${rupiah(pr.estimated_value)}\nSeluruh jumlah PR dibeli dari satu pemasok. Harga, jumlah dan syarat akan terkunci saat disimpan. PO tercatat internal; belum dikirim ke pemasok dan belum menambah stok.`);
+    $('po-prices').oninput=()=>{
+      const inputs=[...$('po-prices').querySelectorAll('input')];
+      if(inputs.some(i=>!i.validity.valid || !/^[0-9]+(\.[0-9]{1,2})?$/.test(i.value))){$('po-total').textContent='Isi harga semua bahan untuk melihat total.';return;}
+      const total=inputs.reduce((sum,input)=>{
+        const qty=pr.lines.find(l=>l.material_id===input.dataset.priceMaterial).quantity.replace('.','');
+        const [whole,fraction='']=input.value.split('.');
+        return sum+(BigInt(qty)*(BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0')))+500n)/1000n;
+      },0n);
+      const value=String(total/100n)+'.'+String(total%100n).padStart(2,'0');
+      $('po-total').textContent='Total PO '+rupiah(value)+(total>BigInt(pr.estimated_value.replace('.',''))?' · Melebihi nilai PR yang disetujui.':'');
+    };
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-purchase-order" data-id="${e(requestId)}">Coba lagi</button>`;}
+}
+
+async function purchaseOrderDialog(id) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian PO','<p class="state">Memuat PO…</p>');const modal=dialogVersion;
+  try{
+    const p=await api.get('/api/purchase-orders/'+encodeURIComponent(id));
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${p.status==='issued'?'Aktif':'Dibatalkan'}</p><h3>${e(p.supplier.code)} · ${e(p.supplier.name)}</h3><p>${e(p.supplier.contact)} · ${e(p.supplier.address)}</p><p>Perkiraan datang ${date(p.expected_date)}</p><p class="reason">Syarat: ${e(p.terms)}</p>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))} × ${e(rupiah(l.unit_price))}/${e(l.unit)}</p><p>Nilai baris ${e(rupiah(l.line_total))}</p></article>`).join('')}<p><strong>Total PO ${e(rupiah(p.total))}</strong></p><p class="reason">${e(p.reason)}</p><p class="hint">Dicatat ${e(p.actor_name)} · ${purchaseStamp(p.created_at)}. PO ini belum mencatat penerimaan barang.</p>${p.cancellation?`<article class="material-event"><h3>Pembatalan PO</h3><p class="reason">${e(p.cancellation.reason)}</p><p>${e(p.cancellation.actor_name)} · ${purchaseStamp(p.cancellation.created_at)}</p></article>`:''}<div class="actions"><button data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button data-action="purchase-orders">Daftar PO</button>${user.role==='admin' && p.status==='issued'?'<button id="po-cancel">Batalkan PO</button>':''}</div>`;
+    if($('po-cancel'))$('po-cancel').onclick=()=>{if(guardPending())return;formDialog('Batalkan PO',materialReason,form=>Object.fromEntries(new FormData(form)),
+      '/api/purchase-orders/'+encodeURIComponent(id)+'/cancel',`${p.reference} · ${rupiah(p.total)}\nPembatalan seluruh PO disimpan permanen. Pastikan pembelian memang dibatalkan; aplikasi tidak mengirim pemberitahuan ke pemasok.`);};
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="purchase-order" data-id="${e(id)}">Coba lagi</button>`;}
 }
 
 const materialReason = '<label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>';

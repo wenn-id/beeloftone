@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import datetime, time, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from uuid import uuid4
 
@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -49,6 +49,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("consumption.sql").read_text(encoding="utf-8"))
             if version < 8:
                 db.executescript(Path(__file__).with_name("purchase_requests.sql").read_text(encoding="utf-8"))
+            if version < 9:
+                db.executescript(Path(__file__).with_name("purchase_orders.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -378,6 +380,10 @@ class Store:
             WHERE request_id=? ORDER BY sequence DESC''', (request_id,))]
         record['status'] = record['history'][0]['status']
         record['revision'] = record['history'][0]['sequence']
+        record['purchase_orders'] = [dict(row) for row in db.execute('''SELECT p.id,p.reference,
+            CASE WHEN c.id IS NULL THEN 'issued' ELSE 'cancelled' END AS status
+            FROM purchase_orders p LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
+            WHERE p.request_id=? ORDER BY p.sequence DESC''', (request_id,))]
         return record
 
     def purchase_request(self, request_id):
@@ -425,10 +431,96 @@ class Store:
                 raise DomainError(409, 'PR sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
             if current['status'] not in ('submitted','approved') or (current['status']=='approved' and payload['status']!='cancelled'):
                 raise DomainError(409, 'Status PR tidak mengizinkan keputusan ini.')
+            if any(po['status']=='issued' for po in current['purchase_orders']):
+                raise DomainError(409, 'PR masih memiliki PO aktif. Batalkan PO tersebut sebelum membatalkan PR.')
             db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?)''', (request_id,payload['status'],payload['reason'],actor['id'],now()))
             return self._purchase_request(db, request_id)
         return self._write(actor, ('admin','operator'), key, 'purchase-request-decision:'+request_id, payload, perform)
+
+    def suppliers(self, limit=100, offset=0):
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute('''SELECT s.*,u.name AS actor_name FROM suppliers s
+                JOIN users u ON u.id=s.actor_id ORDER BY s.code,s.id LIMIT ? OFFSET ?''', (limit,offset))]
+
+    def create_supplier(self, payload, actor, key):
+        def perform(db):
+            record = dict(id=str(uuid4()), **payload, actor_id=actor['id'], created_at=now())
+            db.execute('''INSERT INTO suppliers(id,code,name,contact,address,reason,actor_id,created_at)
+                VALUES(:id,:code,:name,:contact,:address,:reason,:actor_id,:created_at)''', record)
+            return record
+        return self._write(actor, ('admin',), key, 'supplier', payload, perform)
+
+    def _purchase_order(self, db, order_id):
+        row = db.execute('''SELECT p.*,u.name AS actor_name,r.reference AS request_reference,r.order_id AS production_order_id
+            FROM purchase_orders p JOIN users u ON u.id=p.actor_id JOIN purchase_requests r ON r.id=p.request_id
+            WHERE p.id=?''', (order_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'PO tidak ditemukan.')
+        record = dict(row)
+        record['supplier'] = json.loads(record['supplier'])
+        record['lines'] = json.loads(record['lines'])
+        record['total'] = format(Decimal(record.pop('total_minor')) / 100, '.2f')
+        record['currency'] = 'IDR'
+        cancelled = db.execute('''SELECT c.*,u.name AS actor_name FROM purchase_order_cancellations c
+            JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
+        record['cancellation'] = dict(cancelled) if cancelled else None
+        record['status'] = 'cancelled' if cancelled else 'issued'
+        return record
+
+    def purchase_order(self, order_id):
+        with self.transaction() as db:
+            return self._purchase_order(db, order_id)
+
+    def purchase_orders(self, limit=100, before=None, status='all', request_id=None):
+        with self.transaction() as db:
+            ids = db.execute('''SELECT p.id FROM purchase_orders p
+                LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
+                WHERE (? IS NULL OR p.sequence<?) AND (? IS NULL OR p.request_id=?)
+                AND (?='all' OR (?='issued' AND c.id IS NULL) OR (?='cancelled' AND c.id IS NOT NULL))
+                ORDER BY p.sequence DESC LIMIT ?''', (before,before,request_id,request_id,status,status,status,limit)).fetchall()
+            return [self._purchase_order(db, row[0]) for row in ids]
+
+    def create_purchase_order(self, payload, actor, key):
+        def perform(db):
+            pr = self._purchase_request(db, payload['request_id'])
+            if pr['status'] != 'approved' or pr['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'PR harus disetujui dan memakai revisi terbaru. Buka ulang PR.')
+            if any(po['status']=='issued' for po in pr['purchase_orders']):
+                raise DomainError(409, 'PR sudah memiliki PO aktif. Buka PO tersebut; batalkan dahulu jika perlu koreksi.')
+            supplier = db.execute('SELECT id,code,name,contact,address FROM suppliers WHERE id=?', (payload['supplier_id'],)).fetchone()
+            if not supplier:
+                raise DomainError(404, 'Pemasok tidak ditemukan.')
+            prices = {line['material_id']:line['unit_price'] for line in payload['prices']}
+            if set(prices) != {line['material_id'] for line in pr['lines']}:
+                raise DomainError(422, 'Isi harga tepat satu kali untuk seluruh bahan PR. Jumlah bahan mengikuti PR.')
+            lines, total = [], 0
+            for line in pr['lines']:
+                price = prices[line['material_id']]
+                minor = int((Decimal(line['quantity'])*Decimal(price)*100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+                if minor < 1:
+                    raise DomainError(422, 'Nilai tiap baris setelah pembulatan harus minimal Rp0,01.')
+                total += minor
+                lines.append(line | dict(unit_price=price,line_total=format(Decimal(minor)/100,'.2f')))
+            if total > int(Decimal(pr['estimated_value'])*100):
+                raise DomainError(409, 'Total PO melebihi estimasi PR yang disetujui. Ajukan PR baru dengan nilai yang sesuai.')
+            order_id = str(uuid4())
+            db.execute('''INSERT INTO purchase_orders(id,reference,request_id,request_revision,supplier_id,supplier,
+                expected_date,terms,lines,total_minor,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (order_id,payload['reference'],pr['id'],pr['revision'],supplier['id'],json.dumps(dict(supplier)),
+                 payload['expected_date'],payload['terms'],json.dumps(lines),total,payload['reason'],actor['id'],now()))
+            return self._purchase_order(db, order_id)
+        return self._write(actor, ('admin',), key, 'purchase-order', payload, perform)
+
+    def cancel_purchase_order(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            if po['status'] != 'issued':
+                raise DomainError(409, 'PO sudah dibatalkan.')
+            db.execute('''INSERT INTO purchase_order_cancellations(id,order_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)''', (str(uuid4()),order_id,payload['reason'],actor['id'],now()))
+            return self._purchase_order(db, order_id)
+        return self._write(actor, ('admin',), key, 'purchase-order-cancel:'+order_id, payload, perform)
 
     def _bom(self, db, product_id, before=None):
         product = db.execute('SELECT id,sku,name FROM products WHERE id=?', (product_id,)).fetchone()
