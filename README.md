@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.18.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.19.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -123,7 +123,7 @@ Contoh perpindahan:
 }
 ```
 
-Koreksi: `POST /api/movements/{id}/reverse` dengan `{"reason":"Salah input jumlah"}`. Pembalikan mengembalikan **seluruh jumlah transaksi asal**, hanya sekali. Jika jumlah yang benar berbeda, setelah pembalikan buat perpindahan baru. Pembalikan ditolak apabila saldo tahap tujuan sudah tidak cukup; telusuri transaksi lanjutannya terlebih dahulu. Riwayat asli tidak dihapus. Ini ledger kuantitas per SKU, belum pelacakan identitas potong/bundle tertentu.
+Koreksi: `POST /api/movements/{id}/reverse` dengan `{"reason":"Salah input jumlah"}`. Pembalikan mengembalikan **seluruh jumlah transaksi asal**, hanya sekali. Jika jumlah yang benar berbeda, setelah pembalikan buat perpindahan baru. Pembalikan ditolak apabila saldo tahap tujuan sudah tidak cukup; telusuri transaksi lanjutannya terlebih dahulu. Riwayat asli tidak dihapus. Perpindahan tetap memakai saldo per SKU; identitas bundle dicatat lewat alur Bundling dan belum mengikuti perpindahan antar tahap.
 
 Daftar SKU/order/riwayat memakai `?limit=100&offset=0`, maksimal 500 per halaman. Riwayat diurutkan dari yang paling lama. Tenggat dinilai menurut tanggal Jakarta; timestamp audit memakai UTC. `401` berarti key hilang/tidak valid, `403` role salah, `404` objek hilang, `409` konflik, `422` input tidak sah, `503` database sibuk (retry key yang sama).
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 13. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 14. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -834,8 +834,43 @@ API baru:
 
 Schema 12 → 13 menambahkan ledger hasil cutting/koreksi serta guard database untuk sumber
 material, output yang belum dibalik, koreksi atomik, dan riwayat immutable. Belum ada
-alokasi biaya per ukuran, multi-material dalam satu run, identitas bundle, barcode, scrap
+alokasi biaya per ukuran, multi-material dalam satu run, barcode, scrap
 valuation, atau alur vendor/makloon.
 
 Rencana: [cutting plan](docs/cutting-plan.md).
 Bukti pengujian: [cutting verification](docs/cutting-verification.md).
+
+## Bundling (v0.19)
+
+Buka detail order → **Hasil cutting** → rincian hasil, lalu pilih **Buat bundle** pada
+SKU/ukuran yang masih memiliki jumlah belum dibundel. Isi Bundle ID unik, jumlah pcs,
+dan alasan/catatan. Satu bundle selalu menunjuk satu output cutting dan satu SKU/ukuran;
+beberapa bundle parsial boleh memakai output yang sama selama total bundle aktif tidak
+melebihi jumlah output tersebut. Menu **Bundle** pada order menampilkan daftar dan sumbernya.
+
+Bundle adalah identitas fisik di atas catatan hasil cutting. Membuat atau mengoreksi bundle
+tidak memindahkan saldo WIP: pcs sudah berpindah dari cutting ke sewing saat hasil cutting
+dicatat. Pastikan label fisik, SKU/ukuran, dan jumlah sesuai sebelum menyimpan. Semua role
+dapat membaca; admin dan operator dapat membuat; hanya admin dapat memilih **Koreksi bundle**.
+Koreksi berlaku untuk seluruh catatan dan melepaskan alokasi, sedangkan bundle asli tetap
+terlihat sebagai **Sudah dikoreksi**. Bundle aktif harus dikoreksi sebelum hasil cutting asal
+dapat dikoreksi.
+
+API baru memakai `X-API-Key`; semua POST juga memakai `Idempotency-Key`:
+
+- `POST /api/cutting-runs/{id}/bundles`: `reference`, `output_movement_id`, `quantity`, `reason`.
+- `GET /api/orders/{id}/bundles?limit=100&before=sequence`.
+- `GET /api/bundles/{id}`: identitas, SKU/ukuran, order, hasil cutting, dan batch bahan asal.
+- `POST /api/bundles/{id}/reverse`: `reason` (admin).
+
+Jika respons penyimpanan hilang, masuk kembali dengan akun pencatat yang sama dan gunakan
+**Coba ulang penyimpanan**. Key dan payload yang sama mengembalikan hasil pertama tanpa
+menggandakan bundle. Schema 13 → 14 menambah ledger bundle dan guard langsung di SQLite;
+migrasi tidak membuat bundle untuk hasil cutting lama.
+
+Versi ini belum membuat barcode/label, mencetak atau memindai bundle, split/merge, pergerakan
+bundle antar tahap, vendor sewing, biaya, defect, atau missing pieces. Roadmap berikutnya adalah
+sewing/makloon: pengiriman dan penerimaan bundle beserta selisih hasilnya.
+
+Rencana: [bundling plan](docs/bundles-plan.md).
+Bukti pengujian: [bundling verification](docs/bundles-verification.md).
