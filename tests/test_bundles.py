@@ -164,6 +164,11 @@ class BundleTest(TestCase):
                     ('direct-over', 'BDL-DIRECT', run['id'], output['id'], 99, 'Bypass API',
                      self.admin['id'], '2026-09-11T00:00:00+00:00'))
             with self.assertRaises(sqlite3.IntegrityError):
+                db.execute('''INSERT INTO bundles(id,reference,cutting_run_id,output_movement_id,quantity,
+                    reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?)''',
+                    ('direct-space', ' BDL-SPACED ', run['id'], output['id'], 1, 'Bypass API',
+                     self.admin['id'], '2026-09-11T00:00:00+00:00'))
+            with self.assertRaises(sqlite3.IntegrityError):
                 db.execute('''INSERT INTO movements(id,line_id,from_stage,to_stage,quantity,reason,
                     actor_id,created_at,reversal_of) VALUES(?,?,?,?,?,?,?,?,?)''',
                     ('direct-reversal', output['line_id'], 'sewing', 'cutting', output['quantity'],
@@ -174,3 +179,12 @@ class BundleTest(TestCase):
                               'DELETE FROM bundle_reversals']:
                 with self.assertRaises(sqlite3.IntegrityError):
                     db.execute(statement)
+
+    def test_cutting_list_keeps_only_bounded_allocation_summary(self):
+        order, run = self.setup_run()
+        self.create_bundle(run, quantity=3)
+        self.create_bundle(run, reference='BDL-002', quantity=4)
+        listed = self.client.get('/api/orders/'+order['id']+'/cutting-runs').json()[0]
+        self.assertNotIn('bundles', listed)
+        self.assertEqual(listed['outputs'][0]['bundled_quantity'], 7)
+        self.assertEqual(listed['outputs'][0]['unbundled_quantity'], 13)

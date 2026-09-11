@@ -399,7 +399,7 @@ class Store:
                 record=dict(row);record['used']=self._material_decimal(record.pop('used_milli'));record['waste']=self._material_decimal(record.pop('waste_milli'));result.append(record)
             return result
 
-    def _cutting_run(self, db, run_id):
+    def _cutting_run(self, db, run_id, include_bundles=True):
         row=db.execute('''SELECT r.*,o.reference AS order_reference,c.issue_id,c.used_milli,c.waste_milli,
             b.id AS batch_id,b.reference AS batch_reference,s.code,s.unit,u.name AS actor_name
             FROM cutting_runs r JOIN orders o ON o.id=r.order_id JOIN material_consumption c ON c.id=r.consumption_id
@@ -415,13 +415,19 @@ class Store:
             FROM movements m JOIN order_lines l ON l.id=m.line_id JOIN products p ON p.id=l.product_id
             WHERE m.id IN (SELECT value FROM json_each(?)) ORDER BY p.sku''',(record.pop('movement_ids'),))]
         record['total_output']=sum(row['quantity'] for row in record['outputs'])
-        record['bundles']=[self._bundle(db,row['id']) for row in db.execute(
-            'SELECT id FROM bundles WHERE cutting_run_id=? ORDER BY sequence DESC',(run_id,))]
-        active={}
-        for bundle in record['bundles']:
-            if bundle['status']=='active':
-                output_id=bundle['output_movement_id']
-                active[output_id]=active.get(output_id,0)+bundle['quantity']
+        if include_bundles:
+            record['bundles']=[self._bundle(db,row['id']) for row in db.execute(
+                'SELECT id FROM bundles WHERE cutting_run_id=? ORDER BY sequence DESC',(run_id,))]
+            active={}
+            for bundle in record['bundles']:
+                if bundle['status']=='active':
+                    output_id=bundle['output_movement_id']
+                    active[output_id]=active.get(output_id,0)+bundle['quantity']
+        else:
+            active={row['output_movement_id']:row['quantity'] for row in db.execute('''SELECT b.output_movement_id,
+                SUM(b.quantity) AS quantity FROM bundles b WHERE b.cutting_run_id=?
+                AND NOT EXISTS(SELECT 1 FROM bundle_reversals x WHERE x.bundle_id=b.id)
+                GROUP BY b.output_movement_id''',(run_id,))}
         for output in record['outputs']:
             output['bundled_quantity']=active.get(output['id'],0)
             output['unbundled_quantity']=output['quantity']-output['bundled_quantity']
@@ -440,7 +446,7 @@ class Store:
                 raise DomainError(404,'Order produksi tidak ditemukan.')
             ids=db.execute('''SELECT id FROM cutting_runs WHERE order_id=? AND (? IS NULL OR sequence<?)
                 ORDER BY sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
-            return [self._cutting_run(db,row[0]) for row in ids]
+            return [self._cutting_run(db,row[0],False) for row in ids]
 
     def _bundle(self, db, bundle_id):
         row=db.execute('''SELECT b.*,r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
@@ -475,7 +481,7 @@ class Store:
 
     def create_bundle(self, run_id, payload, actor, key):
         def perform(db):
-            run=self._cutting_run(db,run_id)
+            run=self._cutting_run(db,run_id,False)
             if run['reversal']:
                 raise DomainError(409,'Hasil cutting sudah dikoreksi.')
             output=next((row for row in run['outputs'] if row['id']==payload['output_movement_id']),None)
@@ -523,7 +529,7 @@ class Store:
 
     def reverse_cutting_run(self, run_id, payload, actor, key):
         def perform(db):
-            run=self._cutting_run(db,run_id)
+            run=self._cutting_run(db,run_id,False)
             if run['reversal']:
                 raise DomainError(409,'Hasil cutting sudah dikoreksi.')
             if any(row['bundled_quantity'] for row in run['outputs']):

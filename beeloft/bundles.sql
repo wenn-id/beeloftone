@@ -2,7 +2,7 @@ BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS bundles (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
-    reference TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK(length(trim(reference)) BETWEEN 1 AND 160),
+    reference TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK(reference=trim(reference) AND length(reference) BETWEEN 1 AND 160),
     cutting_run_id TEXT NOT NULL REFERENCES cutting_runs(id),
     output_movement_id TEXT NOT NULL REFERENCES movements(id),
     quantity INTEGER NOT NULL CHECK(quantity > 0),

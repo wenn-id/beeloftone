@@ -7,7 +7,7 @@ bisnis.
 ## Hasil otomatis
 
 - `../../.venv/Scripts/python.exe -m unittest discover -s tests -q` dengan
-  `PYTHONPATH` diarahkan ke worktree: **111 tests OK** dalam 69,172 detik.
+  `PYTHONPATH` diarahkan ke worktree: **112 tests OK** dalam 95,611 detik.
 - `node --check beeloft/static/app.mjs`: **PASS**.
 - `node tests/test_client.mjs`: **Client checks PASS** dan **CSV client checks PASS**.
 - `../../.venv/Scripts/python.exe -m pip check`: **No broken requirements found**.
@@ -19,8 +19,9 @@ Tes backend Bundling mencakup dua bundle parsial pada satu output, lineage order
 SKU/ukuran, cutting run dan batch bahan, WIP yang tidak berubah, idempotent replay,
 role, referensi case-insensitive, input boolean/over-allocation, sumber lintas run,
 dua alokasi bersamaan, rollback setelah insert, cursor, persistence, backup,
-koreksi seluruh catatan, blok koreksi cutting, direct-write guard, serta sejarah
-bundle dan koreksi yang immutable.
+koreksi seluruh catatan, blok koreksi cutting, direct-write guard termasuk Bundle
+ID dengan spasi tepi, list cutting yang hanya membawa ringkasan alokasi, serta
+sejarah bundle dan koreksi yang immutable.
 
 Migrasi diuji dari schema 13 ke 14. Hasil cutting lama tetap dapat dibaca, daftar
 bundle awal kosong, output lama seluruhnya belum dibundel, dan `user_version`
@@ -38,8 +39,9 @@ Perintah:
 ```
 
 Seluruh modul browser lulus, termasuk `Bundling browser QA PASS`, dan pemeriksaan
-akhir melaporkan tidak ada error JavaScript. Alur membuat data nyata melalui API,
-masuk sebagai operator, membuka output cutting, dan membuat bundle 8 pcs. Respons
+akhir melaporkan tidak ada error JavaScript. Daftar bundle diuji saat respons GET
+gagal, berhasil dicoba ulang, dan masih kosong. Alur lalu membuat data nyata melalui
+API, masuk sebagai operator, membuka output cutting, dan membuat bundle 8 pcs. Respons
 pertama sengaja diputus setelah server menyimpan; reload dan **Coba ulang
 penyimpanan** dengan key yang sama mengembalikan bundle yang sama, sehingga daftar
 tetap berisi satu record dan saldo sewing tetap 20 pcs.

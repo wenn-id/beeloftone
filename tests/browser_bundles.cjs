@@ -33,6 +33,17 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   }
   await role(operator);
   await openOrder();
+  let failList=true;
+  await page.route('**/api/orders/*/bundles?*',async route=>{
+    if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar bundle sedang sibuk'})});}
+    else await route.continue();
+  });
+  await page.getByRole('button',{name:'Bundle',exact:true}).click();
+  await page.getByText('Daftar bundle sedang sibuk',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await page.getByText('Belum ada bundle untuk order ini.',{exact:false}).waitFor();
+  await page.unroute('**/api/orders/*/bundles?*');
+  await page.keyboard.press('Escape');
   await page.locator('.order-settings').getByRole('button',{name:'Hasil cutting',exact:true}).click();
   await page.getByRole('button',{name:'Rincian BND-CUT',exact:true}).click();
   await page.getByRole('button',{name:'Buat bundle',exact:true}).click();
