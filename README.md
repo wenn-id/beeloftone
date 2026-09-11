@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.15.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.16.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 10. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 11. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -718,3 +718,40 @@ mengarang hubungan dari nama pemasok atau referensi batch. Backup/restore memuat
 Barang hold/reject belum masuk pencatatan ini; hanya bahan yang sudah diperiksa layak pakai.
 Tahap berikutnya: pemeriksaan bahan masuk dengan jumlah diterima, diterima layak, hold/reject,
 dan keputusan pelepasan stok. Bukti pengujian: [verifikasi penerimaan PO](docs/po-receipts-verification.md).
+
+## QC bahan masuk (v0.16)
+
+Kedatangan bahan dari PO bisa dicatat dulu sebagai **hold** melalui **Rincian PO → Catat
+kedatangan untuk QC**. Hold mengurangi sisa bahan yang boleh datang, tetapi belum menjadi
+saldo batch atau bahan yang dapat direservasi. Satu kedatangan menyimpan referensi, lokasi
+hold, tanggal, jumlah, aktor dan alasan secara immutable. Operator dapat mencatat kedatangan;
+viewer hanya membaca.
+
+Admin memutuskan hold sebagian atau seluruhnya sebagai **Terima layak pakai** atau **Tolak
+bahan**. Keputusan layak pakai membuat batch stok baru dan memasangkan receipt ke PO.
+Reject tidak membuat stok dan membuka jatah pengganti pada PO. Sisa yang belum diputuskan
+tetap hold. Rincian PO menampilkan hold, layak, reject, jumlah yang masih bisa datang, serta
+daftar kedatangan dan keputusan QC.
+
+Untuk koreksi, admin memilih **Koreksi keputusan**. Koreksi layak pakai harus membalik receipt
+batch melalui ledger stok; batch yang sudah dikeluarkan, direservasi, atau masih memiliki
+pemakaian tidak dapat dikoreksi. Koreksi reject hanya boleh jika jatah pengganti belum terisi.
+Pembatalan kedatangan hanya boleh tanpa keputusan aktif. PO tidak dapat dibatalkan saat masih
+memiliki bahan hold atau receipt aktif. Guard SQLite juga menjaga aturan ini jika ada penulisan
+langsung ke database.
+
+API tambahan:
+
+- `POST /api/purchase-orders/{id}/qc-intakes`: `material_id`, `reference`, `location`,
+  `received_date`, `quantity`, `reason`.
+- `GET /api/qc-intakes/{id}`: jumlah datang, hold, layak, reject, riwayat keputusan,
+  pembatalan, dan sumber PO.
+- `POST /api/qc-intakes/{id}/decisions`: `kind` accept/reject, `quantity`, alasan;
+  acceptance juga memerlukan referensi dan lokasi batch siap pakai.
+- `POST /api/qc-decisions/{id}/reverse` dan `POST /api/qc-intakes/{id}/cancel`.
+
+Schema 10 → 11 menambahkan intake, decision, cancellation, kuota hold/reject dan guard
+pembatalan/koreksi. Retry memakai Idempotency-Key yang sama dan tidak menambah stok dua kali.
+Penerimaan manual lama dan penerimaan PO langsung tetap kompatibel. Hanya bahan layak pakai
+yang masuk stok; retur pemasok, penutupan sisa PO dan pembayaran belum tersedia.
+Rencana dan bukti: [incoming QC plan](docs/incoming-qc-plan.md) dan [verifikasi incoming QC](docs/incoming-qc-verification.md).

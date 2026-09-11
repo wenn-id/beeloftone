@@ -8,7 +8,7 @@ Source: Beeloft_One_Concept_Blueprint.pdf, pages 7, 8, 15–16. The PDF is produ
 |---|---|
 | 0 Discovery & Data Map | Internal production flow and roles mapped; real SKU/location/vendor identifiers still need field validation. |
 | 1 Command Center | Local SKU master and production dashboard exist. Jubelio/Mekari sync and company-wide dashboard are not implemented. |
-| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt/issue, versioned BOM, latest-BOM requirements, reservations, shortage estimates, actual usage/waste and approved PRs exist. v0.14 adds supplier master and immutable PO with budget/quantity guards. v0.15 links partial receipts and reversals to PO with received/remaining quantities. Incoming material QC remains next. |
+| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt/issue, versioned BOM, latest-BOM requirements, reservations, shortage estimates, actual usage/waste, PR/PO, PO receipts and incoming material QC exist through v0.16. Return/closure and supplier integration remain next. |
 | 3 Warehouse Integration | Not started; internal production warehouse balances are not authoritative sellable stock. |
 | 4 Unified Approvals | Not started. |
 | 5 Economics & Forecasting | Not started. |
@@ -27,7 +27,7 @@ productive used and unusable cutting waste in partial reports; admin reverses a 
 correction. Net used plus waste cannot exceed the issued quantity. Reporting does not change rack
 balance, reservation allocation or WIP pcs, and an issue reversal is blocked while net reporting remains.
 
-Next product increment: incoming material QC with accepted, hold/reject quantities and release decisions. PRs and POs do not increase available stock or reduce shortages. This increment does not claim available-to-promise inventory: no incoming QC hold, costing or physical rack transfers yet. Received quantity means usable accepted stock only; planned pcs do not automatically consume material, and actual usage is recorded explicitly rather than inferred.
+Next product increment: supplier return or formal PO closure after QC decisions. PRs and POs do not increase available stock or reduce shortages until a QC acceptance creates a usable batch. Hold/reject quantities remain outside available stock; planned pcs do not automatically consume material, and actual usage is recorded explicitly rather than inferred.
 
 ## Implementation plan (inline execution)
 

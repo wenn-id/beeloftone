@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
 Quantity = Annotated[int, Field(strict=True, gt=0, le=1_000_000_000)]
@@ -121,6 +121,21 @@ class PurchaseOrderReceipt(MaterialQuantity):
 
 class MaterialReceipt(PurchaseOrderReceipt):
     supplier: Text
+
+
+class QualityDecision(MaterialQuantity):
+    kind: Literal['accept','reject']
+    reference: Text | None = None
+    location: Text | None = None
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def require_batch_for_acceptance(self):
+        if self.kind=='accept' and (not self.reference or not self.location):
+            raise ValueError('Isi referensi batch dan lokasi stok layak pakai.')
+        if self.kind=='reject' and (self.reference is not None or self.location is not None):
+            raise ValueError('Keputusan reject tidak membuat batch stok.')
+        return self
 
 
 class MaterialIssue(MaterialQuantity):

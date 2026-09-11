@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -53,6 +53,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("purchase_orders.sql").read_text(encoding="utf-8"))
             if version < 10:
                 db.executescript(Path(__file__).with_name("po_receipts.sql").read_text(encoding="utf-8"))
+            if version < 11:
+                db.executescript(Path(__file__).with_name("incoming_qc.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -170,6 +172,8 @@ class Store:
         own = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=? AND order_id=?', (batch_id,order_id)).fetchone()[0]
         record.update({key:self._material_decimal(value) for key,value in dict(balance=balance,reserved=reserved,
                       available=balance-reserved,reserved_for_order=own,available_to_order=balance-reserved+own).items()})
+        qc = db.execute('SELECT intake_id FROM qc_decisions WHERE batch_id=?', (batch_id,)).fetchone()
+        record['qc_intake_id'] = qc['intake_id'] if qc else None
         return record
 
     def material_batch(self, batch_id):
@@ -225,21 +229,27 @@ class Store:
 
     def reverse_material(self, movement_id, payload, actor, key):
         def perform(db):
-            original = db.execute('SELECT * FROM material_movements WHERE id=?', (movement_id,)).fetchone()
-            if not original:
-                raise DomainError(404, 'Catatan bahan tidak ditemukan.')
-            if original['kind'] == 'reversal' or db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?', (movement_id,)).fetchone():
-                raise DomainError(409, 'Catatan pembalik atau catatan yang sudah dibalik tidak dapat dikoreksi lagi.')
-            balance = db.execute('SELECT SUM(quantity_milli) FROM material_movements WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]
-            if balance - original['quantity_milli'] < 0:
-                raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
-            if original['kind']=='receipt' and db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]:
-                raise DomainError(409, 'Batch masih direservasi. Lepaskan seluruh reservasi sebelum membalik penerimaan.')
-            if original['kind']=='issue' and db.execute('SELECT COALESCE(SUM(used_milli+waste_milli),0) FROM material_consumption WHERE issue_id=?',(movement_id,)).fetchone()[0]:
-                raise DomainError(409,'Pengeluaran sudah dicatat terpakai atau waste. Periksa dan koreksi catatan pemakaian sebelum mengembalikan seluruh pengeluaran.')
-            return self._material_movement(db, original['batch_id'], 'reversal', -original['quantity_milli'],
-                original['order_id'], payload['reason'], actor['id'], movement_id)
+            if db.execute("""SELECT 1 FROM qc_decisions q JOIN material_movements m ON m.batch_id=q.batch_id
+                WHERE m.id=? AND m.kind='receipt'""", (movement_id,)).fetchone():
+                raise DomainError(409, 'Penerimaan berasal dari QC. Gunakan koreksi keputusan QC agar jumlah hold ikut diperbarui.')
+            return self._reverse_material(db, movement_id, payload, actor)
         return self._write(actor, ('admin',), key, 'material-reverse:'+movement_id, payload, perform)
+
+    def _reverse_material(self, db, movement_id, payload, actor):
+        original = db.execute('SELECT * FROM material_movements WHERE id=?', (movement_id,)).fetchone()
+        if not original:
+            raise DomainError(404, 'Catatan bahan tidak ditemukan.')
+        if original['kind'] == 'reversal' or db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?', (movement_id,)).fetchone():
+            raise DomainError(409, 'Catatan pembalik atau catatan yang sudah dibalik tidak dapat dikoreksi lagi.')
+        balance = db.execute('SELECT SUM(quantity_milli) FROM material_movements WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]
+        if balance - original['quantity_milli'] < 0:
+            raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
+        if original['kind']=='receipt' and db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]:
+            raise DomainError(409, 'Batch masih direservasi. Lepaskan seluruh reservasi sebelum membalik penerimaan.')
+        if original['kind']=='issue' and db.execute('SELECT COALESCE(SUM(used_milli+waste_milli),0) FROM material_consumption WHERE issue_id=?',(movement_id,)).fetchone()[0]:
+            raise DomainError(409,'Pengeluaran sudah dicatat terpakai atau waste. Periksa dan koreksi catatan pemakaian sebelum mengembalikan seluruh pengeluaran.')
+        return self._material_movement(db, original['batch_id'], 'reversal', -original['quantity_milli'],
+            original['order_id'], payload['reason'], actor['id'], movement_id)
 
     def material_history(self, *, batch_id=None, order_id=None, limit=100, before=None):
         with self.transaction() as db:
@@ -488,10 +498,16 @@ class Store:
             record['receipts'].append(receipt)
             if not receipt['reversed_by']:
                 received[receipt['material_id']] = received.get(receipt['material_id'],0)+quantity
+        record['qc_intakes'] = [self._quality_intake(db, row[0]) for row in db.execute(
+            'SELECT id FROM qc_intakes WHERE purchase_order_id=? ORDER BY sequence DESC', (order_id,))]
         for line in record['lines']:
             amount = received.get(line['material_id'],0)
             line['received'] = self._material_decimal(amount)
             line['remaining'] = self._material_decimal(int(Decimal(line['quantity'])*1000)-amount)
+            totals = db.execute('SELECT COALESCE(SUM(held),0),COALESCE(SUM(rejected),0) FROM qc_totals WHERE purchase_order_id=? AND material_id=?', (order_id,line['material_id'])).fetchone()
+            line['held'] = self._material_decimal(totals[0])
+            line['rejected'] = self._material_decimal(totals[1])
+            line['receivable'] = self._material_decimal(int(Decimal(line['remaining'])*1000)-totals[0])
         record['fulfillment'] = ('received' if all(l['remaining']=='0.000' for l in record['lines'])
                                  else 'partial' if received else 'pending')
         return record
@@ -545,8 +561,8 @@ class Store:
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO sudah dibatalkan.')
-            if po['fulfillment'] != 'pending':
-                raise DomainError(409, 'PO memiliki penerimaan aktif. Koreksi penerimaan terlebih dahulu sebelum membatalkan PO.')
+            if po['fulfillment'] != 'pending' or any(l['held']!='0.000' for l in po['lines']):
+                raise DomainError(409, 'PO memiliki penerimaan aktif atau bahan hold. Selesaikan QC atau koreksi penerimaan sebelum membatalkan PO.')
             db.execute('''INSERT INTO purchase_order_cancellations(id,order_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?)''', (str(uuid4()),order_id,payload['reason'],actor['id'],now()))
             return self._purchase_order(db, order_id)
@@ -561,12 +577,117 @@ class Store:
             if not line:
                 raise DomainError(422, 'Bahan tidak tercantum pada PO.')
             quantity = self._material_amount(payload['quantity'], line['unit'])
-            if quantity > int(Decimal(line['remaining'])*1000):
-                raise DomainError(409, 'Jumlah penerimaan melebihi sisa PO. Muat ulang rincian PO.')
+            if quantity > int(Decimal(line['receivable'])*1000):
+                raise DomainError(409, 'Jumlah penerimaan melebihi sisa PO setelah memperhitungkan bahan hold. Muat ulang rincian PO.')
             batch = self._receive_material(db, payload | {'supplier':po['supplier']['name']}, actor)
             db.execute('INSERT INTO purchase_order_receipts(batch_id,purchase_order_id) VALUES(?,?)', (batch['id'],order_id))
             return self._material_batch(db, batch['id'])
         return self._write(actor, ('admin','operator'), key, 'purchase-order-receipt:'+order_id, payload, perform)
+
+    def _quality_intake(self, db, intake_id):
+        row = db.execute('''SELECT q.*,m.code,m.name,m.unit,u.name AS actor_name,p.reference AS purchase_order_reference,
+            t.accepted,t.rejected,t.held,
+            EXISTS(SELECT 1 FROM purchase_order_cancellations WHERE order_id=q.purchase_order_id) AS po_cancelled FROM qc_intakes q JOIN materials m ON m.id=q.material_id
+            JOIN users u ON u.id=q.actor_id JOIN purchase_orders p ON p.id=q.purchase_order_id
+            JOIN qc_totals t ON t.id=q.id WHERE q.id=?''', (intake_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Kedatangan QC tidak ditemukan.')
+        record = dict(row)
+        record['quantity'] = self._material_decimal(record.pop('quantity_milli'))
+        for field in ('accepted','rejected','held'):
+            record[field] = self._material_decimal(record[field])
+        cancelled = db.execute('''SELECT c.*,u.name AS actor_name FROM qc_intake_cancellations c
+            JOIN users u ON u.id=c.actor_id WHERE intake_id=?''', (intake_id,)).fetchone()
+        record['cancellation'] = dict(cancelled) if cancelled else None
+        record['history'] = []
+        for row in db.execute('''SELECT d.*,u.name AS actor_name,b.reference AS batch_reference,
+            (SELECT id FROM qc_decisions WHERE reversal_of=d.id) AS reversed_by
+            FROM qc_decisions d JOIN users u ON u.id=d.actor_id LEFT JOIN material_batches b ON b.id=d.batch_id
+            WHERE d.intake_id=? ORDER BY d.sequence DESC''', (intake_id,)):
+            item = dict(row)
+            item['quantity'] = self._material_decimal(item.pop('quantity_milli'))
+            record['history'].append(item)
+        return record
+
+    def quality_intake(self, intake_id):
+        with self.transaction() as db:
+            return self._quality_intake(db, intake_id)
+
+    def create_quality_intake(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            if po['status'] != 'issued':
+                raise DomainError(409, 'PO sudah dibatalkan.')
+            line = next((l for l in po['lines'] if l['material_id']==payload['material_id']),None)
+            if not line:
+                raise DomainError(422, 'Bahan tidak tercantum pada PO.')
+            quantity = self._material_amount(payload['quantity'],line['unit'])
+            if quantity>int(Decimal(line['receivable'])*1000):
+                raise DomainError(409, 'Kedatangan melebihi sisa PO setelah memperhitungkan bahan hold.')
+            intake_id = str(uuid4())
+            db.execute('''INSERT INTO qc_intakes(id,purchase_order_id,material_id,reference,location,received_date,
+                quantity_milli,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                (intake_id,order_id,payload['material_id'],payload['reference'],payload['location'],payload['received_date'],
+                 quantity,payload['reason'],actor['id'],now()))
+            return self._quality_intake(db,intake_id)
+        return self._write(actor,('admin','operator'),key,'qc-intake:'+order_id,payload,perform)
+
+    def decide_quality(self, intake_id, payload, actor, key):
+        def perform(db):
+            intake = self._quality_intake(db,intake_id)
+            if intake['cancellation']:
+                raise DomainError(409,'Kedatangan QC sudah dibatalkan.')
+            quantity = self._material_amount(payload['quantity'],intake['unit'])
+            if quantity>int(Decimal(intake['held'])*1000):
+                raise DomainError(409,'Jumlah keputusan melebihi bahan hold. Muat ulang QC.')
+            batch = None
+            if payload['kind']=='accept':
+                po = self._purchase_order(db,intake['purchase_order_id'])
+                batch = self._receive_material(db,dict(material_id=intake['material_id'],reference=payload['reference'],
+                    location=payload['location'],supplier=po['supplier']['name'],received_date=intake['received_date'],
+                    quantity=payload['quantity'],reason=payload['reason']),actor)
+            db.execute('''INSERT INTO qc_decisions(id,intake_id,kind,quantity_milli,batch_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''', (str(uuid4()),intake_id,payload['kind'],quantity,batch['id'] if batch else None,
+                                           payload['reason'],actor['id'],now()))
+            if batch:
+                db.execute('INSERT INTO purchase_order_receipts(batch_id,purchase_order_id) VALUES(?,?)',
+                           (batch['id'],intake['purchase_order_id']))
+            return self._quality_intake(db,intake_id)
+        return self._write(actor,('admin',),key,'qc-decision:'+intake_id,payload,perform)
+
+    def reverse_quality(self, decision_id, payload, actor, key):
+        def perform(db):
+            original = db.execute('SELECT * FROM qc_decisions WHERE id=?',(decision_id,)).fetchone()
+            if not original:
+                raise DomainError(404,'Keputusan QC tidak ditemukan.')
+            if original['reversal_of'] or db.execute('SELECT 1 FROM qc_decisions WHERE reversal_of=?',(decision_id,)).fetchone():
+                raise DomainError(409,'Keputusan sudah dikoreksi atau merupakan catatan koreksi.')
+            intake = self._quality_intake(db,original['intake_id'])
+            po = self._purchase_order(db,intake['purchase_order_id'])
+            if intake['cancellation'] or po['status']!='issued':
+                raise DomainError(409,'Kedatangan atau PO sudah dibatalkan.')
+            if original['kind']=='reject':
+                line = next(l for l in po['lines'] if l['material_id']==intake['material_id'])
+                if original['quantity_milli']>int(Decimal(line['receivable'])*1000):
+                    raise DomainError(409,'Jatah pengganti sudah terisi. Koreksi penerimaan atau kedatangan pengganti sebelum mengembalikan reject ke hold.')
+            else:
+                receipt = db.execute("SELECT id FROM material_movements WHERE batch_id=? AND kind='receipt'",(original['batch_id'],)).fetchone()
+                self._reverse_material(db,receipt['id'],payload,actor)
+            db.execute('''INSERT INTO qc_decisions(id,intake_id,kind,quantity_milli,reversal_of,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''',(str(uuid4()),intake['id'],original['kind'],-original['quantity_milli'],decision_id,
+                                          payload['reason'],actor['id'],now()))
+            return self._quality_intake(db,intake['id'])
+        return self._write(actor,('admin',),key,'qc-reverse:'+decision_id,payload,perform)
+
+    def cancel_quality_intake(self, intake_id, payload, actor, key):
+        def perform(db):
+            intake = self._quality_intake(db,intake_id)
+            if intake['cancellation'] or intake['accepted']!='0.000' or intake['rejected']!='0.000':
+                raise DomainError(409,'Kedatangan sudah dibatalkan atau masih memiliki keputusan QC aktif. Koreksi keputusan terlebih dahulu.')
+            db.execute('INSERT INTO qc_intake_cancellations(intake_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
+                       (intake_id,payload['reason'],actor['id'],now()))
+            return self._quality_intake(db,intake_id)
+        return self._write(actor,('admin',),key,'qc-cancel:'+intake_id,payload,perform)
 
     def _bom(self, db, product_id, before=None):
         product = db.execute('SELECT id,sku,name FROM products WHERE id=?', (product_id,)).fetchone()

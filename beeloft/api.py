@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt
+from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -21,7 +21,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.15.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.16.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -130,6 +130,26 @@ def create_app(database_path):
     @app.post('/api/purchase-orders/{order_id}/receipts', status_code=201, tags=['Purchasing'])
     def receive_purchase_order(order_id: str, body: PurchaseOrderReceipt, user: Actor, key: RequestKey):
         return store.receive_purchase_order(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/qc-intakes', status_code=201, tags=['Incoming QC'])
+    def create_quality_intake(order_id: str, body: PurchaseOrderReceipt, user: Actor, key: RequestKey):
+        return store.create_quality_intake(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/qc-intakes/{intake_id}', tags=['Incoming QC'])
+    def quality_intake(intake_id: str, user: Actor):
+        return store.quality_intake(intake_id)
+
+    @app.post('/api/qc-intakes/{intake_id}/decisions', status_code=201, tags=['Incoming QC'])
+    def decide_quality(intake_id: str, body: QualityDecision, user: Actor, key: RequestKey):
+        return store.decide_quality(intake_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/qc-decisions/{decision_id}/reverse', status_code=201, tags=['Incoming QC'])
+    def reverse_quality(decision_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_quality(decision_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/qc-intakes/{intake_id}/cancel', status_code=201, tags=['Incoming QC'])
+    def cancel_quality_intake(intake_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.cancel_quality_intake(intake_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/purchase-requests', status_code=201, tags=['Purchasing'])
     def create_purchase_request(body: PurchaseRequestCreate, user: Actor, key: RequestKey):
