@@ -199,6 +199,30 @@ class BundleCreate(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class SewingJobCreate(ReversalCreate):
+    reference: Text
+    assignment_type: Literal['internal','makloon']
+    assignee: Text
+    quantity_out: Quantity
+    cost: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    sent_date: date
+
+    @field_validator('cost')
+    @classmethod
+    def normalize_cost(cls, value):
+        amount = Decimal(value)
+        if not 0 <= amount <= 1_000_000_000_000:
+            raise ValueError('Biaya total harus antara Rp0 dan Rp1.000.000.000.000.')
+        return format(amount, '.2f')
+
+
+class SewingJobComplete(ReversalCreate):
+    completed_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    defect_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    missing_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    returned_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

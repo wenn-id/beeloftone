@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, SewingJobComplete, SewingJobCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -238,6 +238,27 @@ def create_app(database_path):
     @app.post('/api/bundles/{bundle_id}/reverse', status_code=201, tags=['Bundling'])
     def reverse_bundle(bundle_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_bundle(bundle_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/bundles/{bundle_id}/sewing-jobs', status_code=201, tags=['Sewing'])
+    def create_sewing_job(bundle_id: str, body: SewingJobCreate, user: Actor, key: RequestKey):
+        return store.create_sewing_job(bundle_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/sewing-jobs', tags=['Sewing'])
+    def sewing_jobs(order_id: str, user: Actor, limit: Limit = 100,
+                    before: Annotated[int | None, Query(ge=1)] = None):
+        return store.sewing_jobs(order_id, limit, before)
+
+    @app.get('/api/sewing-jobs/{job_id}', tags=['Sewing'])
+    def sewing_job(job_id: str, user: Actor):
+        return store.sewing_job(job_id)
+
+    @app.post('/api/sewing-jobs/{job_id}/complete', status_code=201, tags=['Sewing'])
+    def complete_sewing_job(job_id: str, body: SewingJobComplete, user: Actor, key: RequestKey):
+        return store.complete_sewing_job(job_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/sewing-jobs/{job_id}/reverse', status_code=201, tags=['Sewing'])
+    def reverse_sewing_job(job_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_sewing_job(job_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
