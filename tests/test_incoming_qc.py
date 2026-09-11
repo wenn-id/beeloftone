@@ -162,6 +162,8 @@ class IncomingQCTest(TestCase):
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).quality_intake(intake['id']),self.qc(intake))
         self.reverse(old)
+        self.cancel(po,status=409)
+        self.post('/api/qc-intakes/'+intake['id']+'/returns',dict(reference='QC-RETURN',returned_date='2026-10-16',quantity='1',reason='Reject dikirim kembali'))
         self.cancel(po)
         self.reverse_decision(rejected['history'][0],status=409)
         self.intake(po,body | {'reference':'CLOSED'},status=409)

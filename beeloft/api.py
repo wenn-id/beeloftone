@@ -12,7 +12,8 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision
+from beeloft.models import CuttingRunCreate
+from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -21,7 +22,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.16.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.18.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -111,7 +112,7 @@ def create_app(database_path):
 
     @app.get('/api/purchase-orders', tags=['Purchasing'])
     def purchase_orders(user: Actor, limit: Limit = 100, before: Annotated[int | None, Query(ge=1)] = None,
-                        status: Literal['all','issued','cancelled'] = 'all',
+                        status: Literal['all','issued','cancelled','closed'] = 'all',
                         request_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
         return store.purchase_orders(limit, before, status, request_id)
 
@@ -126,6 +127,18 @@ def create_app(database_path):
     @app.post('/api/purchase-orders/{order_id}/cancel', status_code=201, tags=['Purchasing'])
     def cancel_purchase_order(order_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.cancel_purchase_order(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/close', status_code=201, tags=['Purchasing'])
+    def close_purchase_order(order_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.close_purchase_order(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/qc-intakes/{intake_id}/returns', status_code=201, tags=['Incoming QC'])
+    def return_supplier(intake_id: str, body: SupplierReturn, user: Actor, key: RequestKey):
+        return store.return_supplier(intake_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/supplier-returns/{return_id}/reverse', status_code=201, tags=['Incoming QC'])
+    def reverse_supplier_return(return_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_supplier_return(return_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/purchase-orders/{order_id}/receipts', status_code=201, tags=['Purchasing'])
     def receive_purchase_order(order_id: str, body: PurchaseOrderReceipt, user: Actor, key: RequestKey):
@@ -191,6 +204,23 @@ def create_app(database_path):
     @app.post('/api/material-reservations', status_code=201, tags=['Materials'])
     def reserve_material(body: MaterialReservation, user: Actor, key: RequestKey):
         return store.reserve_material(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/orders/{order_id}/cutting-runs', status_code=201, tags=['Cutting'])
+    def create_cutting_run(order_id: str, body: CuttingRunCreate, user: Actor, key: RequestKey):
+        return store.create_cutting_run(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/cutting-runs', tags=['Cutting'])
+    def cutting_runs(order_id: str, user: Actor, limit: Limit = 100,
+                     before: Annotated[int | None, Query(ge=1)] = None):
+        return store.cutting_runs(order_id, limit, before)
+
+    @app.get('/api/cutting-runs/{run_id}', tags=['Cutting'])
+    def cutting_run(run_id: str, user: Actor):
+        return store.cutting_run(run_id)
+
+    @app.post('/api/cutting-runs/{run_id}/reverse', status_code=201, tags=['Cutting'])
+    def reverse_cutting_run(run_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_cutting_run(run_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):

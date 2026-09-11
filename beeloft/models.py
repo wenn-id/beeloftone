@@ -123,6 +123,12 @@ class MaterialReceipt(PurchaseOrderReceipt):
     supplier: Text
 
 
+class SupplierReturn(MaterialQuantity):
+    reference: Text
+    returned_date: date
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
 class QualityDecision(MaterialQuantity):
     kind: Literal['accept','reject']
     reference: Text | None = None
@@ -161,6 +167,29 @@ class MaterialConsumption(Input):
         if not 0 <= amount <= 1_000_000:
             raise ValueError('Jumlah harus antara nol dan 1.000.000 satuan.')
         return format(amount,'.3f')
+
+
+class CuttingOutput(Input):
+    line_id: Text
+    quantity: Quantity
+
+
+class CuttingRunCreate(MaterialConsumption):
+    reference: Text
+    outputs: list[CuttingOutput] = Field(min_length=1, max_length=100)
+
+    @field_validator('outputs')
+    @classmethod
+    def unique_output_lines(cls, outputs):
+        if len({row.line_id for row in outputs}) != len(outputs):
+            raise ValueError('Gabungkan hasil untuk SKU yang sama menjadi satu baris.')
+        return sorted(outputs, key=lambda row: row.line_id)
+
+    @model_validator(mode='after')
+    def require_used_material(self):
+        if Decimal(self.used)<=0:
+            raise ValueError('Hasil cutting memerlukan bahan terpakai lebih dari nol.')
+        return self
 
 
 class BomComponent(MaterialQuantity):
