@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -77,6 +77,8 @@ class Store:
                     if name not in columns:
                         db.execute(f'ALTER TABLE final_qc_records ADD COLUMN {name} {definition}')
                 db.executescript(Path(__file__).with_name("finished_goods.sql").read_text(encoding="utf-8"))
+            if version < 19:
+                db.executescript(Path(__file__).with_name("warehouse_movements.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -823,6 +825,24 @@ class Store:
             return self._final_qc_record(db,record_id)
         return self._write(actor,('admin',),key,'final-qc-reverse:'+record_id,payload,perform)
 
+    def _warehouse_balances(self, db, receipt_id):
+        rows=db.execute('''WITH ledger(location,stock_status,quantity) AS (
+            SELECT x.location,'sellable',x.sellable_quantity FROM finished_goods_receipts x
+                WHERE x.id=? AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+            UNION ALL
+            SELECT x.location,'hold',x.hold_quantity FROM finished_goods_receipts x
+                WHERE x.id=? AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+            UNION ALL
+            SELECT w.from_location,w.from_status,-w.quantity FROM warehouse_movements w
+                WHERE w.receipt_id=? AND NOT EXISTS(SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+            UNION ALL
+            SELECT w.to_location,w.to_status,w.quantity FROM warehouse_movements w
+                WHERE w.receipt_id=? AND NOT EXISTS(SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+        ) SELECT location,stock_status,SUM(quantity) AS quantity FROM ledger
+          GROUP BY location COLLATE NOCASE,stock_status HAVING SUM(quantity)>0
+          ORDER BY location COLLATE NOCASE,stock_status''',(receipt_id,receipt_id,receipt_id,receipt_id)).fetchall()
+        return [dict(row) for row in rows]
+
     def _finished_goods_receipt(self, db, receipt_id):
         row=db.execute('''SELECT x.*,q.reference AS final_qc_reference,q.finishing_record_id,
             f.reference AS finishing_reference,f.job_id,j.reference AS sewing_reference,
@@ -845,6 +865,10 @@ class Store:
             JOIN users u ON u.id=r.actor_id WHERE r.receipt_id=?''',(receipt_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'active'
+        record['inventory']=self._warehouse_balances(db,receipt_id)
+        record['active_movement_count']=db.execute('''SELECT COUNT(*) FROM warehouse_movements w
+            WHERE w.receipt_id=? AND NOT EXISTS(
+              SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)''',(receipt_id,)).fetchone()[0]
         return record
 
     def finished_goods_receipt(self, receipt_id):
@@ -866,18 +890,54 @@ class Store:
 
     def finished_goods_inventory(self, limit=100, offset=0):
         with self.transaction() as db:
-            rows=db.execute('''SELECT p.id AS product_id,p.sku,p.name,p.color,p.size,
-                COALESCE(SUM(CASE WHEN r.receipt_id IS NULL THEN x.sellable_quantity ELSE 0 END),0) AS sellable_quantity,
-                COALESCE(SUM(CASE WHEN r.receipt_id IS NULL THEN x.hold_quantity ELSE 0 END),0) AS hold_quantity
-                FROM products p LEFT JOIN (finished_goods_receipts x
-                LEFT JOIN finished_goods_receipt_reversals r ON r.receipt_id=x.id
-                JOIN final_qc_records q ON q.id=x.final_qc_record_id
-                JOIN finishing_records f ON f.id=q.finishing_record_id
-                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
-                JOIN movements m ON m.id=b.output_movement_id) ON m.line_id IN (
-                    SELECT id FROM order_lines WHERE product_id=p.id)
+            rows=db.execute('''WITH receipt_products AS (
+                SELECT x.id,x.location,x.sellable_quantity,x.hold_quantity,l.product_id
+                FROM finished_goods_receipts x JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id
+                WHERE NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+            ), ledger(product_id,stock_status,quantity) AS (
+                SELECT product_id,'sellable',sellable_quantity FROM receipt_products
+                UNION ALL SELECT product_id,'hold',hold_quantity FROM receipt_products
+                UNION ALL SELECT p.product_id,w.from_status,-w.quantity FROM warehouse_movements w
+                    JOIN receipt_products p ON p.id=w.receipt_id WHERE NOT EXISTS(
+                      SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+                UNION ALL SELECT p.product_id,w.to_status,w.quantity FROM warehouse_movements w
+                    JOIN receipt_products p ON p.id=w.receipt_id WHERE NOT EXISTS(
+                      SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+            ) SELECT p.id AS product_id,p.sku,p.name,p.color,p.size,
+                COALESCE(SUM(CASE WHEN l.stock_status='sellable' THEN l.quantity ELSE 0 END),0) AS sellable_quantity,
+                COALESCE(SUM(CASE WHEN l.stock_status='hold' THEN l.quantity ELSE 0 END),0) AS hold_quantity,
+                COALESCE(SUM(CASE WHEN l.stock_status='damaged' THEN l.quantity ELSE 0 END),0) AS damaged_quantity
+                FROM products p LEFT JOIN ledger l ON l.product_id=p.id
                 GROUP BY p.id ORDER BY p.sku LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
-            return [dict(row) | {'total_quantity':row['sellable_quantity']+row['hold_quantity']} for row in rows]
+            return [dict(row) | {'total_quantity':row['sellable_quantity']+row['hold_quantity']+
+                    row['damaged_quantity']} for row in rows]
+
+    def warehouse_inventory(self, limit=100, offset=0):
+        with self.transaction() as db:
+            rows=db.execute('''WITH receipt_products AS (
+                SELECT x.id,x.location,x.sellable_quantity,x.hold_quantity,l.product_id
+                FROM finished_goods_receipts x JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id
+                WHERE NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+            ), ledger(product_id,location,stock_status,quantity) AS (
+                SELECT product_id,location,'sellable',sellable_quantity FROM receipt_products
+                UNION ALL SELECT product_id,location,'hold',hold_quantity FROM receipt_products
+                UNION ALL SELECT p.product_id,w.from_location,w.from_status,-w.quantity
+                    FROM warehouse_movements w JOIN receipt_products p ON p.id=w.receipt_id
+                    WHERE NOT EXISTS(SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+                UNION ALL SELECT p.product_id,w.to_location,w.to_status,w.quantity
+                    FROM warehouse_movements w JOIN receipt_products p ON p.id=w.receipt_id
+                    WHERE NOT EXISTS(SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)
+            ) SELECT p.id AS product_id,p.sku,p.name,p.color,p.size,l.location,l.stock_status,
+                SUM(l.quantity) AS quantity FROM ledger l JOIN products p ON p.id=l.product_id
+                GROUP BY p.id,l.location COLLATE NOCASE,l.stock_status HAVING SUM(l.quantity)>0
+                ORDER BY p.sku,l.location COLLATE NOCASE,l.stock_status LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
+            return [dict(row) for row in rows]
 
     def create_finished_goods_receipt(self, final_qc_record_id, payload, actor, key):
         def perform(db):
@@ -905,10 +965,88 @@ class Store:
             receipt=self._finished_goods_receipt(db,receipt_id)
             if receipt['reversal']:
                 raise DomainError(409,'Penerimaan barang jadi sudah dikoreksi.')
+            if receipt['active_movement_count']:
+                raise DomainError(409,'Koreksi semua pergerakan gudang aktif sebelum mengoreksi penerimaan barang jadi.')
             db.execute('''INSERT INTO finished_goods_receipt_reversals(receipt_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(receipt_id,payload['reason'],actor['id'],now()))
             return self._finished_goods_receipt(db,receipt_id)
         return self._write(actor,('admin',),key,'finished-goods-reverse:'+receipt_id,payload,perform)
+
+    def _warehouse_movement(self, db, movement_id):
+        row=db.execute('''SELECT w.*,u.name AS actor_name FROM warehouse_movements w
+            JOIN users u ON u.id=w.actor_id WHERE w.id=?''',(movement_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Pergerakan gudang tidak ditemukan.')
+        record=dict(row)
+        source=self._finished_goods_receipt(db,record['receipt_id'])
+        for key in ('reference','order_id','order_reference','product_id','sku','product_name','color','size',
+                    'final_qc_record_id','final_qc_reference','batch_id','batch_reference'):
+            record['receipt_reference' if key=='reference' else key]=source[key]
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM warehouse_movement_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.movement_id=?''',(movement_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        return record
+
+    def warehouse_movement(self, movement_id):
+        with self.transaction() as db:
+            return self._warehouse_movement(db,movement_id)
+
+    def warehouse_movements(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT w.id FROM warehouse_movements w
+                JOIN finished_goods_receipts x ON x.id=w.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id WHERE c.order_id=?
+                AND (? IS NULL OR w.sequence<?) ORDER BY w.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._warehouse_movement(db,row['id']) for row in ids]
+
+    def create_warehouse_movement(self, receipt_id, payload, actor, key):
+        def perform(db):
+            receipt=self._finished_goods_receipt(db,receipt_id)
+            if receipt['status']!='active':
+                raise DomainError(409,'Penerimaan barang jadi harus aktif sebelum stok dipindahkan.')
+            if payload['moved_date']<receipt['received_date']:
+                raise DomainError(422,'Tanggal pergerakan tidak boleh sebelum tanggal penerimaan barang jadi.')
+            if payload['kind']=='transfer':
+                from_status=to_status=payload['stock_status']
+            else:
+                from_status='hold'
+                to_status='sellable' if payload['kind']=='hold_release' else 'damaged'
+            balance=next((row['quantity'] for row in receipt['inventory']
+                          if row['location'].casefold()==payload['from_location'].casefold()
+                          and row['stock_status']==from_status),0)
+            if payload['quantity']>balance:
+                raise DomainError(409,'Jumlah melebihi stok pada lokasi dan status asal. Muat ulang inventori.')
+            movement_id=str(uuid4())
+            db.execute('''INSERT INTO warehouse_movements(id,reference,receipt_id,kind,from_location,to_location,
+                from_status,to_status,quantity,moved_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(movement_id,payload['reference'],receipt_id,payload['kind'],
+                payload['from_location'],payload['to_location'],from_status,to_status,payload['quantity'],
+                payload['moved_date'],payload['reason'],actor['id'],now()))
+            return self._warehouse_movement(db,movement_id)
+        return self._write(actor,('admin','operator'),key,'warehouse-movement:'+receipt_id,payload,perform)
+
+    def reverse_warehouse_movement(self, movement_id, payload, actor, key):
+        def perform(db):
+            movement=self._warehouse_movement(db,movement_id)
+            if movement['reversal']:
+                raise DomainError(409,'Pergerakan gudang sudah dikoreksi.')
+            receipt=self._finished_goods_receipt(db,movement['receipt_id'])
+            target=next((row['quantity'] for row in receipt['inventory']
+                         if row['location'].casefold()==movement['to_location'].casefold()
+                         and row['stock_status']==movement['to_status']),0)
+            if target<movement['quantity']:
+                raise DomainError(409,'Stok tujuan sudah dipakai oleh pergerakan berikutnya. Koreksi urutan terbaru terlebih dahulu.')
+            db.execute('''INSERT INTO warehouse_movement_reversals(movement_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(movement_id,payload['reason'],actor['id'],now()))
+            return self._warehouse_movement(db,movement_id)
+        return self._write(actor,('admin',),key,'warehouse-movement-reverse:'+movement_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

@@ -275,6 +275,27 @@ class FinishedGoodsReceiptCreate(ReversalCreate):
         return self
 
 
+class WarehouseMovementCreate(ReversalCreate):
+    reference: Text
+    kind: Literal['transfer', 'hold_release', 'hold_damage']
+    from_location: Text
+    to_location: Text
+    stock_status: Literal['sellable', 'hold', 'damaged'] | None = None
+    quantity: Quantity
+    moved_date: date
+
+    @model_validator(mode='after')
+    def valid_route(self):
+        if self.kind == 'transfer':
+            if self.stock_status is None:
+                raise ValueError('Status stok wajib dipilih untuk transfer lokasi.')
+            if self.from_location.casefold() == self.to_location.casefold():
+                raise ValueError('Lokasi tujuan transfer harus berbeda dari lokasi asal.')
+        elif self.stock_status is not None:
+            raise ValueError('Status stok ditentukan otomatis untuk keputusan hold.')
+        return self
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 
