@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.24.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, serta pergerakan gudang.
+Pelacakan produksi internal, versi 0.25.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, serta reservasi marketplace.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 19. Migrasi 18 → 19 menambahkan ledger transfer lokasi dan keputusan hold, status damaged, inventori per lokasi, koreksi immutable, serta guard saldo sumber/tujuan. Migrasi 17 → 18 menambahkan atribut defect final QC, ledger penerimaan barang jadi, pembagian sellable/hold, inventory per SKU, koreksi immutable, dan guard alokasi. Migrasi 16 → 17 menambahkan ledger final QC, temuan pengukuran/visual, hasil accepted/rework/reject, tiga perpindahan atomik, dan guard sumber finishing. Migrasi 15 → 16 menambahkan ledger finishing, lima checklist wajib, lineage hasil sewing, perpindahan ke QC, koreksi atomik, dan guard alokasi. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 20. Migrasi 19 → 20 menambahkan ledger reservasi marketplace, pemisahan available/reserved, pelepasan, dan guard stok terlindungi. Migrasi 18 → 19 menambahkan ledger transfer lokasi dan keputusan hold, status damaged, inventori per lokasi, koreksi immutable, serta guard saldo sumber/tujuan. Migrasi 17 → 18 menambahkan atribut defect final QC, ledger penerimaan barang jadi, pembagian sellable/hold, inventory per SKU, koreksi immutable, dan guard alokasi. Migrasi 16 → 17 menambahkan ledger final QC, temuan pengukuran/visual, hasil accepted/rework/reject, tiga perpindahan atomik, dan guard sumber finishing. Migrasi 15 → 16 menambahkan ledger finishing, lima checklist wajib, lineage hasil sewing, perpindahan ke QC, koreksi atomik, dan guard alokasi. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -1048,8 +1048,37 @@ API baru memakai `X-API-Key`; semua POST juga memakai `Idempotency-Key`:
 Schema 18 → 19 menambahkan ledger pergerakan/koreksi dan guard SQLite terhadap sumber tidak aktif,
 tanggal salah, overdraw, serta koreksi yang membuat saldo tujuan negatif. Migrasi tidak mengarang
 lokasi atau keputusan untuk penerimaan lama. Jubelio/WMS, master barcode, label/bin, reservasi
-marketplace, pick/pack/ship, retur, stock opname, dan adjustment belum dicakup. Roadmap berikutnya
-adalah reservasi marketplace dan alokasi fulfillment.
+marketplace, pick/pack/ship, retur, stock opname, dan adjustment belum dicakup. Reservasi
+marketplace tersedia pada bagian berikutnya.
 
 Rencana: [warehouse movements plan](docs/warehouse-movements-plan.md).
 Bukti pengujian: [warehouse movements verification](docs/warehouse-movements-verification.md).
+
+## Reservasi marketplace (v0.25)
+
+Buka rincian penerimaan barang jadi lalu pilih **Reservasi marketplace**. Pilih bucket sellable,
+isi marketplace, referensi order eksternal, jumlah, dan tanggal reservasi. Menu **Reservasi jual**
+pada order menampilkan alokasi terbaru dan ringkasan `available`, `reserved`, serta sellable fisik.
+Satu bucket dapat dipakai beberapa reservasi selama total aktif tidak melebihi available.
+
+Reservasi tidak mengurangi stok fisik atau WIP. Jumlah reserved mengurangi available pada SKU dan
+lokasi yang sama. Admin/operator dapat membuat serta melepas seluruh reservasi; semua role aktif
+dapat membaca. Reservasi aktif melindungi stok dari transfer, koreksi pergerakan, dan koreksi
+penerimaan. Pelepasan menyimpan alasan serta tanggal dan mengembalikan alokasi menjadi available.
+
+API baru memakai `X-API-Key`; semua POST juga memakai `Idempotency-Key`:
+
+- `POST /api/finished-goods-receipts/{id}/marketplace-reservations`: `reference`, `marketplace`,
+  `external_order_reference`, `location`, `quantity`, `reserved_date`, dan `reason`.
+- `GET /api/orders/{id}/marketplace-reservations?limit=100&before=sequence`.
+- `GET /api/marketplace-reservations/{id}`.
+- `POST /api/marketplace-reservations/{id}/release`: `released_date` dan `reason`.
+
+Schema 19 → 20 menambahkan ledger reservasi/pelepasan dan guard SQLite terhadap sumber tidak aktif,
+tanggal salah, over-allocation, transfer stok reserved, serta koreksi yang mengurangi reserved.
+Marketplace dan referensi order disimpan sebagai snapshot; belum ada sinkronisasi API marketplace
+atau Jubelio/WMS. Partial release, impor order, pick, pack, ship, retur, stock opname, dan adjustment
+belum dicakup. Roadmap berikutnya adalah alokasi pick dari stok reserved.
+
+Rencana: [marketplace reservations plan](docs/marketplace-reservations-plan.md).
+Bukti pengujian: [marketplace reservations verification](docs/marketplace-reservations-verification.md).

@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.24.0"
+    "version": "0.25.0"
   },
   "paths": {
     "/health": {
@@ -3943,6 +3943,259 @@
         }
       }
     },
+    "/api/finished-goods-receipts/{receipt_id}/marketplace-reservations": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Create Marketplace Reservation",
+        "operationId": "create_marketplace_reservation_api_finished_goods_receipts__receipt_id__marketplace_reservations_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Receipt Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketplaceReservationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{order_id}/marketplace-reservations": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Marketplace Reservations",
+        "operationId": "marketplace_reservations_api_orders__order_id__marketplace_reservations_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace-reservations/{reservation_id}": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Marketplace Reservation",
+        "operationId": "marketplace_reservation_api_marketplace_reservations__reservation_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reservation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reservation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace-reservations/{reservation_id}/release": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Release Marketplace Reservation",
+        "operationId": "release_marketplace_reservation_api_marketplace_reservations__reservation_id__release_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reservation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reservation Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketplaceReservationRelease"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/material-consumption": {
       "post": {
         "tags": [
@@ -6218,6 +6471,85 @@
           "resolution"
         ],
         "title": "IssueResolve"
+      },
+      "MarketplaceReservationCreate": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "marketplace": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Marketplace"
+          },
+          "external_order_reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Order Reference"
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Location"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Quantity"
+          },
+          "reserved_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Reserved Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "reference",
+          "marketplace",
+          "external_order_reference",
+          "location",
+          "quantity",
+          "reserved_date"
+        ],
+        "title": "MarketplaceReservationCreate"
+      },
+      "MarketplaceReservationRelease": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "released_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Released Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "released_date"
+        ],
+        "title": "MarketplaceReservationRelease"
       },
       "MaterialConsumption": {
         "properties": {
