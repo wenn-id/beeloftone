@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -67,6 +67,16 @@ class Store:
                 db.executescript(Path(__file__).with_name("finishing.sql").read_text(encoding="utf-8"))
             if version < 17:
                 db.executescript(Path(__file__).with_name("final_qc.sql").read_text(encoding="utf-8"))
+            if version < 18:
+                columns={row['name'] for row in db.execute('PRAGMA table_info(final_qc_records)')}
+                additions={
+                    'defect_type':"TEXT NOT NULL DEFAULT '' CHECK(defect_type=trim(defect_type) AND length(defect_type) BETWEEN 0 AND 160)",
+                    'responsible_source':"TEXT NOT NULL DEFAULT '' CHECK(responsible_source=trim(responsible_source) AND length(responsible_source) BETWEEN 0 AND 160)",
+                    'disposition':"TEXT NOT NULL DEFAULT '' CHECK(disposition=trim(disposition) AND length(disposition) BETWEEN 0 AND 1000)"}
+                for name,definition in additions.items():
+                    if name not in columns:
+                        db.execute(f'ALTER TABLE final_qc_records ADD COLUMN {name} {definition}')
+                db.executescript(Path(__file__).with_name("finished_goods.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -741,6 +751,11 @@ class Store:
             JOIN users u ON u.id=r.actor_id WHERE r.record_id=?''',(record_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'completed'
+        received=db.execute('''SELECT COALESCE(SUM(x.sellable_quantity+x.hold_quantity),0)
+            FROM finished_goods_receipts x WHERE x.final_qc_record_id=? AND NOT EXISTS(
+                SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)''',(record_id,)).fetchone()[0]
+        record['warehouse_received_quantity']=received
+        record['warehouse_remaining_quantity']=0 if reversal else record['accepted_quantity']-received
         return record
 
     def final_qc_record(self, record_id):
@@ -776,10 +791,12 @@ class Store:
                     from_stage='qc',to_stage=stage,quantity=quantity,reason=payload['reason']),actor)['id']
             record_id=str(uuid4())
             db.execute('''INSERT INTO final_qc_records(id,reference,finishing_record_id,measurement_notes,
-                visual_notes,accepted_quantity,rework_quantity,reject_quantity,inspection_date,
+                visual_notes,defect_type,responsible_source,disposition,
+                accepted_quantity,rework_quantity,reject_quantity,inspection_date,
                 accepted_movement_id,rework_movement_id,reject_movement_id,reason,actor_id,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],finishing_record_id,
-                payload['measurement_notes'],payload['visual_notes'],payload['accepted_quantity'],
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],finishing_record_id,
+                payload['measurement_notes'],payload['visual_notes'],payload['defect_type'],payload['responsible_source'],
+                payload['disposition'],payload['accepted_quantity'],
                 payload['rework_quantity'],payload['reject_quantity'],payload['inspection_date'],
                 movements['accepted'],movements['rework'],movements['reject'],payload['reason'],actor['id'],now()))
             return self._final_qc_record(db,record_id)
@@ -790,6 +807,8 @@ class Store:
             record=self._final_qc_record(db,record_id)
             if record['reversal']:
                 raise DomainError(409,'Catatan final QC sudah dikoreksi.')
+            if record['warehouse_received_quantity']:
+                raise DomainError(409,'Koreksi semua penerimaan barang jadi aktif sebelum mengoreksi final QC.')
             for movement_id in (record['accepted_movement_id'],record['rework_movement_id'],record['reject_movement_id']):
                 if not movement_id:
                     continue
@@ -803,6 +822,93 @@ class Store:
                 VALUES(?,?,?,?)''',(record_id,payload['reason'],actor['id'],now()))
             return self._final_qc_record(db,record_id)
         return self._write(actor,('admin',),key,'final-qc-reverse:'+record_id,payload,perform)
+
+    def _finished_goods_receipt(self, db, receipt_id):
+        row=db.execute('''SELECT x.*,q.reference AS final_qc_reference,q.finishing_record_id,
+            f.reference AS finishing_reference,f.job_id,j.reference AS sewing_reference,
+            b.id AS bundle_id,b.reference AS bundle_reference,r.order_id,o.reference AS order_reference,
+            source.line_id,p.id AS product_id,p.sku,p.name AS product_name,p.color,p.size,
+            batch.id AS batch_id,batch.reference AS batch_reference,u.name AS actor_name
+            FROM finished_goods_receipts x JOIN final_qc_records q ON q.id=x.final_qc_record_id
+            JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+            JOIN bundles b ON b.id=j.bundle_id JOIN cutting_runs r ON r.id=b.cutting_run_id
+            JOIN orders o ON o.id=r.order_id JOIN movements source ON source.id=b.output_movement_id
+            JOIN order_lines l ON l.id=source.line_id JOIN products p ON p.id=l.product_id
+            JOIN material_consumption c ON c.id=r.consumption_id
+            JOIN material_movements i ON i.id=c.issue_id JOIN material_batches batch ON batch.id=i.batch_id
+            JOIN users u ON u.id=x.actor_id WHERE x.id=?''',(receipt_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Penerimaan barang jadi tidak ditemukan.')
+        record=dict(row)
+        record['received_quantity']=record['sellable_quantity']+record['hold_quantity']
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM finished_goods_receipt_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.receipt_id=?''',(receipt_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        return record
+
+    def finished_goods_receipt(self, receipt_id):
+        with self.transaction() as db:
+            return self._finished_goods_receipt(db,receipt_id)
+
+    def finished_goods_receipts(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT x.id FROM finished_goods_receipts x
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs r ON r.id=b.cutting_run_id WHERE r.order_id=?
+                AND (? IS NULL OR x.sequence<?) ORDER BY x.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._finished_goods_receipt(db,row['id']) for row in ids]
+
+    def finished_goods_inventory(self, limit=100, offset=0):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT p.id AS product_id,p.sku,p.name,p.color,p.size,
+                COALESCE(SUM(CASE WHEN r.receipt_id IS NULL THEN x.sellable_quantity ELSE 0 END),0) AS sellable_quantity,
+                COALESCE(SUM(CASE WHEN r.receipt_id IS NULL THEN x.hold_quantity ELSE 0 END),0) AS hold_quantity
+                FROM products p LEFT JOIN (finished_goods_receipts x
+                LEFT JOIN finished_goods_receipt_reversals r ON r.receipt_id=x.id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN movements m ON m.id=b.output_movement_id) ON m.line_id IN (
+                    SELECT id FROM order_lines WHERE product_id=p.id)
+                GROUP BY p.id ORDER BY p.sku LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
+            return [dict(row) | {'total_quantity':row['sellable_quantity']+row['hold_quantity']} for row in rows]
+
+    def create_finished_goods_receipt(self, final_qc_record_id, payload, actor, key):
+        def perform(db):
+            source=self._final_qc_record(db,final_qc_record_id)
+            if source['status']!='completed':
+                raise DomainError(409,'Final QC harus aktif sebelum barang jadi diterima.')
+            quantity=payload['sellable_quantity']+payload['hold_quantity']
+            if quantity>source['warehouse_remaining_quantity']:
+                raise DomainError(409,'Jumlah penerimaan melebihi hasil QC accepted yang belum diterima. Muat ulang data terbaru.')
+            if payload['received_date']<source['inspection_date']:
+                raise DomainError(422,'Tanggal penerimaan tidak boleh sebelum tanggal inspeksi.')
+            if payload['scanned_sku'].casefold()!=source['sku'].casefold():
+                raise DomainError(422,'SKU hasil scan tidak cocok dengan barang dari final QC.')
+            receipt_id=str(uuid4())
+            db.execute('''INSERT INTO finished_goods_receipts(id,reference,final_qc_record_id,scanned_sku,
+                location,sellable_quantity,hold_quantity,received_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(receipt_id,payload['reference'],final_qc_record_id,
+                payload['scanned_sku'],payload['location'],payload['sellable_quantity'],payload['hold_quantity'],
+                payload['received_date'],payload['reason'],actor['id'],now()))
+            return self._finished_goods_receipt(db,receipt_id)
+        return self._write(actor,('admin','operator'),key,'finished-goods:'+final_qc_record_id,payload,perform)
+
+    def reverse_finished_goods_receipt(self, receipt_id, payload, actor, key):
+        def perform(db):
+            receipt=self._finished_goods_receipt(db,receipt_id)
+            if receipt['reversal']:
+                raise DomainError(409,'Penerimaan barang jadi sudah dikoreksi.')
+            db.execute('''INSERT INTO finished_goods_receipt_reversals(receipt_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(receipt_id,payload['reason'],actor['id'],now()))
+            return self._finished_goods_receipt(db,receipt_id)
+        return self._write(actor,('admin',),key,'finished-goods-reverse:'+receipt_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

@@ -35,7 +35,8 @@ class FinalQcTest(TestCase):
     def inspect(self, finishing, reference='QC-001', accepted=6, rework=1, reject=1,
                 inspection_date='2026-09-17', **options):
         body=dict(reference=reference,measurement_notes='Ukuran sesuai toleransi',
-                  visual_notes='Jahitan dan warna diperiksa',accepted_quantity=accepted,
+                  visual_notes='Jahitan dan warna diperiksa',defect_type='Noda ringan',
+                  responsible_source='Finishing internal',disposition='Pisahkan rework dan reject',accepted_quantity=accepted,
                   rework_quantity=rework,reject_quantity=reject,inspection_date=inspection_date,
                   reason='Final QC selesai dihitung')
         return self.post('/api/finishing-records/'+finishing['id']+'/qc-records',body,**options)
@@ -97,6 +98,7 @@ class FinalQcTest(TestCase):
                 barrier.wait(timeout=10)
                 return client.post('/api/finishing-records/'+finishing['id']+'/qc-records',json=dict(
                     reference='QC-RACE-'+str(index),measurement_notes='Ukuran diperiksa',visual_notes='Visual diperiksa',
+                    defect_type='Tidak ada',responsible_source='QC internal',disposition='Diterima gudang',
                     accepted_quantity=15,rework_quantity=0,reject_quantity=0,inspection_date='2026-09-17',
                     reason='Uji bersamaan'),headers={'X-API-Key':self.operator['api_key'],
                     'Idempotency-Key':'qc-race-'+str(index)}).status_code
@@ -140,11 +142,14 @@ class FinalQcTest(TestCase):
         fresh_path=self.path.with_name('schema16.sqlite3')
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
+            db.execute('DROP TRIGGER finished_goods_blocks_final_qc_reversal')
+            db.execute('DROP TABLE finished_goods_receipt_reversals')
+            db.execute('DROP TABLE finished_goods_receipts')
             db.execute('DROP TRIGGER final_qc_blocks_finishing_reversal')
             db.execute('DROP TABLE final_qc_record_reversals')
             db.execute('DROP TABLE final_qc_records')
             db.execute('PRAGMA user_version=16');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],17)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],18)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM final_qc_records').fetchone()[0],0)

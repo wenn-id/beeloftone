@@ -245,6 +245,9 @@ class FinalQcRecordCreate(ReversalCreate):
     reference: Text
     measurement_notes: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     visual_notes: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    defect_type: Text
+    responsible_source: Text
+    disposition: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     accepted_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
     rework_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
     reject_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
@@ -254,6 +257,21 @@ class FinalQcRecordCreate(ReversalCreate):
     def positive_total(self):
         if self.accepted_quantity + self.rework_quantity + self.reject_quantity < 1:
             raise ValueError('Isi setidaknya satu hasil QC dengan jumlah lebih dari nol.')
+        return self
+
+
+class FinishedGoodsReceiptCreate(ReversalCreate):
+    reference: Text
+    scanned_sku: Text
+    location: Text
+    sellable_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    hold_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    received_date: date
+
+    @model_validator(mode='after')
+    def positive_total(self):
+        if self.sellable_quantity + self.hold_quantity < 1:
+            raise ValueError('Jumlah sellable + hold harus lebih dari nol.')
         return self
 
 

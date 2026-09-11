@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -293,6 +293,27 @@ def create_app(database_path):
     @app.post('/api/final-qc-records/{record_id}/reverse', status_code=201, tags=['Final QC'])
     def reverse_final_qc_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_final_qc_record(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/final-qc-records/{record_id}/finished-goods-receipts', status_code=201, tags=['Finished Goods'])
+    def create_finished_goods_receipt(record_id: str, body: FinishedGoodsReceiptCreate, user: Actor, key: RequestKey):
+        return store.create_finished_goods_receipt(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/finished-goods-receipts', tags=['Finished Goods'])
+    def finished_goods_receipts(order_id: str, user: Actor, limit: Limit = 100,
+                                before: Annotated[int | None, Query(ge=1)] = None):
+        return store.finished_goods_receipts(order_id, limit, before)
+
+    @app.get('/api/finished-goods-receipts/{receipt_id}', tags=['Finished Goods'])
+    def finished_goods_receipt(receipt_id: str, user: Actor):
+        return store.finished_goods_receipt(receipt_id)
+
+    @app.post('/api/finished-goods-receipts/{receipt_id}/reverse', status_code=201, tags=['Finished Goods'])
+    def reverse_finished_goods_receipt(receipt_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_finished_goods_receipt(receipt_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/finished-goods-inventory', tags=['Finished Goods'])
+    def finished_goods_inventory(user: Actor, limit: Limit = 100, offset: Offset = 0):
+        return store.finished_goods_inventory(limit, offset)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
