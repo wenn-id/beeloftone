@@ -142,6 +142,9 @@ class FinishingTest(TestCase):
         fresh_path=self.path.with_name('schema15.sqlite3')
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
+            db.execute('DROP TRIGGER finished_goods_reversal_valid')
+            db.execute('DROP TABLE marketplace_reservation_releases')
+            db.execute('DROP TABLE marketplace_reservations')
             db.execute('DROP TABLE warehouse_movement_reversals')
             db.execute('DROP TABLE warehouse_movements')
             db.execute('DROP TRIGGER finished_goods_blocks_final_qc_reversal')
@@ -156,5 +159,5 @@ class FinishingTest(TestCase):
             db.execute('PRAGMA user_version=15');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],19)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],20)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finishing_records').fetchone()[0],0)

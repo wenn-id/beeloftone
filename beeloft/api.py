@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -335,6 +335,24 @@ def create_app(database_path):
     @app.get('/api/warehouse-inventory', tags=['Warehouse'])
     def warehouse_inventory(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.warehouse_inventory(limit, offset)
+
+    @app.post('/api/finished-goods-receipts/{receipt_id}/marketplace-reservations', status_code=201, tags=['Marketplace'])
+    def create_marketplace_reservation(receipt_id: str, body: MarketplaceReservationCreate, user: Actor, key: RequestKey):
+        return store.create_marketplace_reservation(receipt_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/marketplace-reservations', tags=['Marketplace'])
+    def marketplace_reservations(order_id: str, user: Actor, limit: Limit = 100,
+                                 before: Annotated[int | None, Query(ge=1)] = None):
+        return store.marketplace_reservations(order_id, limit, before)
+
+    @app.get('/api/marketplace-reservations/{reservation_id}', tags=['Marketplace'])
+    def marketplace_reservation(reservation_id: str, user: Actor):
+        return store.marketplace_reservation(reservation_id)
+
+    @app.post('/api/marketplace-reservations/{reservation_id}/release', status_code=201, tags=['Marketplace'])
+    def release_marketplace_reservation(reservation_id: str, body: MarketplaceReservationRelease,
+                                        user: Actor, key: RequestKey):
+        return store.release_marketplace_reservation(reservation_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):

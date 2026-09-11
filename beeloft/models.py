@@ -296,6 +296,19 @@ class WarehouseMovementCreate(ReversalCreate):
         return self
 
 
+class MarketplaceReservationCreate(ReversalCreate):
+    reference: Text
+    marketplace: Text
+    external_order_reference: Text
+    location: Text
+    quantity: Quantity
+    reserved_date: date
+
+
+class MarketplaceReservationRelease(ReversalCreate):
+    released_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

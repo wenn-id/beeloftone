@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -79,6 +79,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("finished_goods.sql").read_text(encoding="utf-8"))
             if version < 19:
                 db.executescript(Path(__file__).with_name("warehouse_movements.sql").read_text(encoding="utf-8"))
+            if version < 20:
+                db.executescript(Path(__file__).with_name("marketplace_reservations.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -841,7 +843,18 @@ class Store:
         ) SELECT location,stock_status,SUM(quantity) AS quantity FROM ledger
           GROUP BY location COLLATE NOCASE,stock_status HAVING SUM(quantity)>0
           ORDER BY location COLLATE NOCASE,stock_status''',(receipt_id,receipt_id,receipt_id,receipt_id)).fetchall()
-        return [dict(row) for row in rows]
+        reserved={row['location'].casefold():row['quantity'] for row in db.execute('''SELECT m.location,
+            SUM(m.quantity) AS quantity FROM marketplace_reservations m WHERE m.receipt_id=? AND NOT EXISTS(
+              SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+            GROUP BY m.location COLLATE NOCASE''',(receipt_id,)).fetchall()}
+        result=[]
+        for row in rows:
+            item=dict(row)
+            item['reserved_quantity']=reserved.get(item['location'].casefold(),0) if item['stock_status']=='sellable' else 0
+            item['available_quantity']=item['quantity']-item['reserved_quantity'] if item['stock_status']=='sellable' else 0
+            item['movable_quantity']=item['available_quantity'] if item['stock_status']=='sellable' else item['quantity']
+            result.append(item)
+        return result
 
     def _finished_goods_receipt(self, db, receipt_id):
         row=db.execute('''SELECT x.*,q.reference AS final_qc_reference,q.finishing_record_id,
@@ -869,6 +882,9 @@ class Store:
         record['active_movement_count']=db.execute('''SELECT COUNT(*) FROM warehouse_movements w
             WHERE w.receipt_id=? AND NOT EXISTS(
               SELECT 1 FROM warehouse_movement_reversals r WHERE r.movement_id=w.id)''',(receipt_id,)).fetchone()[0]
+        record['active_reservation_count']=db.execute('''SELECT COUNT(*) FROM marketplace_reservations m
+            WHERE m.receipt_id=? AND NOT EXISTS(
+              SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)''',(receipt_id,)).fetchone()[0]
         return record
 
     def finished_goods_receipt(self, receipt_id):
@@ -912,8 +928,20 @@ class Store:
                 COALESCE(SUM(CASE WHEN l.stock_status='damaged' THEN l.quantity ELSE 0 END),0) AS damaged_quantity
                 FROM products p LEFT JOIN ledger l ON l.product_id=p.id
                 GROUP BY p.id ORDER BY p.sku LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
-            return [dict(row) | {'total_quantity':row['sellable_quantity']+row['hold_quantity']+
-                    row['damaged_quantity']} for row in rows]
+            reserved={row['product_id']:row['quantity'] for row in db.execute('''SELECT l.product_id,
+                SUM(m.quantity) AS quantity FROM marketplace_reservations m
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id WHERE NOT EXISTS(
+                  SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+                AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+                GROUP BY l.product_id''').fetchall()}
+            return [dict(row) | {'reserved_quantity':reserved.get(row['product_id'],0),
+                    'available_quantity':row['sellable_quantity']-reserved.get(row['product_id'],0),
+                    'total_quantity':row['sellable_quantity']+row['hold_quantity']+row['damaged_quantity']}
+                    for row in rows]
 
     def warehouse_inventory(self, limit=100, offset=0):
         with self.transaction() as db:
@@ -937,7 +965,23 @@ class Store:
                 SUM(l.quantity) AS quantity FROM ledger l JOIN products p ON p.id=l.product_id
                 GROUP BY p.id,l.location COLLATE NOCASE,l.stock_status HAVING SUM(l.quantity)>0
                 ORDER BY p.sku,l.location COLLATE NOCASE,l.stock_status LIMIT ? OFFSET ?''',(limit,offset)).fetchall()
-            return [dict(row) for row in rows]
+            reserved={(row['product_id'],row['location'].casefold()):row['quantity'] for row in db.execute('''
+                SELECT l.product_id,m.location,SUM(m.quantity) AS quantity FROM marketplace_reservations m
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id WHERE NOT EXISTS(
+                  SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+                AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+                GROUP BY l.product_id,m.location COLLATE NOCASE''').fetchall()}
+            result=[]
+            for row in rows:
+                item=dict(row)
+                item['reserved_quantity']=reserved.get((item['product_id'],item['location'].casefold()),0) if item['stock_status']=='sellable' else 0
+                item['available_quantity']=item['quantity']-item['reserved_quantity'] if item['stock_status']=='sellable' else 0
+                result.append(item)
+            return result
 
     def create_finished_goods_receipt(self, final_qc_record_id, payload, actor, key):
         def perform(db):
@@ -967,6 +1011,8 @@ class Store:
                 raise DomainError(409,'Penerimaan barang jadi sudah dikoreksi.')
             if receipt['active_movement_count']:
                 raise DomainError(409,'Koreksi semua pergerakan gudang aktif sebelum mengoreksi penerimaan barang jadi.')
+            if receipt['active_reservation_count']:
+                raise DomainError(409,'Lepaskan semua reservasi marketplace aktif sebelum mengoreksi penerimaan barang jadi.')
             db.execute('''INSERT INTO finished_goods_receipt_reversals(receipt_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(receipt_id,payload['reason'],actor['id'],now()))
             return self._finished_goods_receipt(db,receipt_id)
@@ -1018,7 +1064,7 @@ class Store:
             else:
                 from_status='hold'
                 to_status='sellable' if payload['kind']=='hold_release' else 'damaged'
-            balance=next((row['quantity'] for row in receipt['inventory']
+            balance=next((row['movable_quantity'] for row in receipt['inventory']
                           if row['location'].casefold()==payload['from_location'].casefold()
                           and row['stock_status']==from_status),0)
             if payload['quantity']>balance:
@@ -1038,7 +1084,7 @@ class Store:
             if movement['reversal']:
                 raise DomainError(409,'Pergerakan gudang sudah dikoreksi.')
             receipt=self._finished_goods_receipt(db,movement['receipt_id'])
-            target=next((row['quantity'] for row in receipt['inventory']
+            target=next((row['movable_quantity'] for row in receipt['inventory']
                          if row['location'].casefold()==movement['to_location'].casefold()
                          and row['stock_status']==movement['to_status']),0)
             if target<movement['quantity']:
@@ -1047,6 +1093,73 @@ class Store:
                 VALUES(?,?,?,?)''',(movement_id,payload['reason'],actor['id'],now()))
             return self._warehouse_movement(db,movement_id)
         return self._write(actor,('admin',),key,'warehouse-movement-reverse:'+movement_id,payload,perform)
+
+    def _marketplace_reservation(self, db, reservation_id):
+        row=db.execute('''SELECT m.*,u.name AS actor_name FROM marketplace_reservations m
+            JOIN users u ON u.id=m.actor_id WHERE m.id=?''',(reservation_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Reservasi marketplace tidak ditemukan.')
+        record=dict(row)
+        source=self._finished_goods_receipt(db,record['receipt_id'])
+        for field in ('reference','order_id','order_reference','product_id','sku','product_name','color','size',
+                      'final_qc_record_id','final_qc_reference','batch_id','batch_reference'):
+            record['receipt_reference' if field=='reference' else field]=source[field]
+        release=db.execute('''SELECT r.*,u.name AS actor_name FROM marketplace_reservation_releases r
+            JOIN users u ON u.id=r.actor_id WHERE r.reservation_id=?''',(reservation_id,)).fetchone()
+        record['release']=dict(release) if release else None
+        record['status']='released' if release else 'active'
+        return record
+
+    def marketplace_reservation(self, reservation_id):
+        with self.transaction() as db:
+            return self._marketplace_reservation(db,reservation_id)
+
+    def marketplace_reservations(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT m.id FROM marketplace_reservations m
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id WHERE c.order_id=?
+                AND (? IS NULL OR m.sequence<?) ORDER BY m.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._marketplace_reservation(db,row['id']) for row in ids]
+
+    def create_marketplace_reservation(self, receipt_id, payload, actor, key):
+        def perform(db):
+            receipt=self._finished_goods_receipt(db,receipt_id)
+            if receipt['status']!='active':
+                raise DomainError(409,'Penerimaan barang jadi harus aktif sebelum stok direservasi.')
+            if payload['reserved_date']<receipt['received_date']:
+                raise DomainError(422,'Tanggal reservasi tidak boleh sebelum tanggal penerimaan barang jadi.')
+            available=next((row['available_quantity'] for row in receipt['inventory']
+                            if row['location'].casefold()==payload['location'].casefold()
+                            and row['stock_status']=='sellable'),0)
+            if payload['quantity']>available:
+                raise DomainError(409,'Jumlah reservasi melebihi stok sellable yang tersedia di lokasi. Muat ulang inventori.')
+            reservation_id=str(uuid4())
+            db.execute('''INSERT INTO marketplace_reservations(id,reference,receipt_id,marketplace,
+                external_order_reference,location,quantity,reserved_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(reservation_id,payload['reference'],receipt_id,payload['marketplace'],
+                payload['external_order_reference'],payload['location'],payload['quantity'],payload['reserved_date'],
+                payload['reason'],actor['id'],now()))
+            return self._marketplace_reservation(db,reservation_id)
+        return self._write(actor,('admin','operator'),key,'marketplace-reservation:'+receipt_id,payload,perform)
+
+    def release_marketplace_reservation(self, reservation_id, payload, actor, key):
+        def perform(db):
+            reservation=self._marketplace_reservation(db,reservation_id)
+            if reservation['release']:
+                raise DomainError(409,'Reservasi marketplace sudah dilepaskan.')
+            if payload['released_date']<reservation['reserved_date']:
+                raise DomainError(422,'Tanggal pelepasan tidak boleh sebelum tanggal reservasi.')
+            db.execute('''INSERT INTO marketplace_reservation_releases(reservation_id,released_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)''',(reservation_id,payload['released_date'],payload['reason'],actor['id'],now()))
+            return self._marketplace_reservation(db,reservation_id)
+        return self._write(actor,('admin','operator'),key,'marketplace-reservation-release:'+reservation_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

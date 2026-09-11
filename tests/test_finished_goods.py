@@ -138,6 +138,9 @@ class FinishedGoodsTest(TestCase):
         fresh_path=self.path.with_name('schema17.sqlite3')
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
+            db.execute('DROP TRIGGER finished_goods_reversal_valid')
+            db.execute('DROP TABLE marketplace_reservation_releases')
+            db.execute('DROP TABLE marketplace_reservations')
             db.execute('DROP TABLE warehouse_movement_reversals')
             db.execute('DROP TABLE warehouse_movements')
             db.execute('DROP TRIGGER finished_goods_blocks_final_qc_reversal')
@@ -148,7 +151,7 @@ class FinishedGoodsTest(TestCase):
             db.execute('PRAGMA user_version=17');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],19)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],20)
             columns={row[1] for row in db.execute('PRAGMA table_info(final_qc_records)')}
             self.assertTrue({'defect_type','responsible_source','disposition'}<=columns)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_receipts').fetchone()[0],0)
