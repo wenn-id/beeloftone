@@ -220,7 +220,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
       else if (path === '/api/suppliers') suppliersDialog();
-      else if (path.startsWith('/api/qc-') || path.endsWith('/qc-intakes')) {
+      else if (path.startsWith('/api/qc-') || path.startsWith('/api/supplier-returns/') || path.endsWith('/qc-intakes')) {
         if (view === 'materials') loadMaterials();
         qualityIntakeDialog(result.id);
       }
@@ -757,11 +757,11 @@ async function purchaseRequestDialog(id) {
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const decisions=[];
     if(user.role==='admin' && p.status==='submitted')decisions.push(['approved','Setujui PR'],['rejected','Tolak PR']);
-    if((user.role==='admin' && ['submitted','approved'].includes(p.status) && !p.purchase_orders.some(po=>po.status==='issued')) ||
+    if((user.role==='admin' && ['submitted','approved'].includes(p.status) && !p.purchase_orders.some(po=>po.status!=='cancelled')) ||
        (user.role==='operator' && p.actor_id===user.id && p.status==='submitted'))decisions.push(['cancelled','Batalkan PR']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO aktif harus membatalkan PO sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO ditutup sudah final; PO aktif harus dibatalkan sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
     $('dialog-content').querySelector('.actions').insertAdjacentHTML('beforeend',
-      `${user.role==='admin' && p.status==='approved' && !p.purchase_orders.some(po=>po.status==='issued') ? `<button data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>` : ''}${p.purchase_orders.map(po=>`<button data-action="purchase-order" data-id="${e(po.id)}">PO ${e(po.reference)} · ${po.status==='issued'?'Aktif':'Dibatalkan'}</button>`).join('')}`);
+      `${user.role==='admin' && p.status==='approved' && !p.purchase_orders.some(po=>po.status!=='cancelled') ? `<button data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>` : ''}${p.purchase_orders.map(po=>`<button data-action="purchase-order" data-id="${e(po.id)}">PO ${e(po.reference)} · ${poStatus[po.status]}</button>`).join('')}`);
     $('dialog-content').querySelectorAll('[data-pr-decision]').forEach(button=>{
       button.onclick=()=>{if(guardPending())return;
         formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:button.dataset.prDecision,expected_revision:p.revision}),
@@ -793,7 +793,7 @@ function supplierForm() {
 async function purchaseOrdersDialog() {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Daftar PO','<p class="hint">PO tercatat internal. Buka rincian untuk mencatat penerimaan bahan dan melihat sisa pesanan.</p><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="issued">Aktif</option><option value="cancelled">Dibatalkan</option></select><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
+  openDialog('Daftar PO','<p class="hint">PO tercatat internal. Buka rincian untuk mencatat penerimaan bahan dan melihat sisa pesanan.</p><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="issued">Aktif</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
   const modal=dialogVersion,current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null,generation=0;
   async function load(reset=false){
@@ -802,7 +802,7 @@ async function purchaseOrdersDialog() {
     try{
       const rows=await api.get('/api/purchase-orders?'+new URLSearchParams({limit:25,status:$('po-status').value,...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
-      $('po-list').insertAdjacentHTML('beforeend',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${p.status==='issued'?'Aktif':'Dibatalkan'}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><p>${fulfillmentLabel[p.fulfillment]}${p.lines.some(l=>l.held!=='0.000')?' · Menunggu QC':''}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
+      $('po-list').insertAdjacentHTML('beforeend',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${poStatus[p.status]}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><p>${fulfillmentLabel[p.fulfillment]}${p.lines.some(l=>l.held!=='0.000')?' · Menunggu QC':''}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
       if(!before && !rows.length)$('po-list').innerHTML='<p class="state">Belum ada PO yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
     }catch(error){if(current() && gen===generation){message('po-error',error.message,true);button.hidden=false;}}
@@ -817,7 +817,7 @@ async function purchaseOrderForm(requestId) {
   try{
     const [pr,suppliers]=await Promise.all([api.get('/api/purchase-requests/'+encodeURIComponent(requestId)),allRows('/api/suppliers')]);
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    if(pr.status!=='approved' || pr.purchase_orders.some(po=>po.status==='issued')){$('dialog-content').innerHTML='<p>PR belum disetujui atau sudah memiliki PO aktif. Buka ulang rincian PR.</p>';return;}
+    if(pr.status!=='approved' || pr.purchase_orders.some(po=>po.status!=='cancelled')){$('dialog-content').innerHTML='<p>PR belum disetujui atau sudah memiliki PO aktif/ditutup. Buka ulang rincian PR.</p>';return;}
     if(!suppliers.length){$('dialog-content').innerHTML='<p>Tambahkan pemasok sebelum membuat PO.</p><button data-action="new-supplier">Tambah pemasok</button>';return;}
     formDialog('Buat PO dari PR',field('reference','Referensi PO','text','required maxlength="160"')+
       `<label>Pemasok PO<select name="supplier_id" required>${suppliers.map(s=>option(s.id,s.code+' · '+s.name)).join('')}</select></label>`+
@@ -841,10 +841,11 @@ async function purchaseOrderForm(requestId) {
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-purchase-order" data-id="${e(requestId)}">Coba lagi</button>`;}
 }
 
+const poStatus={issued:'Aktif',cancelled:'Dibatalkan',closed:'Ditutup'};
 const fulfillmentLabel={pending:'Belum diterima',partial:'Diterima sebagian',received:'Diterima lengkap'};
 
 function qualityIntakesHTML(p) {
-  return `<h3>QC bahan masuk</h3><p class="hint">Hold belum dapat dipakai atau direservasi. Reject membuka kebutuhan pengganti; pencatatan ini belum mengirim atau meretur barang ke pemasok.</p>${user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<button data-action="qc-intake-form" data-id="${e(p.id)}">Catat kedatangan untuk QC</button>`:''}${p.qc_intakes.map(q=>`<article class="material-event"><h4>${e(q.reference)} · ${e(q.code)}</h4><p>${q.cancellation?'Kedatangan dibatalkan':`Hold ${e(materialQty(q.held,q.unit))} · layak ${e(materialQty(q.accepted,q.unit))} · reject ${e(materialQty(q.rejected,q.unit))}`}</p><button data-action="qc-intake" data-id="${e(q.id)}">Rincian QC ${e(q.reference)}</button></article>`).join('') || '<p>Belum ada kedatangan untuk QC.</p>'}`;
+  return `<h3>QC bahan masuk</h3><p class="hint">Hold belum dapat dipakai atau direservasi. Reject membuka kebutuhan pengganti. Catat retur setelah bahan reject dikirim kembali ke pemasok.</p>${user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<button data-action="qc-intake-form" data-id="${e(p.id)}">Catat kedatangan untuk QC</button>`:''}${p.qc_intakes.map(q=>`<article class="material-event"><h4>${e(q.reference)} · ${e(q.code)}</h4><p>${q.cancellation?'Kedatangan dibatalkan':`Hold ${e(materialQty(q.held,q.unit))} · layak ${e(materialQty(q.accepted,q.unit))} · reject ${e(materialQty(q.rejected,q.unit))}`}</p><button data-action="qc-intake" data-id="${e(q.id)}">Rincian QC ${e(q.reference)}</button></article>`).join('') || '<p>Belum ada kedatangan untuk QC.</p>'}`;
 }
 
 async function qualityIntakeDialog(id) {
@@ -853,8 +854,9 @@ async function qualityIntakeDialog(id) {
   try {
     const q=await api.get('/api/qc-intakes/'+encodeURIComponent(id));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    const active=!q.cancellation && !q.po_cancelled, admin=user.role==='admin';
-    $('dialog-content').innerHTML=`<p class="form-info">${e(q.reference)} · ${e(q.code)} · ${e(q.name)}</p><p>Datang ${e(materialQty(q.quantity,q.unit))} · ${date(q.received_date)} · ${e(q.location)}</p><p class="reason">${e(q.reason)}</p><p class="hint">${e(q.actor_name)} · ${purchaseStamp(q.created_at)}</p><dl class="requirement-values">${[['Hold','held'],['Layak pakai','accepted'],['Reject','rejected']].map(([label,key])=>`<div><dt>${label}</dt><dd>${e(materialQty(q[key],q.unit))}</dd></div>`).join('')}</dl>${q.cancellation?`<p>Kedatangan dibatalkan</p><p class="reason">${e(q.cancellation.reason)}</p><p class="hint">${e(q.cancellation.actor_name)} · ${purchaseStamp(q.cancellation.created_at)}</p>`:''}<div class="actions"><button data-action="purchase-order" data-id="${e(q.purchase_order_id)}">PO ${e(q.purchase_order_reference)}</button>${active && admin && q.held!=='0.000'?'<button id="qc-accept">Terima layak pakai</button><button id="qc-reject">Tolak bahan</button>':''}${active && admin && q.accepted==='0.000' && q.rejected==='0.000'?'<button id="qc-cancel">Batalkan kedatangan</button>':''}</div><h3>Riwayat pemeriksaan</h3>${q.history.map(d=>`<article class="material-event"><h4>${d.reversal_of?'Koreksi ':''}${d.kind==='accept'?'Layak pakai':'Reject'} · ${e(materialQty(d.quantity,q.unit))}</h4><p class="reason">${e(d.reason)}</p><p class="hint">${e(d.actor_name)} · ${purchaseStamp(d.created_at)}</p>${d.reversed_by?'<p>Keputusan sudah dikoreksi</p>':''}${d.batch_id?`<button data-action="material-batch" data-id="${e(d.batch_id)}">Batch ${e(d.batch_reference)}</button>`:''}${active && admin && !d.reversal_of && !d.reversed_by?`<button data-qc-reverse="${e(d.id)}">Koreksi keputusan</button>`:''}</article>`).join('') || '<p>Belum ada keputusan QC.</p>'}`;
+    const active=!q.cancellation && !q.po_cancelled && !q.po_closed, admin=user.role==='admin';
+    $('dialog-content').innerHTML=`<p class="form-info">${e(q.reference)} · ${e(q.code)} · ${e(q.name)}</p><p>Datang ${e(materialQty(q.quantity,q.unit))} · ${date(q.received_date)} · ${e(q.location)}</p><p class="reason">${e(q.reason)}</p><p class="hint">${e(q.actor_name)} · ${purchaseStamp(q.created_at)}</p><dl class="requirement-values">${[['Hold','held'],['Layak pakai','accepted'],['Reject','rejected'],['Sudah diretur','returned'],['Belum diretur','return_pending']].map(([label,key])=>`<div><dt>${label}</dt><dd>${e(materialQty(q[key],q.unit))}</dd></div>`).join('')}</dl>${q.cancellation?`<p>Kedatangan dibatalkan</p><p class="reason">${e(q.cancellation.reason)}</p><p class="hint">${e(q.cancellation.actor_name)} · ${purchaseStamp(q.cancellation.created_at)}</p>`:''}<div class="actions"><button data-action="purchase-order" data-id="${e(q.purchase_order_id)}">PO ${e(q.purchase_order_reference)}</button>${active && admin && q.held!=='0.000'?'<button id="qc-accept">Terima layak pakai</button><button id="qc-reject">Tolak bahan</button>':''}${active && admin && q.accepted==='0.000' && q.rejected==='0.000'?'<button id="qc-cancel">Batalkan kedatangan</button>':''}</div><h3>Riwayat pemeriksaan</h3>${q.history.map(d=>`<article class="material-event"><h4>${d.reversal_of?'Koreksi ':''}${d.kind==='accept'?'Layak pakai':'Reject'} · ${e(materialQty(d.quantity,q.unit))}</h4><p class="reason">${e(d.reason)}</p><p class="hint">${e(d.actor_name)} · ${purchaseStamp(d.created_at)}</p>${d.reversed_by?'<p>Keputusan sudah dikoreksi</p>':''}${d.batch_id?`<button data-action="material-batch" data-id="${e(d.batch_id)}">Batch ${e(d.batch_reference)}</button>`:''}${active && admin && !d.reversal_of && !d.reversed_by && (d.kind==='accept' || Number(d.quantity)<=Number(q.return_pending))?`<button data-qc-reverse="${e(d.id)}">Koreksi keputusan</button>`:''}</article>`).join('') || '<p>Belum ada keputusan QC.</p>'}`;
+    renderSupplierReturns(q);
     for(const kind of ['accept','reject'])if($('qc-'+kind))$('qc-'+kind).onclick=()=>qualityDecisionForm(q,kind);
     if($('qc-cancel'))$('qc-cancel').onclick=()=>{if(guardPending())return;formDialog('Batalkan kedatangan QC',materialReason,form=>Object.fromEntries(new FormData(form)),
       '/api/qc-intakes/'+encodeURIComponent(id)+'/cancel',`${q.reference}\nBatalkan hanya catatan kedatangan yang keliru. Pembatalan melepaskan seluruh jumlah hold dari PO.`);};
@@ -865,6 +867,51 @@ async function qualityIntakeDialog(id) {
         `${q.reference}\nSeluruh jumlah keputusan kembali ke hold. Koreksi layak pakai menarik stok batch; stok harus masih utuh dan tidak direservasi. Koreksi reject memerlukan jatah PO yang belum diisi pengganti. Pastikan barang fisiknya sesuai.`);
     });
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="qc-intake" data-id="${e(id)}">Coba lagi</button>`;}
+}
+
+function renderSupplierReturns(q) {
+  const writable=user.role==='admin' && !q.cancellation && !q.po_closed;
+  $('dialog-content').insertAdjacentHTML('beforeend', `<h3>Retur ke pemasok</h3>
+    <p class="hint">Catat barang reject yang sudah dikirim kembali. Jumlah retur tidak mengubah stok layak pakai atau jatah pengganti PO.</p>
+    ${q.po_closed?'<p>PO sudah ditutup. Riwayat retur sudah final.</p>':''}
+    ${writable && q.return_pending!=='0.000'?'<button id="supplier-return">Catat retur supplier</button>':''}
+    ${q.returns.map(r=>`<article class="material-event"><h4>${r.reversal_of?'Koreksi retur':'Retur'} ${e(r.reference || r.original_reference)} · ${e(materialQty(r.quantity,q.unit))}</h4>
+      ${r.returned_date?`<p>Dikirim ${date(r.returned_date)}</p>`:''}<p class="reason">${e(r.reason)}</p>
+      <p class="hint">${e(r.actor_name)} · ${purchaseStamp(r.created_at)}</p>${r.reversed_by?'<p>Retur sudah dikoreksi</p>':''}
+      ${writable && !q.po_cancelled && !r.reversed_by && !r.reversal_of?`<button data-return-reverse="${e(r.id)}">Koreksi retur</button>`:''}</article>`).join('') || '<p>Belum ada pengiriman retur.</p>'}`);
+  if($('supplier-return'))$('supplier-return').onclick=()=>{
+    if(guardPending())return;
+    formDialog('Catat retur supplier',
+      field('reference','Referensi pengiriman retur','text','required maxlength="160"')+
+      field('returned_date','Tanggal dikirim kembali','date',`required min="${e(q.received_date)}"`)+
+      field('quantity','Jumlah retur','number',`required min="${q.unit==='pcs'?'1':'0.001'}" step="${q.unit==='pcs'?'1':'0.001'}" max="${e(q.return_pending)}"`)+materialReason,
+      form=>Object.fromEntries(new FormData(form)), '/api/qc-intakes/'+encodeURIComponent(q.id)+'/returns',
+      `${q.purchase_order_reference} · kedatangan ${q.reference}\nReject belum diretur: ${materialQty(q.return_pending,q.unit)}. Isi referensi pengiriman fisik ke pemasok PO ini.`);
+  };
+  $('dialog-content').querySelectorAll('[data-return-reverse]').forEach(button=>button.onclick=()=>{
+    if(guardPending())return;
+    const item=q.returns.find(r=>r.id===button.dataset.returnReverse);
+    formDialog('Koreksi retur',materialReason,form=>Object.fromEntries(new FormData(form)),
+      '/api/supplier-returns/'+encodeURIComponent(item.id)+'/reverse',
+      `${item.reference} · ${materialQty(item.quantity,q.unit)}\nSeluruh jumlah catatan ini kembali menjadi reject belum diretur. Pastikan barang fisik sesuai; untuk jumlah baru, catat retur baru setelah koreksi.`);
+  });
+}
+
+function renderPOClosure(p) {
+  if(p.closure) {
+    $('dialog-content').insertAdjacentHTML('beforeend', `<article class="material-event"><h3>Penutupan PO</h3>
+      <p class="reason">${e(p.closure.reason)}</p><p class="hint">${e(p.closure.actor_name)} · ${purchaseStamp(p.closure.created_at)}</p>
+      <p>Sisa tidak akan diterima. Penerimaan, QC, dan retur sudah final; stok layak pakai tetap dapat digunakan untuk produksi.</p></article>`);
+  } else if(user.role==='admin' && p.status==='issued' && p.fulfillment!=='pending') {
+    const ready=p.lines.every(l=>l.held==='0.000' && l.return_pending==='0.000');
+    $('dialog-content').insertAdjacentHTML('beforeend', ready?'<button id="po-close">Tutup PO</button>':'<p>Selesaikan hold QC dan retur bahan reject sebelum menutup PO.</p>');
+    if(ready)$('po-close').onclick=()=>{
+      if(guardPending())return;
+      formDialog('Tutup PO',materialReason,form=>Object.fromEntries(new FormData(form)),
+        '/api/purchase-orders/'+encodeURIComponent(p.id)+'/close',
+        `${p.reference}\n${p.lines.map(l=>`${l.code}: diterima ${materialQty(l.received,l.unit)}, sisa tidak diterima ${materialQty(l.remaining,l.unit)}`).join('\n')}\nPenutupan permanen menghentikan penerimaan dan koreksi QC/retur. Jumlah serta nilai PO asal tetap tersimpan. Pastikan jumlah di atas sudah sesuai kesepakatan dengan pemasok.`);
+    };
+  }
 }
 
 function qualityDecisionForm(q,kind) {
@@ -891,7 +938,7 @@ async function purchaseReceiptForm(id, forQC=false) {
     const po=await api.get('/api/purchase-orders/'+encodeURIComponent(id));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const lines=po.lines.filter(l=>l.receivable!=='0.000');
-    if(po.status!=='issued' || !lines.length){$('dialog-content').innerHTML='<p>PO sudah dibatalkan atau seluruh bahan sudah diterima.</p>';return;}
+    if(po.status!=='issued' || !lines.length){$('dialog-content').innerHTML='<p>PO sudah dibatalkan, ditutup, atau seluruh bahan sudah diterima.</p>';return;}
     formDialog(title,
       `<div class="full"><label for="po-receipt-material">Bahan dari PO</label><select id="po-receipt-material" name="material_id">${lines.map(l=>option(l.material_id,`${l.code} · sisa ${materialQty(l.receivable,l.unit)}`)).join('')}</select></div>`+
       field('reference',forQC?'Referensi kedatangan':'Referensi batch','text','required maxlength="160"')+
@@ -916,7 +963,8 @@ async function purchaseOrderDialog(id) {
   try{
     const p=await api.get('/api/purchase-orders/'+encodeURIComponent(id));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${p.status==='issued'?'Aktif':'Dibatalkan'}</p><h3>${e(p.supplier.code)} · ${e(p.supplier.name)}</h3><p>${e(p.supplier.contact)} · ${e(p.supplier.address)}</p><p>Perkiraan datang ${date(p.expected_date)}</p><p class="reason">Syarat: ${e(p.terms)}</p>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))} × ${e(rupiah(l.unit_price))}/${e(l.unit)}</p><p>Nilai baris ${e(rupiah(l.line_total))}</p><p>Diterima ${e(materialQty(l.received,l.unit))} · sisa layak pakai ${e(materialQty(l.remaining,l.unit))}</p><p>Hold ${e(materialQty(l.held,l.unit))} · reject ${e(materialQty(l.rejected,l.unit))} · bisa datang ${e(materialQty(l.receivable,l.unit))}</p></article>`).join('')}<p><strong>Total PO ${e(rupiah(p.total))}</strong></p><p class="reason">${e(p.reason)}</p><p class="hint">Dicatat ${e(p.actor_name)} · ${purchaseStamp(p.created_at)}.</p><p>${fulfillmentLabel[p.fulfillment]}</p>${p.cancellation?`<article class="material-event"><h3>Pembatalan PO</h3><p class="reason">${e(p.cancellation.reason)}</p><p>${e(p.cancellation.actor_name)} · ${purchaseStamp(p.cancellation.created_at)}</p></article>`:''}<div class="actions"><button data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button data-action="purchase-orders">Daftar PO</button>${user.role==='admin' && p.status==='issued' && p.fulfillment==='pending' && p.lines.every(l=>l.held==='0.000')?'<button id="po-cancel">Batalkan PO</button>':''}</div>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${poStatus[p.status]}</p><h3>${e(p.supplier.code)} · ${e(p.supplier.name)}</h3><p>${e(p.supplier.contact)} · ${e(p.supplier.address)}</p><p>Perkiraan datang ${date(p.expected_date)}</p><p class="reason">Syarat: ${e(p.terms)}</p>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))} × ${e(rupiah(l.unit_price))}/${e(l.unit)}</p><p>Nilai baris ${e(rupiah(l.line_total))}</p><p>Diterima ${e(materialQty(l.received,l.unit))} · sisa layak pakai ${e(materialQty(l.remaining,l.unit))}</p><p>Hold ${e(materialQty(l.held,l.unit))} · reject ${e(materialQty(l.rejected,l.unit))} · bisa datang ${e(materialQty(l.receivable,l.unit))}</p><p>Diretur ${e(materialQty(l.returned,l.unit))} · belum diretur ${e(materialQty(l.return_pending,l.unit))}</p></article>`).join('')}<p><strong>Total PO ${e(rupiah(p.total))}</strong></p><p class="reason">${e(p.reason)}</p><p class="hint">Dicatat ${e(p.actor_name)} · ${purchaseStamp(p.created_at)}.</p><p>${fulfillmentLabel[p.fulfillment]}</p>${p.cancellation?`<article class="material-event"><h3>Pembatalan PO</h3><p class="reason">${e(p.cancellation.reason)}</p><p>${e(p.cancellation.actor_name)} · ${purchaseStamp(p.cancellation.created_at)}</p></article>`:''}<div class="actions"><button data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button data-action="purchase-orders">Daftar PO</button>${user.role==='admin' && p.status==='issued' && p.fulfillment==='pending' && p.lines.every(l=>l.held==='0.000' && l.return_pending==='0.000')?'<button id="po-cancel">Batalkan PO</button>':''}</div>`;
+    renderPOClosure(p);
     $('dialog-content').insertAdjacentHTML('beforeend', qualityIntakesHTML(p)+purchaseReceiptsHTML(p));
     if($('po-cancel'))$('po-cancel').onclick=()=>{if(guardPending())return;formDialog('Batalkan PO',materialReason,form=>Object.fromEntries(new FormData(form)),
       '/api/purchase-orders/'+encodeURIComponent(id)+'/cancel',`${p.reference} · ${rupiah(p.total)}\nPembatalan seluruh PO disimpan permanen. Pastikan pembelian memang dibatalkan; aplikasi tidak mengirim pemberitahuan ke pemasok.`);};
@@ -1003,7 +1051,7 @@ async function materialHistoryDialog(batchId, order=null) {
         const page = await api.get(path+'?'+new URLSearchParams({limit:100,...(before ? {before} : {})}));
         if (!current()) return;
         rows.push(...page); before = rows.at(-1)?.sequence;
-        $('material-history').innerHTML = rows.length ? rows.map(m => `<article class="material-event"><strong>${m.kind === 'receipt' ? 'Penerimaan' : m.kind === 'issue' ? 'Pengeluaran' : 'Pembalikan'} · ${e(materialQty(m.quantity,m.unit))}</strong><p>${e(m.batch_reference)} · ${e(m.code)}${m.order_reference ? ` · ${e(m.order_reference)}` : ''}</p><p class="reason">${e(m.reason)}</p><p class="hint">${e(m.actor_name)} · ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(m.created_at))}${m.reversed_by ? ' · Sudah dibalik' : ''}</p>${user.role === 'admin' && !m.reversal_of && !m.reversed_by && !(batch?.qc_intake_id && m.kind==='receipt') ? `<button type="button" data-material-reverse="${e(m.id)}">Koreksi catatan bahan</button>` : ''}</article>`).join('') : '<p class="state">Belum ada pengeluaran bahan untuk order ini.</p>';
+        $('material-history').innerHTML = rows.length ? rows.map(m => `<article class="material-event"><strong>${m.kind === 'receipt' ? 'Penerimaan' : m.kind === 'issue' ? 'Pengeluaran' : 'Pembalikan'} · ${e(materialQty(m.quantity,m.unit))}</strong><p>${e(m.batch_reference)} · ${e(m.code)}${m.order_reference ? ` · ${e(m.order_reference)}` : ''}</p><p class="reason">${e(m.reason)}</p><p class="hint">${e(m.actor_name)} · ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(m.created_at))}${m.reversed_by ? ' · Sudah dibalik' : ''}</p>${user.role === 'admin' && !m.reversal_of && !m.reversed_by && !((batch?.qc_intake_id || batch?.po_closed) && m.kind==='receipt') ? `<button type="button" data-material-reverse="${e(m.id)}">Koreksi catatan bahan</button>` : ''}</article>`).join('') : '<p class="state">Belum ada pengeluaran bahan untuk order ini.</p>';
         button.hidden = page.length < 100; button.textContent = 'Muat catatan bahan sebelumnya';
       } catch (error) { if (current()) message('material-history-error',error.message,true); }
       finally { if (current()) button.disabled = false; }

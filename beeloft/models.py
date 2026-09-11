@@ -123,6 +123,12 @@ class MaterialReceipt(PurchaseOrderReceipt):
     supplier: Text
 
 
+class SupplierReturn(MaterialQuantity):
+    reference: Text
+    returned_date: date
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
 class QualityDecision(MaterialQuantity):
     kind: Literal['accept','reject']
     reference: Text | None = None

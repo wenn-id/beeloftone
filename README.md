@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.16.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.17.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 11. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 12. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -753,5 +753,54 @@ API tambahan:
 Schema 10 → 11 menambahkan intake, decision, cancellation, kuota hold/reject dan guard
 pembatalan/koreksi. Retry memakai Idempotency-Key yang sama dan tidak menambah stok dua kali.
 Penerimaan manual lama dan penerimaan PO langsung tetap kompatibel. Hanya bahan layak pakai
-yang masuk stok; retur pemasok, penutupan sisa PO dan pembayaran belum tersedia.
+yang masuk stok. Retur pemasok dan penutupan PO ditambahkan pada v0.17 di bawah; pembayaran belum tersedia.
 Rencana dan bukti: [incoming QC plan](docs/incoming-qc-plan.md) dan [verifikasi incoming QC](docs/incoming-qc-verification.md).
+
+## Retur supplier dan penutupan PO (v0.17)
+
+Admin membuka **Permintaan pembelian → Daftar PO → Rincian PO → Rincian QC → Catat retur supplier**.
+Isi referensi pengiriman, tanggal barang dikirim kembali, jumlah aktual, dan alasan.
+Hanya bahan reject dari kedatangan tersebut yang dapat diretur; jumlah boleh parsial.
+**Sudah diretur** dan **Belum diretur** serta riwayat pengiriman terlihat di rincian QC.
+Operator/viewer dapat membaca, sementara pencatatan dan koreksi hanya untuk admin.
+
+Retur tidak mengubah stok layak pakai. Jatah pengganti sudah terbuka ketika QC menolak bahan;
+pengiriman retur tidak membuka jatah tambahan. Bahan yang sudah diterima layak pakai belum
+dapat diretur lewat alur ini. Referensi pengiriman unik, tanggal tidak boleh sebelum kedatangan,
+dan jumlah tidak boleh melampaui reject yang belum diretur. Barang pcs memakai jumlah bulat.
+
+Jika salah catat, pilih **Koreksi retur** dan isi alasan. Koreksi membalik seluruh catatan;
+buat retur baru untuk jumlah yang benar. Riwayat asli tetap tersimpan. Koreksi reject QC
+ditolak apabila jumlah reject setelah koreksi lebih kecil daripada bahan yang sudah diretur.
+Pastikan pencatatan sesuai perpindahan fisik.
+
+Setelah hold QC dan reject belum diretur sama-sama nol, admin dapat memilih **Tutup PO**
+di rincian PO. PO harus memiliki penerimaan layak pakai aktif; jika belum ada, gunakan
+pembatalan. Form penutupan menampilkan jumlah diterima dan sisa yang tidak akan diterima,
+serta meminta alasan. Penutupan permanen: tidak ada penerimaan/kedatangan baru maupun
+koreksi penerimaan, QC, atau retur. Jumlah pesanan, harga, nilai PO, dan sisa yang tidak
+diterima tetap tersimpan; jumlah yang bisa datang menjadi nol. Stok layak pakai tetap
+bisa direservasi, dikeluarkan, dan dicatat pemakaiannya untuk produksi.
+
+Status **Ditutup** berbeda dari **Dibatalkan** dan tersedia pada filter daftar PO.
+PO ditutup tetap mengunci PR asal terhadap pembatalan atau penerbitan PO pengganti;
+pembelian tambahan memakai PR baru. Pembatalan PO juga memerlukan semua retur selesai.
+Untuk kompatibilitas migrasi, PO yang sudah dibatalkan pada versi lama tetapi masih
+memiliki reject dapat mencatat retur; catatan retur pada PO tersebut langsung final.
+
+API baru mengikuti autentikasi, role admin, dan Idempotency-Key yang sama:
+
+- `POST /api/qc-intakes/{id}/returns`: `reference`, `returned_date`, `quantity`, `reason`.
+- `POST /api/supplier-returns/{id}/reverse`: `reason`.
+- `POST /api/purchase-orders/{id}/close`: `reason`.
+- `GET /api/qc-intakes/{id}` menambahkan `returned`, `return_pending`, `returns`, dan `po_closed`.
+- Rincian PO menambahkan `closure`, status `closed`, serta `returned`/`return_pending` per bahan.
+  `remaining` tetap menunjukkan kekurangan terhadap pesanan; `receivable` nol ketika ditutup/dibatalkan.
+- `GET /api/purchase-orders?status=closed` menampilkan PO ditutup.
+
+Schema 11 → 12 mempertahankan data lama dan menambahkan ledger retur, catatan penutupan,
+serta guard SQLite. Buat backup sebelum upgrade. Belum ada buka ulang PO, credit note,
+pembayaran, cetak surat retur, konfirmasi pemasok, atau pengiriman pesan ke pemasok.
+
+Rencana: [supplier returns plan](docs/supplier-returns-plan.md).
+Bukti pengujian: [supplier returns verification](docs/supplier-returns-verification.md).

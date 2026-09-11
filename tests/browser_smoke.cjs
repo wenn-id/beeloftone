@@ -296,6 +296,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_purchase_orders.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_po_receipts.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_incoming_qc.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  await require('./browser_supplier_returns.cjs')({page,login,admin,operator,viewer,apiGet,work});
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');

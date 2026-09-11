@@ -29,4 +29,4 @@ requires no active usable receipt and no held quantity.
 - [x] Add API/browser tests for hold accounting, replacement quota, retries, races, rollback, migration,
   backup, stock/reservation guards, source links, mobile and 200% scaling.
 - [x] Run full verification, update README/OpenAPI/evidence, request independent review, and commit locally.
-- [ ] Next: supplier return or formal receipt closure after QC decisions are complete.
+- [x] Supplier returns and formal PO closure after QC — see `supplier-returns-plan.md` (v0.17).

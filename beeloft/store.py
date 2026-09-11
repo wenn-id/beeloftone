@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -55,6 +55,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("po_receipts.sql").read_text(encoding="utf-8"))
             if version < 11:
                 db.executescript(Path(__file__).with_name("incoming_qc.sql").read_text(encoding="utf-8"))
+            if version < 12:
+                db.executescript(Path(__file__).with_name("supplier_returns.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -163,10 +165,12 @@ class Store:
         if not row:
             raise DomainError(404, 'Batch bahan tidak ditemukan.')
         record = dict(row)
-        source = db.execute('''SELECT p.id,p.reference FROM purchase_order_receipts r
+        source = db.execute('''SELECT p.id,p.reference,
+            EXISTS(SELECT 1 FROM purchase_order_closures WHERE order_id=p.id) AS closed FROM purchase_order_receipts r
             JOIN purchase_orders p ON p.id=r.purchase_order_id WHERE r.batch_id=?''', (batch_id,)).fetchone()
         record['purchase_order_id'] = source['id'] if source else None
         record['purchase_order_reference'] = source['reference'] if source else None
+        record['po_closed'] = bool(source and source['closed'])
         balance = record.pop('balance_milli')
         reserved = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (batch_id,)).fetchone()[0]
         own = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=? AND order_id=?', (batch_id,order_id)).fetchone()[0]
@@ -241,6 +245,9 @@ class Store:
             raise DomainError(404, 'Catatan bahan tidak ditemukan.')
         if original['kind'] == 'reversal' or db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?', (movement_id,)).fetchone():
             raise DomainError(409, 'Catatan pembalik atau catatan yang sudah dibalik tidak dapat dikoreksi lagi.')
+        if original['kind']=='receipt' and db.execute('''SELECT 1 FROM purchase_order_receipts x
+            JOIN purchase_order_closures c ON c.order_id=x.purchase_order_id WHERE x.batch_id=?''', (original['batch_id'],)).fetchone():
+            raise DomainError(409, 'PO sudah ditutup; penerimaan sudah final.')
         balance = db.execute('SELECT SUM(quantity_milli) FROM material_movements WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]
         if balance - original['quantity_milli'] < 0:
             raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
@@ -399,8 +406,9 @@ class Store:
         record['status'] = record['history'][0]['status']
         record['revision'] = record['history'][0]['sequence']
         record['purchase_orders'] = [dict(row) for row in db.execute('''SELECT p.id,p.reference,
-            CASE WHEN c.id IS NULL THEN 'issued' ELSE 'cancelled' END AS status
+            CASE WHEN c.id IS NOT NULL THEN 'cancelled' WHEN z.order_id IS NOT NULL THEN 'closed' ELSE 'issued' END AS status
             FROM purchase_orders p LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
+            LEFT JOIN purchase_order_closures z ON z.order_id=p.id
             WHERE p.request_id=? ORDER BY p.sequence DESC''', (request_id,))]
         return record
 
@@ -449,8 +457,8 @@ class Store:
                 raise DomainError(409, 'PR sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
             if current['status'] not in ('submitted','approved') or (current['status']=='approved' and payload['status']!='cancelled'):
                 raise DomainError(409, 'Status PR tidak mengizinkan keputusan ini.')
-            if any(po['status']=='issued' for po in current['purchase_orders']):
-                raise DomainError(409, 'PR masih memiliki PO aktif. Batalkan PO tersebut sebelum membatalkan PR.')
+            if any(po['status']!='cancelled' for po in current['purchase_orders']):
+                raise DomainError(409, 'PR memiliki PO aktif atau ditutup. PR dengan PO ditutup sudah final; PO aktif harus dibatalkan terlebih dahulu.')
             db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?)''', (request_id,payload['status'],payload['reason'],actor['id'],now()))
             return self._purchase_request(db, request_id)
@@ -483,7 +491,10 @@ class Store:
         cancelled = db.execute('''SELECT c.*,u.name AS actor_name FROM purchase_order_cancellations c
             JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
         record['cancellation'] = dict(cancelled) if cancelled else None
-        record['status'] = 'cancelled' if cancelled else 'issued'
+        closed = db.execute('''SELECT c.*,u.name AS actor_name FROM purchase_order_closures c
+            JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
+        record['closure'] = dict(closed) if closed else None
+        record['status'] = 'cancelled' if cancelled else 'closed' if closed else 'issued'
         record['receipts'] = []
         received = {}
         for row in db.execute('''SELECT b.id AS batch_id,b.reference,b.material_id,b.location,b.received_date,
@@ -508,6 +519,13 @@ class Store:
             line['held'] = self._material_decimal(totals[0])
             line['rejected'] = self._material_decimal(totals[1])
             line['receivable'] = self._material_decimal(int(Decimal(line['remaining'])*1000)-totals[0])
+            if record['status'] != 'issued':
+                line['receivable'] = '0.000'
+            returns = db.execute('''SELECT COALESCE(SUM(t.returned),0),COALESCE(SUM(t.return_pending),0)
+                FROM qc_return_totals t JOIN qc_intakes q ON q.id=t.id
+                WHERE q.purchase_order_id=? AND q.material_id=?''', (order_id,line['material_id'])).fetchone()
+            line['returned'] = self._material_decimal(returns[0])
+            line['return_pending'] = self._material_decimal(returns[1])
         record['fulfillment'] = ('received' if all(l['remaining']=='0.000' for l in record['lines'])
                                  else 'partial' if received else 'pending')
         return record
@@ -520,9 +538,11 @@ class Store:
         with self.transaction() as db:
             ids = db.execute('''SELECT p.id FROM purchase_orders p
                 LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
+                LEFT JOIN purchase_order_closures z ON z.order_id=p.id
                 WHERE (? IS NULL OR p.sequence<?) AND (? IS NULL OR p.request_id=?)
-                AND (?='all' OR (?='issued' AND c.id IS NULL) OR (?='cancelled' AND c.id IS NOT NULL))
-                ORDER BY p.sequence DESC LIMIT ?''', (before,before,request_id,request_id,status,status,status,limit)).fetchall()
+                AND (?='all' OR (?='issued' AND c.id IS NULL AND z.order_id IS NULL)
+                    OR (?='cancelled' AND c.id IS NOT NULL) OR (?='closed' AND z.order_id IS NOT NULL))
+                ORDER BY p.sequence DESC LIMIT ?''', (before,before,request_id,request_id,status,status,status,status,limit)).fetchall()
             return [self._purchase_order(db, row[0]) for row in ids]
 
     def create_purchase_order(self, payload, actor, key):
@@ -530,8 +550,8 @@ class Store:
             pr = self._purchase_request(db, payload['request_id'])
             if pr['status'] != 'approved' or pr['revision'] != payload['expected_revision']:
                 raise DomainError(409, 'PR harus disetujui dan memakai revisi terbaru. Buka ulang PR.')
-            if any(po['status']=='issued' for po in pr['purchase_orders']):
-                raise DomainError(409, 'PR sudah memiliki PO aktif. Buka PO tersebut; batalkan dahulu jika perlu koreksi.')
+            if any(po['status']!='cancelled' for po in pr['purchase_orders']):
+                raise DomainError(409, 'PR sudah memiliki PO aktif atau ditutup. Gunakan PR baru untuk pembelian tambahan.')
             supplier = db.execute('SELECT id,code,name,contact,address FROM suppliers WHERE id=?', (payload['supplier_id'],)).fetchone()
             if not supplier:
                 raise DomainError(404, 'Pemasok tidak ditemukan.')
@@ -560,7 +580,9 @@ class Store:
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan.')
+                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
+            if any(l['return_pending']!='0.000' for l in po['lines']):
+                raise DomainError(409, 'Selesaikan retur bahan reject sebelum membatalkan PO.')
             if po['fulfillment'] != 'pending' or any(l['held']!='0.000' for l in po['lines']):
                 raise DomainError(409, 'PO memiliki penerimaan aktif atau bahan hold. Selesaikan QC atau koreksi penerimaan sebelum membatalkan PO.')
             db.execute('''INSERT INTO purchase_order_cancellations(id,order_id,reason,actor_id,created_at)
@@ -568,11 +590,25 @@ class Store:
             return self._purchase_order(db, order_id)
         return self._write(actor, ('admin',), key, 'purchase-order-cancel:'+order_id, payload, perform)
 
+    def close_purchase_order(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            if po['status'] != 'issued':
+                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
+            if po['fulfillment'] == 'pending':
+                raise DomainError(409, 'Belum ada penerimaan layak pakai. Gunakan pembatalan jika pembelian tidak dilanjutkan.')
+            if any(l['held']!='0.000' or l['return_pending']!='0.000' for l in po['lines']):
+                raise DomainError(409, 'Selesaikan bahan hold dan retur reject sebelum menutup PO.')
+            db.execute('INSERT INTO purchase_order_closures(order_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
+                       (order_id,payload['reason'],actor['id'],now()))
+            return self._purchase_order(db, order_id)
+        return self._write(actor, ('admin',), key, 'purchase-order-close:'+order_id, payload, perform)
+
     def receive_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan; penerimaan tidak diizinkan.')
+                raise DomainError(409, 'PO sudah dibatalkan atau ditutup; penerimaan tidak diizinkan.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']), None)
             if not line:
                 raise DomainError(422, 'Bahan tidak tercantum pada PO.')
@@ -587,6 +623,7 @@ class Store:
     def _quality_intake(self, db, intake_id):
         row = db.execute('''SELECT q.*,m.code,m.name,m.unit,u.name AS actor_name,p.reference AS purchase_order_reference,
             t.accepted,t.rejected,t.held,
+            EXISTS(SELECT 1 FROM purchase_order_closures WHERE order_id=q.purchase_order_id) AS po_closed,
             EXISTS(SELECT 1 FROM purchase_order_cancellations WHERE order_id=q.purchase_order_id) AS po_cancelled FROM qc_intakes q JOIN materials m ON m.id=q.material_id
             JOIN users u ON u.id=q.actor_id JOIN purchase_orders p ON p.id=q.purchase_order_id
             JOIN qc_totals t ON t.id=q.id WHERE q.id=?''', (intake_id,)).fetchone()
@@ -599,6 +636,16 @@ class Store:
         cancelled = db.execute('''SELECT c.*,u.name AS actor_name FROM qc_intake_cancellations c
             JOIN users u ON u.id=c.actor_id WHERE intake_id=?''', (intake_id,)).fetchone()
         record['cancellation'] = dict(cancelled) if cancelled else None
+        totals = db.execute('SELECT returned,return_pending FROM qc_return_totals WHERE id=?', (intake_id,)).fetchone()
+        record['returned'],record['return_pending'] = map(self._material_decimal, totals)
+        record['returns'] = []
+        for row in db.execute('''SELECT r.*,u.name AS actor_name,
+            (SELECT id FROM supplier_returns WHERE reversal_of=r.id) AS reversed_by,
+            (SELECT reference FROM supplier_returns WHERE id=r.reversal_of) AS original_reference
+            FROM supplier_returns r JOIN users u ON u.id=r.actor_id WHERE r.intake_id=? ORDER BY r.sequence DESC''', (intake_id,)):
+            item = dict(row)
+            item['quantity'] = self._material_decimal(item.pop('quantity_milli'))
+            record['returns'].append(item)
         record['history'] = []
         for row in db.execute('''SELECT d.*,u.name AS actor_name,b.reference AS batch_reference,
             (SELECT id FROM qc_decisions WHERE reversal_of=d.id) AS reversed_by
@@ -613,11 +660,43 @@ class Store:
         with self.transaction() as db:
             return self._quality_intake(db, intake_id)
 
+    def return_supplier(self, intake_id, payload, actor, key):
+        def perform(db):
+            intake = self._quality_intake(db, intake_id)
+            if intake['cancellation'] or intake['po_closed']:
+                raise DomainError(409, 'Kedatangan dibatalkan atau PO sudah ditutup.')
+            quantity = self._material_amount(payload['quantity'],intake['unit'])
+            if quantity>int(Decimal(intake['return_pending'])*1000):
+                raise DomainError(409, 'Jumlah retur melebihi reject yang belum dikirim kembali. Muat ulang QC.')
+            if payload['returned_date']<intake['received_date']:
+                raise DomainError(422, 'Tanggal retur tidak boleh sebelum kedatangan.')
+            db.execute('''INSERT INTO supplier_returns(id,intake_id,reference,returned_date,quantity_milli,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''', (str(uuid4()),intake_id,payload['reference'],payload['returned_date'],quantity,
+                                           payload['reason'],actor['id'],now()))
+            return self._quality_intake(db, intake_id)
+        return self._write(actor, ('admin',), key, 'supplier-return:'+intake_id, payload, perform)
+
+    def reverse_supplier_return(self, return_id, payload, actor, key):
+        def perform(db):
+            original = db.execute('SELECT * FROM supplier_returns WHERE id=?', (return_id,)).fetchone()
+            if not original:
+                raise DomainError(404, 'Catatan retur tidak ditemukan.')
+            if original['reversal_of'] or db.execute('SELECT 1 FROM supplier_returns WHERE reversal_of=?',(return_id,)).fetchone():
+                raise DomainError(409, 'Retur sudah dikoreksi atau merupakan koreksi.')
+            intake = self._quality_intake(db,original['intake_id'])
+            if intake['po_closed'] or intake['po_cancelled']:
+                raise DomainError(409, 'PO sudah ditutup atau dibatalkan; catatan retur sudah final.')
+            db.execute('''INSERT INTO supplier_returns(id,intake_id,quantity_milli,reversal_of,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?)''', (str(uuid4()),intake['id'],-original['quantity_milli'],return_id,
+                                          payload['reason'],actor['id'],now()))
+            return self._quality_intake(db,intake['id'])
+        return self._write(actor, ('admin',), key, 'supplier-return-reverse:'+return_id, payload, perform)
+
     def create_quality_intake(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan.')
+                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']),None)
             if not line:
                 raise DomainError(422, 'Bahan tidak tercantum pada PO.')
@@ -635,8 +714,8 @@ class Store:
     def decide_quality(self, intake_id, payload, actor, key):
         def perform(db):
             intake = self._quality_intake(db,intake_id)
-            if intake['cancellation']:
-                raise DomainError(409,'Kedatangan QC sudah dibatalkan.')
+            if intake['cancellation'] or intake['po_closed'] or intake['po_cancelled']:
+                raise DomainError(409,'Kedatangan dibatalkan atau PO sudah final.')
             quantity = self._material_amount(payload['quantity'],intake['unit'])
             if quantity>int(Decimal(intake['held'])*1000):
                 raise DomainError(409,'Jumlah keputusan melebihi bahan hold. Muat ulang QC.')
@@ -665,8 +744,10 @@ class Store:
             intake = self._quality_intake(db,original['intake_id'])
             po = self._purchase_order(db,intake['purchase_order_id'])
             if intake['cancellation'] or po['status']!='issued':
-                raise DomainError(409,'Kedatangan atau PO sudah dibatalkan.')
+                raise DomainError(409,'Kedatangan dibatalkan atau PO sudah final.')
             if original['kind']=='reject':
+                if original['quantity_milli']>int(Decimal(intake['return_pending'])*1000):
+                    raise DomainError(409, 'Bahan sudah diretur. Koreksi catatan retur sebelum mengoreksi reject.')
                 line = next(l for l in po['lines'] if l['material_id']==intake['material_id'])
                 if original['quantity_milli']>int(Decimal(line['receivable'])*1000):
                     raise DomainError(409,'Jatah pengganti sudah terisi. Koreksi penerimaan atau kedatangan pengganti sebelum mengembalikan reject ke hold.')
@@ -682,6 +763,8 @@ class Store:
     def cancel_quality_intake(self, intake_id, payload, actor, key):
         def perform(db):
             intake = self._quality_intake(db,intake_id)
+            if intake['po_closed']:
+                raise DomainError(409,'PO sudah ditutup; kedatangan sudah final.')
             if intake['cancellation'] or intake['accepted']!='0.000' or intake['rejected']!='0.000':
                 raise DomainError(409,'Kedatangan sudah dibatalkan atau masih memiliki keputusan QC aktif. Koreksi keputusan terlebih dahulu.')
             db.execute('INSERT INTO qc_intake_cancellations(intake_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
