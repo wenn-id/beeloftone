@@ -29,3 +29,7 @@ exported.key = 'test-csv-key';
 assert.equal(await (await exported.download('/api/activity.csv')).text(),'ID,Catatan\r\n1,"Uji, CSV"\r\n');
 await assert.rejects(denied.download('/api/activity.csv'), error => error.status === 403 && !error.uncertain);
 console.log('CSV client checks PASS: authenticated blob and JSON access errors.');
+const {formatMaterialQuantity} = await import('../beeloft/static/client.mjs');
+assert.equal(formatMaterialQuantity('1000000000000000.125','m'),'1.000.000.000.000.000,125 m');
+assert.equal(formatMaterialQuantity('-0.125','kg'),'-0,125 kg');
+assert.equal(formatMaterialQuantity('10.000','pcs'),'10 pcs');

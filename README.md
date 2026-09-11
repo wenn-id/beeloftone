@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.9.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.10.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup BOM, reservasi/konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 4. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup reservasi/konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 5. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -414,3 +414,63 @@ Jalankan `./start.ps1 -Demo` dari worktree tersebut untuk membuat demo terpisah;
 database demo pada checkout main. Demo awal belum berisi bahan; tambahkan dari dashboard.
 
 Hasil pengujian: [verifikasi bahan](docs/materials-verification.md).
+
+## BOM dan kebutuhan bahan (v0.10 — Phase 2 roadmap)
+
+Admin membuka **Master SKU → BOM → Isi BOM**. Tambahkan bahan dan jumlah yang dibutuhkan
+untuk membuat **1 pcs** SKU, lalu isi alasan. Contoh: 1,25 m kain dan 2 pcs kancing per produk.
+Satu BOM memuat 1–100 bahan unik. Satuan mengikuti master; m/kg maksimal tiga desimal, pcs
+wajib bulat. Jumlah maksimal 1.000.000 satuan per pcs. Tidak ada konversi satuan atau tambahan
+waste otomatis. Gunakan angka standar yang sudah disepakati di produksi.
+
+**Ubah BOM** membuat versi baru; isi versi lama tetap tersedia di **Riwayat BOM**, beserta
+alasan dan akun pengubah. Perubahan tanpa perbedaan ditolak. Jika form sudah tertinggal karena
+tab lain menyimpan versi baru, tutup form, buka BOM lagi dan periksa sebelum menyimpan ulang.
+Tidak ada hapus/nonaktif BOM pada tahap ini. Operator/viewer dapat membaca BOM dan riwayat,
+tetapi hanya admin aktif yang boleh menyimpan. BOM audit terpisah dari laporan aktivitas produksi.
+
+Buka order → **Kebutuhan bahan**. Perhitungan menggabungkan bahan yang sama di seluruh SKU:
+
+| Angka | Perhitungan |
+|---|---|
+| Kebutuhan total | Jumlah target masing-masing SKU × BOM per pcs, lalu dijumlahkan per bahan |
+| Dikeluarkan bersih | Pengeluaran bahan ke order dikurangi pembalikannya |
+| Sisa kebutuhan | Maksimum(kebutuhan total − dikeluarkan bersih, 0) |
+| Stok rak saat ini | Saldo semua batch bahan tersebut setelah penerimaan, pengeluaran dan koreksi |
+| Kekurangan | Maksimum(sisa kebutuhan − stok rak, 0) |
+
+Jika kebutuhan 20 m, sudah dikeluarkan 4,125 m dan stok rak 10,875 m, sisa kebutuhan 15,875 m
+dan kekurangan 5 m. Jika pengeluaran dikembalikan melalui pembalikan, dikeluarkan bersih
+berkurang dan stok rak bertambah. Pengeluaran melebihi kebutuhan tidak membuat sisa negatif.
+Bahan yang sudah dikeluarkan tetapi tidak ada dalam BOM saat ini tetap tampil dengan label
+**Dikeluarkan di luar BOM saat ini**. Ini tidak otomatis dianggap kesalahan transaksi.
+
+**Estimasi memakai BOM terbaru saat dimuat**, termasuk untuk order lama. Daftar dasar perhitungan
+menunjukkan SKU, target dan versi BOM sumber. Ini belum snapshot BOM saat order dibuat.
+Target tetap penuh meskipun sebagian pcs sudah selesai/reject; posisi WIP tidak mengurangi
+kebutuhan teoritis. Bahan dikeluarkan belum berarti sudah dikonsumsi. Gunakan hasil sebagai
+bantuan perencanaan dan cocokkan dengan kondisi fisik.
+
+SKU tanpa BOM memunculkan peringatan **Perhitungan belum lengkap**. Angka yang ada hanya
+mencakup SKU yang sudah memiliki BOM; BOM kosong tidak dianggap butuh nol bahan. Tidak ada
+penanda seluruh order cukup jika datanya belum lengkap. Stok belum direservasi, bisa dipakai
+order lain, dan tidak boleh menjumlahkan indikator cukup antarorder sebagai jaminan stok bersama.
+Tombol **Hitung ulang kebutuhan** mengambil snapshot terbaru. Membaca estimasi tidak menulis
+stok, mengunci order, atau memulai produksi.
+
+API dengan X-API-Key; POST juga memakai Idempotency-Key:
+
+- `GET /api/products/{id}/bom`: versi terbaru; `revision=0`, `components=[]` jika belum ada.
+- `POST /api/products/{id}/bom`: `expected_revision`, `reason`, `components` berisi `material_id` dan `quantity` string, misalnya `"1.250"`. API menormalisasi angka dan mengurutkan komponen untuk retry konsisten. Revisi dari versi terakhir harus dipakai persis; nomornya global sehingga dapat meloncat antar-SKU.
+- `GET /api/products/{id}/bom-history?limit=100&before=REVISION`: terbaru dahulu; hilangkan `before` pada halaman pertama.
+- `GET /api/orders/{id}/material-requirements`: `basis=latest_bom`, `complete`, `missing_bom`, `sources`, dan `materials` dengan `required`, `issued`, `remaining`, `stock`, `shortage`, `outside_bom`. Semua jumlah bahan berupa string desimal tiga angka; tidak ada total lintas satuan.
+
+Migrasi schema 4 → 5 hanya menambahkan riwayat BOM. Data produksi/bahan lama tetap; tidak
+ada BOM contoh yang dibuat otomatis. Backup sebelum upgrade, seperti versi sebelumnya.
+Perhitungan agregasi memakai integer Python dan tampilan jumlah memakai BigInt sehingga
+angka besar tidak kehilangan desimal. Saat ini pembacaan stok memindai ledger bahan;
+evaluasi saldo teragregasi bila volume transaksi menyebabkan halaman lambat.
+
+Tetap di worktree `feature/core-materials`, tanpa push GitHub. Setelah BOM dasar ini,
+tahap berikutnya adalah reservasi bahan per order sebelum memperluas ke konsumsi aktual dan PR/PO.
+Rencana: [BOM](docs/bom-plan.md). Hasil pengujian: [verifikasi BOM](docs/bom-verification.md).

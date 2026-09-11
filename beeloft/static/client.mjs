@@ -2,6 +2,12 @@ export function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[character]));
 }
 
+export function formatMaterialQuantity(quantity, unit) {
+  const text = String(quantity), [whole,fraction=''] = text.replace(/^-/, '').split('.');
+  const decimal = fraction.replace(/0+$/, '');
+  return `${text.startsWith('-') ? '-' : ''}${new Intl.NumberFormat('id-ID').format(BigInt(whole))}${decimal ? ','+decimal : ''} ${unit}`;
+}
+
 export function displayDate(value) {
   return new Intl.DateTimeFormat('id-ID', {day:'numeric', month:'short', year:'numeric', timeZone:'Asia/Jakarta'}).format(new Date(value.length === 10 ? value + 'T12:00:00+07:00' : value));
 }

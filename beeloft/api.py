@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
-from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue
+from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, BomSave
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -19,7 +19,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.9.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.10.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -81,6 +81,23 @@ def create_app(database_path):
     @app.get("/api/products", tags=["Products"])
     def products(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.products(limit, offset)
+
+    @app.get('/api/products/{product_id}/bom', tags=['BOM'])
+    def bom(product_id: str, user: Actor):
+        return store.bom(product_id)
+
+    @app.post('/api/products/{product_id}/bom', status_code=201, tags=['BOM'])
+    def save_bom(product_id: str, body: BomSave, user: Actor, key: RequestKey):
+        return store.save_bom(product_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/products/{product_id}/bom-history', tags=['BOM'])
+    def bom_history(product_id: str, user: Actor, limit: Limit = 100,
+                    before: Annotated[int | None, Query(ge=1)] = None):
+        return store.bom_history(product_id, limit, before)
+
+    @app.get('/api/orders/{order_id}/material-requirements', tags=['BOM'])
+    def material_requirements(order_id: str, user: Actor):
+        return store.material_requirements(order_id)
 
     @app.post('/api/materials', status_code=201, tags=['Materials'])
     def create_material(body: MaterialCreate, user: Actor, key: RequestKey):

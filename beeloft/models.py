@@ -124,3 +124,20 @@ class MaterialIssue(MaterialQuantity):
     batch_id: Text
     order_id: Text
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class BomComponent(MaterialQuantity):
+    material_id: Text
+
+
+class BomSave(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    components: list[BomComponent] = Field(min_length=1, max_length=100)
+
+    @field_validator('components')
+    @classmethod
+    def unique_materials(cls, components):
+        if len({c.material_id for c in components}) != len(components):
+            raise ValueError('Gabungkan bahan yang sama menjadi satu baris BOM.')
+        return sorted(components, key=lambda c: c.material_id)

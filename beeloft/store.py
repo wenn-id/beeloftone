@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4):
+            if version not in (0, 1, 2, 3, 4, 5):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -41,6 +41,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("order_changes.sql").read_text(encoding="utf-8"))
             if version < 4:
                 db.executescript(Path(__file__).with_name("materials.sql").read_text(encoding="utf-8"))
+            if version < 5:
+                db.executescript(Path(__file__).with_name("bom.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -227,6 +229,82 @@ class Store:
                 record['quantity'] = self._material_decimal(record.pop('quantity_milli'))
                 result.append(record)
             return result
+
+    def _bom(self, db, product_id, before=None):
+        product = db.execute('SELECT id,sku,name FROM products WHERE id=?', (product_id,)).fetchone()
+        if not product:
+            raise DomainError(404, 'SKU tidak ditemukan.')
+        row = db.execute('''SELECT b.*,u.name AS actor_name FROM bom_revisions b JOIN users u ON u.id=b.actor_id
+            WHERE product_id=? AND (? IS NULL OR revision<?) ORDER BY revision DESC LIMIT 1''', (product_id,before,before)).fetchone()
+        record = dict(row) if row else dict(revision=0, product_id=product_id, components='[]', reason='', actor_id=None, actor_name=None, created_at=None)
+        record.update(sku=product['sku'], name=product['name'])
+        record['components'] = [component | dict(db.execute('SELECT code,name,unit FROM materials WHERE id=?', (component['material_id'],)).fetchone())
+                                for component in json.loads(record['components'])]
+        return record
+
+    def bom(self, product_id):
+        with self.transaction() as db:
+            return self._bom(db, product_id)
+
+    def save_bom(self, product_id, payload, actor, key):
+        def perform(db):
+            current = self._bom(db, product_id)
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'BOM sudah berubah. Tutup form, muat ulang BOM, lalu periksa versi terbaru.')
+            components = sorted(payload['components'], key=lambda c: c['material_id'])
+            for component in components:
+                material = db.execute('SELECT unit FROM materials WHERE id=?', (component['material_id'],)).fetchone()
+                if not material:
+                    raise DomainError(404, 'Bahan BOM tidak ditemukan.')
+                self._material_amount(component['quantity'], material['unit'])
+            old = [dict(material_id=c['material_id'], quantity=c['quantity']) for c in current['components']]
+            if components == old:
+                raise DomainError(409, 'BOM tidak berubah. Ubah bahan atau jumlah sebelum menyimpan.')
+            db.execute('INSERT INTO bom_revisions(product_id,components,reason,actor_id,created_at) VALUES(?,?,?,?,?)',
+                       (product_id,json.dumps(components),payload['reason'],actor['id'],now()))
+            return self._bom(db, product_id)
+        return self._write(actor, ('admin',), key, 'bom:'+product_id, payload, perform)
+
+    def bom_history(self, product_id, limit=100, before=None):
+        with self.transaction() as db:
+            self._bom(db, product_id)
+            revisions = db.execute('''SELECT revision FROM bom_revisions WHERE product_id=? AND (? IS NULL OR revision<?)
+                ORDER BY revision DESC LIMIT ?''', (product_id,before,before,limit)).fetchall()
+            return [self._bom(db, product_id, row[0]+1) for row in revisions]
+
+    def material_requirements(self, order_id):
+        with self.transaction() as db:
+            order = self._order(db, order_id)
+            required, issued, stock = {}, {}, {}
+            sources, missing = [], []
+            for line in order['lines']:
+                bom = self._bom(db, line['product_id'])
+                source = dict(product_id=line['product_id'], sku=line['sku'], target_quantity=line['quantity'], revision=bom['revision'])
+                sources.append(source)
+                if not bom['revision']:
+                    missing.append(source)
+                for c in bom['components']:
+                    material_id = c['material_id']
+                    required[material_id] = required.get(material_id,0) + self._material_amount(c['quantity'],c['unit']) * line['quantity']
+            for row in db.execute('''SELECT b.material_id,x.quantity_milli FROM material_movements x
+                JOIN material_batches b ON b.id=x.batch_id WHERE x.order_id=?''', (order_id,)):
+                issued[row['material_id']] = issued.get(row['material_id'],0) - row['quantity_milli']
+            ids = set(required) | {key for key,value in issued.items() if value}
+            # Sum in Python: a multi-SKU requirement can exceed SQLite's signed 64-bit integer.
+            for row in db.execute('''SELECT b.material_id,x.quantity_milli FROM material_movements x
+                JOIN material_batches b ON b.id=x.batch_id'''):
+                if row['material_id'] in ids:
+                    stock[row['material_id']] = stock.get(row['material_id'],0) + row['quantity_milli']
+            rows = []
+            for material_id in ids:
+                material = dict(db.execute('SELECT code,name,unit FROM materials WHERE id=?', (material_id,)).fetchone())
+                need, out, available = required.get(material_id,0), issued.get(material_id,0), stock.get(material_id,0)
+                remaining = max(need-out,0)
+                amounts = dict(required=need,issued=out,remaining=remaining,stock=available,shortage=max(remaining-available,0))
+                rows.append(dict(material_id=material_id, **material, outside_bom=material_id not in required,
+                                 **{key:self._material_decimal(value) for key,value in amounts.items()}))
+            return dict(order_id=order_id, reference=order['reference'], basis='latest_bom', complete=not missing,
+                        sources=sources, missing_bom=missing, materials=sorted(rows,key=lambda r:(r['code'],r['material_id'])))
 
     def create_order(self, payload, actor, key):
         def perform(db):

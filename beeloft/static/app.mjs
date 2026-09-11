@@ -1,4 +1,4 @@
-import {Api, escapeHTML as e, displayDate as date} from './client.mjs';
+import {Api, escapeHTML as e, displayDate as date, formatMaterialQuantity as materialQty} from './client.mjs';
 
 const $ = id => document.getElementById(id);
 const api = new Api();
@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
     <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
@@ -218,6 +218,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
+      else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
       else if (view === 'materials') loadMaterials();
       else if (view === 'detail' && selected) openDetail(selected.id);
       else loadBoard();
@@ -276,7 +277,7 @@ async function productsDialog() {
   try {
     const products = await allRows('/api/products');
     if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
-    $('dialog-content').innerHTML = `<div class="product-list">${products.length ? products.map(p => `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span></div></div>`).join('') : '<p>Belum ada SKU. Tambahkan produk untuk membuat order pertama.</p>'}</div>${user.role === 'admin' ? '<button class="primary" data-action="new-product">Tambah SKU</button>' : ''}`;
+    $('dialog-content').innerHTML = `<div class="product-list">${products.length ? products.map(p => `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span></div><button type="button" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button></div>`).join('') : '<p>Belum ada SKU. Tambahkan produk untuk membuat order pertama.</p>'}</div>${user.role === 'admin' ? '<button class="primary" data-action="new-product">Tambah SKU</button>' : ''}`;
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="products">Coba lagi</button>`; }
 }
 function productForm() {
@@ -320,6 +321,7 @@ document.addEventListener('click', event => {
     'new-issue':() => issueForm(id),'resolve-issue':() => resolveIssueForm(id),'more-issues':() => moreIssues(button),
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
+    bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
@@ -496,6 +498,75 @@ function showMaterials() {
   $('receive-material').hidden = user.role === 'viewer';
   loadMaterials();
 }
+
+const bomComponentsHTML = components => components.map(c => `<div class="product-item"><div><strong>${e(c.code)}</strong><span>${e(c.name)}</span></div><span>${e(materialQty(c.quantity,c.unit))} / pcs</span></div>`).join('');
+async function bomDialog(id) {
+  if (guardPending()) return;
+  const version = epoch; openDialog('BOM per SKU','<p class="state">Memuat BOM…</p>'); const modal = dialogVersion;
+  try {
+    const bom = await api.get(`/api/products/${encodeURIComponent(id)}/bom`);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<p class="form-info">${e(bom.sku)} · ${e(bom.name)}</p><p class="hint">Kebutuhan bahan untuk membuat 1 pcs SKU ini. Angka mengikuti satuan master, belum termasuk tambahan waste otomatis.</p>${bom.revision ? `<p>Versi ${bom.revision} · ${e(bom.actor_name)} · ${date(bom.created_at)}</p><div>${bomComponentsHTML(bom.components)}</div><p class="reason">${e(bom.reason)}</p>` : '<p class="state">BOM belum diisi. Kebutuhan bahan belum dapat dihitung untuk SKU ini.</p>'}<div class="form-actions">${bom.revision ? `<button data-action="bom-history" data-id="${e(id)}">Riwayat BOM</button>` : ''}${user.role === 'admin' ? `<button class="primary" data-action="edit-bom" data-id="${e(id)}">${bom.revision ? 'Ubah BOM' : 'Isi BOM'}</button>` : ''}</div>`;
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="bom" data-id="${e(id)}">Coba lagi</button>`; }
+}
+async function bomForm(id) {
+  if (guardPending()) return;
+  const version = epoch; openDialog('Susun BOM','<p class="state">Memuat bahan dan versi BOM…</p>'); const modal = dialogVersion;
+  try {
+    const [bom,materials] = await Promise.all([api.get(`/api/products/${encodeURIComponent(id)}/bom`),allRows('/api/materials')]);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!materials.length) { $('dialog-content').innerHTML = '<p>Admin perlu menambah master bahan melalui menu Bahan baku sebelum menyusun BOM.</p>'; return; }
+    formDialog('Susun BOM','<div class="full"><div id="bom-lines"></div><button type="button" id="bom-add">Tambah bahan BOM</button></div>'+materialReason,
+      form => {
+        const components = [...form.querySelectorAll('.bom-line')].map(row => ({material_id:row.querySelector('select').value,quantity:row.querySelector('input').value}));
+        if (new Set(components.map(c => c.material_id)).size !== components.length) throw new Error('Gabungkan bahan yang sama menjadi satu baris BOM.');
+        return {components,expected_revision:bom.revision,reason:new FormData(form).get('reason')};
+      },`/api/products/${encodeURIComponent(id)}/bom`,`${bom.sku} · versi ${bom.revision || 'belum diisi'}\nIsi jumlah bahan per 1 pcs produk. Menyimpan membuat versi baru dan memperbarui estimasi kebutuhan semua order SKU ini, termasuk order lama. Stok dan pengeluaran tidak berubah.`);
+    const addLine = (component=null) => {
+      if ($('bom-lines').children.length >= 100) return;
+      const row = document.createElement('div'), token = crypto.randomUUID(); row.className='bom-line';
+      row.innerHTML = `<div><label for="bom-material-${token}">Bahan BOM</label><select id="bom-material-${token}">${materials.map(m => option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('')}</select></div><label>Jumlah per pcs<input type="number" required max="1000000"></label><button type="button" aria-label="Hapus bahan BOM">Hapus</button>`;
+      const select=row.querySelector('select'), input=row.querySelector('input');
+      if (component) {select.value=component.material_id; input.value=component.quantity;}
+      const unitChanged = () => {input.step=input.min=materials.find(m=>m.id===select.value).unit==='pcs' ? '1':'0.001';};
+      select.onchange=unitChanged; unitChanged();
+      row.querySelector('button').onclick=()=>{if ($('bom-lines').children.length>1) row.remove(); else notify('BOM memerlukan minimal satu bahan.');};
+      $('bom-lines').append(row);
+    };
+    $('bom-add').onclick=()=>addLine();
+    if (bom.components.length) bom.components.forEach(addLine); else addLine();
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="edit-bom" data-id="${e(id)}">Coba lagi</button>`; }
+}
+async function bomHistoryDialog(id) {
+  if (guardPending()) return;
+  const version = epoch; openDialog('Riwayat BOM','<div id="bom-history"></div><p id="bom-history-error" class="error" role="alert" hidden></p><button id="bom-history-more" type="button">Muat versi sebelumnya</button>');
+  const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  let before=null;
+  const load=async()=>{
+    const button=$('bom-history-more'); button.disabled=true; message('bom-history-error','');
+    try {
+      const rows=await api.get(`/api/products/${encodeURIComponent(id)}/bom-history?`+new URLSearchParams({limit:10,...(before?{before}:{})}));
+      if (!current()) return;
+      $('bom-history').insertAdjacentHTML('beforeend',rows.map(b=>`<article class="material-event"><h3>${e(b.sku)} · versi ${b.revision}</h3><p class="hint">${e(b.actor_name)} · ${date(b.created_at)}</p>${bomComponentsHTML(b.components)}<p class="reason">${e(b.reason)}</p></article>`).join(''));
+      before=rows.at(-1)?.revision; button.hidden=rows.length<10;
+    } catch(error) {if(current()) message('bom-history-error',error.message,true);}
+    finally {if(current()) button.disabled=false;}
+  };
+  $('bom-history-more').onclick=load; await load();
+}
+async function requirementsDialog() {
+  if (guardPending()) return;
+  const version=epoch, order=selected;
+  openDialog('Kebutuhan bahan order','<p class="state">Menghitung kebutuhan bahan…</p>'); const modal=dialogVersion;
+  try {
+    const report=await api.get(`/api/orders/${encodeURIComponent(order.id)}/material-requirements`);
+    if (version!==epoch || modal!==dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<p class="form-info">${e(report.reference)} · estimasi dari BOM terbaru saat dimuat</p><p class="hint">Target order × BOM per pcs. Dikeluarkan bersih sudah dikurangi pembalikan. Sisa kebutuhan dibandingkan dengan stok rak semua batch. Stok belum direservasi dan bisa dipakai order lain; bukan jaminan ketersediaan. Perubahan versi BOM mengubah estimasi order lama.</p>
+      ${!report.complete ? `<p class="error" role="status">Perhitungan belum lengkap. BOM belum diisi untuk ${report.missing_bom.map(s=>e(s.sku)).join(', ')}. Angka di bawah hanya mencakup SKU yang sudah memiliki BOM.</p>` : ''}
+      <div id="requirements-list">${report.materials.map(m=>`<article class="material-event"><h3>${e(m.code)} · ${e(m.name)}</h3>${m.outside_bom?'<p class="status-label late">Dikeluarkan di luar BOM saat ini</p>':''}<dl class="requirement-values">${[['Kebutuhan total','required'],['Dikeluarkan bersih','issued'],['Sisa kebutuhan','remaining'],['Stok rak saat ini','stock'],['Kekurangan','shortage']].map(([label,key])=>`<div><dt>${label}</dt><dd class="${key==='shortage' && m.shortage!=='0.000'?'status-label late':''}">${e(materialQty(m[key],m.unit))}</dd></div>`).join('')}</dl></article>`).join('')}</div>
+      <h3>Dasar perhitungan</h3><div>${report.sources.map(s=>`<p>${e(s.sku)} · ${n(s.target_quantity)} pcs · ${s.revision ? 'BOM versi '+s.revision : 'BOM belum diisi'} <button class="quiet" data-action="bom" data-id="${e(s.product_id)}">Lihat BOM</button></p>`).join('')}</div><button data-action="requirements">Hitung ulang kebutuhan</button>`;
+  } catch(error) {if(version===epoch && modal===dialogVersion && $('dialog').open) $('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="requirements">Coba lagi</button>`;}
+}
 $('materials').onclick = showMaterials;
 $('materials-back').onclick = showBoard;
 $('materials-refresh').onclick = () => loadMaterials();
@@ -504,7 +575,6 @@ $('materials-previous').onclick = () => { materialsOffset = Math.max(0,materials
 $('materials-next').onclick = () => { materialsOffset += 25; loadMaterials(); };
 $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
-const materialQty = (quantity,unit) => `${n(Number(quantity))} ${unit}`;
 const materialReason = '<label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>';
 
 async function loadMaterials() {
