@@ -49,6 +49,9 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByLabel('Referensi final QC',{exact:true}).fill('FQC-UI-001');
   await page.getByLabel('Catatan pengukuran',{exact:true}).fill('Lingkar dada sesuai toleransi <aman>');
   await page.getByLabel('Catatan pemeriksaan visual',{exact:true}).fill('Jahitan rapi, satu noda ditemukan');
+  await page.getByLabel('Jenis defect',{exact:true}).fill('Noda ringan');
+  await page.getByLabel('Sumber penanggung jawab',{exact:true}).fill('Finishing internal');
+  await page.getByLabel('Disposition',{exact:true}).fill('Noda masuk rework, cacat berat reject');
   await page.getByLabel('Jumlah diterima',{exact:true}).fill('10');
   await page.getByLabel('Jumlah rework',{exact:true}).fill('2');
   await page.getByLabel('Jumlah reject',{exact:true}).fill('1');
