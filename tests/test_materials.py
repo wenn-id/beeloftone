@@ -122,7 +122,7 @@ class MaterialsTest(TestCase):
         self.assertEqual(self.detail(order), order)
         batch = self.post('/api/material-batches', self.receipt(self.material()))
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 6)
             for table in ['materials','material_batches','material_movements']:
                 for query in ['DELETE FROM '+table, 'UPDATE '+table+' SET id=id']:
                     with self.assertRaises(sqlite3.IntegrityError):

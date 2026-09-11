@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5):
+            if version not in (0, 1, 2, 3, 4, 5, 6):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -43,6 +43,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("materials.sql").read_text(encoding="utf-8"))
             if version < 5:
                 db.executescript(Path(__file__).with_name("bom.sql").read_text(encoding="utf-8"))
+            if version < 6:
+                db.executescript(Path(__file__).with_name("reservations.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -143,7 +145,7 @@ class Store:
     def _material_decimal(milli):
         return format(Decimal(milli) / 1000, '.3f')
 
-    def _material_batch(self, db, batch_id):
+    def _material_batch(self, db, batch_id, order_id=None):
         row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
             (SELECT COALESCE(SUM(quantity_milli),0) FROM material_movements WHERE batch_id=b.id) AS balance_milli,
             (SELECT id FROM material_movements WHERE batch_id=b.id AND kind='receipt') AS receipt_id
@@ -151,18 +153,24 @@ class Store:
         if not row:
             raise DomainError(404, 'Batch bahan tidak ditemukan.')
         record = dict(row)
-        record['balance'] = self._material_decimal(record.pop('balance_milli'))
+        balance = record.pop('balance_milli')
+        reserved = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (batch_id,)).fetchone()[0]
+        own = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=? AND order_id=?', (batch_id,order_id)).fetchone()[0]
+        record.update({key:self._material_decimal(value) for key,value in dict(balance=balance,reserved=reserved,
+                      available=balance-reserved,reserved_for_order=own,available_to_order=balance-reserved+own).items()})
         return record
 
     def material_batch(self, batch_id):
         with self.transaction() as db:
             return self._material_batch(db, batch_id)
 
-    def material_batches(self, limit=100, offset=0, material_id=''):
+    def material_batches(self, limit=100, offset=0, material_id='', order_id=None):
         with self.transaction() as db:
             ids = db.execute('''SELECT id FROM material_batches WHERE (?='' OR material_id=?)
                 ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?''', (material_id, material_id, limit, offset)).fetchall()
-            return [self._material_batch(db, row[0]) for row in ids]
+            if order_id is not None and not db.execute('SELECT 1 FROM orders WHERE id=?', (order_id,)).fetchone():
+                raise DomainError(404, 'Order produksi tidak ditemukan.')
+            return [self._material_batch(db, row[0], order_id) for row in ids]
 
     def _material_movement(self, db, batch_id, kind, quantity, order_id, reason, actor_id, reversal_of=None):
         record = dict(id=str(uuid4()), batch_id=batch_id, kind=kind, quantity_milli=quantity,
@@ -188,13 +196,17 @@ class Store:
 
     def issue_material(self, payload, actor, key):
         def perform(db):
-            batch = self._material_batch(db, payload['batch_id'])
+            batch = self._material_batch(db, payload['batch_id'], payload['order_id'])
             if not db.execute('SELECT 1 FROM orders WHERE id=?', (payload['order_id'],)).fetchone():
                 raise DomainError(404, 'Order produksi tidak ditemukan.')
             quantity = self._material_amount(payload['quantity'], batch['unit'])
-            if Decimal(batch['balance']) * 1000 < quantity:
-                raise DomainError(409, 'Saldo batch tidak cukup. Muat ulang dan periksa pengeluaran terakhir.')
-            return self._material_movement(db, batch['id'], 'issue', -quantity, payload['order_id'], payload['reason'], actor['id'])
+            if Decimal(batch['available_to_order']) * 1000 < quantity:
+                raise DomainError(409, 'Bahan untuk order ini tidak cukup. Stok yang direservasi order lain tidak boleh dikeluarkan.')
+            movement = self._material_movement(db, batch['id'], 'issue', -quantity, payload['order_id'], payload['reason'], actor['id'])
+            consumed = min(quantity, int(Decimal(batch['reserved_for_order']) * 1000))
+            if consumed:
+                self._reservation_event(db,batch['id'],payload['order_id'],'consume',-consumed,payload['reason'],actor['id'],movement['id'])
+            return movement
         return self._write(actor, ('admin','operator'), key, 'material-issue', payload, perform)
 
     def reverse_material(self, movement_id, payload, actor, key):
@@ -207,6 +219,8 @@ class Store:
             balance = db.execute('SELECT SUM(quantity_milli) FROM material_movements WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]
             if balance - original['quantity_milli'] < 0:
                 raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
+            if original['kind']=='receipt' and db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]:
+                raise DomainError(409, 'Batch masih direservasi. Lepaskan seluruh reservasi sebelum membalik penerimaan.')
             return self._material_movement(db, original['batch_id'], 'reversal', -original['quantity_milli'],
                 original['order_id'], payload['reason'], actor['id'], movement_id)
         return self._write(actor, ('admin',), key, 'material-reverse:'+movement_id, payload, perform)
@@ -228,6 +242,48 @@ class Store:
                 record = dict(row)
                 record['quantity'] = self._material_decimal(record.pop('quantity_milli'))
                 result.append(record)
+            return result
+
+    def _reservation_event(self, db, batch_id, order_id, kind, quantity, reason, actor_id, movement_id=None):
+        record=dict(id=str(uuid4()),batch_id=batch_id,order_id=order_id,kind=kind,quantity_milli=quantity,
+                    reason=reason,actor_id=actor_id,movement_id=movement_id,created_at=now())
+        db.execute('''INSERT INTO material_reservation_events(id,batch_id,order_id,kind,quantity_milli,movement_id,reason,actor_id,created_at)
+            VALUES(:id,:batch_id,:order_id,:kind,:quantity_milli,:movement_id,:reason,:actor_id,:created_at)''',record)
+        record['quantity']=self._material_decimal(record.pop('quantity_milli'))
+        return record
+
+    def reserve_material(self, payload, actor, key):
+        def perform(db):
+            batch=self._material_batch(db,payload['batch_id'],payload['order_id'])
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(payload['order_id'],)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            quantity=self._material_amount(payload['quantity'],batch['unit'])
+            field='available' if payload['action']=='reserve' else 'reserved_for_order'
+            if quantity>Decimal(batch[field])*1000:
+                raise DomainError(409,'Jumlah melebihi stok bebas atau reservasi order ini. Muat ulang dan periksa alokasi terbaru.')
+            return self._reservation_event(db,batch['id'],payload['order_id'],payload['action'],
+                quantity if payload['action']=='reserve' else -quantity,payload['reason'],actor['id'])
+        return self._write(actor,('admin',),key,'material-reservation',payload,perform)
+
+    def order_reservations(self, order_id, limit=100, offset=0):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT DISTINCT batch_id FROM material_reservation_events WHERE order_id=?
+                ORDER BY batch_id LIMIT ? OFFSET ?''',(order_id,limit,offset)).fetchall()
+            return [self._material_batch(db,row[0],order_id) for row in ids]
+
+    def reservation_history(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            rows=db.execute('''SELECT e.*,b.reference AS batch_reference,m.code,m.unit,u.name AS actor_name
+                FROM material_reservation_events e JOIN material_batches b ON b.id=e.batch_id
+                JOIN materials m ON m.id=b.material_id JOIN users u ON u.id=e.actor_id
+                WHERE e.order_id=? AND (? IS NULL OR e.sequence<?) ORDER BY e.sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
+            result=[]
+            for row in rows:
+                record=dict(row);record['quantity']=self._material_decimal(record.pop('quantity_milli'));result.append(record)
             return result
 
     def _bom(self, db, product_id, before=None):
@@ -289,7 +345,14 @@ class Store:
             for row in db.execute('''SELECT b.material_id,x.quantity_milli FROM material_movements x
                 JOIN material_batches b ON b.id=x.batch_id WHERE x.order_id=?''', (order_id,)):
                 issued[row['material_id']] = issued.get(row['material_id'],0) - row['quantity_milli']
-            ids = set(required) | {key for key,value in issued.items() if value}
+            reserved, own = {}, {}
+            for row in db.execute('''SELECT b.material_id,e.quantity_milli,e.order_id FROM material_reservation_events e
+                JOIN material_batches b ON b.id=e.batch_id'''):
+                material_id=row['material_id']
+                reserved[material_id]=reserved.get(material_id,0)+row['quantity_milli']
+                if row['order_id']==order_id:
+                    own[material_id]=own.get(material_id,0)+row['quantity_milli']
+            ids = set(required) | {key for key,value in issued.items() if value} | {key for key,value in own.items() if value}
             # Sum in Python: a multi-SKU requirement can exceed SQLite's signed 64-bit integer.
             for row in db.execute('''SELECT b.material_id,x.quantity_milli FROM material_movements x
                 JOIN material_batches b ON b.id=x.batch_id'''):
@@ -300,7 +363,11 @@ class Store:
                 material = dict(db.execute('SELECT code,name,unit FROM materials WHERE id=?', (material_id,)).fetchone())
                 need, out, available = required.get(material_id,0), issued.get(material_id,0), stock.get(material_id,0)
                 remaining = max(need-out,0)
-                amounts = dict(required=need,issued=out,remaining=remaining,stock=available,shortage=max(remaining-available,0))
+                reserved_own=own.get(material_id,0)
+                reserved_other=reserved.get(material_id,0)-reserved_own
+                free=available-reserved.get(material_id,0)
+                amounts = dict(required=need,issued=out,remaining=remaining,stock=available,reserved_own=reserved_own,
+                    reserved_other=reserved_other,available=free,available_to_order=free+reserved_own,shortage=max(remaining-free-reserved_own,0))
                 rows.append(dict(material_id=material_id, **material, outside_bom=material_id not in required,
                                  **{key:self._material_decimal(value) for key,value in amounts.items()}))
             return dict(order_id=order_id, reference=order['reference'], basis='latest_bom', complete=not missing,

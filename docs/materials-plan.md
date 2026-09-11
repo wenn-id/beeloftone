@@ -8,7 +8,7 @@ Source: Beeloft_One_Concept_Blueprint.pdf, pages 7, 8, 15–16. The PDF is produ
 |---|---|
 | 0 Discovery & Data Map | Internal production flow and roles mapped; real SKU/location/vendor identifiers still need field validation. |
 | 1 Command Center | Local SKU master and production dashboard exist. Jubelio/Mekari sync and company-wide dashboard are not implemented. |
-| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt and issue exist. v0.10 adds versioned BOM and latest-BOM order requirement/shortage estimates; reservations, actual consumption and PR/PO remain next. |
+| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt/issue, versioned BOM and latest-BOM requirements exist. v0.11 adds batch/order reservations and allocation-aware shortage estimates. Actual consumption/waste and PR/PO remain next. |
 | 3 Warehouse Integration | Not started; internal production warehouse balances are not authoritative sellable stock. |
 | 4 Unified Approvals | Not started. |
 | 5 Economics & Forecasting | Not started. |

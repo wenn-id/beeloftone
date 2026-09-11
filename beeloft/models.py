@@ -126,6 +126,10 @@ class MaterialIssue(MaterialQuantity):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class MaterialReservation(MaterialIssue):
+    action: Literal['reserve', 'release']
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

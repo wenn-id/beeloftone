@@ -290,6 +290,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.locator('#activity-view [data-action="move"]').count(),0);
   await require('./browser_materials.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_bom.cjs')({page,login,admin,viewer,apiGet,work});
+  await require('./browser_reservations.cjs')({page,login,admin,operator,viewer,apiGet,work});
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');

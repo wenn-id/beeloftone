@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
-from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, BomSave
+from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, BomSave
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -19,7 +19,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.10.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.11.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -113,8 +113,22 @@ def create_app(database_path):
 
     @app.get('/api/material-batches', tags=['Materials'])
     def material_batches(user: Actor, limit: Limit = 100, offset: Offset = 0,
-                         material_id: Annotated[str, Query(max_length=160)] = ''):
-        return store.material_batches(limit, offset, material_id)
+                         material_id: Annotated[str, Query(max_length=160)] = '',
+                         order_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
+        return store.material_batches(limit, offset, material_id, order_id)
+
+    @app.post('/api/material-reservations', status_code=201, tags=['Materials'])
+    def reserve_material(body: MaterialReservation, user: Actor, key: RequestKey):
+        return store.reserve_material(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/material-reservations', tags=['Materials'])
+    def order_reservations(order_id: str, user: Actor, limit: Limit = 100, offset: Offset = 0):
+        return store.order_reservations(order_id, limit, offset)
+
+    @app.get('/api/orders/{order_id}/reservation-history', tags=['Materials'])
+    def reservation_history(order_id: str, user: Actor, limit: Limit = 100,
+                            before: Annotated[int | None, Query(ge=1)] = None):
+        return store.reservation_history(order_id, limit, before)
 
     @app.get('/api/material-batches/{batch_id}', tags=['Materials'])
     def material_batch(batch_id: str, user: Actor):

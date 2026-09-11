@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.10.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.11.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup reservasi/konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 5. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 6. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -474,3 +474,77 @@ evaluasi saldo teragregasi bila volume transaksi menyebabkan halaman lambat.
 Tetap di worktree `feature/core-materials`, tanpa push GitHub. Setelah BOM dasar ini,
 tahap berikutnya adalah reservasi bahan per order sebelum memperluas ke konsumsi aktual dan PR/PO.
 Rencana: [BOM](docs/bom-plan.md). Hasil pengujian: [verifikasi BOM](docs/bom-verification.md).
+
+## Reservasi bahan per order (v0.11 — Phase 2 roadmap)
+
+Bagian ini memperbarui batas v0.9/v0.10 di atas: stok bahan sekarang dapat direservasi secara
+manual per batch dan order. Perhitungan kebutuhan sekarang mengurangi reservasi milik order lain
+dari bahan yang dapat dipakai order ini. Riwayat versi sebelumnya tetap dicantumkan sebagai konteks rilis.
+
+Admin: buka order → **Reservasi bahan → Tambah reservasi**. Pilih batch dan isi jumlah tambahan
+beserta alasan. Jumlah tersebut menjadi jatah order tanpa mengubah stok fisik. **Lepaskan reservasi**
+mengurangi jatah tersisa dan membebaskan bahan untuk order lain. Kedua tindakan menerima jumlah
+positif dan memakai satuan master, maksimal tiga desimal; pcs bulat. Jumlah adalah perubahan
+(tambahkan/lepaskan), bukan penggantian total. Minimal 0,001 m/kg atau 1 pcs, maksimal 1.000.000 satuan.
+
+Halaman bahan menampilkan **saldo batch**, **direservasi**, dan **bebas**. Stok bebas = saldo fisik
+dikurangi seluruh reservasi batch. Order hanya dapat mengeluarkan jatah sendiri + stok bebas.
+Admin/operator tetap memakai **Keluarkan bahan ke order**; sistem menghabiskan jatah sendiri
+terlebih dahulu sebelum memakai stok bebas, dalam transaksi yang sama dengan pengeluaran.
+Tidak perlu melepas jatah secara manual sebelum pengeluaran. Alokasi order lain tidak dapat diambil.
+
+Contoh: batch 10 m, order A reservasi 6 m → bebas 4 m. Order B maksimal mengeluarkan 4 m.
+Jika A mengeluarkan 2 m, stok menjadi 8 m, jatah A 4 m, bebas tetap 4 m. Jika A kemudian melepas
+1 m, jatah A menjadi 3 m dan bebas 5 m. Penulisan bersamaan tidak bisa menjanjikan stok yang sama
+dua kali. Retry dengan key/payload yang sama tidak menggandakan jatah.
+
+**Pembalikan pengeluaran mengembalikan stok bebas**, tanpa membuat ulang reservasi yang sudah
+terpakai. Buat reservasi baru bila bahan perlu dialokasikan lagi. Penerimaan tidak dapat dibalik
+jika batch masih mempunyai reservasi atau pengeluaran yang belum dikembalikan. Lepaskan seluruh
+jatah tersisa dan cocokkan kondisi fisik sebelum koreksi penerimaan. Semua catatan tetap utuh.
+
+Reservasi tidak otomatis mengikuti BOM, tidak kedaluwarsa, dan tidak otomatis dilepas saat order
+selesai. Admin perlu meninjau jatah tersisa, termasuk bila BOM berkurang atau bahan tidak lagi
+dipakai. Alokasi di luar BOM diperbolehkan dengan alasan dan terlihat dalam rincian kebutuhan.
+Belum ada reservasi otomatis/FIFO, persetujuan alokasi, atau penguncian produksi berdasarkan BOM.
+
+**Kebutuhan bahan** sekarang memuat reservasi sendiri, reservasi order lain, stok bebas dan
+jumlah yang bisa dipakai order ini. Rumus kekurangan menjadi:
+
+```text
+Sisa kebutuhan = max(kebutuhan total − dikeluarkan bersih, 0)
+Bisa dipakai order ini = stok bebas + reservasi order ini
+Kekurangan = max(sisa kebutuhan − bisa dipakai order ini, 0)
+```
+
+Stok fisik tetap tampil sebagai pembanding, bukan jumlah bebas. Reservasi sendiri tidak mengurangi
+kebutuhan total atau dikeluarkan bersih karena bahan belum berpindah. Estimasi tetap memakai BOM
+terbaru; stok bebas dapat berubah sesudah dimuat. Peringatan BOM belum lengkap tetap berlaku.
+
+Semua role membaca jatah/riwayat. Hanya admin aktif menambah/melepas reservasi. Admin/operator
+mengeluarkan bahan dengan pembatasan yang sama. Riwayat reservasi menyimpan batch, order, jumlah
+bertanda, alasan, akun dan waktu Jakarta: penambahan (+), pelepasan (-), pemakaian oleh pengeluaran
+(-). Catatan pemakaian memiliki ID perpindahan terkait; tidak dapat diedit/dihapus.
+
+API tambahan memakai X-API-Key, POST juga Idempotency-Key:
+
+- `POST /api/material-reservations`: `batch_id`, `order_id`, `action` (`reserve`/`release`), `quantity` string positif dan `reason`.
+- `GET /api/orders/{id}/material-reservations?limit=100&offset=0`: batch yang pernah dialokasikan untuk order, termasuk jatah tersisa nol.
+- `GET /api/orders/{id}/reservation-history?limit=100&before=SEQUENCE`: riwayat terbaru dahulu, hilangkan `before` di halaman pertama.
+- `GET /api/material-batches?order_id=ID`: menambahkan konteks order untuk setiap batch. Parameter tetap opsional; ID tidak ditemukan ditolak 404.
+
+Respons batch menambah `reserved` (semua order), `available` (bebas), `reserved_for_order`,
+`available_to_order`. Dua field terakhir pada daftar tanpa konteks order bernilai nol dan stok bebas.
+Detail batch tunggal juga tanpa konteks order. Daftar reservasi order memakai arti field yang sama,
+bukan mengganti `reserved` dengan jatah sendiri. Semua jumlah tetap string tiga desimal.
+Respons kebutuhan menambah `reserved_own`, `reserved_other`, `available`, `available_to_order`;
+`stock` tetap stok fisik, `shortage` kini memperhitungkan reservasi lain. `outside_bom` juga dapat
+menandai bahan yang direservasi di luar BOM saat ini.
+
+Schema 5 → 6 menambahkan event reservasi. Semua stok lama awalnya bebas, karena tidak ada alokasi
+historis yang diada-adakan. Backup sekarang menyertakan ledger reservasi. Tetap buat backup
+dengan aplikasi lama sebelum upgrade. Pengujian dilakukan di database sementara.
+
+Pengerjaan tetap di `feature/core-materials`, tanpa push atau merge main. Berikutnya: pencatatan
+konsumsi aktual dan waste cutting, sebelum perluasan PR/PO. Rencana dan verifikasi ada di
+[reservasi](docs/reservations-plan.md) dan [hasil uji](docs/reservations-verification.md).

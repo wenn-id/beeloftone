@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
     <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
@@ -264,9 +264,9 @@ function reverseForm(id) {
   formDialog('Koreksi dengan pembalikan', '<label class="full">Alasan koreksi<textarea name="reason" required maxlength="1000"></textarea></label>', form => ({reason:new FormData(form).get('reason').trim()}),
     `/api/movements/${id}/reverse`, `${movement.sku} · ${n(movement.quantity)} pcs\n${labels[movement.to_stage]} kembali ke ${labels[movement.from_stage]}. Seluruh jumlah pada catatan ini akan dikembalikan. Riwayat asli tetap tersimpan.`);
 }
-async function allRows(path) {
+async function allRows(path, extra={}) {
   let rows = [], page;
-  do { page = await api.get(`${path}?limit=500&offset=${rows.length}`); rows.push(...page); } while (page.length === 500);
+  do { page = await api.get(path+'?'+new URLSearchParams({...extra,limit:500,offset:rows.length})); rows.push(...page); } while (page.length === 500);
   return rows;
 }
 async function productsDialog() {
@@ -322,6 +322,7 @@ document.addEventListener('click', event => {
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
     bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
+    reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
@@ -561,11 +562,55 @@ async function requirementsDialog() {
   try {
     const report=await api.get(`/api/orders/${encodeURIComponent(order.id)}/material-requirements`);
     if (version!==epoch || modal!==dialogVersion || !$('dialog').open) return;
-    $('dialog-content').innerHTML = `<p class="form-info">${e(report.reference)} · estimasi dari BOM terbaru saat dimuat</p><p class="hint">Target order × BOM per pcs. Dikeluarkan bersih sudah dikurangi pembalikan. Sisa kebutuhan dibandingkan dengan stok rak semua batch. Stok belum direservasi dan bisa dipakai order lain; bukan jaminan ketersediaan. Perubahan versi BOM mengubah estimasi order lama.</p>
+    $('dialog-content').innerHTML = `<p class="form-info">${e(report.reference)} · estimasi dari BOM terbaru saat dimuat</p><p class="hint">Target order × BOM per pcs. Dikeluarkan bersih sudah dikurangi pembalikan. Sisa kebutuhan dibandingkan dengan jatah order ini ditambah stok bebas semua batch. Reservasi order lain tidak ikut tersedia. Stok bebas masih bisa dialokasikan ke order lain setelah halaman dimuat. Perubahan versi BOM mengubah estimasi order lama.</p>
       ${!report.complete ? `<p class="error" role="status">Perhitungan belum lengkap. BOM belum diisi untuk ${report.missing_bom.map(s=>e(s.sku)).join(', ')}. Angka di bawah hanya mencakup SKU yang sudah memiliki BOM.</p>` : ''}
-      <div id="requirements-list">${report.materials.map(m=>`<article class="material-event"><h3>${e(m.code)} · ${e(m.name)}</h3>${m.outside_bom?'<p class="status-label late">Dikeluarkan di luar BOM saat ini</p>':''}<dl class="requirement-values">${[['Kebutuhan total','required'],['Dikeluarkan bersih','issued'],['Sisa kebutuhan','remaining'],['Stok rak saat ini','stock'],['Kekurangan','shortage']].map(([label,key])=>`<div><dt>${label}</dt><dd class="${key==='shortage' && m.shortage!=='0.000'?'status-label late':''}">${e(materialQty(m[key],m.unit))}</dd></div>`).join('')}</dl></article>`).join('')}</div>
+      <div id="requirements-list">${report.materials.map(m=>`<article class="material-event"><h3>${e(m.code)} · ${e(m.name)}</h3>${m.outside_bom?'<p class="status-label late">Pengeluaran / reservasi di luar BOM saat ini</p>':''}<dl class="requirement-values">${[['Kebutuhan total','required'],['Dikeluarkan bersih','issued'],['Sisa kebutuhan','remaining'],['Stok rak saat ini','stock'],['Reservasi order ini','reserved_own'],['Reservasi order lain','reserved_other'],['Stok bebas','available'],['Bisa dipakai order ini','available_to_order'],['Kekurangan','shortage']].map(([label,key])=>`<div><dt>${label}</dt><dd class="${key==='shortage' && m.shortage!=='0.000'?'status-label late':''}">${e(materialQty(m[key],m.unit))}</dd></div>`).join('')}</dl></article>`).join('')}</div>
       <h3>Dasar perhitungan</h3><div>${report.sources.map(s=>`<p>${e(s.sku)} · ${n(s.target_quantity)} pcs · ${s.revision ? 'BOM versi '+s.revision : 'BOM belum diisi'} <button class="quiet" data-action="bom" data-id="${e(s.product_id)}">Lihat BOM</button></p>`).join('')}</div><button data-action="requirements">Hitung ulang kebutuhan</button>`;
   } catch(error) {if(version===epoch && modal===dialogVersion && $('dialog').open) $('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="requirements">Coba lagi</button>`;}
+}
+
+async function reservationForm(action) {
+  if (guardPending()) return;
+  const version=epoch,order=selected,isReserve=action==='reserve';
+  const title=isReserve?'Tambah reservasi bahan':'Lepaskan reservasi bahan';
+  openDialog(title,'<p class="state">Memuat alokasi batch…</p>');const modal=dialogVersion;
+  try {
+    const rows=await allRows('/api/material-batches',{order_id:order.id});
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    const fieldName=isReserve?'available':'reserved_for_order',batches=rows.filter(b=>Number(b[fieldName])>0);
+    if(!batches.length){$('dialog-content').innerHTML=`<p>${isReserve?'Tidak ada stok bebas untuk direservasi.':'Order ini tidak memiliki reservasi yang tersisa.'}</p>`;return;}
+    formDialog(title,`<div class="full"><label for="reservation-batch">Batch untuk reservasi</label><select id="reservation-batch" name="batch_id">${batches.map(b=>option(b.id,`${b.reference} · ${b.code} · ${isReserve?'bebas':'jatah order'} ${materialQty(b[fieldName],b.unit)}`)).join('')}</select></div>`+
+      field('quantity',isReserve?'Jumlah tambahan reservasi':'Jumlah dilepaskan','number','required min="0.001" max="1000000" step="0.001" id="reservation-quantity"')+materialReason,
+      form=>({...Object.fromEntries(new FormData(form)),order_id:order.id,action}),'/api/material-reservations',
+      `${order.reference}\n${isReserve?'Jumlah ini ditambahkan ke jatah order pada batch pilihan.':'Jumlah ini dilepaskan dari jatah order dan kembali bebas untuk order lain.'} Stok fisik tidak berubah. Reservasi tidak otomatis mengikuti perubahan BOM atau selesai order.`);
+    const update=()=>{const b=batches.find(b=>b.id===$('reservation-batch').value);$('reservation-quantity').max=b[fieldName];$('reservation-quantity').step=$('reservation-quantity').min=b.unit==='pcs'?'1':'0.001';};
+    $('reservation-batch').onchange=update;update();
+  } catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="${isReserve?'reserve-material':'release-material'}">Coba lagi</button>`;}
+}
+async function reservationsDialog() {
+  if(guardPending())return;
+  const version=epoch,order=selected;
+  openDialog('Reservasi bahan order','<p class="state">Memuat reservasi…</p>');const modal=dialogVersion;
+  const current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  try {
+    const batches=await allRows(`/api/orders/${encodeURIComponent(order.id)}/material-reservations`);
+    if(!current())return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><p class="hint">Reservasi melindungi jatah order per batch, tanpa memindahkan bahan. Pengeluaran memakai jatah sendiri terlebih dahulu. Pembalikan pengeluaran mengembalikan stok bebas; reservasi ulang perlu dicatat terpisah. Jatah tersisa tetap berlaku setelah order selesai atau BOM berubah sampai dikeluarkan atau dilepaskan.</p>
+      <div id="reservation-balances">${batches.length?batches.map(b=>`<article class="material-event"><strong>${e(b.reference)} · ${e(b.code)}</strong><p>Jatah tersisa: ${e(materialQty(b.reserved_for_order,b.unit))}</p><p class="hint">${e(b.location)} · stok bebas ${e(materialQty(b.available,b.unit))}</p></article>`).join(''):'<p class="state">Belum ada reservasi untuk order ini.</p>'}</div>
+      ${user.role==='admin'?'<div class="form-actions"><button data-action="release-material">Lepaskan reservasi</button><button class="primary" data-action="reserve-material">Tambah reservasi</button></div>':''}
+      <h3>Riwayat reservasi</h3><div id="reservation-history"></div><p id="reservation-error" class="error" role="alert" hidden></p><button id="reservation-more" type="button">Muat riwayat reservasi</button>`;
+    let before=null;
+    const load=async()=>{
+      const button=$('reservation-more');button.disabled=true;message('reservation-error','');
+      try{
+        const rows=await api.get(`/api/orders/${encodeURIComponent(order.id)}/reservation-history?`+new URLSearchParams({limit:100,...(before?{before}:{})}));
+        if(!current())return;
+        $('reservation-history').insertAdjacentHTML('beforeend',rows.map(r=>`<article class="material-event"><strong>${{reserve:'Reservasi ditambah',release:'Reservasi dilepas',consume:'Dipakai oleh pengeluaran'}[r.kind]} · ${e(materialQty(r.quantity,r.unit))}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(r.created_at))}</p></article>`).join(''));
+        before=rows.at(-1)?.sequence;button.hidden=rows.length<100;button.textContent='Muat reservasi sebelumnya';
+      }catch(error){if(current())message('reservation-error',error.message,true);}finally{if(current())button.disabled=false;}
+    };
+    $('reservation-more').onclick=load;await load();
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="reservations">Coba lagi</button>`;}
 }
 $('materials').onclick = showMaterials;
 $('materials-back').onclick = showBoard;
@@ -587,7 +632,7 @@ async function loadMaterials() {
     $('material-filter').innerHTML = option('','Semua bahan')+materials.map(m => option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('');
     $('material-filter').value = materialId;
     message('materials-message',batches.length ? '' : 'Belum ada batch pada halaman ini. Terima bahan untuk mulai mencatat stok.');
-    $('batch-list').innerHTML = batches.slice(0,25).map(b => `<article class="sku-block"><div class="sku-heading"><div><span class="reference">${e(b.code)} · ${e(b.name)}</span><h2><button class="order-title" data-action="material-batch" data-id="${e(b.id)}">${e(b.reference)}</button></h2><p class="hint">${e(b.supplier)} · ${e(b.location)} · diterima ${date(b.received_date)}</p></div><div>Saldo batch<strong class="material-balance">${e(materialQty(b.balance,b.unit))}</strong></div></div></article>`).join('');
+    $('batch-list').innerHTML = batches.slice(0,25).map(b => `<article class="sku-block"><div class="sku-heading"><div><span class="reference">${e(b.code)} · ${e(b.name)}</span><h2><button class="order-title" data-action="material-batch" data-id="${e(b.id)}">${e(b.reference)}</button></h2><p class="hint">${e(b.supplier)} · ${e(b.location)} · diterima ${date(b.received_date)}</p></div><div>Saldo batch<strong class="material-balance">${e(materialQty(b.balance,b.unit))}</strong><p class="hint">Direservasi ${e(materialQty(b.reserved,b.unit))}<br>Bebas ${e(materialQty(b.available,b.unit))}</p></div></div></article>`).join('');
     $('materials-page').textContent = batches.length ? `Batch ${materialsOffset+1}–${materialsOffset+Math.min(25,batches.length)}` : '0 batch di halaman ini';
     $('materials-previous').disabled = materialsOffset === 0; $('materials-next').disabled = batches.length <= 25;
   } catch (error) { if (version === epoch && request === materialsRequest && view === 'materials') fail(error,'materials-message'); }
@@ -628,13 +673,13 @@ async function materialIssueForm() {
   const version = epoch, order = selected;
   openDialog('Keluarkan bahan ke order','<p class="state">Memuat saldo batch…</p>'); const modal = dialogVersion;
   try {
-    const batches = (await allRows('/api/material-batches')).filter(b => Number(b.balance)>0);
+    const batches = (await allRows('/api/material-batches',{order_id:order.id})).filter(b => Number(b.available_to_order)>0);
     if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
-    if (!batches.length) { $('dialog-content').innerHTML = '<p>Belum ada saldo bahan. Terima batch melalui menu Bahan baku terlebih dahulu.</p>'; return; }
-    formDialog('Keluarkan bahan ke order',`<div class="full"><label for="issue-batch">Batch bahan</label><select id="issue-batch" name="batch_id">${batches.map(b => option(b.id,`${b.reference} · ${b.code} · ${b.location} · sisa ${materialQty(b.balance,b.unit)}`)).join('')}</select></div>`+
+    if (!batches.length) { $('dialog-content').innerHTML = '<p>Belum ada bahan yang dapat dikeluarkan untuk order ini. Periksa penerimaan dan reservasi order lain.</p>'; return; }
+    formDialog('Keluarkan bahan ke order',`<div class="full"><label for="issue-batch">Batch bahan</label><select id="issue-batch" name="batch_id">${batches.map(b => option(b.id,`${b.reference} · ${b.code} · ${b.location} · bisa dipakai ${materialQty(b.available_to_order,b.unit)} · jatah sendiri ${materialQty(b.reserved_for_order,b.unit)}`)).join('')}</select></div>`+
       field('quantity','Jumlah dikeluarkan','number','required min="0.001" max="1000000" step="0.001" id="material-issue-quantity"')+materialReason,
-      form => ({...Object.fromEntries(new FormData(form)),order_id:order.id}), '/api/material-issues',`${order.reference} · ${order.title}\nCatat jumlah yang benar-benar dikeluarkan dari rak. Pengeluaran ini tidak mengubah pcs atau tahap produksi, dan belum berarti konsumsi aktual.`);
-    const updateUnit = () => { const b = batches.find(b => b.id === $('issue-batch').value); $('material-issue-quantity').max = b.balance; $('material-issue-quantity').step = $('material-issue-quantity').min = b.unit === 'pcs' ? '1' : '0.001'; };
+      form => ({...Object.fromEntries(new FormData(form)),order_id:order.id}), '/api/material-issues',`${order.reference} · ${order.title}\nCatat jumlah yang benar-benar dikeluarkan dari rak. Pengeluaran ini tidak mengubah pcs atau tahap produksi, dan belum berarti konsumsi aktual. Reservasi order ini dipakai terlebih dahulu, lalu stok bebas.`);
+    const updateUnit = () => { const b = batches.find(b => b.id === $('issue-batch').value); $('material-issue-quantity').max = b.available_to_order; $('material-issue-quantity').step = $('material-issue-quantity').min = b.unit === 'pcs' ? '1' : '0.001'; };
     $('issue-batch').onchange = updateUnit; updateUnit();
   } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="issue-material">Coba lagi</button>`; }
 }
@@ -665,7 +710,7 @@ async function materialHistoryDialog(batchId, order=null) {
       const button = event.target.closest('[data-material-reverse]'); if (!button || guardPending()) return;
       const item = rows.find(m => m.id === button.dataset.materialReverse);
       formDialog('Koreksi catatan bahan',materialReason,form => Object.fromEntries(new FormData(form)),`/api/material-movements/${encodeURIComponent(item.id)}/reverse`,
-        `${item.batch_reference} · ${materialQty(item.quantity,item.unit)}\nPembalikan mengembalikan seluruh jumlah catatan. Pastikan posisi bahan fisik sesuai. Penerimaan tidak dapat dibalik jika bahan masih dikeluarkan ke order.`);
+        `${item.batch_reference} · ${materialQty(item.quantity,item.unit)}\nPembalikan mengembalikan seluruh jumlah catatan. Pastikan posisi bahan fisik sesuai. Penerimaan tidak dapat dibalik jika bahan masih dikeluarkan atau direservasi. Pembalikan pengeluaran mengembalikan stok bebas, tanpa mengembalikan reservasi otomatis.`);
     };
     await load();
   } catch (error) { if (current()) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="${order ? 'order-materials' : 'material-batch'}" data-id="${e(batchId || '')}">Coba lagi</button>`; }
