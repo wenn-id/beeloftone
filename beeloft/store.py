@@ -492,6 +492,16 @@ class Store:
             return self._bundle(db,bundle_id)
         return self._write(actor,('admin','operator'),key,'bundle:'+run_id,payload,perform)
 
+    def reverse_bundle(self, bundle_id, payload, actor, key):
+        def perform(db):
+            bundle=self._bundle(db,bundle_id)
+            if bundle['reversal']:
+                raise DomainError(409,'Bundle sudah dikoreksi.')
+            db.execute('INSERT INTO bundle_reversals(bundle_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
+                       (bundle_id,payload['reason'],actor['id'],now()))
+            return self._bundle(db,bundle_id)
+        return self._write(actor,('admin',),key,'bundle-reverse:'+bundle_id,payload,perform)
+
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):
             order=self._order(db,order_id)
@@ -516,6 +526,8 @@ class Store:
             run=self._cutting_run(db,run_id)
             if run['reversal']:
                 raise DomainError(409,'Hasil cutting sudah dikoreksi.')
+            if any(row['bundled_quantity'] for row in run['outputs']):
+                raise DomainError(409,'Koreksi semua bundle aktif sebelum mengoreksi hasil cutting.')
             for row in run['outputs']:
                 if row['reversed_by']:
                     raise DomainError(409,'Perpindahan hasil cutting sudah dikoreksi terpisah; periksa riwayat.')

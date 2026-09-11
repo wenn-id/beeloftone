@@ -235,6 +235,10 @@ def create_app(database_path):
     def bundle(bundle_id: str, user: Actor):
         return store.bundle(bundle_id)
 
+    @app.post('/api/bundles/{bundle_id}/reverse', status_code=201, tags=['Bundling'])
+    def reverse_bundle(bundle_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_bundle(bundle_id, body.model_dump(mode='json'), user, key)
+
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
         return store.consume_material(body.model_dump(mode='json'), user, key)
