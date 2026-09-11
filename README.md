@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.8.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.9.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup BOM, stok/konsumsi kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 3. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup BOM, reservasi/konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 4. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -350,3 +350,67 @@ server dan browser serta mengikuti timeout client 15 detik. Rilis ini belum meny
 langsung melalui dashboard, penjadwalan otomatis, enkripsi arsip atau sinkronisasi ke cloud.
 
 Verifikasi: `docs/backup-download-verification.md`.
+
+## Bahan baku dan batch (v0.9 — Phase 2 roadmap)
+
+Status seluruh fase blueprint dan batas increment ini ada di [roadmap bahan](docs/materials-plan.md).
+Produksi menjadi prioritas awal sesuai kebutuhan pelacakan internal. Integrasi Jubelio/Mekari
+pada Phase 1 belum dikerjakan; tahap bahan ini tidak berarti seluruh Phase 2 selesai.
+
+1. Admin membuka **Bahan baku → Master bahan → Tambah bahan**. Pilih satuan dasar meter (m), kilogram (kg), atau pcs.
+2. Admin/operator memilih **Terima batch bahan**: bahan, referensi batch unik, pemasok, lokasi/rak, tanggal diterima, jumlah layak pakai dan alasan.
+3. Buka order produksi → **Keluarkan bahan ke order**. Pilih batch dengan saldo positif dan catat jumlah yang benar-benar dikeluarkan dari rak.
+4. **Riwayat bahan order** menunjukkan batch yang dipakai beserta pencatat/alasan. Klik referensi batch di halaman Bahan baku untuk riwayat penerimaan, pengeluaran, dan pembalikannya.
+5. Admin memilih **Koreksi catatan bahan**, lalu mengisi alasan. Pembalikan mengembalikan seluruh jumlah catatan; untuk jumlah berbeda, catat transaksi baru setelah koreksi.
+
+Contoh: terima 10,125 m lalu keluarkan 2,125 m ke order → saldo rak 8 m. Membalik pengeluaran
+tersebut → saldo kembali 10,125 m. Pengeluaran tidak mengubah pcs maupun tahap WIP order,
+dan belum mengukur konsumsi aktual, hasil cutting atau waste. Angka meter dan kilogram tidak dijumlahkan.
+
+Kode/nama/satuan master dan metadata batch tidak dapat diedit. Penerimaan yang keliru harus
+dibalik, lalu diterima sebagai batch baru dengan referensi berbeda. Pembalikan penerimaan ditolak
+jika bahan masih dikeluarkan ke order; pastikan bahan fisik kembali dan balik pengeluarannya dahulu.
+Catatan pembalik tidak bisa dibalik lagi. Batch bersaldo nol tetap tampil untuk audit.
+Lokasi adalah lokasi penerimaan; perpindahan fisik antarrak belum tersedia.
+
+Jumlah m/kg menerima maksimal tiga desimal; pcs wajib bulat, maksimal 1.000.000 satuan per
+transaksi. Angka di database berupa bilangan bulat per seribu satuan agar tidak mengalami
+pembulatan floating point. Tidak ada konversi roll ke meter. Penerimaan hanya mencatat bahan
+yang diterima layak pakai; barang hold/reject, reservasi, BOM, PR/PO, biaya dan master pemasok
+belum masuk tahap ini. Saldo rak bukan ketersediaan setelah reservasi atau jaminan cukup untuk semua order.
+
+Semua role dapat membaca. Hanya admin membuat master dan membalik catatan; admin/operator
+menerima/mengeluarkan bahan. Catatan tetap menyimpan ID/nama pencatat meskipun akun kemudian
+dinonaktifkan. Waktu pencatatan memakai UTC, tampil di UI dalam waktu Jakarta. Tanggal penerimaan
+diisi pengguna dan tidak mengganti waktu audit. Riwayat bahan terpisah dari Laporan aktivitas produksi.
+
+API tambahan, dengan X-API-Key dan Idempotency-Key pada semua POST:
+
+| Endpoint | Isi / hasil |
+|---|---|
+| `POST /api/materials` | `code`, `name`, `unit` (`m`, `kg`, `pcs`) |
+| `GET /api/materials` | Master bahan, `limit`/`offset` |
+| `POST /api/material-batches` | `material_id`, `reference`, `supplier`, `location`, `received_date`, `quantity`, `reason` |
+| `GET /api/material-batches` | Batch dan saldo; filter `material_id`, `limit`/`offset` |
+| `GET /api/material-batches/{id}` | Detail batch, `balance`, `receipt_id` |
+| `POST /api/material-issues` | `batch_id`, `order_id`, `quantity`, `reason` |
+| `POST /api/material-movements/{id}/reverse` | `reason` |
+| `GET /api/material-batches/{id}/movements` | Riwayat batch terbaru dahulu |
+| `GET /api/orders/{id}/material-movements` | Riwayat pengeluaran/pembalikan order terbaru dahulu |
+
+Kirim jumlah sebagai **string desimal**, misalnya `"2.125"`; bukan JSON float atau angka dengan koma.
+Respons saldo dan jumlah juga string tiga desimal. Jumlah positif menambah stok rak; negatif
+mengurangi stok rak. Normalisasi desimal membuat `"2"` dan `"2.000"` payload yang sama untuk retry.
+Riwayat menerima `limit` (1–500, default 100) dan `before` dari sequence terakhir; halaman pertama
+tanpa `before`. Field `reversed_by` tetap menunjukkan pembalikan walau catatan pembalik berada
+di halaman lain. Setiap baca memperoleh snapshot tersendiri; muat ulang untuk perubahan terbaru.
+
+Schema 3 → 4 menambahkan tabel bahan tanpa mengubah pcs, order, atau riwayat produksi lama.
+Backup memakai versi lama sebelum upgrade. Cadangan database sekarang juga menyertakan semua
+master, batch dan catatan bahan. Pengujian tetap memakai database sementara.
+
+Pengerjaan v0.9 berada di worktree lokal `.worktrees/core-materials`, branch `feature/core-materials`.
+Jalankan `./start.ps1 -Demo` dari worktree tersebut untuk membuat demo terpisah; tidak memakai
+database demo pada checkout main. Demo awal belum berisi bahan; tambahkan dari dashboard.
+
+Hasil pengujian: [verifikasi bahan](docs/materials-verification.md).

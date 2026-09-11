@@ -21,7 +21,15 @@
       <form id="login-form" class="login-form"><h2>Masuk ke produksi</h2><p>Gunakan kunci akses akun yang dibuat di server Beeloft.</p><label for="access-key">Kunci akses</label><input id="access-key" type="password" required autocomplete="off" spellcheck="false"><p class="hint">Kunci hanya digunakan selama halaman ini terbuka.</p><p id="login-error" class="error" role="alert" hidden></p><button class="primary" type="submit">Buka ruang produksi</button></form>
     </section>
     <section id="workspace" hidden>
-      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><div class="actions"><button id="activity" class="quiet" type="button">Laporan aktivitas</button><button id="products" class="quiet" type="button">Master SKU</button><button id="backup" class="quiet" type="button" hidden>Cadangan data</button></div></div>
+      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><div class="actions"><button id="materials" class="quiet" type="button">Bahan baku</button><button id="activity" class="quiet" type="button">Laporan aktivitas</button><button id="products" class="quiet" type="button">Master SKU</button><button id="backup" class="quiet" type="button" hidden>Cadangan data</button></div></div>
+      <section id="materials-view" hidden>
+        <button id="materials-back" class="quiet back" type="button">← Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Bahan baku · stok internal</p><h1>Bahan masuk, pemakaian tercatat.</h1></div><div class="actions"><button id="material-master" type="button">Master bahan</button><button id="receive-material" class="primary" type="button" hidden>Terima batch bahan</button></div></div>
+        <p class="hint">Saldo adalah bahan layak pakai yang diterima, dikurangi pengeluaran ke order. Belum memperhitungkan reservasi atau kebutuhan BOM. Untuk mencatat pemakaian, buka order produksi.</p>
+        <div class="filters"><div><label for="material-filter">Bahan</label><select id="material-filter"><option value="">Semua bahan</option></select></div><button id="materials-refresh" type="button">Muat ulang bahan</button></div>
+        <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list"></div>
+        <div class="pagination"><span id="materials-page" class="hint"></span><div class="actions"><button id="materials-previous" type="button">Batch sebelumnya</button><button id="materials-next" type="button">Batch berikutnya</button></div></div>
+      </section>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>

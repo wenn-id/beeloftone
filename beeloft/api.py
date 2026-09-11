@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -18,8 +19,8 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.8.0",
-                  description="Fondasi produksi internal. Semua jumlah dalam pcs. Gunakan Authorize untuk API key pengguna.")
+    app = FastAPI(title="Beeloft One · Production API", version="0.9.0",
+                  description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
     static = Path(__file__).with_name("static")
@@ -46,7 +47,7 @@ def create_app(database_path):
 
     @app.exception_handler(sqlite3.IntegrityError)
     async def integrity_error(request, exc):
-        return JSONResponse(status_code=409, content={"detail": "Data duplikat atau melanggar aturan database. Periksa SKU dan referensi order."})
+        return JSONResponse(status_code=409, content={"detail": "Data duplikat atau melanggar aturan database. Periksa kode SKU/bahan dan referensi order/batch."})
 
     @app.exception_handler(sqlite3.OperationalError)
     async def database_error(request, exc):
@@ -80,6 +81,45 @@ def create_app(database_path):
     @app.get("/api/products", tags=["Products"])
     def products(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.products(limit, offset)
+
+    @app.post('/api/materials', status_code=201, tags=['Materials'])
+    def create_material(body: MaterialCreate, user: Actor, key: RequestKey):
+        return store.create_material(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/materials', tags=['Materials'])
+    def materials(user: Actor, limit: Limit = 100, offset: Offset = 0):
+        return store.materials(limit, offset)
+
+    @app.post('/api/material-batches', status_code=201, tags=['Materials'])
+    def receive_material(body: MaterialReceipt, user: Actor, key: RequestKey):
+        return store.receive_material(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/material-batches', tags=['Materials'])
+    def material_batches(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                         material_id: Annotated[str, Query(max_length=160)] = ''):
+        return store.material_batches(limit, offset, material_id)
+
+    @app.get('/api/material-batches/{batch_id}', tags=['Materials'])
+    def material_batch(batch_id: str, user: Actor):
+        return store.material_batch(batch_id)
+
+    @app.post('/api/material-issues', status_code=201, tags=['Materials'])
+    def issue_material(body: MaterialIssue, user: Actor, key: RequestKey):
+        return store.issue_material(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/material-movements/{movement_id}/reverse', status_code=201, tags=['Materials'])
+    def reverse_material(movement_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_material(movement_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/material-batches/{batch_id}/movements', tags=['Materials'])
+    def batch_material_history(batch_id: str, user: Actor, limit: Limit = 100,
+                               before: Annotated[int | None, Query(ge=1)] = None):
+        return store.material_history(batch_id=batch_id, limit=limit, before=before)
+
+    @app.get('/api/orders/{order_id}/material-movements', tags=['Materials'])
+    def order_material_history(order_id: str, user: Actor, limit: Limit = 100,
+                               before: Annotated[int | None, Query(ge=1)] = None):
+        return store.material_history(order_id=order_id, limit=limit, before=before)
 
     @app.post("/api/orders", status_code=201, tags=["Production"])
     def create_order(body: OrderCreate, user: Actor, key: RequestKey):

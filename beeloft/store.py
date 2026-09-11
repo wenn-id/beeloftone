@@ -4,6 +4,7 @@ import secrets
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -38,6 +39,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("issues.sql").read_text(encoding="utf-8"))
             if version < 3:
                 db.executescript(Path(__file__).with_name("order_changes.sql").read_text(encoding="utf-8"))
+            if version < 4:
+                db.executescript(Path(__file__).with_name("materials.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -113,6 +116,117 @@ class Store:
     def products(self, limit=100, offset=0):
         with self.transaction() as db:
             return [dict(row) for row in db.execute("SELECT * FROM products ORDER BY sku LIMIT ? OFFSET ?", (limit, offset))]
+
+    def create_material(self, payload, actor, key):
+        def perform(db):
+            record = {'id':str(uuid4()), **payload, 'created_by':actor['id'], 'created_at':now()}
+            db.execute('INSERT INTO materials VALUES(:id,:code,:name,:unit,:created_by,:created_at)', record)
+            return record
+        return self._write(actor, ('admin',), key, 'material', payload, perform)
+
+    def materials(self, limit=100, offset=0):
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute('SELECT * FROM materials ORDER BY code,id LIMIT ? OFFSET ?', (limit, offset))]
+
+    @staticmethod
+    def _material_amount(quantity, unit):
+        amount = Decimal(quantity)
+        if not amount.is_finite() or not 0 < amount <= 1_000_000 or amount * 1000 != (amount * 1000).to_integral_value():
+            raise DomainError(422, 'Jumlah bahan harus positif, maksimal 1.000.000 dengan tiga desimal.')
+        if unit == 'pcs' and amount != amount.to_integral_value():
+            raise DomainError(422, 'Bahan dengan satuan pcs harus berjumlah bulat.')
+        return int(amount * 1000)
+
+    @staticmethod
+    def _material_decimal(milli):
+        return format(Decimal(milli) / 1000, '.3f')
+
+    def _material_batch(self, db, batch_id):
+        row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
+            (SELECT COALESCE(SUM(quantity_milli),0) FROM material_movements WHERE batch_id=b.id) AS balance_milli,
+            (SELECT id FROM material_movements WHERE batch_id=b.id AND kind='receipt') AS receipt_id
+            FROM material_batches b JOIN materials m ON m.id=b.material_id WHERE b.id=?''', (batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Batch bahan tidak ditemukan.')
+        record = dict(row)
+        record['balance'] = self._material_decimal(record.pop('balance_milli'))
+        return record
+
+    def material_batch(self, batch_id):
+        with self.transaction() as db:
+            return self._material_batch(db, batch_id)
+
+    def material_batches(self, limit=100, offset=0, material_id=''):
+        with self.transaction() as db:
+            ids = db.execute('''SELECT id FROM material_batches WHERE (?='' OR material_id=?)
+                ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?''', (material_id, material_id, limit, offset)).fetchall()
+            return [self._material_batch(db, row[0]) for row in ids]
+
+    def _material_movement(self, db, batch_id, kind, quantity, order_id, reason, actor_id, reversal_of=None):
+        record = dict(id=str(uuid4()), batch_id=batch_id, kind=kind, quantity_milli=quantity,
+                      order_id=order_id, reason=reason, actor_id=actor_id, created_at=now(), reversal_of=reversal_of)
+        db.execute('''INSERT INTO material_movements(id,batch_id,kind,quantity_milli,order_id,reversal_of,reason,actor_id,created_at)
+            VALUES(:id,:batch_id,:kind,:quantity_milli,:order_id,:reversal_of,:reason,:actor_id,:created_at)''', record)
+        record['quantity'] = self._material_decimal(record.pop('quantity_milli'))
+        return record
+
+    def receive_material(self, payload, actor, key):
+        def perform(db):
+            material = db.execute('SELECT unit FROM materials WHERE id=?', (payload['material_id'],)).fetchone()
+            if not material:
+                raise DomainError(404, 'Bahan tidak ditemukan.')
+            quantity = self._material_amount(payload['quantity'], material['unit'])
+            record = {k:v for k,v in payload.items() if k not in ('quantity','reason')}
+            record.update(id=str(uuid4()), created_by=actor['id'], created_at=now())
+            db.execute('''INSERT INTO material_batches VALUES(:id,:material_id,:reference,:supplier,:location,
+                :received_date,:created_by,:created_at)''', record)
+            self._material_movement(db, record['id'], 'receipt', quantity, None, payload['reason'], actor['id'])
+            return self._material_batch(db, record['id'])
+        return self._write(actor, ('admin','operator'), key, 'material-receipt', payload, perform)
+
+    def issue_material(self, payload, actor, key):
+        def perform(db):
+            batch = self._material_batch(db, payload['batch_id'])
+            if not db.execute('SELECT 1 FROM orders WHERE id=?', (payload['order_id'],)).fetchone():
+                raise DomainError(404, 'Order produksi tidak ditemukan.')
+            quantity = self._material_amount(payload['quantity'], batch['unit'])
+            if Decimal(batch['balance']) * 1000 < quantity:
+                raise DomainError(409, 'Saldo batch tidak cukup. Muat ulang dan periksa pengeluaran terakhir.')
+            return self._material_movement(db, batch['id'], 'issue', -quantity, payload['order_id'], payload['reason'], actor['id'])
+        return self._write(actor, ('admin','operator'), key, 'material-issue', payload, perform)
+
+    def reverse_material(self, movement_id, payload, actor, key):
+        def perform(db):
+            original = db.execute('SELECT * FROM material_movements WHERE id=?', (movement_id,)).fetchone()
+            if not original:
+                raise DomainError(404, 'Catatan bahan tidak ditemukan.')
+            if original['kind'] == 'reversal' or db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?', (movement_id,)).fetchone():
+                raise DomainError(409, 'Catatan pembalik atau catatan yang sudah dibalik tidak dapat dikoreksi lagi.')
+            balance = db.execute('SELECT SUM(quantity_milli) FROM material_movements WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]
+            if balance - original['quantity_milli'] < 0:
+                raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
+            return self._material_movement(db, original['batch_id'], 'reversal', -original['quantity_milli'],
+                original['order_id'], payload['reason'], actor['id'], movement_id)
+        return self._write(actor, ('admin',), key, 'material-reverse:'+movement_id, payload, perform)
+
+    def material_history(self, *, batch_id=None, order_id=None, limit=100, before=None):
+        with self.transaction() as db:
+            if batch_id is not None:
+                self._material_batch(db, batch_id)
+            elif not db.execute('SELECT 1 FROM orders WHERE id=?', (order_id,)).fetchone():
+                raise DomainError(404, 'Order produksi tidak ditemukan.')
+            rows = db.execute('''SELECT x.*,b.reference AS batch_reference,b.location,m.code,m.unit,u.name AS actor_name,
+                o.reference AS order_reference,(SELECT id FROM material_movements WHERE reversal_of=x.id) AS reversed_by
+                FROM material_movements x JOIN material_batches b ON b.id=x.batch_id
+                JOIN materials m ON m.id=b.material_id JOIN users u ON u.id=x.actor_id LEFT JOIN orders o ON o.id=x.order_id
+                WHERE (? IS NULL OR x.batch_id=?) AND (? IS NULL OR x.order_id=?) AND (? IS NULL OR x.sequence<?)
+                ORDER BY x.sequence DESC LIMIT ?''', (batch_id,batch_id,order_id,order_id,before,before,limit)).fetchall()
+            result = []
+            for row in rows:
+                record = dict(row)
+                record['quantity'] = self._material_decimal(record.pop('quantity_milli'))
+                result.append(record)
+            return result
 
     def create_order(self, payload, actor, key):
         def perform(db):

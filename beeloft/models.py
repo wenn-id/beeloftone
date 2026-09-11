@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -81,4 +82,45 @@ class OrderChange(Input):
     owner_id: Text
     due_date: date
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
+
+
+class MaterialCreate(Input):
+    code: Text
+    name: Text
+    unit: Literal['m', 'kg', 'pcs']
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class MaterialQuantity(Input):
+    quantity: MaterialAmount
+
+    @field_validator('quantity')
+    @classmethod
+    def validate_quantity(cls, value):
+        quantity = Decimal(value)
+        if not 0 < quantity <= 1_000_000:
+            raise ValueError('Jumlah harus lebih dari nol dan maksimal 1.000.000 satuan.')
+        return format(quantity, '.3f')
+
+
+class MaterialReceipt(MaterialQuantity):
+    material_id: Text
+    reference: Text
+    supplier: Text
+    location: Text
+    received_date: date
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class MaterialIssue(MaterialQuantity):
+    batch_id: Text
+    order_id: Text
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
