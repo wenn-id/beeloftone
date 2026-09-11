@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, SewingJobComplete, SewingJobCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinishingRecordCreate, SewingJobComplete, SewingJobCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -259,6 +259,23 @@ def create_app(database_path):
     @app.post('/api/sewing-jobs/{job_id}/reverse', status_code=201, tags=['Sewing'])
     def reverse_sewing_job(job_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_sewing_job(job_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/sewing-jobs/{job_id}/finishing-records', status_code=201, tags=['Finishing'])
+    def create_finishing_record(job_id: str, body: FinishingRecordCreate, user: Actor, key: RequestKey):
+        return store.create_finishing_record(job_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/finishing-records', tags=['Finishing'])
+    def finishing_records(order_id: str, user: Actor, limit: Limit = 100,
+                          before: Annotated[int | None, Query(ge=1)] = None):
+        return store.finishing_records(order_id, limit, before)
+
+    @app.get('/api/finishing-records/{record_id}', tags=['Finishing'])
+    def finishing_record(record_id: str, user: Actor):
+        return store.finishing_record(record_id)
+
+    @app.post('/api/finishing-records/{record_id}/reverse', status_code=201, tags=['Finishing'])
+    def reverse_finishing_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_finishing_record(record_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):

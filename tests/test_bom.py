@@ -107,7 +107,7 @@ class BomTest(TestCase):
         saved=self.bom(material)
         self.assertEqual(self.requirements(order)['materials'][0]['required'],'125.000')
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],15)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],16)
             for query in ['DELETE FROM bom_revisions','UPDATE bom_revisions SET reason=reason']:
                 with self.assertRaises(sqlite3.IntegrityError): db.execute(query)
         self.assertEqual(Store(self.path).bom(self.product['id'])['revision'],saved['revision'])

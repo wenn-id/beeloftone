@@ -223,6 +223,24 @@ class SewingJobComplete(ReversalCreate):
     returned_date: date
 
 
+class FinishingRecordCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    thread_trimmed: Annotated[bool, Field(strict=True)]
+    ironed: Annotated[bool, Field(strict=True)]
+    labels_attached: Annotated[bool, Field(strict=True)]
+    hangtags_attached: Annotated[bool, Field(strict=True)]
+    packaged: Annotated[bool, Field(strict=True)]
+    completed_date: date
+
+    @model_validator(mode='after')
+    def completed_checklist(self):
+        if not all((self.thread_trimmed, self.ironed, self.labels_attached,
+                    self.hangtags_attached, self.packaged)):
+            raise ValueError('Semua langkah finishing harus dikonfirmasi sebelum masuk QC.')
+        return self
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

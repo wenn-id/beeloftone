@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -63,6 +63,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("bundles.sql").read_text(encoding="utf-8"))
             if version < 15:
                 db.executescript(Path(__file__).with_name("sewing.sql").read_text(encoding="utf-8"))
+            if version < 16:
+                db.executescript(Path(__file__).with_name("finishing.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -544,6 +546,11 @@ class Store:
             JOIN users u ON u.id=x.actor_id WHERE x.job_id=?''',(job_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'completed' if result else 'open'
+        finished=db.execute('''SELECT COALESCE(SUM(f.quantity),0) FROM finishing_records f
+            WHERE f.job_id=? AND NOT EXISTS(
+                SELECT 1 FROM finishing_record_reversals r WHERE r.record_id=f.id)''',(job_id,)).fetchone()[0]
+        record['finishing_completed_quantity']=finished
+        record['finishing_remaining_quantity']=0 if reversal or not result else result['completed_quantity']-finished
         return record
 
     def sewing_job(self, job_id):
@@ -609,6 +616,8 @@ class Store:
             job=self._sewing_job(db,job_id)
             if job['reversal']:
                 raise DomainError(409,'Job sewing sudah dikoreksi.')
+            if job['finishing_completed_quantity']:
+                raise DomainError(409,'Koreksi semua catatan finishing aktif sebelum mengoreksi job sewing.')
             if job['result']:
                 for movement_id in (job['result']['completion_movement_id'],job['result']['reject_movement_id']):
                     if not movement_id:
@@ -623,6 +632,81 @@ class Store:
                        (job_id,payload['reason'],actor['id'],now()))
             return self._sewing_job(db,job_id)
         return self._write(actor,('admin',),key,'sewing-reverse:'+job_id,payload,perform)
+
+    def _finishing_record(self, db, record_id):
+        row=db.execute('''SELECT f.*,j.reference AS sewing_reference,j.assignment_type,j.assignee,
+            b.id AS bundle_id,b.reference AS bundle_reference,b.cutting_run_id,
+            r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
+            source.line_id,p.sku,p.name AS product_name,p.color,p.size,batch.id AS batch_id,
+            batch.reference AS batch_reference,s.code AS material_code,u.name AS actor_name
+            FROM finishing_records f JOIN sewing_jobs j ON j.id=f.job_id
+            JOIN bundles b ON b.id=j.bundle_id JOIN cutting_runs r ON r.id=b.cutting_run_id
+            JOIN orders o ON o.id=r.order_id JOIN movements source ON source.id=b.output_movement_id
+            JOIN order_lines l ON l.id=source.line_id JOIN products p ON p.id=l.product_id
+            JOIN material_consumption c ON c.id=r.consumption_id
+            JOIN material_movements i ON i.id=c.issue_id JOIN material_batches batch ON batch.id=i.batch_id
+            JOIN materials s ON s.id=batch.material_id JOIN users u ON u.id=f.actor_id
+            WHERE f.id=?''',(record_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan finishing tidak ditemukan.')
+        record=dict(row)
+        for field in ('thread_trimmed','ironed','labels_attached','hangtags_attached','packaged'):
+            record[field]=bool(record[field])
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM finishing_record_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.record_id=?''',(record_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'completed'
+        return record
+
+    def finishing_record(self, record_id):
+        with self.transaction() as db:
+            return self._finishing_record(db,record_id)
+
+    def finishing_records(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT f.id FROM finishing_records f JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN cutting_runs r ON r.id=b.cutting_run_id
+                WHERE r.order_id=? AND (? IS NULL OR f.sequence<?)
+                ORDER BY f.sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
+            return [self._finishing_record(db,row['id']) for row in ids]
+
+    def create_finishing_record(self, job_id, payload, actor, key):
+        def perform(db):
+            job=self._sewing_job(db,job_id)
+            if job['status']!='completed':
+                raise DomainError(409,'Job sewing harus selesai dan aktif sebelum finishing dicatat.')
+            if payload['quantity']>job['finishing_remaining_quantity']:
+                raise DomainError(409,'Jumlah finishing melebihi hasil sewing yang belum dicatat. Muat ulang data terbaru.')
+            if payload['completed_date']<job['result']['returned_date']:
+                raise DomainError(422,'Tanggal selesai finishing tidak boleh sebelum tanggal kembali sewing.')
+            movement=self._transfer(db,dict(line_id=job['line_id'],from_stage='finishing',to_stage='qc',
+                quantity=payload['quantity'],reason=payload['reason']),actor)
+            record_id=str(uuid4())
+            db.execute('''INSERT INTO finishing_records(id,reference,job_id,quantity,thread_trimmed,ironed,
+                labels_attached,hangtags_attached,packaged,completed_date,movement_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],job_id,payload['quantity'],
+                payload['thread_trimmed'],payload['ironed'],payload['labels_attached'],payload['hangtags_attached'],
+                payload['packaged'],payload['completed_date'],movement['id'],payload['reason'],actor['id'],now()))
+            return self._finishing_record(db,record_id)
+        return self._write(actor,('admin','operator'),key,'finishing:'+job_id,payload,perform)
+
+    def reverse_finishing_record(self, record_id, payload, actor, key):
+        def perform(db):
+            record=self._finishing_record(db,record_id)
+            if record['reversal']:
+                raise DomainError(409,'Catatan finishing sudah dikoreksi.')
+            original=db.execute('SELECT * FROM movements WHERE id=?',(record['movement_id'],)).fetchone()
+            if db.execute('SELECT 1 FROM movements WHERE reversal_of=?',(record['movement_id'],)).fetchone():
+                raise DomainError(409,'Perpindahan finishing sudah dikoreksi terpisah; periksa riwayat.')
+            self._transfer(db,dict(line_id=original['line_id'],from_stage=original['to_stage'],
+                to_stage=original['from_stage'],quantity=original['quantity'],reason=payload['reason']),
+                actor,reversal_of=record['movement_id'])
+            db.execute('''INSERT INTO finishing_record_reversals(record_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(record_id,payload['reason'],actor['id'],now()))
+            return self._finishing_record(db,record_id)
+        return self._write(actor,('admin',),key,'finishing-reverse:'+record_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):
@@ -1326,6 +1410,8 @@ class Store:
             if db.execute('''SELECT 1 FROM sewing_job_results
                 WHERE completion_movement_id=? OR reject_movement_id=?''',(movement_id,movement_id)).fetchone():
                 raise DomainError(409,'Perpindahan berasal dari job sewing. Gunakan koreksi job sewing agar hasil ikut dikoreksi.')
+            if db.execute('SELECT 1 FROM finishing_records WHERE movement_id=?',(movement_id,)).fetchone():
+                raise DomainError(409,'Perpindahan berasal dari finishing. Gunakan koreksi finishing agar checklist ikut dikoreksi.')
             original = db.execute("SELECT * FROM movements WHERE id=?", (movement_id,)).fetchone()
             if not original:
                 raise DomainError(404, "Perpindahan tidak ditemukan.")
@@ -1342,7 +1428,8 @@ class Store:
                 raise DomainError(404, "Order produksi tidak ditemukan.")
             return [dict(row) for row in db.execute("""SELECT m.*,u.name AS actor_name,p.sku,
                 (SELECT r.id FROM cutting_runs r,json_each(r.movement_ids) x WHERE x.value=m.id) AS cutting_run_id,
-                (SELECT j.job_id FROM sewing_job_results j WHERE j.completion_movement_id=m.id OR j.reject_movement_id=m.id) AS sewing_job_id
+                (SELECT j.job_id FROM sewing_job_results j WHERE j.completion_movement_id=m.id OR j.reject_movement_id=m.id) AS sewing_job_id,
+                (SELECT f.id FROM finishing_records f WHERE f.movement_id=m.id) AS finishing_record_id
                 FROM movements m
                 JOIN order_lines l ON l.id=m.line_id JOIN users u ON u.id=m.actor_id
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",
