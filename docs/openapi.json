@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.19.0"
+    "version": "0.20.0"
   },
   "paths": {
     "/health": {
@@ -2446,6 +2446,326 @@
             "schema": {
               "type": "string",
               "title": "Bundle Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bundles/{bundle_id}/sewing-jobs": {
+      "post": {
+        "tags": [
+          "Sewing"
+        ],
+        "summary": "Create Sewing Job",
+        "operationId": "create_sewing_job_api_bundles__bundle_id__sewing_jobs_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bundle_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bundle Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SewingJobCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{order_id}/sewing-jobs": {
+      "get": {
+        "tags": [
+          "Sewing"
+        ],
+        "summary": "Sewing Jobs",
+        "operationId": "sewing_jobs_api_orders__order_id__sewing_jobs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sewing-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Sewing"
+        ],
+        "summary": "Sewing Job",
+        "operationId": "sewing_job_api_sewing_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sewing-jobs/{job_id}/complete": {
+      "post": {
+        "tags": [
+          "Sewing"
+        ],
+        "summary": "Complete Sewing Job",
+        "operationId": "complete_sewing_job_api_sewing_jobs__job_id__complete_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SewingJobComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sewing-jobs/{job_id}/reverse": {
+      "post": {
+        "tags": [
+          "Sewing"
+        ],
+        "summary": "Reverse Sewing Job",
+        "operationId": "reverse_sewing_job_api_sewing_jobs__job_id__reverse_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
             }
           },
           {
@@ -5277,6 +5597,108 @@
           "reason"
         ],
         "title": "ReversalCreate"
+      },
+      "SewingJobComplete": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "completed_quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Completed Quantity"
+          },
+          "defect_quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Defect Quantity"
+          },
+          "missing_quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Missing Quantity"
+          },
+          "returned_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Returned Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "completed_quantity",
+          "defect_quantity",
+          "missing_quantity",
+          "returned_date"
+        ],
+        "title": "SewingJobComplete"
+      },
+      "SewingJobCreate": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "assignment_type": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "makloon"
+            ],
+            "title": "Assignment Type"
+          },
+          "assignee": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Assignee"
+          },
+          "quantity_out": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Quantity Out"
+          },
+          "cost": {
+            "type": "string",
+            "maxLength": 16,
+            "pattern": "^[0-9]{1,13}(\\.[0-9]{1,2})?$",
+            "title": "Cost"
+          },
+          "sent_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Sent Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "reference",
+          "assignment_type",
+          "assignee",
+          "quantity_out",
+          "cost",
+          "sent_date"
+        ],
+        "title": "SewingJobCreate"
       },
       "SupplierCreate": {
         "properties": {

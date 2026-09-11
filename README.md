@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.19.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.20.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 14. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 15. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -868,9 +868,51 @@ Jika respons penyimpanan hilang, masuk kembali dengan akun pencatat yang sama da
 menggandakan bundle. Schema 13 → 14 menambah ledger bundle dan guard langsung di SQLite;
 migrasi tidak membuat bundle untuk hasil cutting lama.
 
-Versi ini belum membuat barcode/label, mencetak atau memindai bundle, split/merge, pergerakan
-bundle antar tahap, vendor sewing, biaya, defect, atau missing pieces. Roadmap berikutnya adalah
-sewing/makloon: pengiriman dan penerimaan bundle beserta selisih hasilnya.
+Versi ini belum membuat barcode/label, mencetak atau memindai bundle, split/merge, atau
+pergerakan bundle antar tahap di luar job sewing. Alur sewing/makloon tersedia pada bagian berikutnya.
 
 Rencana: [bundling plan](docs/bundles-plan.md).
 Bukti pengujian: [bundling verification](docs/bundles-verification.md).
+
+## Sewing dan makloon (v0.20)
+
+Buka detail order → **Bundle** → rincian bundle, lalu pilih **Kirim ke sewing**. Isi referensi
+job unik, jenis penugasan internal atau makloon, nama pelaksana/vendor, jumlah keluar, biaya
+total rupiah, tanggal kirim, dan alasan. Satu bundle dapat dialokasikan ke beberapa job parsial,
+tetapi total job aktif tidak boleh melebihi jumlah bundle. Pengiriman hanya mengalokasikan
+identitas bundle; saldo WIP tetap di sewing karena perpindahan dari cutting sudah terjadi saat
+hasil cutting dicatat.
+
+Admin atau operator menyelesaikan job melalui **Catat hasil sewing**. Seluruh jumlah keluar
+harus dibagi tepat menjadi selesai, defect, dan missing. Jumlah selesai berpindah dari sewing
+ke finishing, sedangkan defect dan missing berpindah ke reject agar jumlah order tetap seimbang.
+Rincian job menyimpan kedua jenis selisih secara terpisah dan menghitung turnaround sebagai
+selisih hari kalender antara tanggal kirim dan tanggal kembali.
+
+Semua role aktif dapat melihat daftar serta rincian. Admin/operator dapat mengirim dan menerima
+hasil; hanya admin dapat memilih **Koreksi job sewing**. Koreksi membalik seluruh perpindahan
+hasil secara atomik dan mempertahankan riwayat asli. Bundle tidak dapat dikoreksi selama masih
+memiliki job aktif. Perpindahan yang dibuat oleh hasil sewing juga tidak dapat dibalik sendiri
+dari riwayat order.
+
+API baru memakai `X-API-Key`; semua POST juga memakai `Idempotency-Key`:
+
+- `POST /api/bundles/{id}/sewing-jobs`: `reference`, `assignment_type`, `assignee`,
+  `quantity_out`, `cost`, `sent_date`, dan `reason`.
+- `GET /api/orders/{id}/sewing-jobs?limit=100&before=sequence`.
+- `GET /api/sewing-jobs/{id}`.
+- `POST /api/sewing-jobs/{id}/complete`: `completed_quantity`, `defect_quantity`,
+  `missing_quantity`, `returned_date`, dan `reason`.
+- `POST /api/sewing-jobs/{id}/reverse`: `reason` (admin).
+
+Biaya adalah total job dalam IDR, disimpan presisi dua desimal. Nama pelaksana/vendor merupakan
+snapshot teks bebas; versi ini belum menyediakan master vendor, formula ongkos per pcs, invoice,
+pembayaran, penerimaan sebagian, keputusan rework, attachment, atau pemindaian barcode. Job
+diselesaikan satu kali untuk seluruh jumlahnya; jika dikoreksi, catat job pengganti.
+
+Schema 14 → 15 menambahkan ledger job, hasil, koreksi, hubungan perpindahan WIP, dan guard SQLite.
+Migrasi tidak mengarang job untuk bundle lama. Roadmap berikutnya adalah finishing: trimming
+benang, setrika, label, hangtag, packaging, dan jumlah selesai.
+
+Rencana: [sewing/makloon plan](docs/sewing-makloon-plan.md).
+Bukti pengujian: [sewing/makloon verification](docs/sewing-makloon-verification.md).
