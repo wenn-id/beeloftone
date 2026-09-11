@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <p><button data-action="order-purchases">PR untuk order ini</button></p>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
@@ -219,6 +219,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
+      else if (path.endsWith('/marketplace-reservations') || path.startsWith('/api/marketplace-reservations/')) marketplaceReservationDialog(result.id);
       else if (path.endsWith('/warehouse-movements') || path.startsWith('/api/warehouse-movements/')) warehouseMovementDialog(result.id);
       else if (path.endsWith('/finished-goods-receipts') || path.startsWith('/api/finished-goods-receipts/')) finishedGoodsReceiptDialog(result.id);
       else if (path.endsWith('/qc-records') || path.startsWith('/api/final-qc-records/')) finalQcRecordDialog(result.id);
@@ -356,6 +357,7 @@ document.addEventListener('click', event => {
     'final-qc-records':()=>finalQcRecordsDialog(id || selected?.id),'new-final-qc-record':()=>finalQcForm(id),'final-qc-record':()=>finalQcRecordDialog(id),
     'finished-goods':()=>finishedGoodsDialog(id || selected?.id),'new-finished-goods':()=>finishedGoodsForm(id),'finished-goods-receipt':()=>finishedGoodsReceiptDialog(id),
     warehouse:()=>warehouseDialog(id || selected?.id),'new-warehouse-movement':()=>warehouseMovementForm(id,kind),'warehouse-movement':()=>warehouseMovementDialog(id),
+    'marketplace-reservations':()=>marketplaceReservationsDialog(id || selected?.id),'new-marketplace-reservation':()=>marketplaceReservationForm(id),'marketplace-reservation':()=>marketplaceReservationDialog(id),
     consumption:consumptionDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
@@ -990,7 +992,7 @@ async function finishedGoodsDialog(orderId) {
     if(!current())return;
     const productIds=new Set(order.lines.map(line=>line.product_id));
     const relevant=inventory.filter(row=>productIds.has(row.product_id));
-    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori barang jadi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.size)}</strong><p>Sellable ${n(row.sellable_quantity)} pcs · hold ${n(row.hold_quantity)} pcs · damaged ${n(row.damaged_quantity)} pcs · total ${n(row.total_quantity)} pcs</p></article>`).join('')}<p class="hint">Angka ini adalah ledger internal Beeloft dan belum menyinkronkan stok Jubelio/WMS.</p><button data-action="warehouse" data-id="${e(orderId)}">Inventori per lokasi &amp; pergerakan</button><h3>Riwayat penerimaan</h3><div id="finished-goods-list"><p class="state">Memuat penerimaan...</p></div><p id="finished-goods-error" class="error" role="alert" hidden></p><button id="finished-goods-more" type="button">Muat penerimaan sebelumnya</button>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori barang jadi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.size)}</strong><p>Available ${n(row.available_quantity)} pcs · reserved ${n(row.reserved_quantity)} pcs</p><p>Sellable fisik ${n(row.sellable_quantity)} · hold ${n(row.hold_quantity)} · damaged ${n(row.damaged_quantity)} · total ${n(row.total_quantity)} pcs</p></article>`).join('')}<p class="hint">Angka ini adalah ledger internal Beeloft dan belum menyinkronkan stok Jubelio/WMS.</p><button data-action="warehouse" data-id="${e(orderId)}">Inventori per lokasi &amp; pergerakan</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><h3>Riwayat penerimaan</h3><div id="finished-goods-list"><p class="state">Memuat penerimaan...</p></div><p id="finished-goods-error" class="error" role="alert" hidden></p><button id="finished-goods-more" type="button">Muat penerimaan sebelumnya</button>`;
     let before=null;
     const load=async()=>{
       const button=$('finished-goods-more');button.disabled=true;message('finished-goods-error','');
@@ -1034,7 +1036,8 @@ async function finishedGoodsReceiptDialog(receiptId) {
     const receipt=await api.get('/api/finished-goods-receipts/'+encodeURIComponent(receiptId));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const sellable=receipt.inventory.some(row=>row.stock_status==='sellable'),hold=receipt.inventory.some(row=>row.stock_status==='hold'),damaged=receipt.inventory.some(row=>row.stock_status==='damaged');
-    $('dialog-content').innerHTML=`<p class="form-info">${e(receipt.reference)} · ${receipt.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(receipt.received_quantity)} pcs · ${e(receipt.sku)} · ${e(receipt.size)}</h3><article class="material-event"><h3>Inventori sekarang</h3>${receipt.inventory.map(row=>`<p>${e(row.location)} · ${e(row.stock_status)} ${n(row.quantity)} pcs</p>`).join('') || '<p>Stok penerimaan ini sudah dilepaskan.</p>'}<p>Diterima awal di ${e(receipt.location)} · ${date(receipt.received_date)}</p><p>SKU dipindai: ${e(receipt.scanned_sku)}</p></article><p>Final QC ${e(receipt.final_qc_reference)} · finishing ${e(receipt.finishing_reference)} · sewing ${e(receipt.sewing_reference)} · bundle ${e(receipt.bundle_reference)}</p><p class="reason">${e(receipt.reason)}</p><p class="hint">${e(receipt.actor_name)} · ${purchaseStamp(receipt.created_at)}</p>${receipt.active_movement_count?`<p class="hint">${n(receipt.active_movement_count)} pergerakan gudang aktif. Koreksi pergerakan tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.reversal?`<article class="material-event"><h3>Penerimaan barang jadi dikoreksi</h3><p class="reason">${e(receipt.reversal.reason)}</p><p class="hint">${e(receipt.reversal.actor_name)} · ${purchaseStamp(receipt.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="finished-goods-order">Buka order produksi</button><button data-action="final-qc-record" data-id="${e(receipt.final_qc_record_id)}">Final QC asal</button><button data-action="finishing-record" data-id="${e(receipt.finishing_record_id)}">Finishing asal</button><button data-action="sewing-job" data-id="${e(receipt.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(receipt.bundle_id)}">Bundle asal</button><button data-action="finished-goods" data-id="${e(receipt.order_id)}">Semua barang jadi</button><button data-action="warehouse" data-id="${e(receipt.order_id)}">Gudang order</button>${user.role!=='viewer' && receipt.status==='active' && (sellable||hold||damaged)?`<button data-action="new-warehouse-movement" data-kind="transfer" data-id="${e(receipt.id)}">Transfer lokasi</button>`:''}${user.role!=='viewer' && receipt.status==='active' && hold?`<button data-action="new-warehouse-movement" data-kind="hold_release" data-id="${e(receipt.id)}">Lepaskan hold</button><button data-action="new-warehouse-movement" data-kind="hold_damage" data-id="${e(receipt.id)}">Tandai damaged</button>`:''}${user.role==='admin' && receipt.status==='active' && !receipt.active_movement_count?'<button id="reverse-finished-goods">Koreksi penerimaan</button>':''}</div>`;
+    const reservable=receipt.inventory.some(row=>row.stock_status==='sellable'&&row.available_quantity>0);
+    $('dialog-content').innerHTML=`<p class="form-info">${e(receipt.reference)} · ${receipt.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(receipt.received_quantity)} pcs · ${e(receipt.sku)} · ${e(receipt.size)}</h3><article class="material-event"><h3>Inventori sekarang</h3>${receipt.inventory.map(row=>`<p>${e(row.location)} · ${e(row.stock_status)} ${n(row.quantity)} pcs${row.stock_status==='sellable'?` · available ${n(row.available_quantity)} · reserved ${n(row.reserved_quantity)}`:''}</p>`).join('') || '<p>Stok penerimaan ini sudah dilepaskan.</p>'}<p>Diterima awal di ${e(receipt.location)} · ${date(receipt.received_date)}</p><p>SKU dipindai: ${e(receipt.scanned_sku)}</p></article><p>Final QC ${e(receipt.final_qc_reference)} · finishing ${e(receipt.finishing_reference)} · sewing ${e(receipt.sewing_reference)} · bundle ${e(receipt.bundle_reference)}</p><p class="reason">${e(receipt.reason)}</p><p class="hint">${e(receipt.actor_name)} · ${purchaseStamp(receipt.created_at)}</p>${receipt.active_movement_count?`<p class="hint">${n(receipt.active_movement_count)} pergerakan gudang aktif. Koreksi pergerakan tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.active_reservation_count?`<p class="hint">${n(receipt.active_reservation_count)} reservasi marketplace aktif. Lepaskan reservasi tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.reversal?`<article class="material-event"><h3>Penerimaan barang jadi dikoreksi</h3><p class="reason">${e(receipt.reversal.reason)}</p><p class="hint">${e(receipt.reversal.actor_name)} · ${purchaseStamp(receipt.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="finished-goods-order">Buka order produksi</button><button data-action="final-qc-record" data-id="${e(receipt.final_qc_record_id)}">Final QC asal</button><button data-action="finishing-record" data-id="${e(receipt.finishing_record_id)}">Finishing asal</button><button data-action="sewing-job" data-id="${e(receipt.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(receipt.bundle_id)}">Bundle asal</button><button data-action="finished-goods" data-id="${e(receipt.order_id)}">Semua barang jadi</button><button data-action="warehouse" data-id="${e(receipt.order_id)}">Gudang order</button><button data-action="marketplace-reservations" data-id="${e(receipt.order_id)}">Reservasi order</button>${user.role!=='viewer'&&receipt.status==='active'&&reservable?`<button data-action="new-marketplace-reservation" data-id="${e(receipt.id)}">Reservasi marketplace</button>`:''}${user.role!=='viewer' && receipt.status==='active' && (sellable||hold||damaged)?`<button data-action="new-warehouse-movement" data-kind="transfer" data-id="${e(receipt.id)}">Transfer lokasi</button>`:''}${user.role!=='viewer' && receipt.status==='active' && hold?`<button data-action="new-warehouse-movement" data-kind="hold_release" data-id="${e(receipt.id)}">Lepaskan hold</button><button data-action="new-warehouse-movement" data-kind="hold_damage" data-id="${e(receipt.id)}">Tandai damaged</button>`:''}${user.role==='admin' && receipt.status==='active' && !receipt.active_movement_count && !receipt.active_reservation_count?'<button id="reverse-finished-goods">Koreksi penerimaan</button>':''}</div>`;
     $('finished-goods-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(receipt.order_id);};
     if($('reverse-finished-goods'))$('reverse-finished-goods').onclick=()=>{
       if(guardPending())return;
@@ -1057,7 +1060,7 @@ async function warehouseDialog(orderId) {
     if(!current())return;
     const productIds=new Set(order.lines.map(line=>line.product_id));
     const relevant=inventory.filter(row=>productIds.has(row.product_id));
-    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori per lokasi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.location)}</strong><p>${e(warehouseStatus[row.stock_status])} ${n(row.quantity)} pcs</p></article>`).join('') || '<p class="state">Belum ada inventori barang jadi untuk order ini.</p>'}<p class="hint">Sellable siap dialokasikan, hold menunggu keputusan, damaged dipisahkan dari stok jual.</p><button data-action="finished-goods" data-id="${e(orderId)}">Penerimaan barang jadi</button><h3>Riwayat pergerakan</h3><div id="warehouse-list"><p class="state">Memuat pergerakan...</p></div><p id="warehouse-error" class="error" role="alert" hidden></p><button id="warehouse-more" type="button">Muat pergerakan sebelumnya</button>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori per lokasi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.location)}</strong><p>${e(warehouseStatus[row.stock_status])} ${n(row.quantity)} pcs${row.stock_status==='sellable'?` · available ${n(row.available_quantity)} · reserved ${n(row.reserved_quantity)}`:''}</p></article>`).join('') || '<p class="state">Belum ada inventori barang jadi untuk order ini.</p>'}<p class="hint">Sellable dibagi menjadi available dan reserved; hold menunggu keputusan; damaged dipisahkan dari stok jual.</p><button data-action="finished-goods" data-id="${e(orderId)}">Penerimaan barang jadi</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><h3>Riwayat pergerakan</h3><div id="warehouse-list"><p class="state">Memuat pergerakan...</p></div><p id="warehouse-error" class="error" role="alert" hidden></p><button id="warehouse-more" type="button">Muat pergerakan sebelumnya</button>`;
     let before=null;
     const load=async()=>{
       const button=$('warehouse-more');button.disabled=true;message('warehouse-error','');
@@ -1082,17 +1085,17 @@ async function warehouseMovementForm(receiptId,kind) {
   try{
     const receipt=await api.get('/api/finished-goods-receipts/'+encodeURIComponent(receiptId));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    const buckets=receipt.inventory.filter(row=>kind==='transfer' || row.stock_status==='hold');
+    const buckets=receipt.inventory.filter(row=>kind==='transfer'?row.movable_quantity>0:row.stock_status==='hold');
     if(receipt.status!=='active' || !buckets.length){$('dialog-content').innerHTML='<p>Tidak ada stok aktif yang sesuai untuk tindakan ini. Muat ulang rincian penerimaan.</p><button data-action="finished-goods-receipt" data-id="'+e(receiptId)+'">Muat ulang penerimaan</button>';return;}
-    const source=`<div><label for="warehouse-source">Stok asal</label><select id="warehouse-source" name="source">${buckets.map((row,index)=>option(index,`${row.location} · ${warehouseStatus[row.stock_status]} ${n(row.quantity)} pcs`)).join('')}</select></div>`;
+    const source=`<div><label for="warehouse-source">Stok asal</label><select id="warehouse-source" name="source">${buckets.map((row,index)=>option(index,`${row.location} · ${warehouseStatus[row.stock_status]} ${n(row.movable_quantity)} pcs dapat dipindah`)).join('')}</select></div>`;
     formDialog(title,field('reference','Referensi pergerakan','text','required maxlength="160"')+source+
       field('to_location','Lokasi tujuan','text','required maxlength="160"')+
       field('quantity','Jumlah','number','required min="1" step="1"')+
       field('moved_date','Tanggal pergerakan','date',`required min="${e(receipt.received_date)}"`)+materialReason,
-      form=>{const data=new FormData(form),bucket=buckets[Number(data.get('source'))],payload={reference:data.get('reference'),kind,from_location:bucket.location,to_location:data.get('to_location'),quantity:Number(data.get('quantity')),moved_date:data.get('moved_date'),reason:data.get('reason')};if(kind==='transfer')payload.stock_status=bucket.stock_status;if(payload.quantity>bucket.quantity)throw new Error('Jumlah melebihi stok pada lokasi dan status asal.');if(kind==='transfer'&&payload.from_location.trim().toLocaleLowerCase()===payload.to_location.trim().toLocaleLowerCase())throw new Error('Lokasi tujuan transfer harus berbeda dari lokasi asal.');return payload;},
+      form=>{const data=new FormData(form),bucket=buckets[Number(data.get('source'))],payload={reference:data.get('reference'),kind,from_location:bucket.location,to_location:data.get('to_location'),quantity:Number(data.get('quantity')),moved_date:data.get('moved_date'),reason:data.get('reason')};if(kind==='transfer')payload.stock_status=bucket.stock_status;if(payload.quantity>bucket.movable_quantity)throw new Error('Jumlah melebihi stok yang dapat dipindahkan pada lokasi dan status asal.');if(kind==='transfer'&&payload.from_location.trim().toLocaleLowerCase()===payload.to_location.trim().toLocaleLowerCase())throw new Error('Lokasi tujuan transfer harus berbeda dari lokasi asal.');return payload;},
       '/api/finished-goods-receipts/'+encodeURIComponent(receiptId)+'/warehouse-movements',
       `${receipt.reference} · ${receipt.sku}\n${kind==='transfer'?'Status stok tetap sama selama transfer.':'Keputusan hanya mengambil stok hold dari lokasi yang dipilih.'}`);
-    const updateMax=()=>{const bucket=buckets[Number($('warehouse-source').value)];$('action-form').elements.quantity.max=bucket.quantity;};
+    const updateMax=()=>{const bucket=buckets[Number($('warehouse-source').value)];$('action-form').elements.quantity.max=bucket.movable_quantity;};
     $('warehouse-source').onchange=updateMax;updateMax();
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-warehouse-movement" data-kind="${e(kind)}" data-id="${e(receiptId)}">Coba lagi</button>`;}
 }
@@ -1111,6 +1114,72 @@ async function warehouseMovementDialog(movementId) {
         `${row.reference} · ${n(row.quantity)} pcs\nKoreksi mengembalikan stok ke lokasi dan status asal. Riwayat asli tetap tersimpan.`);
     };
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="warehouse-movement" data-id="${e(movementId)}">Coba lagi</button>`;}
+}
+
+async function marketplaceReservationsDialog(orderId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Reservasi marketplace','<p class="state">Memuat reservasi...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  try{
+    const [order,inventory]=await Promise.all([api.get('/api/orders/'+encodeURIComponent(orderId)),allRows('/api/finished-goods-inventory')]);
+    if(!current())return;
+    const productIds=new Set(order.lines.map(line=>line.product_id));
+    const relevant=inventory.filter(row=>productIds.has(row.product_id));
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Alokasi stok jual</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.size)}</strong><p>Available ${n(row.available_quantity)} pcs · reserved ${n(row.reserved_quantity)} pcs · sellable fisik ${n(row.sellable_quantity)} pcs</p></article>`).join('') || '<p class="state">Belum ada stok sellable.</p>'}<p class="hint">Reservasi mengurangi available tanpa mengubah stok fisik atau WIP.</p><button data-action="finished-goods" data-id="${e(orderId)}">Pilih penerimaan sumber</button><h3>Riwayat reservasi</h3><div id="marketplace-list"><p class="state">Memuat reservasi...</p></div><p id="marketplace-error" class="error" role="alert" hidden></p><button id="marketplace-more" type="button">Muat reservasi sebelumnya</button>`;
+    let before=null;
+    const load=async()=>{
+      const button=$('marketplace-more');button.disabled=true;message('marketplace-error','');
+      try{
+        const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-reservations?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
+        if(!current())return;
+        if(!before)$('marketplace-list').replaceChildren();
+        $('marketplace-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.location)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><p>${date(row.reserved_date)}</p><button data-action="marketplace-reservation" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian reservasi</button></article>`).join(''));
+        if(!before&&!rows.length)$('marketplace-list').innerHTML='<p class="state">Belum ada reservasi marketplace untuk order ini.</p>';
+        before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat reservasi sebelumnya';
+      }catch(error){if(current()){message('marketplace-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      finally{if(current())button.disabled=false;}
+    };
+    $('marketplace-more').onclick=load;await load();
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketplace-reservations" data-id="${e(orderId)}">Coba lagi</button>`;}
+}
+
+async function marketplaceReservationForm(receiptId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Reservasi marketplace','<p class="state">Memuat stok sellable...</p>');const modal=dialogVersion;
+  try{
+    const receipt=await api.get('/api/finished-goods-receipts/'+encodeURIComponent(receiptId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const buckets=receipt.inventory.filter(row=>row.stock_status==='sellable'&&row.available_quantity>0);
+    if(receipt.status!=='active'||!buckets.length){$('dialog-content').innerHTML='<p>Tidak ada stok sellable tersedia pada penerimaan ini.</p><button data-action="finished-goods-receipt" data-id="'+e(receiptId)+'">Muat ulang penerimaan</button>';return;}
+    const source=`<div><label for="marketplace-source">Stok sellable</label><select id="marketplace-source" name="source">${buckets.map((row,index)=>option(index,`${row.location} · available ${n(row.available_quantity)} pcs`)).join('')}</select></div>`;
+    formDialog('Reservasi marketplace',field('reference','Referensi reservasi','text','required maxlength="160"')+
+      field('marketplace','Marketplace','text','required maxlength="160"')+
+      field('external_order_reference','Referensi order marketplace','text','required maxlength="160"')+source+
+      field('quantity','Jumlah reservasi','number','required min="1" step="1"')+
+      field('reserved_date','Tanggal reservasi','date',`required min="${e(receipt.received_date)}"`)+materialReason,
+      form=>{const data=new FormData(form),bucket=buckets[Number(data.get('source'))],payload={reference:data.get('reference'),marketplace:data.get('marketplace'),external_order_reference:data.get('external_order_reference'),location:bucket.location,quantity:Number(data.get('quantity')),reserved_date:data.get('reserved_date'),reason:data.get('reason')};if(payload.quantity>bucket.available_quantity)throw new Error('Jumlah reservasi melebihi stok sellable yang tersedia.');return payload;},
+      '/api/finished-goods-receipts/'+encodeURIComponent(receiptId)+'/marketplace-reservations',
+      `${receipt.reference} · ${receipt.sku}\nReservasi mengikat stok tersedia ke order marketplace tanpa mengubah jumlah fisik.`);
+    const updateMax=()=>{const bucket=buckets[Number($('marketplace-source').value)];$('action-form').elements.quantity.max=bucket.available_quantity;};
+    $('marketplace-source').onchange=updateMax;updateMax();
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-marketplace-reservation" data-id="${e(receiptId)}">Coba lagi</button>`;}
+}
+
+async function marketplaceReservationDialog(reservationId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian reservasi marketplace','<p class="state">Memuat reservasi...</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/marketplace-reservations/'+encodeURIComponent(reservationId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><h3>${n(row.quantity)} pcs · ${e(row.sku)} · ${e(row.size)}</h3><article class="material-event"><h3>${e(row.marketplace)}</h3><p>Order ${e(row.external_order_reference)}</p><p>${e(row.location)} · ${date(row.reserved_date)}</p></article><p>Penerimaan ${e(row.receipt_reference)} · Final QC ${e(row.final_qc_reference)} · batch ${e(row.batch_reference)}</p><p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>${row.release?`<article class="material-event"><h3>Reservasi dilepaskan</h3><p>${date(row.release.released_date)}</p><p class="reason">${e(row.release.reason)}</p><p class="hint">${e(row.release.actor_name)} · ${purchaseStamp(row.release.created_at)}</p></article>`:''}<div class="actions"><button data-action="finished-goods-receipt" data-id="${e(row.receipt_id)}">Penerimaan asal</button><button data-action="marketplace-reservations" data-id="${e(row.order_id)}">Semua reservasi</button>${user.role!=='viewer'&&row.status==='active'?'<button id="release-marketplace">Lepaskan reservasi</button>':''}</div>`;
+    if($('release-marketplace'))$('release-marketplace').onclick=()=>{
+      if(guardPending())return;
+      formDialog('Lepaskan reservasi',field('released_date','Tanggal pelepasan','date',`required min="${e(row.reserved_date)}"`)+materialReason,
+        form=>Object.fromEntries(new FormData(form)),
+        '/api/marketplace-reservations/'+encodeURIComponent(row.id)+'/release',
+        `${row.marketplace} · ${row.external_order_reference} · ${n(row.quantity)} pcs\nSeluruh alokasi kembali menjadi available.`);
+    };
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketplace-reservation" data-id="${e(reservationId)}">Coba lagi</button>`;}
 }
 
 async function consumptionForm(issueId) {
