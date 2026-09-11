@@ -309,6 +309,13 @@ class MarketplaceReservationRelease(ReversalCreate):
     released_date: date
 
 
+class MarketplacePickCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    staging_location: Text
+    picked_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

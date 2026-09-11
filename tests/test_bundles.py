@@ -137,6 +137,9 @@ class BundleTest(TestCase):
         before = self.client.get('/api/cutting-runs/'+run['id']).json()
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('DROP TRIGGER finished_goods_reversal_valid')
+            db.execute('DROP TRIGGER marketplace_reservation_release_valid')
+            db.execute('DROP TABLE marketplace_pick_reversals')
+            db.execute('DROP TABLE marketplace_picks')
             db.execute('DROP TABLE marketplace_reservation_releases')
             db.execute('DROP TABLE marketplace_reservations')
             db.execute('DROP TABLE warehouse_movement_reversals')
@@ -161,7 +164,7 @@ class BundleTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 20)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],21)
         after = self.client.get('/api/cutting-runs/'+run['id']).json()
         self.assertEqual({k: after[k] for k in before if k != 'outputs'},
                          {k: before[k] for k in before if k != 'outputs'})

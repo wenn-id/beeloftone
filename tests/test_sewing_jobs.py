@@ -198,6 +198,9 @@ class SewingJobTest(TestCase):
         order, _, bundle = self.setup_bundle()
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('DROP TRIGGER finished_goods_reversal_valid')
+            db.execute('DROP TRIGGER marketplace_reservation_release_valid')
+            db.execute('DROP TABLE marketplace_pick_reversals')
+            db.execute('DROP TABLE marketplace_picks')
             db.execute('DROP TABLE marketplace_reservation_releases')
             db.execute('DROP TABLE marketplace_reservations')
             db.execute('DROP TABLE warehouse_movement_reversals')
@@ -217,7 +220,7 @@ class SewingJobTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 20)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],21)
         self.assertEqual(self.client.get('/api/orders/'+order['id']+'/sewing-jobs').json(), [])
         current = self.client.get('/api/bundles/'+bundle['id']).json()
         self.assertEqual((current['sewing_allocated_quantity'], current['sewing_unassigned_quantity']), (0, 20))
