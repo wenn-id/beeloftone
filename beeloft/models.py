@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
 Quantity = Annotated[int, Field(strict=True, gt=0, le=1_000_000_000)]
@@ -111,13 +111,31 @@ class MaterialQuantity(Input):
         return format(quantity, '.3f')
 
 
-class MaterialReceipt(MaterialQuantity):
+class PurchaseOrderReceipt(MaterialQuantity):
     material_id: Text
     reference: Text
-    supplier: Text
     location: Text
     received_date: date
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class MaterialReceipt(PurchaseOrderReceipt):
+    supplier: Text
+
+
+class QualityDecision(MaterialQuantity):
+    kind: Literal['accept','reject']
+    reference: Text | None = None
+    location: Text | None = None
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def require_batch_for_acceptance(self):
+        if self.kind=='accept' and (not self.reference or not self.location):
+            raise ValueError('Isi referensi batch dan lokasi stok layak pakai.')
+        if self.kind=='reject' and (self.reference is not None or self.location is not None):
+            raise ValueError('Keputusan reject tidak membuat batch stok.')
+        return self
 
 
 class MaterialIssue(MaterialQuantity):
@@ -147,6 +165,77 @@ class MaterialConsumption(Input):
 
 class BomComponent(MaterialQuantity):
     material_id: Text
+
+
+class PurchaseRequestCreate(Input):
+    reference: Text
+    order_id: Text | None = None
+    required_date: date
+    estimated_value: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    lines: list[BomComponent] = Field(min_length=1, max_length=100)
+
+    @field_validator('estimated_value')
+    @classmethod
+    def normalize_value(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000_000:
+            raise ValueError('Estimasi total harus positif dan maksimal Rp1.000.000.000.000.')
+        return format(amount, '.2f')
+
+    @field_validator('lines')
+    @classmethod
+    def unique_lines(cls, lines):
+        if len({line.material_id for line in lines}) != len(lines):
+            raise ValueError('Gabungkan bahan yang sama menjadi satu baris.')
+        return sorted(lines, key=lambda line: line.material_id)
+
+
+class PurchaseRequestDecision(ReversalCreate):
+    status: Literal['approved', 'rejected', 'cancelled']
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+
+
+class SupplierCreate(ReversalCreate):
+    code: Text
+    name: Text
+    contact: str = Field(default='', max_length=500)
+    address: str = Field(default='', max_length=1000)
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class PurchasePrice(Input):
+    material_id: Text
+    unit_price: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,10}(\.[0-9]{1,2})?$", max_length=13)]
+
+    @field_validator('unit_price')
+    @classmethod
+    def normalize_price(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000:
+            raise ValueError('Harga satuan harus positif dan maksimal Rp1.000.000.000.')
+        return format(amount, '.2f')
+
+
+class PurchaseOrderCreate(ReversalCreate):
+    reference: Text
+    request_id: Text
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    supplier_id: Text
+    expected_date: date
+    terms: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    prices: list[PurchasePrice] = Field(min_length=1, max_length=100)
+
+    @field_validator('prices')
+    @classmethod
+    def unique_prices(cls, prices):
+        if len({price.material_id for price in prices}) != len(prices):
+            raise ValueError('Harga setiap bahan harus diisi tepat satu kali.')
+        return sorted(prices, key=lambda price: price.material_id)
 
 
 class BomSave(Input):
