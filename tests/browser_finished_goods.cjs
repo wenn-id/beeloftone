@@ -71,7 +71,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.reload();await login(operator);await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
   await page.getByRole('heading',{name:'Rincian barang jadi',exact:true}).waitFor();
   await page.unroute('**/api/final-qc-records/*/finished-goods-receipts');
-  await page.getByRole('heading',{name:'Inventori diterima',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Inventori sekarang',exact:true}).waitFor();
   const receipts=await apiGet('/api/orders/'+order.id+'/finished-goods-receipts');
   assert.equal(receipts.length,1);assert.equal(receipts[0].reference,'FG-UI-001');assert.equal(receipts[0].received_quantity,15);
   const totals=(await apiGet('/api/orders/'+order.id)).totals;
@@ -99,5 +99,9 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.hold_quantity],[0,0]);
   assert.equal((await apiGet('/api/orders/'+order.id)).totals.warehouse,20);
+  const warehouseReceipt=await post('/api/final-qc-records/'+qc.id+'/finished-goods-receipts',{reference:'FG-WH-SOURCE',
+    scanned_sku:'FG-M',location:'Rak Barang Jadi A',sellable_quantity:12,hold_quantity:8,
+    received_date:'2026-09-18',reason:'CONTOH sumber stok untuk pergerakan gudang'},'fg-wh-source');
   console.log('Finished goods browser QA PASS: scan, sellable/hold, inventory, retry, roles, correction, unchanged WIP, empty/error, mobile/200%.');
+  return {order,receipt:warehouseReceipt};
 };

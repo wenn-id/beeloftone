@@ -302,7 +302,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_sewing.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_finishing.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_final_qc.cjs')({page,login,admin,operator,viewer,apiGet,work});
-  await require('./browser_finished_goods.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  const finishedGoods=await require('./browser_finished_goods.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  await require('./browser_warehouse_movements.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');
