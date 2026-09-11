@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button><button data-action="marketplace-picks">Picking</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <p><button data-action="order-purchases">PR untuk order ini</button></p>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
@@ -219,6 +219,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
+      else if (path.endsWith('/picks') || path.startsWith('/api/marketplace-picks/')) marketplacePickDialog(result.id);
       else if (path.endsWith('/marketplace-reservations') || path.startsWith('/api/marketplace-reservations/')) marketplaceReservationDialog(result.id);
       else if (path.endsWith('/warehouse-movements') || path.startsWith('/api/warehouse-movements/')) warehouseMovementDialog(result.id);
       else if (path.endsWith('/finished-goods-receipts') || path.startsWith('/api/finished-goods-receipts/')) finishedGoodsReceiptDialog(result.id);
@@ -358,6 +359,7 @@ document.addEventListener('click', event => {
     'finished-goods':()=>finishedGoodsDialog(id || selected?.id),'new-finished-goods':()=>finishedGoodsForm(id),'finished-goods-receipt':()=>finishedGoodsReceiptDialog(id),
     warehouse:()=>warehouseDialog(id || selected?.id),'new-warehouse-movement':()=>warehouseMovementForm(id,kind),'warehouse-movement':()=>warehouseMovementDialog(id),
     'marketplace-reservations':()=>marketplaceReservationsDialog(id || selected?.id),'new-marketplace-reservation':()=>marketplaceReservationForm(id),'marketplace-reservation':()=>marketplaceReservationDialog(id),
+    'marketplace-picks':()=>marketplacePicksDialog(id || selected?.id),'new-marketplace-pick':()=>marketplacePickForm(id),'marketplace-pick':()=>marketplacePickDialog(id),
     consumption:consumptionDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
@@ -992,7 +994,7 @@ async function finishedGoodsDialog(orderId) {
     if(!current())return;
     const productIds=new Set(order.lines.map(line=>line.product_id));
     const relevant=inventory.filter(row=>productIds.has(row.product_id));
-    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori barang jadi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.size)}</strong><p>Available ${n(row.available_quantity)} pcs · reserved ${n(row.reserved_quantity)} pcs</p><p>Sellable fisik ${n(row.sellable_quantity)} · hold ${n(row.hold_quantity)} · damaged ${n(row.damaged_quantity)} · total ${n(row.total_quantity)} pcs</p></article>`).join('')}<p class="hint">Angka ini adalah ledger internal Beeloft dan belum menyinkronkan stok Jubelio/WMS.</p><button data-action="warehouse" data-id="${e(orderId)}">Inventori per lokasi &amp; pergerakan</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><h3>Riwayat penerimaan</h3><div id="finished-goods-list"><p class="state">Memuat penerimaan...</p></div><p id="finished-goods-error" class="error" role="alert" hidden></p><button id="finished-goods-more" type="button">Muat penerimaan sebelumnya</button>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori barang jadi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.size)}</strong><p>Available ${n(row.available_quantity)} pcs · reserved ${n(row.reserved_quantity)} pcs · picked ${n(row.picked_quantity)} pcs</p><p>Sellable fisik ${n(row.sellable_quantity)} · hold ${n(row.hold_quantity)} · damaged ${n(row.damaged_quantity)} · total ${n(row.total_quantity)} pcs</p></article>`).join('')}<p class="hint">Angka ini adalah ledger internal Beeloft dan belum menyinkronkan stok Jubelio/WMS.</p><button data-action="warehouse" data-id="${e(orderId)}">Inventori per lokasi &amp; pergerakan</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><button data-action="marketplace-picks" data-id="${e(orderId)}">Riwayat picking</button><h3>Riwayat penerimaan</h3><div id="finished-goods-list"><p class="state">Memuat penerimaan...</p></div><p id="finished-goods-error" class="error" role="alert" hidden></p><button id="finished-goods-more" type="button">Muat penerimaan sebelumnya</button>`;
     let before=null;
     const load=async()=>{
       const button=$('finished-goods-more');button.disabled=true;message('finished-goods-error','');
@@ -1048,7 +1050,7 @@ async function finishedGoodsReceiptDialog(receiptId) {
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="finished-goods-receipt" data-id="${e(receiptId)}">Coba lagi</button>`;}
 }
 
-const warehouseStatus={sellable:'Sellable',hold:'Hold',damaged:'Damaged'};
+const warehouseStatus={sellable:'Sellable',hold:'Hold',damaged:'Damaged',picked:'Picked'};
 const warehouseKind={transfer:'Transfer lokasi',hold_release:'Pelepasan hold',hold_damage:'Hold menjadi damaged'};
 
 async function warehouseDialog(orderId) {
@@ -1060,7 +1062,7 @@ async function warehouseDialog(orderId) {
     if(!current())return;
     const productIds=new Set(order.lines.map(line=>line.product_id));
     const relevant=inventory.filter(row=>productIds.has(row.product_id));
-    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori per lokasi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.location)}</strong><p>${e(warehouseStatus[row.stock_status])} ${n(row.quantity)} pcs${row.stock_status==='sellable'?` · available ${n(row.available_quantity)} · reserved ${n(row.reserved_quantity)}`:''}</p></article>`).join('') || '<p class="state">Belum ada inventori barang jadi untuk order ini.</p>'}<p class="hint">Sellable dibagi menjadi available dan reserved; hold menunggu keputusan; damaged dipisahkan dari stok jual.</p><button data-action="finished-goods" data-id="${e(orderId)}">Penerimaan barang jadi</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><h3>Riwayat pergerakan</h3><div id="warehouse-list"><p class="state">Memuat pergerakan...</p></div><p id="warehouse-error" class="error" role="alert" hidden></p><button id="warehouse-more" type="button">Muat pergerakan sebelumnya</button>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><h3>Inventori per lokasi</h3>${relevant.map(row=>`<article class="material-event"><strong>${e(row.sku)} · ${e(row.location)}</strong><p>${e(warehouseStatus[row.stock_status])} ${n(row.quantity)} pcs${row.stock_status==='sellable'?` · available ${n(row.available_quantity)} · reserved ${n(row.reserved_quantity)}`:''}</p></article>`).join('') || '<p class="state">Belum ada inventori barang jadi untuk order ini.</p>'}<p class="hint">Sellable dibagi menjadi available dan reserved. Picked berada di staging untuk proses packing. Hold dan damaged tetap terpisah dari stok jual.</p><button data-action="finished-goods" data-id="${e(orderId)}">Penerimaan barang jadi</button><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><button data-action="marketplace-picks" data-id="${e(orderId)}">Riwayat picking</button><h3>Riwayat pergerakan</h3><div id="warehouse-list"><p class="state">Memuat pergerakan...</p></div><p id="warehouse-error" class="error" role="alert" hidden></p><button id="warehouse-more" type="button">Muat pergerakan sebelumnya</button>`;
     let before=null;
     const load=async()=>{
       const button=$('warehouse-more');button.disabled=true;message('warehouse-error','');
@@ -1133,7 +1135,7 @@ async function marketplaceReservationsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-reservations?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-list').replaceChildren();
-        $('marketplace-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.location)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><p>${date(row.reserved_date)}</p><button data-action="marketplace-reservation" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian reservasi</button></article>`).join(''));
+        $('marketplace-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.location)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><p>Sudah dipick ${n(row.picked_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.reserved_date)}</p><button data-action="marketplace-reservation" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian reservasi</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-list').innerHTML='<p class="state">Belum ada reservasi marketplace untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat reservasi sebelumnya';
       }catch(error){if(current()){message('marketplace-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
@@ -1171,7 +1173,7 @@ async function marketplaceReservationDialog(reservationId) {
   try{
     const row=await api.get('/api/marketplace-reservations/'+encodeURIComponent(reservationId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><h3>${n(row.quantity)} pcs · ${e(row.sku)} · ${e(row.size)}</h3><article class="material-event"><h3>${e(row.marketplace)}</h3><p>Order ${e(row.external_order_reference)}</p><p>${e(row.location)} · ${date(row.reserved_date)}</p></article><p>Penerimaan ${e(row.receipt_reference)} · Final QC ${e(row.final_qc_reference)} · batch ${e(row.batch_reference)}</p><p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>${row.release?`<article class="material-event"><h3>Reservasi dilepaskan</h3><p>${date(row.release.released_date)}</p><p class="reason">${e(row.release.reason)}</p><p class="hint">${e(row.release.actor_name)} · ${purchaseStamp(row.release.created_at)}</p></article>`:''}<div class="actions"><button data-action="finished-goods-receipt" data-id="${e(row.receipt_id)}">Penerimaan asal</button><button data-action="marketplace-reservations" data-id="${e(row.order_id)}">Semua reservasi</button>${user.role!=='viewer'&&row.status==='active'?'<button id="release-marketplace">Lepaskan reservasi</button>':''}</div>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><h3>${n(row.quantity)} pcs · ${e(row.sku)} · ${e(row.size)}</h3><article class="material-event"><h3>${e(row.marketplace)}</h3><p>Order ${e(row.external_order_reference)}</p><p>${e(row.location)} · ${date(row.reserved_date)}</p><p>Sudah dipick ${n(row.picked_quantity)} pcs · sisa ${n(row.remaining_quantity)} pcs</p></article><p>Penerimaan ${e(row.receipt_reference)} · Final QC ${e(row.final_qc_reference)} · batch ${e(row.batch_reference)}</p><p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>${row.release?`<article class="material-event"><h3>Reservasi dilepaskan</h3><p>${date(row.release.released_date)}</p><p class="reason">${e(row.release.reason)}</p><p class="hint">${e(row.release.actor_name)} · ${purchaseStamp(row.release.created_at)}</p></article>`:''}${row.picked_quantity?'<p class="hint">Koreksi semua pick aktif sebelum melepas reservasi.</p>':''}<div class="actions"><button data-action="finished-goods-receipt" data-id="${e(row.receipt_id)}">Penerimaan asal</button><button data-action="marketplace-reservations" data-id="${e(row.order_id)}">Semua reservasi</button><button data-action="marketplace-picks" data-id="${e(row.order_id)}">Riwayat picking</button>${user.role!=='viewer'&&row.status==='active'&&row.remaining_quantity>0?`<button data-action="new-marketplace-pick" data-id="${e(row.id)}">Catat pick</button>`:''}${user.role!=='viewer'&&row.status==='active'&&!row.picked_quantity?'<button id="release-marketplace">Lepaskan reservasi</button>':''}</div>`;
     if($('release-marketplace'))$('release-marketplace').onclick=()=>{
       if(guardPending())return;
       formDialog('Lepaskan reservasi',field('released_date','Tanggal pelepasan','date',`required min="${e(row.reserved_date)}"`)+materialReason,
@@ -1180,6 +1182,64 @@ async function marketplaceReservationDialog(reservationId) {
         `${row.marketplace} · ${row.external_order_reference} · ${n(row.quantity)} pcs\nSeluruh alokasi kembali menjadi available.`);
     };
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketplace-reservation" data-id="${e(reservationId)}">Coba lagi</button>`;}
+}
+
+async function marketplacePicksDialog(orderId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Picking marketplace','<p class="state">Memuat riwayat pick...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const order=await api.get('/api/orders/'+encodeURIComponent(orderId));
+    if(!current())return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><p class="hint">Pick memindahkan stok reserved dari rak sellable ke lokasi staging. Packing dicatat pada langkah berikutnya.</p><button data-action="marketplace-reservations" data-id="${e(orderId)}">Reservasi marketplace</button><button data-action="warehouse" data-id="${e(orderId)}">Inventori gudang</button><h3>Riwayat pick</h3><div id="marketplace-pick-list"><p class="state">Memuat pick...</p></div><p id="marketplace-pick-error" class="error" role="alert" hidden></p><button id="marketplace-pick-more" type="button">Muat pick sebelumnya</button>`;
+    let before=null;
+    const load=async()=>{
+      const button=$('marketplace-pick-more');button.disabled=true;message('marketplace-pick-error','');
+      try{
+        const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-picks?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
+        if(!current())return;
+        if(!before)$('marketplace-pick-list').replaceChildren();
+        $('marketplace-pick-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.location)} → ${e(row.staging_location)} · ${row.status==='active'?'Di staging':'Sudah dikoreksi'}</p><p>${date(row.picked_date)}</p><button data-action="marketplace-pick" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pick</button></article>`).join(''));
+        if(!before&&!rows.length)$('marketplace-pick-list').innerHTML='<p class="state">Belum ada pick marketplace untuk order ini.</p>';
+        before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pick sebelumnya';
+      }catch(error){if(current()){message('marketplace-pick-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      finally{if(current())button.disabled=false;}
+    };
+    $('marketplace-pick-more').onclick=load;await load();
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketplace-picks" data-id="${e(orderId)}">Coba lagi</button>`;}
+}
+
+async function marketplacePickForm(reservationId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Catat pick marketplace','<p class="state">Memuat reservasi...</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/marketplace-reservations/'+encodeURIComponent(reservationId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    if(row.status!=='active'||row.remaining_quantity<1){$('dialog-content').innerHTML='<p>Reservasi ini tidak memiliki jumlah yang dapat dipick. Muat ulang rinciannya.</p><button data-action="marketplace-reservation" data-id="'+e(reservationId)+'">Muat ulang reservasi</button>';return;}
+    formDialog('Catat pick marketplace',field('reference','Referensi pick','text','required maxlength="160"')+
+      field('quantity','Jumlah pick','number',`required min="1" max="${row.remaining_quantity}" step="1"`)+
+      field('staging_location','Lokasi staging','text','required maxlength="160"')+
+      field('picked_date','Tanggal pick','date',`required min="${e(row.reserved_date)}"`)+materialReason,
+      form=>{const data=new FormData(form),payload={reference:data.get('reference'),quantity:Number(data.get('quantity')),staging_location:data.get('staging_location'),picked_date:data.get('picked_date'),reason:data.get('reason')};if(payload.quantity>row.remaining_quantity)throw new Error('Jumlah pick melebihi sisa reservasi.');return payload;},
+      '/api/marketplace-reservations/'+encodeURIComponent(row.id)+'/picks',
+      `${row.reference} · ${row.marketplace} · ${row.external_order_reference}\nSisa reservasi ${n(row.remaining_quantity)} dari ${n(row.quantity)} pcs di ${row.location}.`);
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-marketplace-pick" data-id="${e(reservationId)}">Coba lagi</button>`;}
+}
+
+async function marketplacePickDialog(pickId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian pick','<p class="state">Memuat catatan pick...</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/marketplace-picks/'+encodeURIComponent(pickId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${row.status==='active'?'Di staging':'Sudah dikoreksi'}</p><h3>${n(row.quantity)} pcs · ${e(row.sku)} · ${e(row.size)}</h3><article class="material-event"><h3>${e(row.marketplace)} · ${e(row.external_order_reference)}</h3><p>${e(row.location)} → ${e(row.staging_location)}</p><p>Dipick ${date(row.picked_date)}</p></article><p>Reservasi ${e(row.reservation_reference)} · penerimaan ${e(row.receipt_reference)} · Final QC ${e(row.final_qc_reference)} · batch ${e(row.batch_reference)}</p><p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>${row.reversal?`<article class="material-event"><h3>Pick dikoreksi</h3><p class="reason">${e(row.reversal.reason)}</p><p class="hint">${e(row.reversal.actor_name)} · ${purchaseStamp(row.reversal.created_at)}</p></article>`:''}<div class="actions"><button data-action="marketplace-reservation" data-id="${e(row.reservation_id)}">Reservasi asal</button><button data-action="marketplace-picks" data-id="${e(row.order_id)}">Semua pick</button><button data-action="warehouse" data-id="${e(row.order_id)}">Inventori gudang</button>${user.role==='admin'&&row.status==='active'?'<button id="reverse-marketplace-pick">Koreksi pick</button>':''}</div>`;
+    if($('reverse-marketplace-pick'))$('reverse-marketplace-pick').onclick=()=>{
+      if(guardPending())return;
+      formDialog('Koreksi pick',materialReason,form=>Object.fromEntries(new FormData(form)),
+        '/api/marketplace-picks/'+encodeURIComponent(row.id)+'/reverse',
+        `${row.reference} · ${n(row.quantity)} pcs\nKoreksi mengembalikan barang dari staging ke reserved sellable. Riwayat asli tetap tersimpan.`);
+    };
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketplace-pick" data-id="${e(pickId)}">Coba lagi</button>`;}
 }
 
 async function consumptionForm(issueId) {
