@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
-from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, BomSave
+from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -19,7 +19,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.11.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.12.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
@@ -120,6 +120,23 @@ def create_app(database_path):
     @app.post('/api/material-reservations', status_code=201, tags=['Materials'])
     def reserve_material(body: MaterialReservation, user: Actor, key: RequestKey):
         return store.reserve_material(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
+    def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
+        return store.consume_material(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/material-consumption/{consumption_id}/reverse', status_code=201, tags=['Materials'])
+    def reverse_consumption(consumption_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_consumption(consumption_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/material-consumption', tags=['Materials'])
+    def order_consumption(order_id: str, user: Actor, limit: Limit = 100, offset: Offset = 0):
+        return store.order_consumption(order_id, limit, offset)
+
+    @app.get('/api/orders/{order_id}/consumption-history', tags=['Materials'])
+    def consumption_history(order_id: str, user: Actor, limit: Limit = 100,
+                            before: Annotated[int | None, Query(ge=1)] = None):
+        return store.consumption_history(order_id, limit, before)
 
     @app.get('/api/orders/{order_id}/material-reservations', tags=['Materials'])
     def order_reservations(order_id: str, user: Actor, limit: Limit = 100, offset: Offset = 0):

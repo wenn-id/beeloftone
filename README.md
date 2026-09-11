@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.11.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.12.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup konsumsi aktual kain, barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 6. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 7. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -364,8 +364,9 @@ pada Phase 1 belum dikerjakan; tahap bahan ini tidak berarti seluruh Phase 2 sel
 5. Admin memilih **Koreksi catatan bahan**, lalu mengisi alasan. Pembalikan mengembalikan seluruh jumlah catatan; untuk jumlah berbeda, catat transaksi baru setelah koreksi.
 
 Contoh: terima 10,125 m lalu keluarkan 2,125 m ke order → saldo rak 8 m. Membalik pengeluaran
-tersebut → saldo kembali 10,125 m. Pengeluaran tidak mengubah pcs maupun tahap WIP order,
-dan belum mengukur konsumsi aktual, hasil cutting atau waste. Angka meter dan kilogram tidak dijumlahkan.
+tersebut → saldo kembali 10,125 m. Pengeluaran tidak mengubah pcs maupun tahap WIP order.
+Pada increment v0.9 ini belum ada pencatatan konsumsi aktual, hasil cutting atau waste; angka meter
+dan kilogram tidak dijumlahkan.
 
 Kode/nama/satuan master dan metadata batch tidak dapat diedit. Penerimaan yang keliru harus
 dibalik, lalu diterima sebagai batch baru dengan referensi berbeda. Pembalikan penerimaan ditolak
@@ -548,3 +549,34 @@ dengan aplikasi lama sebelum upgrade. Pengujian dilakukan di database sementara.
 Pengerjaan tetap di `feature/core-materials`, tanpa push atau merge main. Berikutnya: pencatatan
 konsumsi aktual dan waste cutting, sebelum perluasan PR/PO. Rencana dan verifikasi ada di
 [reservasi](docs/reservations-plan.md) dan [hasil uji](docs/reservations-verification.md).
+
+## Pemakaian aktual dan waste cutting (v0.12 — Phase 2 roadmap)
+
+Pada detail order, buka **Pemakaian & waste** untuk melihat setiap pengeluaran bahan dan
+melaporkan jumlah yang benar-benar terpakai serta jumlah yang menjadi waste cutting. Pelaporan
+boleh bertahap; sisa yang belum dilaporkan ditampilkan terpisah dari saldo fisik. Setiap catatan
+menyimpan batch, alasan, akun dan waktu, sehingga operator tidak perlu menebak pemakaian dari
+perpindahan WIP.
+
+Jumlah pemakaian dan waste memakai satuan batch (m/kg maksimal tiga desimal, pcs bulat), minimal
+satu di antaranya positif, dan total bersih tidak boleh melebihi pengeluaran bahan terkait.
+Admin/operator dapat mencatat. Hanya admin yang dapat membalik catatan pemakaian, dan pembalikan
+selalu membuat catatan pasangan yang immutable. Pengeluaran bahan tidak dapat dibalik ke rak selama
+masih ada pemakaian atau waste bersih; balik catatan pemakaian dahulu lalu catat koreksi baru.
+
+Pencatatan pemakaian tidak mengubah saldo batch, reservasi, atau jumlah WIP. Waste tidak masuk
+sebagai stok yang dapat dipakai ulang. Belum ada pengembalian sebagian, sisa kain reusable,
+tautan ke output cutting, perhitungan biaya, atau forecast waste. Semua pembacaan boleh dilakukan
+oleh seluruh role; POST memakai `X-API-Key` dan `Idempotency-Key`.
+
+API tambahan:
+
+- `POST /api/material-consumption`: `issue_id`, `used`, `waste`, `reason`.
+- `POST /api/material-consumption/{id}/reverse`: `reason` admin-only.
+- `GET /api/orders/{id}/material-consumption?limit=100&offset=0`: ringkasan pengeluaran, pemakaian,
+  waste dan sisa belum dilaporkan per batch.
+- `GET /api/orders/{id}/consumption-history?limit=100&before=SEQUENCE`: ledger terbaru dahulu;
+  hilangkan `before` pada halaman pertama.
+
+Schema 6 → 7 menambahkan ledger pemakaian tanpa mensintesis histori lama. Backup sebelum upgrade
+tetap wajib. Rencana: [pemakaian](docs/consumption-plan.md). Hasil uji: [verifikasi pemakaian](docs/consumption-verification.md).

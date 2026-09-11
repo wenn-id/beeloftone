@@ -130,6 +130,21 @@ class MaterialReservation(MaterialIssue):
     action: Literal['reserve', 'release']
 
 
+class MaterialConsumption(Input):
+    issue_id: Text
+    used: MaterialAmount
+    waste: MaterialAmount
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('used','waste')
+    @classmethod
+    def validate_amount(cls,value):
+        amount=Decimal(value)
+        if not 0 <= amount <= 1_000_000:
+            raise ValueError('Jumlah harus antara nol dan 1.000.000 satuan.')
+        return format(amount,'.3f')
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

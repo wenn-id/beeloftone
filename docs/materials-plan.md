@@ -8,7 +8,7 @@ Source: Beeloft_One_Concept_Blueprint.pdf, pages 7, 8, 15–16. The PDF is produ
 |---|---|
 | 0 Discovery & Data Map | Internal production flow and roles mapped; real SKU/location/vendor identifiers still need field validation. |
 | 1 Command Center | Local SKU master and production dashboard exist. Jubelio/Mekari sync and company-wide dashboard are not implemented. |
-| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt/issue, versioned BOM and latest-BOM requirements exist. v0.11 adds batch/order reservations and allocation-aware shortage estimates. Actual consumption/waste and PR/PO remain next. |
+| 2 Core Operations | Production orders, partial WIP, basic QC, issues, audit, raw materials, batch receipt/issue, versioned BOM, latest-BOM requirements, batch/order reservations and allocation-aware shortage estimates exist. v0.12 adds actual used/waste recording against material issues. PR/PO remains next. |
 | 3 Warehouse Integration | Not started; internal production warehouse balances are not authoritative sellable stock. |
 | 4 Unified Approvals | Not started. |
 | 5 Economics & Forecasting | Not started. |
@@ -22,7 +22,12 @@ An immutable material ledger records receipt, issue to an existing production or
 
 Admin creates masters and reverses; admin/operator receive and issue; all three roles read. Batch history uses a sequence cursor. Order detail links to material issue history, including reversals. Materials audit remains in its own history rather than mixing meter/kg amounts into the production pcs report. Empty/error/loading states, keyboard use, mobile and existing pending-request recovery are required.
 
-Next product increment: basic BOM and material requirements/shortages, then reservation/consumption and PR/PO. This increment does not claim available-to-promise inventory: no reservations, incoming QC hold, waste, cost, supplier master or physical rack transfers yet. Received quantity means usable accepted stock only; planned pcs do not automatically consume material.
+Actual consumption is a separate immutable ledger tied to an unreversed issue. Admin/operator record
+productive used and unusable cutting waste in partial reports; admin reverses a report before a new
+correction. Net used plus waste cannot exceed the issued quantity. Reporting does not change rack
+balance, reservation allocation or WIP pcs, and an issue reversal is blocked while net reporting remains.
+
+Next product increment: PR/PO. This increment does not claim available-to-promise inventory: no incoming QC hold, cost, supplier master or physical rack transfers yet. Received quantity means usable accepted stock only; planned pcs do not automatically consume material, and actual usage is recorded explicitly rather than inferred.
 
 ## Implementation plan (inline execution)
 

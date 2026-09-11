@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -45,6 +45,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("bom.sql").read_text(encoding="utf-8"))
             if version < 6:
                 db.executescript(Path(__file__).with_name("reservations.sql").read_text(encoding="utf-8"))
+            if version < 7:
+                db.executescript(Path(__file__).with_name("consumption.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -221,6 +223,8 @@ class Store:
                 raise DomainError(409, 'Bahan sudah dikeluarkan. Periksa dan kembalikan pengeluaran terkait sebelum membalik penerimaan.')
             if original['kind']=='receipt' and db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (original['batch_id'],)).fetchone()[0]:
                 raise DomainError(409, 'Batch masih direservasi. Lepaskan seluruh reservasi sebelum membalik penerimaan.')
+            if original['kind']=='issue' and db.execute('SELECT COALESCE(SUM(used_milli+waste_milli),0) FROM material_consumption WHERE issue_id=?',(movement_id,)).fetchone()[0]:
+                raise DomainError(409,'Pengeluaran sudah dicatat terpakai atau waste. Periksa dan koreksi catatan pemakaian sebelum mengembalikan seluruh pengeluaran.')
             return self._material_movement(db, original['batch_id'], 'reversal', -original['quantity_milli'],
                 original['order_id'], payload['reason'], actor['id'], movement_id)
         return self._write(actor, ('admin',), key, 'material-reverse:'+movement_id, payload, perform)
@@ -284,6 +288,77 @@ class Store:
             result=[]
             for row in rows:
                 record=dict(row);record['quantity']=self._material_decimal(record.pop('quantity_milli'));result.append(record)
+            return result
+
+    def _issue_consumption(self, db, issue_id):
+        row=db.execute('''SELECT m.id AS issue_id,m.batch_id,m.order_id,m.quantity_milli,m.created_at,m.reason,
+            b.reference AS batch_reference,b.location,s.code,s.name,s.unit,
+            (SELECT id FROM material_movements WHERE reversal_of=m.id) AS reversed_by,
+            (SELECT COALESCE(SUM(used_milli),0) FROM material_consumption WHERE issue_id=m.id) AS used_milli,
+            (SELECT COALESCE(SUM(waste_milli),0) FROM material_consumption WHERE issue_id=m.id) AS waste_milli
+            FROM material_movements m JOIN material_batches b ON b.id=m.batch_id JOIN materials s ON s.id=b.material_id
+            WHERE m.id=? AND m.kind='issue' ''',(issue_id,)).fetchone()
+        if not row:
+            if db.execute('SELECT 1 FROM material_movements WHERE id=?',(issue_id,)).fetchone():
+                raise DomainError(422,'Pemakaian harus merujuk catatan pengeluaran bahan.')
+            raise DomainError(404,'Pengeluaran bahan tidak ditemukan.')
+        record=dict(row)
+        issued=-record.pop('quantity_milli');used=record.pop('used_milli');waste=record.pop('waste_milli')
+        record.update({key:self._material_decimal(value) for key,value in dict(issued=issued,used=used,waste=waste,
+                      unreported=0 if record['reversed_by'] else issued-used-waste).items()})
+        return record
+
+    def order_consumption(self, order_id, limit=100, offset=0):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT id FROM material_movements WHERE order_id=? AND kind='issue'
+                ORDER BY sequence DESC LIMIT ? OFFSET ?''',(order_id,limit,offset)).fetchall()
+            return [self._issue_consumption(db,row[0]) for row in ids]
+
+    def _consumption_event(self, db, issue_id, used, waste, reason, actor_id, reversal_of=None):
+        record=dict(id=str(uuid4()),issue_id=issue_id,used_milli=used,waste_milli=waste,reason=reason,
+                    actor_id=actor_id,created_at=now(),reversal_of=reversal_of)
+        db.execute('''INSERT INTO material_consumption(id,issue_id,used_milli,waste_milli,reversal_of,reason,actor_id,created_at)
+            VALUES(:id,:issue_id,:used_milli,:waste_milli,:reversal_of,:reason,:actor_id,:created_at)''',record)
+        record['used']=self._material_decimal(record.pop('used_milli'));record['waste']=self._material_decimal(record.pop('waste_milli'))
+        return record
+
+    def consume_material(self, payload, actor, key):
+        def perform(db):
+            issue=self._issue_consumption(db,payload['issue_id'])
+            if issue['reversed_by']:
+                raise DomainError(409,'Pengeluaran sudah dibalik, tidak dapat dicatat pemakaiannya.')
+            amounts=[0 if Decimal(payload[field])==0 else self._material_amount(payload[field],issue['unit']) for field in ('used','waste')]
+            if sum(amounts)==0:
+                raise DomainError(422,'Isi jumlah terpakai atau waste lebih dari nol.')
+            if sum(amounts)>Decimal(issue['unreported'])*1000:
+                raise DomainError(409,'Terpakai + waste melebihi jumlah yang belum dilaporkan. Muat ulang dan periksa catatan terbaru.')
+            return self._consumption_event(db,issue['issue_id'],*amounts,payload['reason'],actor['id'])
+        return self._write(actor,('admin','operator'),key,'material-consumption',payload,perform)
+
+    def reverse_consumption(self, consumption_id, payload, actor, key):
+        def perform(db):
+            row=db.execute('SELECT * FROM material_consumption WHERE id=?',(consumption_id,)).fetchone()
+            if not row:
+                raise DomainError(404,'Catatan pemakaian tidak ditemukan.')
+            if row['reversal_of'] or db.execute('SELECT 1 FROM material_consumption WHERE reversal_of=?',(consumption_id,)).fetchone():
+                raise DomainError(409,'Catatan pembalik atau catatan yang sudah dibalik tidak dapat dikoreksi lagi.')
+            return self._consumption_event(db,row['issue_id'],-row['used_milli'],-row['waste_milli'],payload['reason'],actor['id'],consumption_id)
+        return self._write(actor,('admin',),key,'consumption-reverse:'+consumption_id,payload,perform)
+
+    def consumption_history(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            rows=db.execute('''SELECT c.*,b.reference AS batch_reference,s.code,s.unit,u.name AS actor_name,
+                (SELECT id FROM material_consumption WHERE reversal_of=c.id) AS reversed_by
+                FROM material_consumption c JOIN material_movements m ON m.id=c.issue_id
+                JOIN material_batches b ON b.id=m.batch_id JOIN materials s ON s.id=b.material_id JOIN users u ON u.id=c.actor_id
+                WHERE m.order_id=? AND (? IS NULL OR c.sequence<?) ORDER BY c.sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
+            result=[]
+            for row in rows:
+                record=dict(row);record['used']=self._material_decimal(record.pop('used_milli'));record['waste']=self._material_decimal(record.pop('waste_milli'));result.append(record)
             return result
 
     def _bom(self, db, product_id, before=None):

@@ -9,7 +9,8 @@ Produksi sulit dilacak dan seluruh tahap dikerjakan internal. Mulai coding fonda
 - Satu aplikasi Python 3.12+, FastAPI, dan SQLite. Database dan transaksi memakai pustaka standar `sqlite3`; tidak ada ORM atau microservices.
 - Satu order berisi beberapa baris SKU/varian. Setiap baris punya target pcs bilangan bulat dan saldo per tahap. Ukuran dan warna dibedakan oleh SKU.
 - Tahap: planned -> cutting -> sewing -> finishing -> qc -> warehouse. QC dapat mengirim ke rework atau reject; rework kembali ke QC.
-- `planned` menghitung target pcs yang belum masuk cutting, bukan stok kain. Ledger kain/BOM dan konsumsi aktual berada di tahap pengembangan berikutnya.
+- `planned` menghitung target pcs yang belum masuk cutting, bukan stok kain. BOM, reservasi bahan,
+  dan ledger pemakaian/waste adalah catatan Phase 2 terpisah; target pcs tidak otomatis mengonsumsi bahan.
 - Warehouse berarti penerimaan internal; belum menyinkronkan stok jual Jubelio.
 - Perpindahan bersifat atomik: validasi saldo, kurangi sumber, tambah tujuan, simpan pelaku dan waktu dalam satu transaksi. Jumlah semua tahap selalu sama dengan target.
 - Catatan perpindahan tidak diedit/dihapus. Koreksi oleh admin membuat catatan pembalik dengan alasan; pembalikan ditolak jika saldo tujuan sudah tidak cukup. Sistem ini melacak kuantitas per SKU, bukan identitas setiap potong.

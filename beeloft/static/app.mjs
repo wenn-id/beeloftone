@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
     <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
@@ -322,7 +322,7 @@ document.addEventListener('click', event => {
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
     bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
-    reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
+    consumption:consumptionDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
@@ -612,6 +612,54 @@ async function reservationsDialog() {
     $('reservation-more').onclick=load;await load();
   }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="reservations">Coba lagi</button>`;}
 }
+
+async function consumptionForm(issueId) {
+  if(guardPending())return;
+  const version=epoch,order=selected;
+  openDialog('Catat pemakaian & waste','<p class="state">Memuat sisa pengeluaran…</p>');const modal=dialogVersion;
+  try{
+    const rows=await allRows(`/api/orders/${encodeURIComponent(order.id)}/material-consumption`);
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    const issue=rows.find(r=>r.issue_id===issueId);
+    if(!issue || issue.reversed_by || issue.unreported==='0.000'){$('dialog-content').innerHTML='<p>Pengeluaran tidak lagi memiliki jumlah yang dapat dilaporkan. Tutup dialog dan muat ulang pemakaian order.</p>';return;}
+    const step=issue.unit==='pcs'?'1':'0.001';
+    formDialog('Catat pemakaian & waste',field('used','Terpakai untuk produksi','number',`required min="0" max="${e(issue.unreported)}" step="${step}" value="0"`)+
+      field('waste','Waste tidak layak pakai','number',`required min="0" max="${e(issue.unreported)}" step="${step}" value="0"`)+materialReason,
+      form=>({...Object.fromEntries(new FormData(form)),issue_id:issue.issue_id}),'/api/material-consumption',
+      `${order.reference} · ${issue.batch_reference} · ${issue.code}\nPengeluaran ${issue.issue_id}\nBelum dilaporkan: ${materialQty(issue.unreported,issue.unit)}. Terpakai + waste tidak boleh melampaui jumlah ini. Isi sesuai satuan ${issue.unit}. Waste berarti sisa tidak layak pakai; sisa yang masih bisa dipakai tidak dicatat sebagai waste. Stok rak tidak dipotong lagi dan pcs produksi tidak berubah.`);
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="record-consumption" data-id="${e(issueId)}">Coba lagi</button>`;}
+}
+async function consumptionDialog() {
+  if(guardPending())return;
+  const version=epoch,order=selected;
+  openDialog('Pemakaian & waste order','<p class="state">Memuat pemakaian bahan…</p>');const modal=dialogVersion;
+  const current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  const stamp=value=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
+  try{
+    const issues=await allRows(`/api/orders/${encodeURIComponent(order.id)}/material-consumption`);
+    if(!current())return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><p class="hint">Pemakaian dicatat per pengeluaran bahan. Terpakai adalah bahan untuk produksi; waste adalah bahan tidak layak pakai. Belum dilaporkan berarti belum ada pencatatan, bukan hasil pengecekan sisa fisik. Pencatatan ini tidak memotong stok rak atau mengubah pcs/tahap produksi.</p><div id="consumption-issues">${issues.length?issues.map(i=>`<article class="material-event"><h3>${e(i.batch_reference)} · ${e(i.code)}</h3><p class="hint">Pengeluaran ${e(i.issue_id)} · ${stamp(i.created_at)}</p>${i.reversed_by?'<p class="status-label">Pengeluaran sudah dibalik</p>':''}<dl class="requirement-values">${[['Dikeluarkan awal','issued'],['Terpakai','used'],['Waste','waste'],['Belum dilaporkan','unreported']].map(([label,key])=>`<div><dt>${label}</dt><dd>${e(materialQty(i[key],i.unit))}</dd></div>`).join('')}</dl>${user.role!=='viewer' && !i.reversed_by && i.unreported!=='0.000'?`<button data-action="record-consumption" data-id="${e(i.issue_id)}">Catat pemakaian</button>`:''}</article>`).join(''):'<p class="state">Belum ada pengeluaran bahan untuk dicatat pemakaiannya.</p>'}</div><h3>Riwayat pemakaian & waste</h3><div id="consumption-history"></div><p id="consumption-error" class="error" role="alert" hidden></p><button id="consumption-more" type="button">Muat riwayat pemakaian</button>`;
+    let before=null,history=[];
+    const load=async()=>{
+      const button=$('consumption-more');button.disabled=true;message('consumption-error','');
+      try{
+        const rows=await api.get(`/api/orders/${encodeURIComponent(order.id)}/consumption-history?`+new URLSearchParams({limit:100,...(before?{before}:{})}));
+        if(!current())return;
+        history.push(...rows);
+        $('consumption-history').insertAdjacentHTML('beforeend',rows.map(r=>`<article class="material-event"><strong>${r.reversal_of?'Pembalikan pemakaian':'Pemakaian dicatat'}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p>Terpakai ${e(materialQty(r.used,r.unit))} · waste ${e(materialQty(r.waste,r.unit))}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${stamp(r.created_at)}${r.reversed_by?' · Sudah dibalik':''}</p><p class="hint">Pengeluaran ${e(r.issue_id)}</p>${user.role==='admin' && !r.reversal_of && !r.reversed_by?`<button data-consumption-reverse="${e(r.id)}">Koreksi pemakaian</button>`:''}</article>`).join(''));
+        before=rows.at(-1)?.sequence;button.hidden=rows.length<100;button.textContent='Muat pemakaian sebelumnya';
+      }catch(error){if(current())message('consumption-error',error.message,true);}finally{if(current())button.disabled=false;}
+    };
+    $('consumption-more').onclick=load;
+    $('consumption-history').onclick=event=>{
+      const button=event.target.closest('[data-consumption-reverse]');if(!button || guardPending())return;
+      const record=history.find(r=>r.id===button.dataset.consumptionReverse);
+      formDialog('Koreksi pemakaian & waste',materialReason,form=>Object.fromEntries(new FormData(form)),`/api/material-consumption/${encodeURIComponent(record.id)}/reverse`,
+        `${record.batch_reference} · terpakai ${materialQty(record.used,record.unit)} · waste ${materialQty(record.waste,record.unit)}\nPembalikan membatalkan seluruh jumlah pada catatan ini. Stok rak tidak berubah. Setelah koreksi, catat kembali angka yang benar bila diperlukan.`);
+    };
+    await load();
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="consumption">Coba lagi</button>`;}
+}
 $('materials').onclick = showMaterials;
 $('materials-back').onclick = showBoard;
 $('materials-refresh').onclick = () => loadMaterials();
@@ -710,7 +758,7 @@ async function materialHistoryDialog(batchId, order=null) {
       const button = event.target.closest('[data-material-reverse]'); if (!button || guardPending()) return;
       const item = rows.find(m => m.id === button.dataset.materialReverse);
       formDialog('Koreksi catatan bahan',materialReason,form => Object.fromEntries(new FormData(form)),`/api/material-movements/${encodeURIComponent(item.id)}/reverse`,
-        `${item.batch_reference} · ${materialQty(item.quantity,item.unit)}\nPembalikan mengembalikan seluruh jumlah catatan. Pastikan posisi bahan fisik sesuai. Penerimaan tidak dapat dibalik jika bahan masih dikeluarkan atau direservasi. Pembalikan pengeluaran mengembalikan stok bebas, tanpa mengembalikan reservasi otomatis.`);
+        `${item.batch_reference} · ${materialQty(item.quantity,item.unit)}\nPembalikan mengembalikan seluruh jumlah catatan. Pastikan posisi bahan fisik sesuai. Penerimaan tidak dapat dibalik jika bahan masih dikeluarkan atau direservasi. Pembalikan pengeluaran mengembalikan stok bebas, tanpa mengembalikan reservasi otomatis. Pemakaian/waste yang masih tercatat harus dikoreksi terlebih dahulu.`);
     };
     await load();
   } catch (error) { if (current()) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="${order ? 'order-materials' : 'material-batch'}" data-id="${e(batchId || '')}">Coba lagi</button>`; }

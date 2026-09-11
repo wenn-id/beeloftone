@@ -1,0 +1,64 @@
+const assert=require('node:assert/strict');
+const path=require('node:path');
+
+module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(operator);
+  await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
+  const order=(await apiGet('/api/orders')).find(o=>o.reference==='DEMO-PROD-001');
+  const before=await apiGet('/api/material-batches');
+  await page.getByRole('button',{name:'Pemakaian & waste',exact:true}).click();
+  await page.getByRole('button',{name:'Catat pemakaian',exact:true}).click();
+  await page.getByLabel('Terpakai untuk produksi',{exact:true}).fill('2');
+  await page.getByLabel('Waste tidak layak pakai',{exact:true}).fill('0.2');
+  await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH - hasil cutting');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText(/Terpakai \+ waste melebihi/).waitFor();
+  await page.getByLabel('Terpakai untuk produksi',{exact:true}).fill('1.5');
+  await page.getByLabel('Waste tidak layak pakai',{exact:true}).fill('0.125');
+  let drop=true;
+  await page.route('**/api/material-consumption',async route=>{
+    if(drop){drop=false;await route.fetch();await route.abort('failed');}else await route.continue();
+  });
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
+  await page.locator('dialog').waitFor({state:'hidden'});await page.unroute('**/api/material-consumption');
+  assert.deepEqual(await apiGet('/api/material-batches'),before);
+  const report=await apiGet('/api/orders/'+order.id+'/material-consumption');
+  const issue=report.find(i=>!i.reversed_by);
+  assert.equal(issue.unreported,'0.500');
+  assert.equal(issue.used,'1.500');assert.equal(issue.waste,'0.125');
+  assert.equal((await apiGet('/api/orders/'+order.id+'/consumption-history')).length,1);
+  await page.getByRole('button',{name:'Pemakaian & waste',exact:true}).click();
+  await page.getByText('Pemakaian dicatat',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Koreksi pemakaian',exact:true}).count(),0);
+  const artifacts=process.env.BEELOFT_QA_SCREENSHOTS || work;
+  await page.setViewportSize({width:1440,height:1000});
+  await page.locator('dialog').screenshot({path:path.join(artifacts,'beeloft-consumption.png')});
+  for(const width of [320,390,768]){
+    await page.setViewportSize({width,height:844});
+    assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}),'Consumption overflow '+width);
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}),'Consumption 200% overflow');
+  await page.evaluate(()=>document.documentElement.style.fontSize='');await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(viewer);
+  await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
+  await page.getByRole('button',{name:'Pemakaian & waste',exact:true}).click();
+  await page.getByText('Pemakaian dicatat',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Catat pemakaian',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Koreksi pemakaian',exact:true}).count(),0);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(admin);
+  await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
+  await page.getByRole('button',{name:'Pemakaian & waste',exact:true}).click();
+  await page.getByRole('button',{name:'Koreksi pemakaian',exact:true}).click();
+  await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH - salah ukur, akan dicatat ulang');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();await page.locator('dialog').waitFor({state:'hidden'});
+  assert.equal((await apiGet('/api/orders/'+order.id+'/material-consumption')).find(i=>i.issue_id===issue.issue_id).unreported,'2.125');
+  await page.getByRole('button',{name:'Pemakaian & waste',exact:true}).click();
+  await page.getByText('Pembalikan pemakaian',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Koreksi pemakaian',exact:true}).count(),0);
+  await page.keyboard.press('Escape');
+  console.log('Consumption browser QA PASS: overage validation, partial used/waste, committed retry, unchanged rack/reservations, roles, reversal, mobile/200%.');
+};
