@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.12.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
+Pelacakan produksi internal, versi 0.13.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, perpindahan parsial, QC, serta riwayat koreksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 7. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup barang hilang di tengah produksi, partial cancellation, perubahan jumlah target setelah order dibuat, bundle/barcode, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 8. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan versi BOM. Migrasi 3 → 4 menambahkan master bahan, batch, dan ledger bahan. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -580,3 +580,55 @@ API tambahan:
 
 Schema 6 → 7 menambahkan ledger pemakaian tanpa mensintesis histori lama. Backup sebelum upgrade
 tetap wajib. Rencana: [pemakaian](docs/consumption-plan.md). Hasil uji: [verifikasi pemakaian](docs/consumption-verification.md).
+
+## Permintaan pembelian (v0.13 — Phase 2 roadmap)
+
+Pembelian dimulai dari PR, sesuai blueprint halaman 7. Buka **Permintaan pembelian → Buat PR**,
+atau dari detail produksi buka **PR untuk order ini** agar order terpilih otomatis.
+Isi referensi unik, tanggal dibutuhkan, estimasi total rupiah, alasan dan bahan yang diminta.
+Order bersifat opsional untuk permintaan umum. Pengajuan langsung berstatus **Menunggu keputusan**.
+
+Satu PR berisi 1–100 bahan berbeda; gabungkan bahan yang sama menjadi satu baris. Jumlah positif
+maksimal 1.000.000 satuan per bahan, m/kg maksimal tiga desimal dan pcs bulat. Estimasi total
+seluruh PR wajib positif, maksimal Rp1.000.000.000.000,00, dengan dua desimal. Angka ini diisi
+manual sebagai estimasi pengajuan; belum ada harga pemasok, pajak, ongkir, kurs atau biaya aktual.
+Nilai tersimpan sebagai integer per 0,01 rupiah dan API mengembalikannya sebagai string.
+
+| Pelaku | Tindakan |
+|---|---|
+| Admin/operator | Mengajukan PR |
+| Admin | Menyetujui/menolak pengajuan; membatalkan PR yang menunggu atau sudah disetujui |
+| Operator pemohon | Membatalkan PR miliknya sendiri yang masih menunggu keputusan |
+| Semua role aktif | Membaca daftar, rincian dan riwayat; filter status dan order |
+
+Setiap keputusan wajib beralasan dan memakai revisi terakhir. Jika tab lain sudah mengambil
+keputusan, tutup form dan muat ulang rincian. Retry dengan key/payload yang sama mengembalikan
+hasil awal; tidak menciptakan keputusan baru. Catatan pengajuan dan riwayat tidak dapat diedit
+atau dihapus. Untuk koreksi, batalkan lalu ajukan referensi baru. PR ditolak/dibatalkan bersifat final.
+
+Untuk operasi sendiri, admin dapat menyetujui pengajuannya sendiri. Semua nilai memerlukan
+keputusan admin; belum ada aturan ambang nilai atau pemisahan pemohon dan pemberi persetujuan.
+Pengaturan tersebut dan antrean persetujuan lintas modul masuk Phase 4.
+
+PR yang disetujui **belum menjadi PO ke pemasok**. Pengajuan tidak mengubah stok, reservasi,
+WIP atau hasil perhitungan kekurangan BOM. Buka daftar PR yang masih aktif sebelum mengajukan
+bahan lagi; dua pengajuan dengan referensi berbeda tidak otomatis dianggap duplikat.
+Ringkasan kebutuhan tetap memakai BOM terbaru, sedangkan rincian PR menyimpan bahan/jumlah yang
+diajukan. Tidak ada pengajuan otomatis berdasarkan BOM atau asumsi bahwa bahan sudah dipesan.
+
+API dengan X-API-Key; semua POST juga memakai Idempotency-Key:
+
+- `POST /api/purchase-requests`: `reference`, `order_id` (opsional/null), `required_date`,
+  `estimated_value` string seperti `"123456.78"`, `reason`, dan `lines` berisi
+  `material_id` serta `quantity` string.
+- `GET /api/purchase-requests?status=all&limit=100&before=SEQUENCE&order_id=ID`:
+  terbaru dahulu; before/order_id opsional. Status: all/submitted/approved/rejected/cancelled.
+- `GET /api/purchase-requests/{id}`: rincian, revisi terakhir dan riwayat keputusan.
+- `POST /api/purchase-requests/{id}/decisions`: `status` approved/rejected/cancelled,
+  `expected_revision` dari rincian terakhir dan `reason`.
+
+Revisi adalah sequence global keputusan, sehingga nomornya dapat meloncat antar-PR.
+Migrasi 7 → 8 mempertahankan data lama; PR historis tidak dibuat otomatis. Backup aplikasi
+mencakup PR dan seluruh keputusan. Rencana: [PR](docs/purchase-requests-plan.md).
+Hasil pengujian: [verifikasi PR](docs/purchase-requests-verification.md).
+Tahap berikutnya: master pemasok dan PO yang merujuk PR disetujui, termasuk harga dan tanggal datang.

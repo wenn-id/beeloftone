@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -47,6 +47,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("reservations.sql").read_text(encoding="utf-8"))
             if version < 7:
                 db.executescript(Path(__file__).with_name("consumption.sql").read_text(encoding="utf-8"))
+            if version < 8:
+                db.executescript(Path(__file__).with_name("purchase_requests.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -360,6 +362,73 @@ class Store:
             for row in rows:
                 record=dict(row);record['used']=self._material_decimal(record.pop('used_milli'));record['waste']=self._material_decimal(record.pop('waste_milli'));result.append(record)
             return result
+
+    def _purchase_request(self, db, request_id):
+        row = db.execute('''SELECT p.*,u.name AS actor_name,o.reference AS order_reference
+            FROM purchase_requests p JOIN users u ON u.id=p.actor_id
+            LEFT JOIN orders o ON o.id=p.order_id WHERE p.id=?''', (request_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Permintaan pembelian tidak ditemukan.')
+        record = dict(row)
+        record['estimated_value'] = format(Decimal(record.pop('estimated_value_minor')) / 100, '.2f')
+        record['currency'] = 'IDR'
+        record['lines'] = json.loads(record['lines'])
+        record['history'] = [dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
+            FROM purchase_request_events e JOIN users u ON u.id=e.actor_id
+            WHERE request_id=? ORDER BY sequence DESC''', (request_id,))]
+        record['status'] = record['history'][0]['status']
+        record['revision'] = record['history'][0]['sequence']
+        return record
+
+    def purchase_request(self, request_id):
+        with self.transaction() as db:
+            return self._purchase_request(db, request_id)
+
+    def purchase_requests(self, limit=100, before=None, status='all', order_id=None):
+        with self.transaction() as db:
+            if order_id is not None and not db.execute('SELECT 1 FROM orders WHERE id=?', (order_id,)).fetchone():
+                raise DomainError(404, 'Order produksi tidak ditemukan.')
+            ids = db.execute('''SELECT p.id FROM purchase_requests p WHERE (? IS NULL OR p.sequence<?)
+                AND (? IS NULL OR p.order_id=?) AND (?='all' OR
+                (SELECT status FROM purchase_request_events WHERE request_id=p.id ORDER BY sequence DESC LIMIT 1)=?)
+                ORDER BY p.sequence DESC LIMIT ?''', (before,before,order_id,order_id,status,status,limit)).fetchall()
+            return [self._purchase_request(db, row[0]) for row in ids]
+
+    def create_purchase_request(self, payload, actor, key):
+        def perform(db):
+            if payload['order_id'] is not None and not db.execute('SELECT 1 FROM orders WHERE id=?', (payload['order_id'],)).fetchone():
+                raise DomainError(404, 'Order produksi tidak ditemukan.')
+            lines = []
+            for line in payload['lines']:
+                material = db.execute('SELECT code,name,unit FROM materials WHERE id=?', (line['material_id'],)).fetchone()
+                if not material:
+                    raise DomainError(404, 'Bahan permintaan tidak ditemukan.')
+                self._material_amount(line['quantity'], material['unit'])
+                lines.append(line | dict(material))
+            request_id, timestamp = str(uuid4()), now()
+            db.execute('''INSERT INTO purchase_requests(id,reference,order_id,required_date,estimated_value_minor,lines,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?)''', (request_id,payload['reference'],payload['order_id'],payload['required_date'],
+                    int(Decimal(payload['estimated_value'])*100),json.dumps(lines),payload['reason'],actor['id'],timestamp))
+            db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)''', (request_id,payload['reason'],actor['id'],timestamp))
+            return self._purchase_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'purchase-request', payload, perform)
+
+    def decide_purchase_request(self, request_id, payload, actor, key):
+        def perform(db):
+            current = self._purchase_request(db, request_id)
+            role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
+            if role != 'admin' and not (payload['status']=='cancelled' and
+                    current['status']=='submitted' and current['actor_id']==actor['id']):
+                raise DomainError(403, 'Hanya admin memutuskan PR; pemohon boleh membatalkan pengajuannya yang belum diputuskan.')
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'PR sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
+            if current['status'] not in ('submitted','approved') or (current['status']=='approved' and payload['status']!='cancelled'):
+                raise DomainError(409, 'Status PR tidak mengizinkan keputusan ini.')
+            db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)''', (request_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._purchase_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'purchase-request-decision:'+request_id, payload, perform)
 
     def _bom(self, db, product_id, before=None):
         product = db.execute('SELECT id,sku,name FROM products WHERE id=?', (product_id,)).fetchone()

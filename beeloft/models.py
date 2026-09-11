@@ -149,6 +149,35 @@ class BomComponent(MaterialQuantity):
     material_id: Text
 
 
+class PurchaseRequestCreate(Input):
+    reference: Text
+    order_id: Text | None = None
+    required_date: date
+    estimated_value: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    lines: list[BomComponent] = Field(min_length=1, max_length=100)
+
+    @field_validator('estimated_value')
+    @classmethod
+    def normalize_value(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000_000:
+            raise ValueError('Estimasi total harus positif dan maksimal Rp1.000.000.000.000.')
+        return format(amount, '.2f')
+
+    @field_validator('lines')
+    @classmethod
+    def unique_lines(cls, lines):
+        if len({line.material_id for line in lines}) != len(lines):
+            raise ValueError('Gabungkan bahan yang sama menjadi satu baris.')
+        return sorted(lines, key=lambda line: line.material_id)
+
+
+class PurchaseRequestDecision(ReversalCreate):
+    status: Literal['approved', 'rejected', 'cancelled']
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+
+
 class BomSave(Input):
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
