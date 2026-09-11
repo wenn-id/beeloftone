@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <p><button data-action="order-purchases">PR untuk order ini</button></p>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
@@ -160,9 +160,9 @@ function renderDetail(more) {
 function renderHistory() {
   const reversed = new Set(history.map(item => item.reversal_of).filter(Boolean));
   $('history-list').innerHTML = history.length ? history.map(item => {
-    const canReverse = user.role === 'admin' && !item.reversal_of && !reversed.has(item.id) && !item.cutting_run_id && !item.sewing_job_id && !item.finishing_record_id;
+    const canReverse = user.role === 'admin' && !item.reversal_of && !reversed.has(item.id) && !item.cutting_run_id && !item.sewing_job_id && !item.finishing_record_id && !item.final_qc_record_id;
     const timestamp = new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
-    return `<article class="history-item"><time datetime="${e(item.created_at)}">${timestamp}</time><div><strong>${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}</strong><p class="hint">${e(item.sku)} · dicatat ${e(item.actor_name)}${item.reversal_of ? ' · Catatan pembalik' : reversed.has(item.id) ? ' · Sudah dibalik' : ''}</p>${item.reason ? `<p class="reason">${e(item.reason)}</p>` : ''}</div>${item.cutting_run_id ? `<button data-action="cutting-run" data-id="${e(item.cutting_run_id)}">Hasil cutting</button>` : ''}${item.sewing_job_id ? `<button data-action="sewing-job" data-id="${e(item.sewing_job_id)}">Job sewing</button>` : ''}${item.finishing_record_id ? `<button data-action="finishing-record" data-id="${e(item.finishing_record_id)}">Finishing</button>` : ''}${canReverse ? `<button class="quiet history-action" data-action="reverse" data-id="${e(item.id)}">Koreksi</button>` : ''}</article>`;
+    return `<article class="history-item"><time datetime="${e(item.created_at)}">${timestamp}</time><div><strong>${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}</strong><p class="hint">${e(item.sku)} · dicatat ${e(item.actor_name)}${item.reversal_of ? ' · Catatan pembalik' : reversed.has(item.id) ? ' · Sudah dibalik' : ''}</p>${item.reason ? `<p class="reason">${e(item.reason)}</p>` : ''}</div>${item.cutting_run_id ? `<button data-action="cutting-run" data-id="${e(item.cutting_run_id)}">Hasil cutting</button>` : ''}${item.sewing_job_id ? `<button data-action="sewing-job" data-id="${e(item.sewing_job_id)}">Job sewing</button>` : ''}${item.finishing_record_id ? `<button data-action="finishing-record" data-id="${e(item.finishing_record_id)}">Finishing</button>` : ''}${item.final_qc_record_id ? `<button data-action="final-qc-record" data-id="${e(item.final_qc_record_id)}">Final QC</button>` : ''}${canReverse ? `<button class="quiet history-action" data-action="reverse" data-id="${e(item.id)}">Koreksi</button>` : ''}</article>`;
   }).join('') : '<p class="state">Belum ada perpindahan. Semua target masih berada di posisi belum cutting.</p>';
 }
 async function moreHistory(button) {
@@ -219,6 +219,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (path === '/api/orders') openDetail(result.id);
+      else if (path.endsWith('/qc-records') || path.startsWith('/api/final-qc-records/')) finalQcRecordDialog(result.id);
       else if (path.endsWith('/finishing-records') || path.startsWith('/api/finishing-records/')) finishingRecordDialog(result.id);
       else if (path.endsWith('/sewing-jobs') || path.startsWith('/api/sewing-jobs/')) sewingJobDialog(result.id);
       else if (path.endsWith('/bundles') || path.startsWith('/api/bundles/')) bundleDialog(result.id);
@@ -350,6 +351,7 @@ document.addEventListener('click', event => {
     bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),
     'sewing-jobs':()=>sewingJobsDialog(id || selected?.id),'new-sewing-job':()=>sewingJobForm(id),'sewing-job':()=>sewingJobDialog(id),
     'finishing-records':()=>finishingRecordsDialog(id || selected?.id),'new-finishing-record':()=>finishingForm(id),'finishing-record':()=>finishingRecordDialog(id),
+    'final-qc-records':()=>finalQcRecordsDialog(id || selected?.id),'new-final-qc-record':()=>finalQcForm(id),'final-qc-record':()=>finalQcRecordDialog(id),
     consumption:consumptionDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
@@ -903,7 +905,7 @@ async function finishingRecordDialog(recordId) {
     const record=await api.get('/api/finishing-records/'+encodeURIComponent(recordId));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const checks=[['Benang dirapikan',record.thread_trimmed],['Disetrika',record.ironed],['Label terpasang',record.labels_attached],['Hangtag terpasang',record.hangtags_attached],['Dikemas',record.packaged]];
-    $('dialog-content').innerHTML=`<p class="form-info">${e(record.reference)} · ${record.status==='completed'?'Selesai':'Sudah dikoreksi'}</p><h3>${n(record.quantity)} pcs · ${e(record.sku)} · ${e(record.size)}</h3><p>Job sewing ${e(record.sewing_reference)} · bundle ${e(record.bundle_reference)}</p><p>${record.assignment_type==='makloon'?'Makloon':'Internal'} · ${e(record.assignee)}</p><article class="material-event"><h3>Checklist finishing lengkap</h3>${checks.map(([label,done])=>`<p>${done?'✓':'—'} ${e(label)}</p>`).join('')}<p>Selesai ${date(record.completed_date)}</p></article><p class="reason">${e(record.reason)}</p><p class="hint">${e(record.actor_name)} · ${purchaseStamp(record.created_at)}</p>${record.reversal?`<article class="material-event"><h3>Finishing dikoreksi</h3><p class="reason">${e(record.reversal.reason)}</p><p class="hint">${e(record.reversal.actor_name)} · ${purchaseStamp(record.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="finishing-order">Buka order produksi</button><button data-action="sewing-job" data-id="${e(record.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(record.bundle_id)}">Bundle asal</button><button data-action="cutting-run" data-id="${e(record.cutting_run_id)}">Hasil cutting asal</button><button data-action="material-batch" data-id="${e(record.batch_id)}">Batch bahan asal</button><button data-action="finishing-records" data-id="${e(record.order_id)}">Semua finishing</button>${user.role==='admin' && record.status==='completed'?'<button id="reverse-finishing">Koreksi finishing</button>':''}</div>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(record.reference)} · ${record.status==='completed'?'Selesai':'Sudah dikoreksi'}</p><h3>${n(record.quantity)} pcs · ${e(record.sku)} · ${e(record.size)}</h3><p>Job sewing ${e(record.sewing_reference)} · bundle ${e(record.bundle_reference)}</p><p>${record.assignment_type==='makloon'?'Makloon':'Internal'} · ${e(record.assignee)}</p><article class="material-event"><h3>Checklist finishing lengkap</h3>${checks.map(([label,done])=>`<p>${done?'✓':'—'} ${e(label)}</p>`).join('')}<p>Selesai ${date(record.completed_date)}</p><p>Final QC tercatat ${n(record.qc_inspected_quantity)} pcs · belum diperiksa ${n(record.qc_remaining_quantity)} pcs</p></article><p class="reason">${e(record.reason)}</p><p class="hint">${e(record.actor_name)} · ${purchaseStamp(record.created_at)}</p>${record.reversal?`<article class="material-event"><h3>Finishing dikoreksi</h3><p class="reason">${e(record.reversal.reason)}</p><p class="hint">${e(record.reversal.actor_name)} · ${purchaseStamp(record.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="finishing-order">Buka order produksi</button><button data-action="sewing-job" data-id="${e(record.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(record.bundle_id)}">Bundle asal</button><button data-action="cutting-run" data-id="${e(record.cutting_run_id)}">Hasil cutting asal</button><button data-action="material-batch" data-id="${e(record.batch_id)}">Batch bahan asal</button><button data-action="finishing-records" data-id="${e(record.order_id)}">Semua finishing</button><button data-action="final-qc-records" data-id="${e(record.order_id)}">Final QC order</button>${user.role!=='viewer' && record.status==='completed' && record.qc_remaining_quantity>0?`<button data-action="new-final-qc-record" data-id="${e(record.id)}">Catat final QC</button>`:''}${user.role==='admin' && record.status==='completed'?'<button id="reverse-finishing">Koreksi finishing</button>':''}</div>`;
     $('finishing-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(record.order_id);};
     if($('reverse-finishing'))$('reverse-finishing').onclick=()=>{
       if(guardPending())return;
@@ -912,6 +914,64 @@ async function finishingRecordDialog(recordId) {
         `${record.reference} · ${n(record.quantity)} pcs\nKoreksi mengembalikan jumlah dari QC ke finishing. Checklist dan riwayat asli tetap tersimpan.`);
     };
   }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="finishing-record" data-id="${e(recordId)}">Coba lagi</button>`;}
+}
+
+async function finalQcRecordsDialog(orderId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Final QC order','<p class="state">Memuat catatan final QC...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
+  $('dialog-content').innerHTML='<p class="hint">Inspeksi terbaru ditampilkan lebih dahulu. Setiap jumlah dibagi menjadi diterima gudang, rework, dan reject.</p><div id="final-qc-list"><p class="state">Memuat catatan final QC...</p></div><p id="final-qc-error" class="error" role="alert" hidden></p><button id="final-qc-more" type="button">Muat inspeksi sebelumnya</button>';
+  let before=null;
+  const load=async()=>{
+    const button=$('final-qc-more');button.disabled=true;message('final-qc-error','');
+    try{
+      const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/final-qc-records?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
+      if(!current())return;
+      if(!before)$('final-qc-list').replaceChildren();
+      $('final-qc-list').insertAdjacentHTML('beforeend',rows.map(record=>`<article class="material-event"><h3>${e(record.reference)} · ${n(record.inspected_quantity)} pcs</h3><p>${e(record.finishing_reference)} · ${e(record.sku)} · ${e(record.size)}</p><p>Diterima ${n(record.accepted_quantity)} · rework ${n(record.rework_quantity)} · reject ${n(record.reject_quantity)}</p><p>${record.status==='completed'?'Selesai':'Sudah dikoreksi'} · ${date(record.inspection_date)}</p><button data-action="final-qc-record" data-id="${e(record.id)}" aria-label="Rincian ${e(record.reference)}">Rincian final QC</button></article>`).join(''));
+      if(!before && !rows.length)$('final-qc-list').innerHTML='<p class="state">Belum ada catatan final QC untuk order ini. Buka finishing yang selesai untuk mencatat inspeksi.</p>';
+      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat inspeksi sebelumnya';
+    }catch(error){if(current()){message('final-qc-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    finally{if(current())button.disabled=false;}
+  };
+  $('final-qc-more').onclick=load;await load();
+}
+
+async function finalQcForm(finishingId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Catat final QC','<p class="state">Memuat finishing...</p>');const modal=dialogVersion;
+  try{
+    const source=await api.get('/api/finishing-records/'+encodeURIComponent(finishingId));
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    if(source.status!=='completed' || source.qc_remaining_quantity<1){$('dialog-content').innerHTML='<p>Finishing sudah dikoreksi atau seluruh jumlahnya sudah diperiksa. Muat ulang rinciannya.</p><button data-action="finishing-record" data-id="'+e(finishingId)+'">Muat ulang finishing</button>';return;}
+    formDialog('Catat final QC',field('reference','Referensi final QC','text','required maxlength="160"')+
+      '<label class="full">Catatan pengukuran<textarea name="measurement_notes" required maxlength="1000"></textarea></label>'+
+      '<label class="full">Catatan pemeriksaan visual<textarea name="visual_notes" required maxlength="1000"></textarea></label>'+
+      field('accepted_quantity','Jumlah diterima','number',`required min="0" max="${source.qc_remaining_quantity}" step="1" value="${source.qc_remaining_quantity}"`)+
+      field('rework_quantity','Jumlah rework','number',`required min="0" max="${source.qc_remaining_quantity}" step="1" value="0"`)+
+      field('reject_quantity','Jumlah reject','number',`required min="0" max="${source.qc_remaining_quantity}" step="1" value="0"`)+
+      field('inspection_date','Tanggal inspeksi','date',`required min="${e(source.completed_date)}"`)+materialReason,
+      form=>{const data=new FormData(form),payload={reference:data.get('reference'),measurement_notes:data.get('measurement_notes'),visual_notes:data.get('visual_notes'),accepted_quantity:Number(data.get('accepted_quantity')),rework_quantity:Number(data.get('rework_quantity')),reject_quantity:Number(data.get('reject_quantity')),inspection_date:data.get('inspection_date'),reason:data.get('reason')};const total=payload.accepted_quantity+payload.rework_quantity+payload.reject_quantity;if(total<1)throw new Error('Isi setidaknya satu hasil QC dengan jumlah lebih dari nol.');if(total>source.qc_remaining_quantity)throw new Error('Jumlah diterima + rework + reject melebihi finishing yang belum diperiksa.');return payload;},
+      '/api/finishing-records/'+encodeURIComponent(finishingId)+'/qc-records',
+      `${source.reference} · ${source.sku} · ${source.size}\nTersedia ${n(source.qc_remaining_quantity)} dari ${n(source.quantity)} pcs. Jumlah diterima, rework, dan reject langsung berpindah dari QC ke posisi masing-masing.`);
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-final-qc-record" data-id="${e(finishingId)}">Coba lagi</button>`;}
+}
+
+async function finalQcRecordDialog(recordId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian final QC','<p class="state">Memuat catatan final QC...</p>');const modal=dialogVersion;
+  try{
+    const record=await api.get('/api/final-qc-records/'+encodeURIComponent(recordId));
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(record.reference)} · ${record.status==='completed'?'Selesai':'Sudah dikoreksi'}</p><h3>${n(record.inspected_quantity)} pcs diperiksa · ${e(record.sku)} · ${e(record.size)}</h3><p>Finishing ${e(record.finishing_reference)} · sewing ${e(record.sewing_reference)} · bundle ${e(record.bundle_reference)}</p><article class="material-event"><h3>Hasil final QC</h3><p>Diterima gudang ${n(record.accepted_quantity)} pcs</p><p>Rework ${n(record.rework_quantity)} pcs · reject ${n(record.reject_quantity)} pcs</p><p>Inspeksi ${date(record.inspection_date)}</p></article><h3>Pengukuran</h3><p class="reason">${e(record.measurement_notes)}</p><h3>Pemeriksaan visual</h3><p class="reason">${e(record.visual_notes)}</p><p class="reason">${e(record.reason)}</p><p class="hint">${e(record.actor_name)} · ${purchaseStamp(record.created_at)}</p>${record.reversal?`<article class="material-event"><h3>Final QC dikoreksi</h3><p class="reason">${e(record.reversal.reason)}</p><p class="hint">${e(record.reversal.actor_name)} · ${purchaseStamp(record.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="final-qc-order">Buka order produksi</button><button data-action="finishing-record" data-id="${e(record.finishing_record_id)}">Finishing asal</button><button data-action="sewing-job" data-id="${e(record.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(record.bundle_id)}">Bundle asal</button><button data-action="material-batch" data-id="${e(record.batch_id)}">Batch bahan asal</button><button data-action="final-qc-records" data-id="${e(record.order_id)}">Semua final QC</button>${user.role==='admin' && record.status==='completed'?'<button id="reverse-final-qc">Koreksi final QC</button>':''}</div>`;
+    $('final-qc-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(record.order_id);};
+    if($('reverse-final-qc'))$('reverse-final-qc').onclick=()=>{
+      if(guardPending())return;
+      formDialog('Koreksi final QC',materialReason,form=>Object.fromEntries(new FormData(form)),
+        '/api/final-qc-records/'+encodeURIComponent(record.id)+'/reverse',
+        `${record.reference} · ${n(record.inspected_quantity)} pcs\nKoreksi mengembalikan seluruh hasil diterima, rework, dan reject ke QC. Catatan inspeksi asli tetap tersimpan.`);
+    };
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="final-qc-record" data-id="${e(recordId)}">Coba lagi</button>`;}
 }
 
 async function consumptionForm(issueId) {
