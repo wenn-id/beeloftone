@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -138,6 +138,45 @@ class AiActionProposalCreate(InvestigationCreate):
 class AiActionProposalDecision(ReversalCreate):
     status: Literal['approved','rejected','cancelled']
     expected_revision: Annotated[int, Field(strict=True, ge=1)]
+
+
+IntegrationSystem = Literal['jubelio','mekari']
+IntegrationScope = Literal['orders','finished_goods','returns','listings',
+                           'finance_summary','payables','receivables','payroll']
+
+
+class IntegrationSyncRunCreate(Input):
+    system: IntegrationSystem
+    scope: IntegrationScope
+    status: Literal['succeeded','failed']
+    started_at: datetime
+    finished_at: datetime
+    records_read: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    records_written: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    external_cursor: str = Field(default='', max_length=1000)
+    error: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('started_at','finished_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu sinkronisasi harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_contract(self):
+        scopes={'jubelio':{'orders','finished_goods','returns','listings'},
+                'mekari':{'finance_summary','payables','receivables','payroll'}}
+        if self.scope not in scopes[self.system]:
+            raise ValueError('Scope tidak sesuai dengan sistem sumber.')
+        if self.finished_at < self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        if self.status=='failed' and not self.error:
+            raise ValueError('Sinkronisasi gagal memerlukan pesan error.')
+        if self.status=='succeeded' and self.error:
+            raise ValueError('Sinkronisasi berhasil tidak boleh memiliki pesan error.')
+        return self
 
 
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]

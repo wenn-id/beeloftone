@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -150,6 +150,27 @@ def create_app(database_path):
                                          user: Actor, key: RequestKey):
         return store.create_ai_investigation_feedback(
             investigation_id,body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/integrations', tags=['Integrations'])
+    def integrations(user: Actor,
+                     stale_after_minutes: Annotated[int, Query(ge=5,le=10_080)] = 1440):
+        return store.integrations(stale_after_minutes)
+
+    @app.get('/api/integration-sync-runs', tags=['Integrations'])
+    def integration_sync_runs(user: Actor, limit: Limit = 100,
+                              before: Annotated[int | None, Query(ge=1)] = None,
+                              system: Literal['all','jubelio','mekari'] = 'all',
+                              scope: Annotated[str, Query(max_length=40)] = '',
+                              status: Literal['all','succeeded','failed'] = 'all'):
+        return store.integration_sync_runs(limit,before,system,scope,status)
+
+    @app.post('/api/integration-sync-runs', status_code=201, tags=['Integrations'])
+    def create_integration_sync_run(body: IntegrationSyncRunCreate, user: Actor, key: RequestKey):
+        return store.create_integration_sync_run(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/integration-sync-runs/{run_id}', tags=['Integrations'])
+    def integration_sync_run(run_id: str, user: Actor):
+        return store.integration_sync_run(run_id)
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

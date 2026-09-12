@@ -11,6 +11,18 @@ from uuid import uuid4
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
+INTEGRATION_CONTRACTS = (
+    {'system':'jubelio','label':'Jubelio','scopes':(
+        {'scope':'orders','domain':'Marketplace orders','source_of_truth':'Jubelio'},
+        {'scope':'finished_goods','domain':'Finished goods stock / fulfillment','source_of_truth':'Jubelio / WMS'},
+        {'scope':'returns','domain':'Marketplace returns','source_of_truth':'Jubelio'},
+        {'scope':'listings','domain':'Marketplace listings','source_of_truth':'Jubelio'})},
+    {'system':'mekari','label':'Mekari','scopes':(
+        {'scope':'finance_summary','domain':'Management finance summary','source_of_truth':'Mekari Accounting'},
+        {'scope':'payables','domain':'Payables','source_of_truth':'Mekari Accounting'},
+        {'scope':'receivables','domain':'Receivables','source_of_truth':'Mekari Accounting'},
+        {'scope':'payroll','domain':'Payroll records','source_of_truth':'Mekari HR / Payroll'})},
+)
 
 
 def now():
@@ -30,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -109,6 +121,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("ai_action_proposals.sql").read_text(encoding="utf-8"))
             if version < 32:
                 db.executescript(Path(__file__).with_name("ai_investigations.sql").read_text(encoding="utf-8"))
+            if version < 33:
+                db.executescript(Path(__file__).with_name("integration_sync.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -154,6 +168,64 @@ class Store:
     def users(self):
         with self.transaction() as db:
             return [dict(row) for row in db.execute("SELECT id,name,role,active FROM users ORDER BY name,id")]
+
+    def _integration_sync_run(self, db, run_id):
+        row=db.execute('''SELECT r.*,u.name AS actor_name FROM integration_sync_runs r
+            JOIN users u ON u.id=r.actor_id WHERE r.id=?''',(run_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan sinkronisasi tidak ditemukan.')
+        return dict(row)
+
+    def create_integration_sync_run(self, payload, actor, key):
+        def perform(db):
+            run_id=str(uuid4())
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,
+                finished_at,records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,payload['system'],payload['scope'],
+                payload['status'],payload['started_at'],payload['finished_at'],payload['records_read'],
+                payload['records_written'],payload['external_cursor'],payload['error'],payload['reason'],
+                actor['id'],now()))
+            return self._integration_sync_run(db,run_id)
+        return self._write(actor,('admin',),key,'integration-sync-run',payload,perform)
+
+    def integration_sync_run(self, run_id):
+        with self.transaction() as db:
+            return self._integration_sync_run(db,run_id)
+
+    def integration_sync_runs(self, limit=100, before=None, system='all', scope='', status='all'):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM integration_sync_runs WHERE (? IS NULL OR sequence<?)
+                AND (?='all' OR system=?) AND (?='' OR scope=?) AND (?='all' OR status=?)
+                ORDER BY sequence DESC LIMIT ?''',(before,before,system,system,scope,scope,
+                status,status,limit)).fetchall()
+            return [self._integration_sync_run(db,row['id']) for row in rows]
+
+    def integrations(self, stale_after_minutes=1440):
+        generated=datetime.now(timezone.utc)
+        systems=[]
+        with self.transaction() as db:
+            for contract in INTEGRATION_CONTRACTS:
+                scopes=[]
+                for definition in contract['scopes']:
+                    row=db.execute('''SELECT id FROM integration_sync_runs WHERE system=? AND scope=?
+                        ORDER BY sequence DESC LIMIT 1''',(contract['system'],definition['scope'])).fetchone()
+                    latest=self._integration_sync_run(db,row['id']) if row else None
+                    age=None
+                    if latest:
+                        finished=datetime.fromisoformat(latest['finished_at'].replace('Z','+00:00'))
+                        age=max(0,int((generated-finished).total_seconds()//60))
+                    health='never_synced' if latest is None else ('failed' if latest['status']=='failed'
+                        else 'stale' if age>stale_after_minutes else 'healthy')
+                    scopes.append(definition|{'direction':'inbound','mode':'read_only','health':health,
+                        'age_minutes':age,'latest_run':latest})
+                healths={item['health'] for item in scopes}
+                overall='failed' if 'failed' in healths else ('never_synced' if healths=={'never_synced'}
+                    else 'incomplete' if 'never_synced' in healths else 'stale' if 'stale' in healths
+                    else 'healthy')
+                systems.append({'system':contract['system'],'label':contract['label'],'health':overall,
+                    'scopes':scopes,'attention_count':sum(item['health']!='healthy' for item in scopes)})
+        return {'generated_at':generated.isoformat(),'stale_after_minutes':stale_after_minutes,
+                'systems':systems}
 
     def _write(self, actor, roles, key, operation, payload, perform):
         fingerprint = hashlib.sha256(json.dumps([operation, payload], sort_keys=True).encode()).hexdigest()

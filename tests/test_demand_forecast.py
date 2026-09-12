@@ -125,5 +125,5 @@ class DemandForecastTest(TestCase):
         self.assertEqual(Store(backup).demand_forecast(date(2026, 11, 15), 14, 30,
                                                        self.product['sku']), expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],32)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],33)
         self.assertEqual(shipment['quantity'], 10)
