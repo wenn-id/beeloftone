@@ -464,6 +464,30 @@ class SupplierPaymentRequestCreate(ReversalCreate):
         return self
 
 
+class MarketingBudgetRequestCreate(ReversalCreate):
+    reference: Text
+    campaign_name: Text
+    channel: Text
+    start_date: date
+    end_date: date
+    amount: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    objective: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('amount')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000_000:
+            raise ValueError('Nominal budget harus positif dan maksimal Rp1.000.000.000.000.')
+        return format(amount, '.2f')
+
+    @model_validator(mode='after')
+    def valid_dates(self):
+        if self.start_date > self.end_date:
+            raise ValueError('Tanggal selesai kampanye tidak boleh sebelum tanggal mulai.')
+        return self
+
+
 class BomSave(Input):
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

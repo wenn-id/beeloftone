@@ -13,7 +13,7 @@ from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChang
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
-from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
+from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
 
@@ -76,8 +76,28 @@ def create_app(database_path):
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
                   status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','production_change'] = 'all'):
+                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change'] = 'all'):
         return store.approvals(limit, offset, status, kind)
+
+    @app.get('/api/marketing-budget-requests', tags=['Marketing','Approvals'])
+    def marketing_budget_requests(user: Actor, limit: Limit = 100,
+                                  before: Annotated[int | None, Query(ge=1)] = None,
+                                  status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
+        return store.marketing_budget_requests(limit, before, status)
+
+    @app.post('/api/marketing-budget-requests', status_code=201, tags=['Marketing','Approvals'])
+    def create_marketing_budget_request(body: MarketingBudgetRequestCreate, user: Actor, key: RequestKey):
+        return store.create_marketing_budget_request(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/marketing-budget-requests/{request_id}', tags=['Marketing','Approvals'])
+    def marketing_budget_request(request_id: str, user: Actor):
+        return store.marketing_budget_request(request_id)
+
+    @app.post('/api/marketing-budget-requests/{request_id}/decisions', status_code=201,
+              tags=['Marketing','Approvals'])
+    def decide_marketing_budget_request(request_id: str, body: PurchaseRequestDecision,
+                                        user: Actor, key: RequestKey):
+        return store.decide_marketing_budget_request(request_id, body.model_dump(mode='json'), user, key)
 
     @app.get("/api/stages", tags=["Production"])
     def stages(user: Actor):

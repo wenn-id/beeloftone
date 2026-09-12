@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -101,6 +101,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("purchase_order_approvals.sql").read_text(encoding="utf-8"))
             if version < 28:
                 db.executescript(Path(__file__).with_name("supplier_payment_approvals.sql").read_text(encoding="utf-8"))
+            if version < 29:
+                db.executescript(Path(__file__).with_name("marketing_budget_approvals.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2138,6 +2140,64 @@ class Store:
             return self._supplier_payment_request(db, request_id)
         return self._write(actor, ('admin','operator'), key, 'supplier-payment-decision:'+request_id, payload, perform)
 
+    def _marketing_budget_request(self, db, request_id):
+        row = db.execute("""SELECT r.*,u.name AS actor_name FROM marketing_budget_requests r
+            JOIN users u ON u.id=r.actor_id WHERE r.id=?""", (request_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Permintaan budget marketing tidak ditemukan.')
+        record = dict(row)
+        record['amount'] = format(Decimal(record.pop('amount_minor'))/100,'.2f')
+        record['currency'] = 'IDR'
+        record['history'] = [dict(event) for event in db.execute("""SELECT e.*,u.name AS actor_name
+            FROM marketing_budget_request_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.request_id=? ORDER BY e.sequence DESC""", (request_id,))]
+        record['status'] = record['history'][0]['status']
+        record['revision'] = record['history'][0]['sequence']
+        return record
+
+    def marketing_budget_request(self, request_id):
+        with self.transaction() as db:
+            return self._marketing_budget_request(db, request_id)
+
+    def marketing_budget_requests(self, limit=100, before=None, status='all'):
+        with self.transaction() as db:
+            ids = db.execute("""SELECT r.id FROM marketing_budget_requests r
+                WHERE (? IS NULL OR r.sequence<?) AND (?='all' OR ?=(
+                    SELECT e.status FROM marketing_budget_request_events e WHERE e.request_id=r.id
+                    ORDER BY e.sequence DESC LIMIT 1))
+                ORDER BY r.sequence DESC LIMIT ?""",
+                (before,before,status,status,limit)).fetchall()
+            return [self._marketing_budget_request(db, row['id']) for row in ids]
+
+    def create_marketing_budget_request(self, payload, actor, key):
+        def perform(db):
+            request_id, timestamp = str(uuid4()), now()
+            amount_minor = int(Decimal(payload['amount'])*100)
+            db.execute("""INSERT INTO marketing_budget_requests(id,reference,campaign_name,channel,
+                start_date,end_date,amount_minor,objective,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (request_id,payload['reference'],payload['campaign_name'],
+                payload['channel'],payload['start_date'],payload['end_date'],amount_minor,
+                payload['objective'],payload['reason'],actor['id'],timestamp))
+            db.execute("""INSERT INTO marketing_budget_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)""", (request_id,payload['reason'],actor['id'],timestamp))
+            return self._marketing_budget_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'marketing-budget-request', payload, perform)
+
+    def decide_marketing_budget_request(self, request_id, payload, actor, key):
+        def perform(db):
+            request = self._marketing_budget_request(db, request_id)
+            role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
+            if role!='admin' and not (payload['status']=='cancelled' and request['actor_id']==actor['id']):
+                raise DomainError(403, 'Hanya admin memutuskan budget; pemohon boleh membatalkan pengajuannya.')
+            if request['revision']!=payload['expected_revision']:
+                raise DomainError(409, 'Permintaan budget sudah berubah. Buka ulang rincian keputusan terbaru.')
+            if request['status']!='submitted':
+                raise DomainError(409, 'Permintaan budget sudah diputuskan.')
+            db.execute("""INSERT INTO marketing_budget_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)""", (request_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._marketing_budget_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'marketing-budget-decision:'+request_id, payload, perform)
+
     def _quality_intake(self, db, intake_id):
         row = db.execute('''SELECT q.*,m.code,m.name,m.unit,u.name AS actor_name,p.reference AS purchase_order_reference,
             t.accepted,t.rejected,t.held,
@@ -2584,6 +2644,21 @@ class Store:
                         "supplier_name":request["supplier"]["name"],
                         "invoice_reference":request["invoice_reference"],
                         "invoice_date":request["invoice_date"],"due_date":request["due_date"]}})
+            if kind in ("all","marketing_budget"):
+                for row in db.execute("SELECT id FROM marketing_budget_requests"):
+                    request = self._marketing_budget_request(db, row["id"])
+                    current_status = "pending" if request["status"]=="submitted" else request["status"]
+                    if status not in ("all",current_status):
+                        continue
+                    items.append({"id":request["id"],"kind":"marketing_budget","department":"Marketing",
+                        "status":current_status,"reference":request["reference"],
+                        "title":request["campaign_name"]+" · "+request["channel"],
+                        "amount":request["amount"],"currency":"IDR","reason":request["reason"],
+                        "actor_id":request["actor_id"],"actor_name":request["actor_name"],
+                        "created_at":request["created_at"],"context":{
+                        "campaign_name":request["campaign_name"],"channel":request["channel"],
+                        "start_date":request["start_date"],"end_date":request["end_date"],
+                        "objective":request["objective"]}})
             if kind in ("all","production_change"):
                 for row in db.execute("SELECT id FROM production_change_requests"):
                     request = self._production_change_request(db, row["id"])
