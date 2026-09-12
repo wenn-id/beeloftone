@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.34.0"
+    "version": "0.35.0"
   },
   "paths": {
     "/health": {
@@ -751,6 +751,51 @@
         ],
         "summary": "Material Requirements",
         "operationId": "material_requirements_api_orders__order_id__material_requirements_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{order_id}/production-cost": {
+      "get": {
+        "tags": [
+          "Economics"
+        ],
+        "summary": "Production Cost",
+        "operationId": "production_cost_api_orders__order_id__production_cost_get",
         "security": [
           {
             "APIKeyHeader": []

@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.34.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, retur pelanggan, adjustment, stock opname, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
+Pelacakan produksi internal, versi 0.35.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, retur pelanggan, adjustment, stock opname, biaya produksi aktual, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
 
 ## Coba di Windows
 
@@ -1341,3 +1341,28 @@ role, validasi periode/nominal, idempotency, dan integrasi ke inbox approval gab
 
 Rencana: [marketing budget approvals plan](docs/marketing-budget-approvals-plan.md).
 Bukti pengujian: [marketing budget approvals verification](docs/marketing-budget-approvals-verification.md).
+
+## Biaya produksi aktual per order (v0.35)
+
+Buka order lalu pilih **Biaya aktual**. Laporan menghitung bahan yang sudah dilaporkan sebagai
+terpakai atau waste memakai harga satuan PO dari batch asal, kemudian menambahkan biaya job sewing
+atau makloon yang masih aktif. Semua nominal dihitung dalam sen IDR dan baru diformat saat respons.
+
+Laporan menampilkan biaya bahan, sewing/makloon, total biaya, biaya per target pcs, biaya per barang
+jadi yang sudah diterima, rincian batch, dan job sumber. Koreksi pemakaian atau job langsung tercermin
+pada pembacaan berikutnya karena laporan dihitung dari ledger aktif, bukan menyimpan salinan total.
+
+`total_cost` hanya tersedia jika seluruh pengeluaran bahan telah dilaporkan dan setiap pemakaian
+mempunyai harga PO. Batch manual tanpa PO, pengeluaran yang belum dilaporkan, atau order yang belum
+mempunyai pemakaian menghasilkan status `incomplete` dan `coverage_gaps` terstruktur. `known_cost`
+tetap menunjukkan subtotal sumber yang tersedia tanpa mengklaimnya sebagai biaya total.
+
+API terkait: `GET /api/orders/{id}/production-cost`. Schema tetap versi 29 karena laporan ini adalah
+read model dari ledger bahan, PO, sewing, dan barang jadi yang sudah ada.
+
+Cakupan saat ini belum memasukkan tenaga kerja internal, finishing, QC, kemasan, freight, overhead,
+biaya pembayaran, atau jurnal Mekari. Karena itu istilah biaya aktual pada milestone ini berarti biaya
+bahan dan sewing/makloon yang sudah mempunyai sumber nominal, bukan full landed cost perusahaan.
+
+Rencana: [production cost reporting plan](docs/production-cost-reporting-plan.md).
+Bukti pengujian: [production cost reporting verification](docs/production-cost-reporting-verification.md).
