@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.40.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, serta tindakan AI yang memerlukan approval.
+Pelacakan produksi internal, versi 0.41.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, serta riwayat investigasi dan feedback tim.
 
 ## Coba di Windows
 
@@ -1513,3 +1513,34 @@ sudah memiliki guard domain.
 
 Rencana: [AI approved actions plan](docs/ai-approved-actions-plan.md).
 Bukti pengujian: [AI approved actions verification](docs/ai-approved-actions-verification.md).
+
+## Riwayat investigasi dan feedback AI (v0.41)
+
+**Tanya Beeloft** kini menyimpan setiap analisis sebagai snapshot immutable. Pertanyaan, asumsi,
+intent, jawaban, fakta, temuan, rekomendasi, bukti, pengaju, dan waktu tetap dapat dibaca meski ledger
+bisnis kemudian berubah. Penyimpanan memakai Idempotency-Key, termasuk ketika respons jaringan hilang
+setelah server selesai mencatat.
+
+Semua role dapat membuka **Riwayat investigasi**, mencari pertanyaan, memfilter jenis analisis, dan
+memberikan feedback **Jawaban membantu** atau **Perlu diperbaiki** beserta alasan. Feedback bersifat
+append-only. Ringkasan menghitung respons terbaru setiap pengguna agar perubahan penilaian tidak
+menggandakan jumlah responden.
+
+Proposal order produksi atau purchase request yang diajukan dari hasil tersimpan ditautkan kembali ke
+investigasi asal. Server membandingkan asumsi dan rekomendasi snapshot dengan hasil terbaru ketika
+proposal dibuat. Jika sudah berubah, proposal ditolak dan pengguna diminta menjalankan investigasi
+baru. Pemeriksaan ulang saat approval dari v0.40 tetap berlaku.
+
+API terkait:
+
+- `POST /api/ai/investigations` untuk menjalankan dan menyimpan satu snapshot.
+- `GET /api/ai/investigations?intent=...&q=...` untuk riwayat bercursor.
+- `GET /api/ai/investigations/{id}` untuk snapshot, feedback, dan tindakan tertaut.
+- `POST /api/ai/investigations/{id}/feedback` untuk event feedback.
+- `POST /api/ai/investigate` tetap tersedia sebagai preview kompatibel yang tidak menyimpan data.
+
+Schema 31 → 32 menambahkan ledger investigasi, feedback, dan linkage tindakan. Feedback belum melatih
+model atau mengubah aturan rekomendasi secara otomatis.
+
+Rencana: [AI investigation memory plan](docs/ai-investigation-memory-plan.md).
+Bukti pengujian: [AI investigation memory verification](docs/ai-investigation-memory-verification.md).

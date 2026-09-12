@@ -23,7 +23,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path):
-    app = FastAPI(title="Beeloft One · Production API", version="0.40.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.41.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     app.state.store = store
