@@ -354,6 +354,15 @@ class FinishedGoodsAdjustmentCreate(ReversalCreate):
         return value
 
 
+class FinishedGoodsStockCountCreate(ReversalCreate):
+    reference: Text
+    scanned_sku: Text
+    location: Text
+    stock_status: Literal['sellable', 'hold', 'damaged']
+    counted_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    counted_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

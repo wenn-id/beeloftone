@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -89,6 +89,12 @@ class Store:
                 db.executescript(Path(__file__).with_name("marketplace_shipping.sql").read_text(encoding="utf-8"))
             if version < 24:
                 db.executescript(Path(__file__).with_name("returns_adjustments.sql").read_text(encoding="utf-8"))
+            if version < 25:
+                adjustment_columns={row['name'] for row in db.execute('PRAGMA table_info(finished_goods_adjustments)')}
+                if 'stock_count_id' not in adjustment_columns:
+                    db.execute('''ALTER TABLE finished_goods_adjustments ADD COLUMN stock_count_id TEXT
+                        REFERENCES finished_goods_stock_counts(id)''')
+                db.executescript(Path(__file__).with_name("inventory_reconciliation.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -945,6 +951,9 @@ class Store:
         record['active_adjustment_count']=db.execute('''SELECT COUNT(*) FROM finished_goods_adjustments a
             WHERE a.receipt_id=? AND NOT EXISTS(
               SELECT 1 FROM finished_goods_adjustment_reversals r WHERE r.adjustment_id=a.id)''',(receipt_id,)).fetchone()[0]
+        record['active_stock_count_count']=db.execute('''SELECT COUNT(*) FROM finished_goods_stock_counts c
+            WHERE c.receipt_id=? AND NOT EXISTS(
+              SELECT 1 FROM finished_goods_stock_count_reversals r WHERE r.count_id=c.id)''',(receipt_id,)).fetchone()[0]
         return record
 
     def finished_goods_receipt(self, receipt_id):
@@ -1180,6 +1189,10 @@ class Store:
                 raise DomainError(409,'Koreksi semua pergerakan gudang aktif sebelum mengoreksi penerimaan barang jadi.')
             if receipt['active_reservation_count']:
                 raise DomainError(409,'Lepaskan semua reservasi marketplace aktif sebelum mengoreksi penerimaan barang jadi.')
+            if receipt['active_adjustment_count']:
+                raise DomainError(409,'Koreksi semua adjustment aktif sebelum mengoreksi penerimaan barang jadi.')
+            if receipt['active_stock_count_count']:
+                raise DomainError(409,'Koreksi semua stock opname aktif sebelum mengoreksi penerimaan barang jadi.')
             db.execute('''INSERT INTO finished_goods_receipt_reversals(receipt_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(receipt_id,payload['reason'],actor['id'],now()))
             return self._finished_goods_receipt(db,receipt_id)
@@ -1661,10 +1674,87 @@ class Store:
             record=self._finished_goods_adjustment(db,adjustment_id)
             if record['reversal']:
                 raise DomainError(409,'Adjustment barang jadi sudah dikoreksi.')
+            if record.get('stock_count_id'):
+                raise DomainError(409,'Adjustment ini berasal dari stock opname. Koreksi melalui catatan stock opname.')
             db.execute('''INSERT INTO finished_goods_adjustment_reversals(adjustment_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(adjustment_id,payload['reason'],actor['id'],now()))
             return self._finished_goods_adjustment(db,adjustment_id)
         return self._write(actor,('admin',),key,'finished-goods-adjustment-reverse:'+adjustment_id,payload,perform)
+
+    def _finished_goods_stock_count(self, db, count_id):
+        row=db.execute('''SELECT c.*,u.name AS actor_name,a.id AS adjustment_id
+            FROM finished_goods_stock_counts c JOIN users u ON u.id=c.actor_id
+            LEFT JOIN finished_goods_adjustments a ON a.stock_count_id=c.id WHERE c.id=?''',(count_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan stock opname tidak ditemukan.')
+        record=dict(row)
+        source=self._finished_goods_receipt(db,record['receipt_id'])
+        for field in ('reference','order_id','order_reference','product_id','sku','product_name','color','size',
+                      'final_qc_record_id','final_qc_reference','batch_id','batch_reference','received_date'):
+            record['receipt_reference' if field=='reference' else field]=source[field]
+        record['quantity_delta']=record['counted_quantity']-record['expected_quantity']
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM finished_goods_stock_count_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.count_id=?''',(count_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        return record
+
+    def finished_goods_stock_count(self, count_id):
+        with self.transaction() as db:
+            return self._finished_goods_stock_count(db,count_id)
+
+    def finished_goods_stock_counts(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT c.id FROM finished_goods_stock_counts c
+                JOIN finished_goods_receipts x ON x.id=c.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs r ON r.id=b.cutting_run_id WHERE r.order_id=?
+                AND (? IS NULL OR c.sequence<?) ORDER BY c.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._finished_goods_stock_count(db,row['id']) for row in ids]
+
+    def create_finished_goods_stock_count(self, receipt_id, payload, actor, key):
+        def perform(db):
+            receipt=self._finished_goods_receipt(db,receipt_id)
+            if receipt['status']!='active':
+                raise DomainError(409,'Penerimaan barang jadi harus aktif sebelum stock opname dicatat.')
+            if payload['counted_date']<receipt['received_date']:
+                raise DomainError(422,'Tanggal stock opname tidak boleh sebelum tanggal penerimaan.')
+            if payload['scanned_sku'].casefold()!=receipt['sku'].casefold():
+                raise DomainError(422,'SKU hasil scan tidak cocok dengan penerimaan barang jadi.')
+            bucket=next((row for row in receipt['inventory'] if row['location'].casefold()==payload['location'].casefold()
+                         and row['stock_status']==payload['stock_status']),None)
+            expected=0 if not bucket else bucket['quantity']
+            reserved=0 if not bucket else bucket['reserved_quantity']
+            if payload['stock_status']=='sellable' and payload['counted_quantity']<reserved:
+                raise DomainError(409,'Hasil hitung lebih kecil dari stok sellable yang masih terikat reservasi.')
+            count_id=str(uuid4());timestamp=now()
+            db.execute('''INSERT INTO finished_goods_stock_counts(id,reference,receipt_id,scanned_sku,location,
+                stock_status,expected_quantity,counted_quantity,counted_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(count_id,payload['reference'],receipt_id,payload['scanned_sku'],
+                payload['location'],payload['stock_status'],expected,payload['counted_quantity'],payload['counted_date'],
+                payload['reason'],actor['id'],timestamp))
+            delta=payload['counted_quantity']-expected
+            if delta:
+                db.execute('''INSERT INTO finished_goods_adjustments(id,reference,receipt_id,location,stock_status,
+                    quantity_delta,adjusted_date,reason,actor_id,created_at,stock_count_id)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),payload['reference'],receipt_id,payload['location'],
+                    payload['stock_status'],delta,payload['counted_date'],payload['reason'],actor['id'],timestamp,count_id))
+            return self._finished_goods_stock_count(db,count_id)
+        return self._write(actor,('admin','operator'),key,'finished-goods-stock-count:'+receipt_id,payload,perform)
+
+    def reverse_finished_goods_stock_count(self, count_id, payload, actor, key):
+        def perform(db):
+            record=self._finished_goods_stock_count(db,count_id)
+            if record['reversal']:
+                raise DomainError(409,'Catatan stock opname sudah dikoreksi.')
+            db.execute('''INSERT INTO finished_goods_stock_count_reversals(count_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(count_id,payload['reason'],actor['id'],now()))
+            return self._finished_goods_stock_count(db,count_id)
+        return self._write(actor,('admin',),key,'finished-goods-stock-count-reverse:'+count_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

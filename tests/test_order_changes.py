@@ -107,7 +107,7 @@ class OrderChangeTest(TestCase):
         for _ in range(2):
             Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],24)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],25)
             for table, rows in before.items():
                 self.assertEqual(db.execute('SELECT * FROM ' + table).fetchall(), rows)
         self.assertEqual(self.detail(order)['revision'], 0)

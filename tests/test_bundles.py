@@ -144,6 +144,8 @@ class BundleTest(TestCase):
             db.execute('DROP VIEW finished_goods_stock_ledger')
             db.execute('DROP TABLE finished_goods_adjustment_reversals')
             db.execute('DROP TABLE finished_goods_adjustments')
+            db.execute('DROP TABLE finished_goods_stock_count_reversals')
+            db.execute('DROP TABLE finished_goods_stock_counts')
             db.execute('DROP TABLE marketplace_return_reversals')
             db.execute('DROP TABLE marketplace_returns')
             db.execute('DROP TABLE marketplace_shipment_reversals')
@@ -176,7 +178,7 @@ class BundleTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],24)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],25)
         after = self.client.get('/api/cutting-runs/'+run['id']).json()
         self.assertEqual({k: after[k] for k in before if k != 'outputs'},
                          {k: before[k] for k in before if k != 'outputs'})

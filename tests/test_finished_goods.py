@@ -146,6 +146,8 @@ class FinishedGoodsTest(TestCase):
             db.execute('DROP VIEW finished_goods_stock_ledger')
             db.execute('DROP TABLE finished_goods_adjustment_reversals')
             db.execute('DROP TABLE finished_goods_adjustments')
+            db.execute('DROP TABLE finished_goods_stock_count_reversals')
+            db.execute('DROP TABLE finished_goods_stock_counts')
             db.execute('DROP TABLE marketplace_return_reversals')
             db.execute('DROP TABLE marketplace_returns')
             db.execute('DROP TABLE marketplace_shipment_reversals')
@@ -166,7 +168,7 @@ class FinishedGoodsTest(TestCase):
             db.execute('PRAGMA user_version=17');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],24)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],25)
             columns={row[1] for row in db.execute('PRAGMA table_info(final_qc_records)')}
             self.assertTrue({'defect_type','responsible_source','disposition'}<=columns)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_receipts').fetchone()[0],0)

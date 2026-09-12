@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -439,6 +439,24 @@ def create_app(database_path):
     @app.post('/api/finished-goods-adjustments/{adjustment_id}/reverse', status_code=201, tags=['Warehouse'])
     def reverse_finished_goods_adjustment(adjustment_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_finished_goods_adjustment(adjustment_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/finished-goods-receipts/{receipt_id}/stock-counts', status_code=201, tags=['Warehouse'])
+    def create_finished_goods_stock_count(receipt_id: str, body: FinishedGoodsStockCountCreate,
+                                          user: Actor, key: RequestKey):
+        return store.create_finished_goods_stock_count(receipt_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/finished-goods-stock-counts', tags=['Warehouse'])
+    def finished_goods_stock_counts(order_id: str, user: Actor, limit: Limit = 100,
+                                    before: Annotated[int | None, Query(ge=1)] = None):
+        return store.finished_goods_stock_counts(order_id, limit, before)
+
+    @app.get('/api/finished-goods-stock-counts/{count_id}', tags=['Warehouse'])
+    def finished_goods_stock_count(count_id: str, user: Actor):
+        return store.finished_goods_stock_count(count_id)
+
+    @app.post('/api/finished-goods-stock-counts/{count_id}/reverse', status_code=201, tags=['Warehouse'])
+    def reverse_finished_goods_stock_count(count_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_finished_goods_stock_count(count_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):
