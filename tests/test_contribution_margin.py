@@ -108,6 +108,11 @@ class ContributionMarginTest(TestCase):
         self.assertEqual((stale['net_sold_quantity'],stale['contribution_margin']),(8,None))
         self.post('/api/marketplace-sale-settlements/'+settlement['id']+'/reverse',
                   {'reason':'Settlement belum mencakup retur'})
+        with self.app.state.store.transaction(write=True) as db:
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute('''INSERT INTO marketplace_shipment_reversals(shipment_id,reason,actor_id,created_at)
+                    VALUES(?,?,?,?)''',(shipment['id'],'Bypass retur',self.admin['id'],
+                    '2026-10-26T00:00:00+00:00'))
         replacement=self.settle(shipment,payload=self.settlement_payload('SETTLE-002',customer_refund='200'))
         self.assertEqual((replacement['return_quantity'],replacement['return_coverage_status']),(2,'current'))
         current=self.report(order)

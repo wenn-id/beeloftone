@@ -148,6 +148,8 @@ class FinishedGoodsTest(TestCase):
             db.execute('DROP TABLE finished_goods_adjustments')
             db.execute('DROP TABLE finished_goods_stock_count_reversals')
             db.execute('DROP TABLE finished_goods_stock_counts')
+            db.execute('DROP TABLE marketplace_sale_settlement_reversals')
+            db.execute('DROP TABLE marketplace_sale_settlements')
             db.execute('DROP TABLE marketplace_return_reversals')
             db.execute('DROP TABLE marketplace_returns')
             db.execute('DROP TABLE marketplace_shipment_reversals')

@@ -62,6 +62,8 @@ WHEN NOT EXISTS(SELECT 1 FROM marketplace_shipments s JOIN marketplace_packs k O
       AND NOT EXISTS(SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id))
 OR EXISTS(SELECT 1 FROM marketplace_sale_settlements e WHERE e.shipment_id=NEW.shipment_id
     AND NOT EXISTS(SELECT 1 FROM marketplace_sale_settlement_reversals r WHERE r.settlement_id=e.id))
+OR EXISTS(SELECT 1 FROM marketplace_returns t WHERE t.shipment_id=NEW.shipment_id
+    AND NOT EXISTS(SELECT 1 FROM marketplace_return_reversals r WHERE r.return_id=t.id))
 BEGIN SELECT RAISE(ABORT,'Invalid marketplace shipment reversal'); END;
 
 CREATE TRIGGER IF NOT EXISTS marketplace_sale_settlements_no_update

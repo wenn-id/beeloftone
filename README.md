@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.35.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, retur pelanggan, adjustment, stock opname, biaya produksi aktual, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
+Pelacakan produksi internal, versi 0.36.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
 
 ## Coba di Windows
 
@@ -157,7 +157,7 @@ Tes client JavaScript memerlukan Node 22+: `node tests/test_client.mjs`. Untuk p
 
 Server hanya mendengarkan localhost. Rilis ini untuk pengembangan/uji lokal, belum deployment bersama untuk tim. Sebelum dipakai banyak perangkat: siapkan HTTPS, login browser/SSO, kebijakan akses yang lebih rinci, backup terjadwal dengan uji restore, serta validasi alur di lapangan. SQLite cukup untuk uji lokal; evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau penulisan bersamaan lebih tinggi.
 
-Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 29. Migrasi 28 → 29 menambahkan request dan approval budget marketing dengan periode, channel, objective, nominal, role guard, dan ledger keputusan immutable. Migrasi 27 → 28 menambahkan request dan approval pembayaran supplier, batas nilai penerimaan aktif, serta guard koreksi receipt. Migrasi 26 → 27 menambahkan approval penerbitan PO, backfill PO historis sebagai approved, serta guard penerimaan/QC. Migrasi 25 → 26 menambahkan ledger permintaan perubahan produksi, keputusan immutable, penerapan perubahan order atomik, revision guard, serta inbox approval gabungan dengan PR. Migrasi 24 → 25 menambahkan ledger stock opname barang jadi, snapshot saldo sistem, jumlah fisik, adjustment selisih yang terhubung, koreksi immutable, scan SKU, serta guard reserved stock. Migrasi 23 → 24 menambahkan ledger retur pelanggan dan adjustment barang jadi, alasan retur terstruktur, status hasil inspeksi, stok per receipt, koreksi immutable, serta guard shipment/reservasi/saldo. Migrasi 22 → 23 menambahkan ledger shipping marketplace, carrier/resi, stok keluar gudang, koreksi immutable, dan guard jumlah/tanggal/pack. Migrasi 21 → 22 menambahkan ledger packing marketplace, stok `packed` di staging, koreksi immutable, dan guard jumlah/tanggal/pick. Migrasi 20 → 21 menambahkan ledger picking marketplace, stok `picked` di lokasi staging, koreksi immutable, dan guard jumlah/tanggal/release. Migrasi 19 → 20 menambahkan ledger reservasi marketplace, pemisahan available/reserved, pelepasan, dan guard stok terlindungi. Migrasi 18 → 19 menambahkan ledger transfer lokasi dan keputusan hold, status damaged, inventori per lokasi, koreksi immutable, serta guard saldo sumber/tujuan. Migrasi 17 → 18 menambahkan atribut defect final QC, ledger penerimaan barang jadi, pembagian sellable/hold, inventory per SKU, koreksi immutable, dan guard alokasi. Migrasi 16 → 17 menambahkan ledger final QC, temuan pengukuran/visual, hasil accepted/rework/reject, tiga perpindahan atomik, dan guard sumber finishing. Migrasi 15 → 16 menambahkan ledger finishing, lima checklist wajib, lineage hasil sewing, perpindahan ke QC, koreksi atomik, dan guard alokasi. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
+Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, barcode/cetak/scan bundle, attachment kendala, atau integrasi Jubelio/Mekari. Schema sekarang versi 30. Migrasi 29 → 30 menambahkan settlement penjualan marketplace, koreksi immutable, snapshot cakupan retur, dan guard pengiriman. Migrasi 28 → 29 menambahkan request dan approval budget marketing dengan periode, channel, objective, nominal, role guard, dan ledger keputusan immutable. Migrasi 27 → 28 menambahkan request dan approval pembayaran supplier, batas nilai penerimaan aktif, serta guard koreksi receipt. Migrasi 26 → 27 menambahkan approval penerbitan PO, backfill PO historis sebagai approved, serta guard penerimaan/QC. Migrasi 25 → 26 menambahkan ledger permintaan perubahan produksi, keputusan immutable, penerapan perubahan order atomik, revision guard, serta inbox approval gabungan dengan PR. Migrasi 24 → 25 menambahkan ledger stock opname barang jadi, snapshot saldo sistem, jumlah fisik, adjustment selisih yang terhubung, koreksi immutable, scan SKU, serta guard reserved stock. Migrasi 23 → 24 menambahkan ledger retur pelanggan dan adjustment barang jadi, alasan retur terstruktur, status hasil inspeksi, stok per receipt, koreksi immutable, serta guard shipment/reservasi/saldo. Migrasi 22 → 23 menambahkan ledger shipping marketplace, carrier/resi, stok keluar gudang, koreksi immutable, dan guard jumlah/tanggal/pack. Migrasi 21 → 22 menambahkan ledger packing marketplace, stok `packed` di staging, koreksi immutable, dan guard jumlah/tanggal/pick. Migrasi 20 → 21 menambahkan ledger picking marketplace, stok `picked` di lokasi staging, koreksi immutable, dan guard jumlah/tanggal/release. Migrasi 19 → 20 menambahkan ledger reservasi marketplace, pemisahan available/reserved, pelepasan, dan guard stok terlindungi. Migrasi 18 → 19 menambahkan ledger transfer lokasi dan keputusan hold, status damaged, inventori per lokasi, koreksi immutable, serta guard saldo sumber/tujuan. Migrasi 17 → 18 menambahkan atribut defect final QC, ledger penerimaan barang jadi, pembagian sellable/hold, inventory per SKU, koreksi immutable, dan guard alokasi. Migrasi 16 → 17 menambahkan ledger final QC, temuan pengukuran/visual, hasil accepted/rework/reject, tiga perpindahan atomik, dan guard sumber finishing. Migrasi 15 → 16 menambahkan ledger finishing, lima checklist wajib, lineage hasil sewing, perpindahan ke QC, koreksi atomik, dan guard alokasi. Migrasi 14 → 15 menambahkan ledger job sewing/makloon, hasil selesai/defect/missing, biaya, turnaround, koreksi atomik, dan guard alokasi bundle. Migrasi 13 → 14 menambahkan identitas bundle, alokasi terhadap output cutting, koreksi immutable, dan guard over-allocation. Migrasi 12 → 13 menambahkan hasil cutting yang menghubungkan pemakaian bahan, waste, dan perpindahan pcs ke sewing, beserta koreksi atomik. Migrasi 11 → 12 menambahkan retur supplier, penutupan PO, dan guard riwayat final. Migrasi 10 → 11 menambahkan antrean QC kedatangan PO, keputusan layak pakai/reject, dan guard pembatalan/koreksi. Migrasi 9 → 10 menambahkan hubungan penerimaan batch ke PO. Migrasi 8 → 9 menambahkan master pemasok, PO, dan catatan pembatalannya. Migrasi 7 → 8 menambahkan PR dan riwayat keputusan. Migrasi 6 → 7 menambahkan ledger pemakaian aktual dan waste cutting. Migrasi 5 → 6 menambahkan ledger reservasi. Migrasi 4 → 5 menambahkan master bahan, batch, dan ledger bahan. Migrasi 3 → 4 menambahkan versi BOM. Saat startup, migrasi 1 → 2 menambahkan tabel kendala dan 2 → 3 menambahkan riwayat tenggat/PIC. Setiap migrasi berjalan dalam satu transaksi tanpa mengubah catatan produksi lama. Buat backup dengan versi aplikasi lama sebelum upgrade. Backup demo sebelum upgrade v0.4 tersedia lokal di `data/backups/demo-before-v04.sqlite3`.
 
 Desain: `docs/design.md`. Rencana dan status implementasi: `docs/implementation-plan.md`.
 
@@ -1366,3 +1366,40 @@ bahan dan sewing/makloon yang sudah mempunyai sumber nominal, bukan full landed 
 
 Rencana: [production cost reporting plan](docs/production-cost-reporting-plan.md).
 Bukti pengujian: [production cost reporting verification](docs/production-cost-reporting-verification.md).
+
+## Margin kontribusi per order (v0.36)
+
+Setelah pengiriman marketplace aktif, buka rincian pengiriman lalu pilih **Catat settlement**. Catatan
+menyimpan omzet kotor, diskon penjual, refund pelanggan, fee marketplace, biaya kirim yang ditanggung
+penjual, biaya variabel lain, tanggal settlement, dan jumlah retur aktif saat pencatatan. Nominal
+disimpan sebagai integer sen IDR dan riwayat tidak dapat diubah atau dihapus.
+
+Buka order lalu pilih **Margin kontribusi**. Pendapatan neto adalah omzet dikurangi diskon dan refund.
+Biaya jual variabel menjumlahkan fee marketplace, biaya kirim, dan biaya variabel lain. Biaya
+produksi dialokasikan proporsional terhadap jumlah terjual neto dibanding barang jadi yang telah
+diterima. Margin kontribusi adalah pendapatan neto dikurangi biaya jual variabel dan biaya produksi
+teralokasi.
+
+Margin final hanya tersedia jika biaya produksi lengkap dan setiap pengiriman aktif mempunyai
+settlement yang masih sesuai dengan jumlah retur. Retur baru atau koreksi retur membuat settlement
+berstatus usang sampai admin mengoreksi catatan lama dan membuat penggantinya. Dengan begitu laporan
+tidak diam-diam memakai refund yang belum diperbarui.
+
+API terkait:
+
+- `POST /api/marketplace-shipments/{id}/sale-settlements`.
+- `GET /api/orders/{id}/sale-settlements?limit=100&before=sequence`.
+- `GET /api/marketplace-sale-settlements/{id}`.
+- `POST /api/marketplace-sale-settlements/{id}/reverse`.
+- `GET /api/orders/{id}/contribution-margin`.
+
+Schema 29 → 30 menambahkan ledger settlement dan pembalikan immutable, snapshot jumlah retur,
+validasi satu settlement aktif per pengiriman, serta guard agar pengiriman tidak dikoreksi selama
+settlement masih aktif.
+
+Pajak, payment gateway terpisah, iklan, overhead tetap, biaya penanganan retur, write-off stok, dan
+jurnal Mekari belum dihitung. Harga pokok yang dialokasikan masih mengikuti cakupan biaya produksi
+v0.35.
+
+Rencana: [contribution margin plan](docs/contribution-margin-plan.md).
+Bukti pengujian: [contribution margin verification](docs/contribution-margin-verification.md).
