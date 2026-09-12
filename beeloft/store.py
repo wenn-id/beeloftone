@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -107,6 +107,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("marketplace_sale_settlements.sql").read_text(encoding="utf-8"))
             if version < 31:
                 db.executescript(Path(__file__).with_name("ai_action_proposals.sql").read_text(encoding="utf-8"))
+            if version < 32:
+                db.executescript(Path(__file__).with_name("ai_investigations.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -3019,6 +3021,81 @@ class Store:
         return self._write(actor, ("admin","operator"), key, "production-change-request-decision:"+request_id, payload, perform)
 
     @staticmethod
+    def _ai_feedback(db, investigation_id):
+        history=[dict(row) for row in db.execute('''SELECT f.*,u.name AS actor_name
+            FROM ai_investigation_feedback f JOIN users u ON u.id=f.actor_id
+            WHERE f.investigation_id=? ORDER BY f.sequence DESC''',(investigation_id,))]
+        latest=[];seen=set()
+        for row in history:
+            if row['actor_id'] not in seen:
+                latest.append(row);seen.add(row['actor_id'])
+        return history,{'helpful':sum(row['rating']=='helpful' for row in latest),
+                        'not_helpful':sum(row['rating']=='not_helpful' for row in latest),
+                        'respondents':len(latest)}
+
+    def _ai_investigation(self, db, investigation_id):
+        row=db.execute('''SELECT i.*,u.name AS actor_name FROM ai_investigations i
+            JOIN users u ON u.id=i.actor_id WHERE i.id=?''',(investigation_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Investigasi AI tidak ditemukan.')
+        record=dict(row)
+        source_payload=json.loads(record.pop('source_payload'))
+        result=json.loads(record.pop('result_snapshot'))
+        feedback,summary=self._ai_feedback(db,investigation_id)
+        links=[self._ai_action_proposal(db,item['proposal_id']) for item in db.execute(
+            '''SELECT proposal_id FROM ai_investigation_actions WHERE investigation_id=?
+               ORDER BY created_at DESC,proposal_id DESC''',(investigation_id,))]
+        return result|record|{'source_payload':source_payload,'feedback':feedback,
+            'feedback_summary':summary,'linked_actions':links}
+
+    def create_ai_investigation(self, payload, actor, key):
+        def perform(db):
+            from beeloft.brain import investigate
+            result=investigate(self,payload)
+            investigation_id,timestamp=str(uuid4()),now()
+            db.execute('''INSERT INTO ai_investigations(id,question,intent,source_payload,
+                result_snapshot,actor_id,created_at) VALUES(?,?,?,?,?,?,?)''',(
+                investigation_id,payload['question'],result['intent'],json.dumps(payload),
+                json.dumps(result),actor['id'],timestamp))
+            return self._ai_investigation(db,investigation_id)
+        return self._write(actor,('admin','operator','viewer'),key,'ai-investigation',payload,perform)
+
+    def ai_investigation(self, investigation_id):
+        with self.transaction() as db:
+            return self._ai_investigation(db,investigation_id)
+
+    def ai_investigations(self, limit=100, before=None, intent='all', query=''):
+        query=query.strip().casefold()
+        with self.transaction() as db:
+            rows=db.execute('''SELECT i.*,u.name AS actor_name FROM ai_investigations i
+                JOIN users u ON u.id=i.actor_id WHERE (? IS NULL OR i.sequence<?)
+                AND (?='all' OR i.intent=?) AND (?='' OR instr(lower(i.question),?)>0)
+                ORDER BY i.sequence DESC LIMIT ?''',(before,before,intent,intent,query,query,limit)).fetchall()
+            items=[]
+            for row in rows:
+                report=json.loads(row['result_snapshot'])
+                _,feedback=self._ai_feedback(db,row['id'])
+                actions=db.execute('''SELECT COUNT(*) FROM ai_investigation_actions
+                    WHERE investigation_id=?''',(row['id'],)).fetchone()[0]
+                items.append({'id':row['id'],'sequence':row['sequence'],'question':row['question'],
+                    'intent':row['intent'],'interpretation':report['interpretation'],
+                    'answer':report['answer'],'actor_id':row['actor_id'],'actor_name':row['actor_name'],
+                    'created_at':row['created_at'],'feedback_summary':feedback,'action_count':actions})
+            return items
+
+    def create_ai_investigation_feedback(self, investigation_id, payload, actor, key):
+        def perform(db):
+            if not db.execute('SELECT 1 FROM ai_investigations WHERE id=?',
+                              (investigation_id,)).fetchone():
+                raise DomainError(404,'Investigasi AI tidak ditemukan.')
+            db.execute('''INSERT INTO ai_investigation_feedback(id,investigation_id,rating,reason,
+                actor_id,created_at) VALUES(?,?,?,?,?,?)''',(str(uuid4()),investigation_id,
+                payload['rating'],payload['reason'],actor['id'],now()))
+            return self._ai_investigation(db,investigation_id)
+        return self._write(actor,('admin','operator','viewer'),key,
+            'ai-investigation-feedback:'+investigation_id,payload,perform)
+
+    @staticmethod
     def _recommendation_fingerprint(recommendation):
         return hashlib.sha256(json.dumps(recommendation,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
@@ -3047,6 +3124,9 @@ class Store:
         record['revision']=record['history'][0]['sequence']
         record['executed_entity_type']=record['history'][0]['executed_entity_type']
         record['executed_entity_id']=record['history'][0]['executed_entity_id']
+        link=db.execute('''SELECT investigation_id FROM ai_investigation_actions
+            WHERE proposal_id=?''',(proposal_id,)).fetchone()
+        record['investigation_id']=link['investigation_id'] if link else None
         return record
 
     def create_ai_action_proposal(self, payload, actor, key):
@@ -3055,6 +3135,21 @@ class Store:
         source_payload={name:payload[name] for name in source_keys}
         def perform(db):
             recommendation=self._ai_recommendation(source_payload,payload['action_kind'],payload['subject_id'])
+            investigation_id=payload.get('investigation_id')
+            if investigation_id:
+                investigation=db.execute('''SELECT source_payload,result_snapshot FROM ai_investigations
+                    WHERE id=?''',(investigation_id,)).fetchone()
+                if not investigation:
+                    raise DomainError(404,'Investigasi AI tidak ditemukan.')
+                if json.loads(investigation['source_payload'])!=source_payload:
+                    raise DomainError(409,'Asumsi proposal berbeda dari investigasi tersimpan. Jalankan investigasi baru.')
+                stored_report=json.loads(investigation['result_snapshot'])
+                subject_key='product_id' if payload['action_kind']=='create_production_order' else 'material_id'
+                stored=next((row for row in stored_report['recommendations']
+                    if row['kind']==payload['action_kind'] and
+                    row['preview'].get(subject_key)==payload['subject_id']),None)
+                if stored is None or self._recommendation_fingerprint(stored)!=self._recommendation_fingerprint(recommendation):
+                    raise DomainError(409,'Rekomendasi investigasi sudah berubah. Jalankan investigasi baru.')
             if payload['action_kind']=='create_production_order':
                 action_payload={'reference':payload['reference'],'title':payload['title'],
                     'owner_id':payload['owner_id'],'due_date':payload['due_date'],
@@ -3079,6 +3174,9 @@ class Store:
                 json.dumps(action_payload),payload['reason'],actor['id'],timestamp))
             db.execute('''INSERT INTO ai_action_proposal_events(proposal_id,status,reason,actor_id,created_at)
                 VALUES(?,'submitted',?,?,?)''',(proposal_id,payload['reason'],actor['id'],timestamp))
+            if investigation_id:
+                db.execute('''INSERT INTO ai_investigation_actions(investigation_id,proposal_id,created_at)
+                    VALUES(?,?,?)''',(investigation_id,proposal_id,timestamp))
             return self._ai_action_proposal(db,proposal_id)
         return self._write(actor,('admin','operator'),key,'ai-action-proposal',payload,perform)
 

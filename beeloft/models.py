@@ -99,7 +99,13 @@ class InvestigationCreate(Input):
     batch_multiple: Annotated[int, Field(strict=True, ge=1, le=100_000)] = 1
 
 
+class AiInvestigationFeedbackCreate(Input):
+    rating: Literal['helpful','not_helpful']
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
 class AiActionProposalCreate(InvestigationCreate):
+    investigation_id: Text | None = None
     action_kind: Literal['create_production_order','create_purchase_request']
     subject_id: Text
     reference: Text

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -127,6 +127,29 @@ def create_app(database_path):
     @app.post('/api/ai/investigate', tags=['AI Brain'])
     def ai_investigate(body: InvestigationCreate, user: Actor):
         return investigate(store, body.model_dump(mode='json'))
+
+    @app.get('/api/ai/investigations', tags=['AI Brain'])
+    def ai_investigations(user: Actor, limit: Limit = 100,
+                          before: Annotated[int | None, Query(ge=1)] = None,
+                          intent: Literal['all','overview','production','stockout','approvals','margin'] = 'all',
+                          q: Annotated[str, Query(max_length=160)] = ''):
+        return store.ai_investigations(limit,before,intent,q)
+
+    @app.post('/api/ai/investigations', status_code=201, tags=['AI Brain'])
+    def create_ai_investigation(body: InvestigationCreate, user: Actor, key: RequestKey):
+        return store.create_ai_investigation(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/ai/investigations/{investigation_id}', tags=['AI Brain'])
+    def ai_investigation(investigation_id: str, user: Actor):
+        return store.ai_investigation(investigation_id)
+
+    @app.post('/api/ai/investigations/{investigation_id}/feedback', status_code=201,
+              tags=['AI Brain'])
+    def create_ai_investigation_feedback(investigation_id: str,
+                                         body: AiInvestigationFeedbackCreate,
+                                         user: Actor, key: RequestKey):
+        return store.create_ai_investigation_feedback(
+            investigation_id,body.model_dump(mode='json'),user,key)
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):
