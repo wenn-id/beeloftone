@@ -148,7 +148,7 @@ function renderDetail(more) {
   const o = selected;
   $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
     <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}<button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button><button data-action="marketplace-picks">Picking</button><button data-action="marketplace-packs">Packing</button><button data-action="marketplace-shipments">Shipping</button><button data-action="marketplace-returns">Retur</button><button data-action="finished-goods-adjustments">Adjustment</button><button data-action="finished-goods-stock-counts">Stock opname</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
+    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}${user.role !== 'viewer' ? '<button data-action="new-production-change-request">Ajukan perubahan tenggat / PIC</button>' : ''}<button class="quiet" data-action="production-change-requests">Riwayat permintaan perubahan</button><button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button><button data-action="marketplace-picks">Picking</button><button data-action="marketplace-packs">Packing</button><button data-action="marketplace-shipments">Shipping</button><button data-action="marketplace-returns">Retur</button><button data-action="finished-goods-adjustments">Adjustment</button><button data-action="finished-goods-stock-counts">Stock opname</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
     <p><button data-action="order-purchases">PR untuk order ini</button></p>
     <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
     <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
@@ -236,6 +236,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         await openDetail(result.order_id);
         if(version===epoch)cuttingRunDialog(result.id);
       }
+      else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path === '/api/suppliers') suppliersDialog();
       else if (path.startsWith('/api/qc-') || path.startsWith('/api/supplier-returns/') || path.endsWith('/qc-intakes')) {
         if (view === 'materials') loadMaterials();
@@ -348,6 +349,8 @@ document.addEventListener('click', event => {
   const actions = {detail:() => openDetail(id),move:() => moveForm(id),reverse:() => reverseForm(id),
     'new-issue':() => issueForm(id),'resolve-issue':() => resolveIssueForm(id),'more-issues':() => moreIssues(button),
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
+    'new-production-change-request':productionChangeRequestForm,'production-change-requests':()=>productionChangeRequestsDialog(id || selected?.id),
+    'production-change-request':()=>productionChangeRequestDialog(id),'approvals':approvalsDialog,
     'purchase-requests':()=>purchaseRequestsDialog(),'order-purchases':()=>purchaseRequestsDialog(selected.id),
     'purchase-request':()=>purchaseRequestDialog(id),'new-purchase-request':()=>purchaseRequestForm(id || null),
     suppliers:suppliersDialog,'new-supplier':supplierForm,'purchase-orders':purchaseOrdersDialog,
@@ -465,6 +468,70 @@ async function orderChangesDialog() {
   }
   $('more-changes').onclick = load;
   await load();
+}
+
+async function productionChangeRequestForm() {
+  if(guardPending())return;
+  const version=epoch,order=selected;
+  openDialog('Ajukan perubahan produksi','<p class="state">Memuat penanggung jawab...</p>');const modal=dialogVersion;
+  try{
+    const users=await api.get('/api/users');
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const owners=users.filter(row=>row.active&&row.role!=='viewer');
+    formDialog('Ajukan perubahan produksi',field('reference','Referensi permintaan','text','required maxlength="160"')+
+      field('due_date','Target selesai yang diajukan','date','required id="request-due"')+
+      `<div><label for="request-owner">PIC yang diajukan</label><select id="request-owner" name="owner_id" required>${owners.map(row=>option(row.id,row.name)).join('')}</select></div>`+
+      '<label class="full">Alasan perubahan<textarea name="reason" required maxlength="1000"></textarea></label>',
+      form=>({...Object.fromEntries(new FormData(form)),expected_revision:order.revision}),
+      '/api/orders/'+encodeURIComponent(order.id)+'/change-requests',
+      `${order.reference}\nSaat ini: ${date(order.due_date)} · ${order.owner_name}\nOrder tidak berubah sebelum admin menyetujui. Satu order hanya dapat memiliki satu permintaan yang masih menunggu.`);
+    $('request-due').value=order.due_date;
+    $('request-owner').value=owners.some(row=>row.id===order.owner_id)?order.owner_id:'';
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-production-change-request">Coba lagi</button>`;}
+}
+
+async function productionChangeRequestsDialog(orderId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Permintaan perubahan produksi','<p class="state">Memuat riwayat permintaan...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const order=await api.get('/api/orders/'+encodeURIComponent(orderId));
+    if(!current())return;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><p class="hint">Permintaan menyimpan nilai sebelum dan sesudah. Order baru berubah setelah admin menyetujui.</p>${user.role!=='viewer'?`<button data-action="new-production-change-request">Ajukan perubahan</button>`:''}<button data-action="approvals">Inbox approval</button><div id="production-change-request-list"><p class="state">Memuat permintaan...</p></div><p id="production-change-request-error" class="error" role="alert" hidden></p><button id="production-change-request-more" type="button">Muat permintaan sebelumnya</button>`;
+    let before=null;
+    const load=async()=>{
+      const button=$('production-change-request-more');button.disabled=true;message('production-change-request-error','');
+      try{
+        const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/change-requests?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
+        if(!current())return;
+        if(!before)$('production-change-request-list').replaceChildren();
+        $('production-change-request-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>Target ${date(row.old_due_date)} → ${date(row.new_due_date)}</p><p>PIC ${e(row.old_owner_name)} → ${e(row.new_owner_name)}</p>${row.stale?'<p class="status-label late">Order sudah berubah; permintaan perlu ditolak dan diajukan ulang.</p>':''}<p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="production-change-request" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian permintaan</button></article>`).join(''));
+        if(!before&&!rows.length)$('production-change-request-list').innerHTML='<p class="state">Belum ada permintaan perubahan untuk order ini.</p>';
+        before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat permintaan sebelumnya';
+      }catch(error){if(current()){message('production-change-request-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      finally{if(current())button.disabled=false;}
+    };
+    $('production-change-request-more').onclick=load;await load();
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="production-change-requests" data-id="${e(orderId)}">Coba lagi</button>`;}
+}
+
+async function productionChangeRequestDialog(requestId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian approval produksi','<p class="state">Memuat permintaan...</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/production-change-requests/'+encodeURIComponent(requestId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const canCancel=row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id);
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><h3>${e(row.order_reference)} · ${e(row.order_title)}</h3><article class="material-event"><h3>Perubahan yang diajukan</h3><p>Target ${date(row.old_due_date)} → ${date(row.new_due_date)}</p><p>PIC ${e(row.old_owner_name)} → ${e(row.new_owner_name)}</p></article>${row.stale?'<p class="error">Order sudah berubah setelah permintaan dibuat. Tolak permintaan ini, muat ulang order, lalu ajukan nilai terbaru.</p>':''}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><div class="actions">${user.role==='admin'&&row.status==='submitted'&&!row.stale?'<button class="primary" data-production-decision="approved">Setujui perubahan</button>':''}${user.role==='admin'&&row.status==='submitted'?'<button data-production-decision="rejected">Tolak perubahan</button>':''}${canCancel?'<button data-production-decision="cancelled">Batalkan permintaan</button>':''}<button id="production-request-order">Buka order</button><button data-action="production-change-requests" data-id="${e(row.order_id)}">Riwayat order</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p>${event.order_change_id?'<p class="hint">Perubahan order diterapkan dalam transaksi approval ini.</p>':''}</article>`).join('')}`;
+    $('production-request-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(row.order_id);};
+    $('dialog-content').querySelectorAll('[data-production-decision]').forEach(button=>button.onclick=()=>{
+      if(guardPending())return;
+      const decision=button.dataset.productionDecision;
+      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+        '/api/production-change-requests/'+encodeURIComponent(row.id)+'/decisions',
+        `${row.reference} · ${row.order_reference}\n${button.textContent}. Keputusan dan alasan tersimpan permanen.${decision==='approved'?' Tenggat/PIC order berubah saat persetujuan tersimpan.':''}`);
+    });
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="production-change-request" data-id="${e(requestId)}">Coba lagi</button>`;}
 }
 
 const activityLabels = {movement:'Perpindahan barang',reversal:'Koreksi perpindahan',issue_opened:'Kendala dicatat',issue_resolved:'Kendala selesai',order_created:'Order dibuat',order_changed:'Tenggat / PIC diubah'};
@@ -1608,9 +1675,34 @@ $('materials-next').onclick = () => { materialsOffset += 25; loadMaterials(); };
 $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
 const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+const approvalKind = {purchase_request:'Purchasing · PR',production_change:'Production · perubahan order'};
 const rupiah = value => 'Rp' + BigInt(value.split('.')[0]).toLocaleString('id-ID') + ',' + value.split('.')[1];
 const purchaseStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
 $('purchase-requests').onclick = () => purchaseRequestsDialog();
+$('approvals').onclick = approvalsDialog;
+
+async function approvalsDialog() {
+  if(guardPending())return;
+  const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing dan produksi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="production_change">Production · perubahan order</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  let offset=0,generation=0;
+  const load=async(reset=false)=>{
+    if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
+    const gen=generation,button=$('approval-more');button.disabled=true;message('approval-error','');
+    try{
+      const rows=await api.get('/api/approvals?'+new URLSearchParams({limit:25,offset,status:$('approval-status').value,kind:$('approval-kind').value}));
+      if(!current()||gen!==generation)return;
+      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${row.kind==='purchase_request'?`<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`:`<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${row.kind==='purchase_request'?'purchase-request':'production-change-request'}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
+      if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
+      offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
+    }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    finally{if(current()&&gen===generation)button.disabled=false;}
+  };
+  $('approval-status').onchange=$('approval-kind').onchange=$('approval-refresh').onclick=()=>load(true);
+  $('approval-more').onclick=()=>load();await load();
+}
 
 async function purchaseRequestsDialog(orderId=null) {
   if (guardPending()) return;
@@ -1681,7 +1773,7 @@ async function purchaseRequestDialog(id) {
     if(user.role==='admin' && p.status==='submitted')decisions.push(['approved','Setujui PR'],['rejected','Tolak PR']);
     if((user.role==='admin' && ['submitted','approved'].includes(p.status) && !p.purchase_orders.some(po=>po.status!=='cancelled')) ||
        (user.role==='operator' && p.actor_id===user.id && p.status==='submitted'))decisions.push(['cancelled','Batalkan PR']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO ditutup sudah final; PO aktif harus dibatalkan sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO ditutup sudah final; PO aktif harus dibatalkan sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
     $('dialog-content').querySelector('.actions').insertAdjacentHTML('beforeend',
       `${user.role==='admin' && p.status==='approved' && !p.purchase_orders.some(po=>po.status!=='cancelled') ? `<button data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>` : ''}${p.purchase_orders.map(po=>`<button data-action="purchase-order" data-id="${e(po.id)}">PO ${e(po.reference)} · ${poStatus[po.status]}</button>`).join('')}`);
     $('dialog-content').querySelectorAll('[data-pr-decision]').forEach(button=>{
