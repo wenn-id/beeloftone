@@ -128,6 +128,10 @@ def create_app(database_path):
     def material_requirements(order_id: str, user: Actor):
         return store.material_requirements(order_id)
 
+    @app.get('/api/orders/{order_id}/production-cost', tags=['Economics'])
+    def production_cost(order_id: str, user: Actor):
+        return store.production_cost(order_id)
+
     @app.get('/api/suppliers', tags=['Purchasing'])
     def suppliers(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.suppliers(limit, offset)

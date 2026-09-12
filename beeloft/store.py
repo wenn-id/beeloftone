@@ -2677,6 +2677,99 @@ class Store:
             items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
             return items[offset:offset+limit]
 
+    def production_cost(self, order_id):
+        with self.transaction() as db:
+            order = self._order(db, order_id)
+            issues = db.execute("""SELECT m.id AS issue_id,-m.quantity_milli AS issued_milli,
+                b.id AS batch_id,b.reference AS batch_reference,s.id AS material_id,s.code,s.name,s.unit,
+                COALESCE((SELECT SUM(c.used_milli) FROM material_consumption c WHERE c.issue_id=m.id),0) AS used_milli,
+                COALESCE((SELECT SUM(c.waste_milli) FROM material_consumption c WHERE c.issue_id=m.id),0) AS waste_milli,
+                p.id AS purchase_order_id,p.reference AS purchase_order_reference,
+                (SELECT json_extract(line.value,'$.unit_price') FROM json_each(p.lines) line
+                 WHERE json_extract(line.value,'$.material_id')=s.id) AS unit_price
+                FROM material_movements m JOIN material_batches b ON b.id=m.batch_id
+                JOIN materials s ON s.id=b.material_id
+                LEFT JOIN purchase_order_receipts x ON x.batch_id=b.id
+                LEFT JOIN purchase_orders p ON p.id=x.purchase_order_id
+                WHERE m.order_id=? AND m.kind='issue' AND NOT EXISTS(
+                    SELECT 1 FROM material_movements r WHERE r.reversal_of=m.id)
+                ORDER BY m.sequence""", (order_id,)).fetchall()
+            grouped = {}
+            for source in issues:
+                key = source['batch_id']
+                item = grouped.setdefault(key, dict(source) | {
+                    'issued_milli':0, 'used_milli':0, 'waste_milli':0})
+                for field in ('issued_milli','used_milli','waste_milli'):
+                    item[field] += source[field]
+
+            material_cost_minor = 0
+            materials = []
+            gaps = []
+            for item in grouped.values():
+                issued = item.pop('issued_milli')
+                used = item.pop('used_milli')
+                waste = item.pop('waste_milli')
+                consumed = used+waste
+                unreported = issued-consumed
+                unit_price = item['unit_price']
+                cost_minor = None
+                if unit_price is not None:
+                    cost_minor = int((Decimal(consumed)/1000*Decimal(unit_price)*100).quantize(
+                        Decimal('1'), rounding=ROUND_HALF_UP))
+                    material_cost_minor += cost_minor
+                    item['unit_price'] = format(Decimal(unit_price),'.2f')
+                item.update(issued=self._material_decimal(issued), used=self._material_decimal(used),
+                    waste=self._material_decimal(waste), consumed=self._material_decimal(consumed),
+                    unreported=self._material_decimal(unreported),
+                    cost=None if cost_minor is None else format(Decimal(cost_minor)/100,'.2f'))
+                materials.append(item)
+                if consumed and unit_price is None:
+                    gaps.append({'kind':'unpriced_consumption','batch_id':item['batch_id'],
+                        'batch_reference':item['batch_reference'],'material_id':item['material_id'],
+                        'code':item['code'],'quantity':self._material_decimal(consumed),'unit':item['unit']})
+                if unreported:
+                    gaps.append({'kind':'unreported_issue','batch_id':item['batch_id'],
+                        'batch_reference':item['batch_reference'],'material_id':item['material_id'],
+                        'code':item['code'],'quantity':self._material_decimal(unreported),'unit':item['unit']})
+            if not materials:
+                gaps.append({'kind':'no_material_consumption'})
+
+            jobs = [dict(row) for row in db.execute("""SELECT j.id,j.reference,j.assignment_type,j.assignee,
+                j.quantity_out,j.cost_minor,j.sent_date,
+                CASE WHEN EXISTS(SELECT 1 FROM sewing_job_results x WHERE x.job_id=j.id)
+                     THEN 'completed' ELSE 'open' END AS status
+                FROM sewing_jobs j JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs r ON r.id=b.cutting_run_id WHERE r.order_id=?
+                AND NOT EXISTS(SELECT 1 FROM sewing_job_reversals x WHERE x.job_id=j.id)
+                ORDER BY j.sequence""", (order_id,))]
+            sewing_cost_minor = 0
+            for job in jobs:
+                sewing_cost_minor += job['cost_minor']
+                job['cost'] = format(Decimal(job.pop('cost_minor'))/100,'.2f')
+
+            finished_quantity = db.execute("""SELECT COALESCE(SUM(x.sellable_quantity+x.hold_quantity),0)
+                FROM finished_goods_receipts x JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN cutting_runs r ON r.id=b.cutting_run_id
+                WHERE r.order_id=? AND NOT EXISTS(
+                    SELECT 1 FROM finished_goods_receipt_reversals z WHERE z.receipt_id=x.id)""",
+                (order_id,)).fetchone()[0]
+            known_cost_minor = material_cost_minor+sewing_cost_minor
+            complete = not gaps
+            money = lambda minor: format(Decimal(minor)/100,'.2f')
+            per_unit = lambda quantity: format((Decimal(known_cost_minor)/100/quantity).quantize(
+                Decimal('.01'), rounding=ROUND_HALF_UP),'.2f') if complete and quantity else None
+            return {'order_id':order['id'],'order_reference':order['reference'],'order_title':order['title'],
+                'target_quantity':order['target_quantity'],'finished_quantity':finished_quantity,
+                'currency':'IDR','status':'complete' if complete else 'incomplete',
+                'material_cost':money(material_cost_minor),'sewing_cost':money(sewing_cost_minor),
+                'known_cost':money(known_cost_minor),'total_cost':money(known_cost_minor) if complete else None,
+                'cost_per_target_unit':per_unit(order['target_quantity']),
+                'cost_per_finished_unit':per_unit(finished_quantity),
+                'materials':materials,'sewing_jobs':jobs,'coverage_gaps':gaps,
+                'scope':['material_consumption','sewing_jobs'],
+                'excluded_costs':['internal_labor','finishing','quality_control','packaging','freight','overhead']}
+
     def orders(self, limit=100, offset=0):
         with self.transaction() as db:
             ids = [row[0] for row in db.execute("SELECT id FROM orders ORDER BY due_date,created_at,id LIMIT ? OFFSET ?", (limit, offset))]
