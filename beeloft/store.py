@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -97,6 +97,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("inventory_reconciliation.sql").read_text(encoding="utf-8"))
             if version < 26:
                 db.executescript(Path(__file__).with_name("unified_approvals.sql").read_text(encoding="utf-8"))
+            if version < 27:
+                db.executescript(Path(__file__).with_name("purchase_order_approvals.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1813,7 +1815,9 @@ class Store:
         record['status'] = record['history'][0]['status']
         record['revision'] = record['history'][0]['sequence']
         record['purchase_orders'] = [dict(row) for row in db.execute('''SELECT p.id,p.reference,
-            CASE WHEN c.id IS NOT NULL THEN 'cancelled' WHEN z.order_id IS NOT NULL THEN 'closed' ELSE 'issued' END AS status
+            CASE WHEN c.id IS NOT NULL THEN 'cancelled' WHEN z.order_id IS NOT NULL THEN 'closed'
+              WHEN (SELECT status FROM purchase_order_approval_events WHERE order_id=p.id ORDER BY sequence DESC LIMIT 1)='submitted' THEN 'pending'
+              ELSE (SELECT status FROM purchase_order_approval_events WHERE order_id=p.id ORDER BY sequence DESC LIMIT 1) END AS status
             FROM purchase_orders p LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
             LEFT JOIN purchase_order_closures z ON z.order_id=p.id
             WHERE p.request_id=? ORDER BY p.sequence DESC''', (request_id,))]
@@ -1864,7 +1868,7 @@ class Store:
                 raise DomainError(409, 'PR sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
             if current['status'] not in ('submitted','approved') or (current['status']=='approved' and payload['status']!='cancelled'):
                 raise DomainError(409, 'Status PR tidak mengizinkan keputusan ini.')
-            if any(po['status']!='cancelled' for po in current['purchase_orders']):
+            if any(po['status'] not in ('cancelled','rejected') for po in current['purchase_orders']):
                 raise DomainError(409, 'PR memiliki PO aktif atau ditutup. PR dengan PO ditutup sudah final; PO aktif harus dibatalkan terlebih dahulu.')
             db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?)''', (request_id,payload['status'],payload['reason'],actor['id'],now()))
@@ -1895,13 +1899,21 @@ class Store:
         record['lines'] = json.loads(record['lines'])
         record['total'] = format(Decimal(record.pop('total_minor')) / 100, '.2f')
         record['currency'] = 'IDR'
+        record['approval_history'] = [dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
+            FROM purchase_order_approval_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.order_id=? ORDER BY e.sequence DESC''', (order_id,))]
+        record['approval_status'] = record['approval_history'][0]['status']
+        record['revision'] = record['approval_history'][0]['sequence']
         cancelled = db.execute('''SELECT c.*,u.name AS actor_name FROM purchase_order_cancellations c
             JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
         record['cancellation'] = dict(cancelled) if cancelled else None
         closed = db.execute('''SELECT c.*,u.name AS actor_name FROM purchase_order_closures c
             JOIN users u ON u.id=c.actor_id WHERE c.order_id=?''', (order_id,)).fetchone()
         record['closure'] = dict(closed) if closed else None
-        record['status'] = 'cancelled' if cancelled else 'closed' if closed else 'issued'
+        if record['approval_status']=='approved':
+            record['status'] = 'cancelled' if cancelled else 'closed' if closed else 'issued'
+        else:
+            record['status'] = 'pending' if record['approval_status']=='submitted' else record['approval_status']
         record['receipts'] = []
         received = {}
         for row in db.execute('''SELECT b.id AS batch_id,b.reference,b.material_id,b.location,b.received_date,
@@ -1947,9 +1959,11 @@ class Store:
                 LEFT JOIN purchase_order_cancellations c ON c.order_id=p.id
                 LEFT JOIN purchase_order_closures z ON z.order_id=p.id
                 WHERE (? IS NULL OR p.sequence<?) AND (? IS NULL OR p.request_id=?)
-                AND (?='all' OR (?='issued' AND c.id IS NULL AND z.order_id IS NULL)
-                    OR (?='cancelled' AND c.id IS NOT NULL) OR (?='closed' AND z.order_id IS NOT NULL))
-                ORDER BY p.sequence DESC LIMIT ?''', (before,before,request_id,request_id,status,status,status,status,limit)).fetchall()
+                AND (?='all' OR ?=CASE WHEN c.id IS NOT NULL THEN 'cancelled' WHEN z.order_id IS NOT NULL THEN 'closed'
+                    WHEN (SELECT status FROM purchase_order_approval_events WHERE order_id=p.id ORDER BY sequence DESC LIMIT 1)='submitted' THEN 'pending'
+                    WHEN (SELECT status FROM purchase_order_approval_events WHERE order_id=p.id ORDER BY sequence DESC LIMIT 1)='approved' THEN 'issued'
+                    ELSE (SELECT status FROM purchase_order_approval_events WHERE order_id=p.id ORDER BY sequence DESC LIMIT 1) END)
+                ORDER BY p.sequence DESC LIMIT ?''', (before,before,request_id,request_id,status,status,limit)).fetchall()
             return [self._purchase_order(db, row[0]) for row in ids]
 
     def create_purchase_order(self, payload, actor, key):
@@ -1957,7 +1971,7 @@ class Store:
             pr = self._purchase_request(db, payload['request_id'])
             if pr['status'] != 'approved' or pr['revision'] != payload['expected_revision']:
                 raise DomainError(409, 'PR harus disetujui dan memakai revisi terbaru. Buka ulang PR.')
-            if any(po['status']!='cancelled' for po in pr['purchase_orders']):
+            if any(po['status'] not in ('cancelled','rejected') for po in pr['purchase_orders']):
                 raise DomainError(409, 'PR sudah memiliki PO aktif atau ditutup. Gunakan PR baru untuk pembelian tambahan.')
             supplier = db.execute('SELECT id,code,name,contact,address FROM suppliers WHERE id=?', (payload['supplier_id'],)).fetchone()
             if not supplier:
@@ -1975,19 +1989,36 @@ class Store:
                 lines.append(line | dict(unit_price=price,line_total=format(Decimal(minor)/100,'.2f')))
             if total > int(Decimal(pr['estimated_value'])*100):
                 raise DomainError(409, 'Total PO melebihi estimasi PR yang disetujui. Ajukan PR baru dengan nilai yang sesuai.')
-            order_id = str(uuid4())
+            order_id, timestamp = str(uuid4()), now()
             db.execute('''INSERT INTO purchase_orders(id,reference,request_id,request_revision,supplier_id,supplier,
                 expected_date,terms,lines,total_minor,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (order_id,payload['reference'],pr['id'],pr['revision'],supplier['id'],json.dumps(dict(supplier)),
-                 payload['expected_date'],payload['terms'],json.dumps(lines),total,payload['reason'],actor['id'],now()))
+                 payload['expected_date'],payload['terms'],json.dumps(lines),total,payload['reason'],actor['id'],timestamp))
+            db.execute('''INSERT INTO purchase_order_approval_events(order_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)''', (order_id,payload['reason'],actor['id'],timestamp))
             return self._purchase_order(db, order_id)
-        return self._write(actor, ('admin',), key, 'purchase-order', payload, perform)
+        return self._write(actor, ('admin','operator'), key, 'purchase-order', payload, perform)
+
+    def decide_purchase_order(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
+            if role != 'admin' and not (payload['status']=='cancelled' and po['actor_id']==actor['id']):
+                raise DomainError(403, 'Hanya admin memutuskan PO; pembuat boleh membatalkan pengajuannya.')
+            if po['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'Approval PO sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
+            if po['approval_status'] != 'submitted':
+                raise DomainError(409, 'Approval PO sudah diputuskan.')
+            db.execute('''INSERT INTO purchase_order_approval_events(order_id,status,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)''', (order_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._purchase_order(db, order_id)
+        return self._write(actor, ('admin','operator'), key, 'purchase-order-decision:'+order_id, payload, perform)
 
     def cancel_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
+                raise DomainError(409, 'PO belum disetujui atau sudah final.')
             if any(l['return_pending']!='0.000' for l in po['lines']):
                 raise DomainError(409, 'Selesaikan retur bahan reject sebelum membatalkan PO.')
             if po['fulfillment'] != 'pending' or any(l['held']!='0.000' for l in po['lines']):
@@ -2001,7 +2032,7 @@ class Store:
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
+                raise DomainError(409, 'PO belum disetujui atau sudah final.')
             if po['fulfillment'] == 'pending':
                 raise DomainError(409, 'Belum ada penerimaan layak pakai. Gunakan pembatalan jika pembelian tidak dilanjutkan.')
             if any(l['held']!='0.000' or l['return_pending']!='0.000' for l in po['lines']):
@@ -2015,7 +2046,7 @@ class Store:
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan atau ditutup; penerimaan tidak diizinkan.')
+                raise DomainError(409, 'PO harus disetujui dan aktif sebelum penerimaan.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']), None)
             if not line:
                 raise DomainError(422, 'Bahan tidak tercantum pada PO.')
@@ -2103,7 +2134,7 @@ class Store:
         def perform(db):
             po = self._purchase_order(db, order_id)
             if po['status'] != 'issued':
-                raise DomainError(409, 'PO sudah dibatalkan atau ditutup.')
+                raise DomainError(409, 'PO harus disetujui dan aktif sebelum QC bahan masuk.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']),None)
             if not line:
                 raise DomainError(422, 'Bahan tidak tercantum pada PO.')
@@ -2442,6 +2473,20 @@ class Store:
                         "actor_id":request["actor_id"],"actor_name":request["actor_name"],
                         "created_at":request["created_at"],"context":{"required_date":request["required_date"],
                         "line_count":len(request["lines"]),"order_id":request["order_id"]}})
+            if kind in ("all","purchase_order"):
+                for row in db.execute("SELECT id FROM purchase_orders"):
+                    order = self._purchase_order(db, row["id"])
+                    current_status = "pending" if order["approval_status"] == "submitted" else order["approval_status"]
+                    if status not in ("all", current_status):
+                        continue
+                    items.append({"id":order["id"],"kind":"purchase_order","department":"Purchasing",
+                        "status":current_status,"reference":order["reference"],
+                        "title":order["supplier"]["name"]+" · PR "+order["request_reference"],
+                        "amount":order["total"],"currency":"IDR","reason":order["reason"],
+                        "actor_id":order["actor_id"],"actor_name":order["actor_name"],
+                        "created_at":order["created_at"],"context":{"request_id":order["request_id"],
+                        "request_reference":order["request_reference"],"supplier_name":order["supplier"]["name"],
+                        "expected_date":order["expected_date"],"line_count":len(order["lines"])}})
             if kind in ("all","production_change"):
                 for row in db.execute("SELECT id FROM production_change_requests"):
                     request = self._production_change_request(db, row["id"])

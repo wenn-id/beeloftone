@@ -30,8 +30,21 @@ class PurchaseOrderTest(TestCase):
                         supplier_id=supplier['id'],expected_date='2026-10-15',terms='Bayar setelah diterima',
                         reason='Harga disepakati',prices=[dict(material_id=material['id'],unit_price='12.34')])
 
-    def issue(self, payload, **options):
+    def submit_po(self, payload, **options):
         return self.post('/api/purchase-orders',payload,**options)
+
+    def approve_po(self, po, decision='approved', **options):
+        return self.post('/api/purchase-orders/'+po['id']+'/decisions', dict(
+            status=decision, expected_revision=po['revision'], reason='Keputusan PO'), **options)
+
+    def issue(self, payload, **options):
+        po = self.post('/api/purchase-orders', payload, **options)
+        if options.get('status', 201) != 201:
+            return po
+        key = options.get('key')
+        return self.post('/api/purchase-orders/'+po['id']+'/decisions', dict(
+            status='approved', expected_revision=po['revision'], reason='Keputusan PO'),
+            key=(key+'-approval') if key else None)
 
     def detail(self, po):
         response = self.client.get('/api/purchase-orders/'+po['id'])
@@ -72,8 +85,12 @@ class PurchaseOrderTest(TestCase):
     def test_price_coverage_budget_validation_permissions_and_supplier_retry(self):
         pr,payload = self.setup_po()
         self.supplier(key='duplicate',status=409)
+        pending = self.submit_po(payload | {'reference':'PO-OPERATOR'},api_key=self.operator['api_key'],key='operator-po')
+        self.assertEqual(pending['status'],'pending')
+        self.approve_po(pending,api_key=self.operator['api_key'],status=403)
+        self.approve_po(pending,'cancelled',api_key=self.operator['api_key'])
+        self.submit_po(payload | {'reference':'PO-VIEWER'},api_key=self.viewer['api_key'],status=403)
         for role in [self.operator,self.viewer]:
-            self.issue(payload,api_key=role['api_key'],status=403)
             self.supplier(api_key=role['api_key'],status=403)
         for change, code in [
             ({'prices':[]},422),({'prices':payload['prices']*2},422),
@@ -125,6 +142,7 @@ class PurchaseOrderTest(TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(attempt,range(2))),[201,409])
         po = self.client.get('/api/purchase-orders').json()[0]
+        po = self.approve_po(po)
         with self.app.state.store.transaction(write=True) as db:
             db.execute("CREATE TRIGGER fail_po BEFORE INSERT ON requests WHEN NEW.key='fail' BEGIN SELECT RAISE(ABORT,'test'); END")
         self.cancel(po,key='fail',status=409)
@@ -161,7 +179,7 @@ class PurchaseOrderTest(TestCase):
         self.assertEqual(self.client.get('/api/purchase-orders?before='+str(page[0]['sequence'])).json()[0]['id'],a['id'])
         self.assertEqual(len(self.client.get('/api/purchase-orders?status=issued&request_id='+pr['id']).json()),1)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],27)
             for table in ['suppliers','purchase_orders','purchase_order_cancellations']:
                 for sql in ['DELETE FROM '+table,'UPDATE '+table+' SET reason=reason']:
                     with self.assertRaises(sqlite3.IntegrityError):db.execute(sql)

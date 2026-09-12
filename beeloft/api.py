@@ -76,7 +76,7 @@ def create_app(database_path):
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
                   status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','production_change'] = 'all'):
+                  kind: Literal['all','purchase_request','purchase_order','production_change'] = 'all'):
         return store.approvals(limit, offset, status, kind)
 
     @app.get("/api/stages", tags=["Production"])
@@ -118,7 +118,7 @@ def create_app(database_path):
 
     @app.get('/api/purchase-orders', tags=['Purchasing'])
     def purchase_orders(user: Actor, limit: Limit = 100, before: Annotated[int | None, Query(ge=1)] = None,
-                        status: Literal['all','issued','cancelled','closed'] = 'all',
+                        status: Literal['all','pending','issued','rejected','cancelled','closed'] = 'all',
                         request_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
         return store.purchase_orders(limit, before, status, request_id)
 
@@ -129,6 +129,10 @@ def create_app(database_path):
     @app.post('/api/purchase-orders', status_code=201, tags=['Purchasing'])
     def create_purchase_order(body: PurchaseOrderCreate, user: Actor, key: RequestKey):
         return store.create_purchase_order(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/decisions', status_code=201, tags=['Approvals'])
+    def decide_purchase_order(order_id: str, body: PurchaseRequestDecision, user: Actor, key: RequestKey):
+        return store.decide_purchase_order(order_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/purchase-orders/{order_id}/cancel', status_code=201, tags=['Purchasing'])
     def cancel_purchase_order(order_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
