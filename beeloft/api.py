@@ -492,6 +492,20 @@ def create_app(database_path):
         return store.demand_forecast(as_of or date.today(), window_days, horizon_days,
                                      query, marketplace, limit, offset)
 
+    @app.get('/api/replenishment-recommendations', tags=['Economics'])
+    def replenishment_recommendations(user: Actor, as_of: date | None = None,
+                                      window_days: Annotated[int, Query(ge=7, le=90)] = 28,
+                                      lead_time_days: Annotated[int, Query(ge=1, le=180)] = 14,
+                                      review_period_days: Annotated[int, Query(ge=1, le=180)] = 30,
+                                      safety_stock_days: Annotated[int, Query(ge=0, le=90)] = 7,
+                                      batch_multiple: Annotated[int, Query(ge=1, le=100_000)] = 1,
+                                      query: Annotated[str, Query(max_length=160)] = '',
+                                      marketplace: Annotated[str, Query(max_length=160)] = '',
+                                      limit: Limit = 100, offset: Offset = 0):
+        return store.replenishment_recommendations(as_of or date.today(), window_days,
+            lead_time_days, review_period_days, safety_stock_days, batch_multiple,
+            query, marketplace, limit, offset)
+
     @app.post('/api/marketplace-shipments/{shipment_id}/returns', status_code=201, tags=['Marketplace'])
     def create_marketplace_return(shipment_id: str, body: MarketplaceReturnCreate, user: Actor, key: RequestKey):
         return store.create_marketplace_return(shipment_id, body.model_dump(mode='json'), user, key)

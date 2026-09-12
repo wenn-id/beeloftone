@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
 from uuid import uuid4
 
@@ -1792,6 +1792,187 @@ class Store:
             'previous_weight':'0.30','total':total,'offset':offset,'limit':limit,
             'total_forecast_quantity':format(total_forecast.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f'),
             'items':page}
+
+    def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
+                                      review_period_days=30, safety_stock_days=7, batch_multiple=1,
+                                      query='', marketplace='', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        coverage_days=lead_time_days+review_period_days+safety_stock_days
+        planning_horizon_end=as_of_date+timedelta(days=coverage_days)
+        forecast=self.demand_forecast(as_of_date,window_days,coverage_days,query,marketplace,
+                                      1_000_000_000,0)
+        inventory={row['product_id']:row for row in self.finished_goods_inventory(1_000_000_000,0)}
+        product_ids={row['id'] for row in forecast['items']}
+        with self.transaction() as db:
+            production_rows=[dict(row) for row in db.execute('''SELECT l.order_id,l.product_id,l.quantity,o.due_date,
+                SUM(CASE WHEN b.stage NOT IN ('warehouse','reject') THEN b.quantity ELSE 0 END) AS pending
+                FROM order_lines l JOIN balances b ON b.line_id=l.id JOIN orders o ON o.id=l.order_id
+                GROUP BY l.id,l.order_id,l.product_id,l.quantity''')]
+            relevant_orders={row['order_id'] for row in production_rows
+                             if row['product_id'] in product_ids and row['pending']>0
+                             and row['due_date']<=planning_horizon_end.isoformat()}
+            inbound={}
+            for row in production_rows:
+                if (row['product_id'] in product_ids and row['pending']>0
+                        and row['due_date']<=planning_horizon_end.isoformat()):
+                    inbound[row['product_id']]=inbound.get(row['product_id'],0)+row['pending']
+
+            products=[]
+            for row in forecast['items']:
+                stock=inventory.get(row['id'],{})
+                available=stock.get('available_quantity',0)
+                pipeline=inbound.get(row['id'],0)
+                rate=Decimal(row['forecast_daily_rate'])
+                if rate:
+                    cover=Decimal(available)/rate
+                    cover_days=format(cover.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+                    stockout=(as_of_date+timedelta(days=int(cover.to_integral_value(
+                        rounding=ROUND_CEILING)))).isoformat()
+                    reorder_point=int((rate*(lead_time_days+safety_stock_days)).to_integral_value(
+                        rounding=ROUND_CEILING))
+                    target=int((rate*coverage_days).to_integral_value(rounding=ROUND_CEILING))
+                    shortfall=max(target-available-pipeline,0)
+                    recommended=((shortfall+batch_multiple-1)//batch_multiple)*batch_multiple
+                    if available<=0:
+                        risk='out_of_stock'
+                    elif cover<=lead_time_days:
+                        risk='stockout_before_replenishment'
+                    elif available<reorder_point:
+                        risk='below_safety_stock'
+                    else:
+                        risk='covered'
+                else:
+                    cover_days=stockout=None;reorder_point=target=recommended=0
+                    risk='insufficient_history' if row['history_status']=='no_history' else 'no_demand'
+                products.append(row | {'sellable_quantity':stock.get('sellable_quantity',0),
+                    'reserved_quantity':stock.get('reserved_quantity',0),'available_quantity':available,
+                    'hold_quantity':stock.get('hold_quantity',0),'damaged_quantity':stock.get('damaged_quantity',0),
+                    'inbound_production_quantity':pipeline,'inventory_position':available+pipeline,
+                    'days_of_cover':cover_days,'projected_stockout_date':stockout,
+                    'reorder_point_quantity':reorder_point,'target_stock_quantity':target,
+                    'batch_multiple':batch_multiple,'recommended_production_quantity':recommended,
+                    'stockout_risk':risk})
+
+            bom_cache={}
+            gaps={}
+            def current_bom(product_id):
+                if product_id not in bom_cache:
+                    bom_cache[product_id]=self._bom(db,product_id)
+                return bom_cache[product_id]
+            existing_required={}
+            required_by_order={}
+            scoped_lines=[row for row in production_rows if row['order_id'] in relevant_orders]
+            for line in scoped_lines:
+                bom=current_bom(line['product_id'])
+                if not bom['revision']:
+                    gaps[('active_production',line['product_id'])]={'kind':'missing_bom',
+                        'context':'active_production','product_id':line['product_id'],'sku':bom['sku']}
+                    continue
+                for component in bom['components']:
+                    key=(line['order_id'],component['material_id'])
+                    required_by_order[key]=required_by_order.get(key,0)+self._material_amount(
+                        component['quantity'],component['unit'])*line['quantity']
+            issued_by_order={}
+            for row in db.execute('''SELECT m.order_id,b.material_id,m.quantity_milli FROM material_movements m
+                JOIN material_batches b ON b.id=m.batch_id WHERE m.order_id IS NOT NULL'''):
+                if row['order_id'] in relevant_orders:
+                    key=(row['order_id'],row['material_id'])
+                    issued_by_order[key]=issued_by_order.get(key,0)-row['quantity_milli']
+            for key,required in required_by_order.items():
+                material_id=key[1]
+                remaining=max(required-issued_by_order.get(key,0),0)
+                existing_required[material_id]=existing_required.get(material_id,0)+remaining
+
+            recommended_required={}
+            for product in products:
+                quantity=product['recommended_production_quantity']
+                if not quantity:
+                    continue
+                bom=current_bom(product['id'])
+                if not bom['revision']:
+                    gaps[('recommended_production',product['id'])]={'kind':'missing_bom',
+                        'context':'recommended_production','product_id':product['id'],'sku':bom['sku']}
+                    continue
+                for component in bom['components']:
+                    material_id=component['material_id']
+                    recommended_required[material_id]=recommended_required.get(material_id,0)+self._material_amount(
+                        component['quantity'],component['unit'])*quantity
+
+            on_hand={}
+            for row in db.execute('''SELECT b.material_id,m.quantity_milli FROM material_movements m
+                JOIN material_batches b ON b.id=m.batch_id'''):
+                on_hand[row['material_id']]=on_hand.get(row['material_id'],0)+row['quantity_milli']
+            requested={};request_sources=[]
+            for request_id, in db.execute('SELECT id FROM purchase_requests'):
+                request=self._purchase_request(db,request_id)
+                active_po=any(po['status'] not in ('cancelled','rejected') for po in request['purchase_orders'])
+                if (request['status'] not in ('submitted','approved') or active_po
+                        or request['required_date']>planning_horizon_end.isoformat()):
+                    continue
+                request_sources.append({line['material_id'] for line in request['lines']})
+                for line in request['lines']:
+                    requested[line['material_id']]=requested.get(line['material_id'],0)+self._material_amount(
+                        line['quantity'],line['unit'])
+            ordered={};order_sources=[]
+            for order_id, in db.execute('SELECT id FROM purchase_orders'):
+                purchase_order=self._purchase_order(db,order_id)
+                if (purchase_order['status'] not in ('pending','issued')
+                        or purchase_order['expected_date']>planning_horizon_end.isoformat()):
+                    continue
+                active_lines=[line for line in purchase_order['lines'] if Decimal(line['remaining'])>0]
+                if active_lines:
+                    order_sources.append({line['material_id'] for line in active_lines})
+                for line in active_lines:
+                    ordered[line['material_id']]=ordered.get(line['material_id'],0)+self._material_amount(
+                        line['remaining'],line['unit'])
+
+            material_ids=set(existing_required)|set(recommended_required)
+            request_count=sum(bool(source&material_ids) for source in request_sources)
+            order_count=sum(bool(source&material_ids) for source in order_sources)
+            materials=[]
+            for material_id in material_ids:
+                material=dict(db.execute('SELECT code,name,unit FROM materials WHERE id=?',
+                                         (material_id,)).fetchone())
+                existing=existing_required.get(material_id,0)
+                new=recommended_required.get(material_id,0)
+                stock=on_hand.get(material_id,0)
+                pr=requested.get(material_id,0)
+                po=ordered.get(material_id,0)
+                purchase=max(existing+new-stock-pr-po,0)
+                materials.append({'material_id':material_id,**material,
+                    'existing_production_requirement':self._material_decimal(existing),
+                    'recommended_production_requirement':self._material_decimal(new),
+                    'total_requirement':self._material_decimal(existing+new),
+                    'on_hand_quantity':self._material_decimal(stock),
+                    'open_purchase_request_quantity':self._material_decimal(pr),
+                    'open_purchase_order_quantity':self._material_decimal(po),
+                    'recommended_purchase_quantity':self._material_decimal(purchase),
+                    'status':'purchase' if purchase else 'covered'})
+
+        priority={'out_of_stock':0,'stockout_before_replenishment':1,'below_safety_stock':2,
+                  'covered':3,'insufficient_history':4,'no_demand':5}
+        products.sort(key=lambda row:(priority[row['stockout_risk']],
+                      -row['recommended_production_quantity'],row['sku'].casefold(),row['id']))
+        materials.sort(key=lambda row:(row['status']!='purchase',row['code'].casefold(),row['material_id']))
+        total=len(products)
+        page=products[offset:offset+limit]
+        risks={name:sum(row['stockout_risk']==name for row in products) for name in priority}
+        return {'as_of':as_of_date.isoformat(),'planning_horizon_end':planning_horizon_end.isoformat(),
+            'window_days':window_days,
+            'lead_time_days':lead_time_days,'review_period_days':review_period_days,
+            'safety_stock_days':safety_stock_days,'coverage_days':coverage_days,
+            'batch_multiple':batch_multiple,'query':query.strip(),'marketplace':marketplace.strip() or None,
+            'method':'forecast_inventory_position','total':total,'offset':offset,'limit':limit,
+            'summary':{'total_products':total,**risks,
+                'recommended_production_quantity':sum(row['recommended_production_quantity'] for row in products),
+                'materials_to_purchase':sum(row['status']=='purchase' for row in materials),
+                'open_purchase_requests':request_count,'open_purchase_orders':order_count},
+            'coverage_complete':not gaps,'coverage_gaps':sorted(gaps.values(),key=lambda row:(row['sku'],row['context'])),
+            'product_recommendations':page,'material_purchase_recommendations':materials,
+            'forecast':{'history_start':forecast['history_start'],
+                'previous_period_end':forecast['previous_period_end'],
+                'recent_period_start':forecast['recent_period_start'],
+                'recent_weight':forecast['recent_weight'],'previous_weight':forecast['previous_weight']}}
 
     def _marketplace_return(self, db, return_id):
         row=db.execute('''SELECT t.*,u.name AS actor_name FROM marketplace_returns t
