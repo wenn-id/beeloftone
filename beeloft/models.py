@@ -334,6 +334,27 @@ class MarketplaceShipmentCreate(ReversalCreate):
     shipped_date: date
 
 
+class MarketplaceSaleSettlementCreate(ReversalCreate):
+    reference: Text
+    gross_revenue: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    seller_discount: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    customer_refund: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    marketplace_fee: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    shipping_cost: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    other_variable_cost: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    settled_date: date
+
+    @field_validator('gross_revenue','seller_discount','customer_refund','marketplace_fee',
+                     'shipping_cost','other_variable_cost')
+    @classmethod
+    def normalize_money(cls, value, info):
+        amount = Decimal(value)
+        minimum = Decimal('0.01') if info.field_name == 'gross_revenue' else Decimal('0')
+        if not minimum <= amount <= 1_000_000_000_000:
+            raise ValueError('Nominal harus antara Rp0 dan Rp1.000.000.000.000; omzet wajib positif.')
+        return format(amount, '.2f')
+
+
 class MarketplaceReturnCreate(ReversalCreate):
     reference: Text
     quantity: Quantity

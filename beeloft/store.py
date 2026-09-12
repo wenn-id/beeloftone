@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -103,6 +103,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("supplier_payment_approvals.sql").read_text(encoding="utf-8"))
             if version < 29:
                 db.executescript(Path(__file__).with_name("marketing_budget_approvals.sql").read_text(encoding="utf-8"))
+            if version < 30:
+                db.executescript(Path(__file__).with_name("marketplace_sale_settlements.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1510,6 +1512,12 @@ class Store:
             WHERE t.shipment_id=? AND NOT EXISTS(
               SELECT 1 FROM marketplace_return_reversals r WHERE r.return_id=t.id)''',(shipment_id,)).fetchone()[0]
         record['returnable_quantity']=0 if reversal else record['quantity']-record['returned_quantity']
+        settlement=db.execute('''SELECT e.id,e.reference FROM marketplace_sale_settlements e
+            WHERE e.shipment_id=? AND NOT EXISTS(
+              SELECT 1 FROM marketplace_sale_settlement_reversals r WHERE r.settlement_id=e.id)
+            ORDER BY e.sequence DESC LIMIT 1''',(shipment_id,)).fetchone()
+        record['sale_settlement_id']=settlement['id'] if settlement else None
+        record['sale_settlement_reference']=settlement['reference'] if settlement else None
         return record
 
     def marketplace_shipment(self, shipment_id):
@@ -1554,10 +1562,160 @@ class Store:
                 raise DomainError(409,'Catatan pengiriman sudah dikoreksi.')
             if shipment['returned_quantity']:
                 raise DomainError(409,'Koreksi semua retur aktif sebelum mengoreksi pengiriman.')
+            if shipment['sale_settlement_id']:
+                raise DomainError(409,'Koreksi settlement penjualan aktif sebelum mengoreksi pengiriman.')
             db.execute('''INSERT INTO marketplace_shipment_reversals(shipment_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(shipment_id,payload['reason'],actor['id'],now()))
             return self._marketplace_shipment(db,shipment_id)
         return self._write(actor,('admin',),key,'marketplace-shipment-reverse:'+shipment_id,payload,perform)
+
+    def _marketplace_sale_settlement(self, db, settlement_id):
+        row=db.execute('''SELECT e.*,u.name AS actor_name FROM marketplace_sale_settlements e
+            JOIN users u ON u.id=e.actor_id WHERE e.id=?''',(settlement_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Settlement penjualan tidak ditemukan.')
+        record=dict(row)
+        source=self._marketplace_shipment(db,record['shipment_id'])
+        for field in ('reference','order_id','order_reference','product_id','sku','product_name','color','size',
+                      'marketplace','external_order_reference','quantity','returned_quantity','carrier',
+                      'tracking_number','shipped_date','receipt_id','receipt_reference'):
+            record['shipment_reference' if field=='reference' else field]=source[field]
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM marketplace_sale_settlement_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.settlement_id=?''',(settlement_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        record['return_coverage_status']='current' if record['return_quantity']==source['returned_quantity'] else 'stale'
+        gross=record['gross_revenue_minor']
+        deductions=record['seller_discount_minor']+record['customer_refund_minor']
+        selling=record['marketplace_fee_minor']+record['shipping_cost_minor']+record['other_variable_cost_minor']
+        record['net_revenue_minor']=gross-deductions
+        record['variable_selling_cost_minor']=selling
+        record['contribution_before_production_minor']=gross-deductions-selling
+        for field in ('gross_revenue','seller_discount','customer_refund','marketplace_fee','shipping_cost',
+                      'other_variable_cost','net_revenue','variable_selling_cost','contribution_before_production'):
+            record[field]=format(Decimal(record.pop(field+'_minor'))/100,'.2f')
+        return record
+
+    def marketplace_sale_settlement(self, settlement_id):
+        with self.transaction() as db:
+            return self._marketplace_sale_settlement(db,settlement_id)
+
+    def marketplace_sale_settlements(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT e.id FROM marketplace_sale_settlements e
+                JOIN marketplace_shipments s ON s.id=e.shipment_id JOIN marketplace_packs k ON k.id=s.pack_id
+                JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id WHERE c.order_id=?
+                AND (? IS NULL OR e.sequence<?) ORDER BY e.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._marketplace_sale_settlement(db,row['id']) for row in ids]
+
+    def create_marketplace_sale_settlement(self, shipment_id, payload, actor, key):
+        def perform(db):
+            shipment=self._marketplace_shipment(db,shipment_id)
+            if shipment['status']!='shipped':
+                raise DomainError(409,'Pengiriman harus aktif sebelum settlement penjualan dicatat.')
+            if shipment['sale_settlement_id']:
+                raise DomainError(409,'Pengiriman sudah memiliki settlement penjualan aktif.')
+            if payload['settled_date']<shipment['shipped_date']:
+                raise DomainError(422,'Tanggal settlement tidak boleh sebelum tanggal kirim.')
+            settlement_id=str(uuid4())
+            money=lambda name:int(Decimal(payload[name])*100)
+            db.execute('''INSERT INTO marketplace_sale_settlements(id,reference,shipment_id,return_quantity,
+                gross_revenue_minor,seller_discount_minor,customer_refund_minor,marketplace_fee_minor,
+                shipping_cost_minor,other_variable_cost_minor,settled_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(settlement_id,payload['reference'],shipment_id,
+                shipment['returned_quantity'],money('gross_revenue'),money('seller_discount'),
+                money('customer_refund'),money('marketplace_fee'),money('shipping_cost'),
+                money('other_variable_cost'),payload['settled_date'],payload['reason'],actor['id'],now()))
+            return self._marketplace_sale_settlement(db,settlement_id)
+        return self._write(actor,('admin','operator'),key,'marketplace-sale-settlement:'+shipment_id,payload,perform)
+
+    def reverse_marketplace_sale_settlement(self, settlement_id, payload, actor, key):
+        def perform(db):
+            record=self._marketplace_sale_settlement(db,settlement_id)
+            if record['reversal']:
+                raise DomainError(409,'Settlement penjualan sudah dikoreksi.')
+            db.execute('''INSERT INTO marketplace_sale_settlement_reversals(settlement_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(settlement_id,payload['reason'],actor['id'],now()))
+            return self._marketplace_sale_settlement(db,settlement_id)
+        return self._write(actor,('admin',),key,'marketplace-sale-settlement-reverse:'+settlement_id,payload,perform)
+
+    def contribution_margin(self, order_id):
+        production=self.production_cost(order_id)
+        with self.transaction() as db:
+            order=self._order(db,order_id)
+            ids=db.execute('''SELECT s.id FROM marketplace_shipments s
+                JOIN marketplace_packs k ON k.id=s.pack_id JOIN marketplace_picks p ON p.id=k.pick_id
+                JOIN marketplace_reservations m ON m.id=p.reservation_id JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id WHERE c.order_id=?
+                AND NOT EXISTS(SELECT 1 FROM marketplace_shipment_reversals r WHERE r.shipment_id=s.id)
+                ORDER BY s.sequence''',(order_id,)).fetchall()
+            shipments=[]
+            totals={name:0 for name in ('gross_revenue_minor','seller_discount_minor','customer_refund_minor',
+                'marketplace_fee_minor','shipping_cost_minor','other_variable_cost_minor')}
+            gaps=[]
+            sold_quantity=0
+            for item in ids:
+                shipment=self._marketplace_shipment(db,item['id'])
+                sold_quantity+=shipment['quantity']-shipment['returned_quantity']
+                settlement=None
+                if shipment['sale_settlement_id']:
+                    settlement=self._marketplace_sale_settlement(db,shipment['sale_settlement_id'])
+                    for name in totals:
+                        totals[name]+=int(Decimal(settlement[name.removesuffix('_minor')])*100)
+                    if settlement['return_coverage_status']=='stale':
+                        gaps.append({'kind':'stale_return_coverage','shipment_id':shipment['id'],
+                            'shipment_reference':shipment['reference'],'recorded_return_quantity':settlement['return_quantity'],
+                            'current_return_quantity':shipment['returned_quantity']})
+                else:
+                    gaps.append({'kind':'missing_sales_settlement','shipment_id':shipment['id'],
+                        'shipment_reference':shipment['reference'],'quantity':shipment['quantity']})
+                shipments.append({'id':shipment['id'],'reference':shipment['reference'],'quantity':shipment['quantity'],
+                    'returned_quantity':shipment['returned_quantity'],'net_sold_quantity':shipment['quantity']-shipment['returned_quantity'],
+                    'marketplace':shipment['marketplace'],'external_order_reference':shipment['external_order_reference'],
+                    'settlement':settlement})
+            if not shipments:
+                gaps.append({'kind':'no_sales_shipments'})
+            if production['status']!='complete':
+                gaps.append({'kind':'incomplete_production_cost','coverage_gaps':production['coverage_gaps']})
+            if not production['finished_quantity']:
+                gaps.append({'kind':'no_finished_quantity'})
+
+            gross=totals['gross_revenue_minor']
+            net_revenue=gross-totals['seller_discount_minor']-totals['customer_refund_minor']
+            variable=totals['marketplace_fee_minor']+totals['shipping_cost_minor']+totals['other_variable_cost_minor']
+            before_production=net_revenue-variable
+            allocated=None
+            if production['status']=='complete' and production['finished_quantity']:
+                total_cost_minor=int(Decimal(production['total_cost'])*100)
+                allocated=int((Decimal(total_cost_minor)*sold_quantity/production['finished_quantity']).quantize(
+                    Decimal('1'),rounding=ROUND_HALF_UP))
+            margin=before_production-allocated if allocated is not None and not gaps else None
+            money=lambda value:format(Decimal(value)/100,'.2f')
+            rate=(format((Decimal(margin)/net_revenue*100).quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+                  if margin is not None and net_revenue>0 else None)
+            return {'order_id':order['id'],'order_reference':order['reference'],'order_title':order['title'],
+                'currency':'IDR','status':'complete' if not gaps else 'incomplete',
+                'finished_quantity':production['finished_quantity'],'shipped_quantity':sum(x['quantity'] for x in shipments),
+                'returned_quantity':sum(x['returned_quantity'] for x in shipments),'net_sold_quantity':sold_quantity,
+                'gross_revenue':money(gross),'seller_discount':money(totals['seller_discount_minor']),
+                'customer_refund':money(totals['customer_refund_minor']),'net_revenue':money(net_revenue),
+                'marketplace_fee':money(totals['marketplace_fee_minor']),'shipping_cost':money(totals['shipping_cost_minor']),
+                'other_variable_cost':money(totals['other_variable_cost_minor']),
+                'variable_selling_cost':money(variable),'contribution_before_production':money(before_production),
+                'allocated_production_cost':money(allocated) if allocated is not None else None,
+                'contribution_margin':money(margin) if margin is not None else None,
+                'contribution_margin_rate':rate,'production_cost':production,'shipments':shipments,
+                'coverage_gaps':gaps,'scope':['sales_settlements','active_shipments','active_returns','production_cost_allocation'],
+                'excluded_costs':['tax','payment_gateway_fee','advertising','fixed_overhead','return_handling','inventory_write_off']}
 
     def _marketplace_return(self, db, return_id):
         row=db.execute('''SELECT t.*,u.name AS actor_name FROM marketplace_returns t
