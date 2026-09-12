@@ -99,6 +99,41 @@ class InvestigationCreate(Input):
     batch_multiple: Annotated[int, Field(strict=True, ge=1, le=100_000)] = 1
 
 
+class AiActionProposalCreate(InvestigationCreate):
+    action_kind: Literal['create_production_order','create_purchase_request']
+    subject_id: Text
+    reference: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    title: Text | None = None
+    owner_id: Text | None = None
+    due_date: date | None = None
+    required_date: date | None = None
+    estimated_value: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)] | None = None
+
+    @model_validator(mode='after')
+    def action_fields(self):
+        if self.action_kind=='create_production_order':
+            if self.title is None or self.owner_id is None or self.due_date is None:
+                raise ValueError('Proposal order produksi memerlukan judul, PIC, dan target selesai.')
+            if self.required_date is not None or self.estimated_value is not None:
+                raise ValueError('Proposal order produksi tidak memakai tanggal kebutuhan atau estimasi PR.')
+        else:
+            if self.required_date is None or self.estimated_value is None:
+                raise ValueError('Proposal PR memerlukan tanggal kebutuhan dan estimasi nilai.')
+            if self.title is not None or self.owner_id is not None or self.due_date is not None:
+                raise ValueError('Proposal PR tidak memakai judul, PIC, atau target produksi.')
+            amount=Decimal(self.estimated_value)
+            if not 0 < amount <= 1_000_000_000_000:
+                raise ValueError('Estimasi total harus positif dan maksimal Rp1.000.000.000.000.')
+            self.estimated_value=format(amount,'.2f')
+        return self
+
+
+class AiActionProposalDecision(ReversalCreate):
+    status: Literal['approved','rejected','cancelled']
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

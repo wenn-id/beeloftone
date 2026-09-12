@@ -123,7 +123,7 @@ class PurchaseRequestTest(TestCase):
         self.assertEqual(self.client.get(route+'?limit=0').status_code,422)
         self.assertEqual(self.client.get(route+'/missing').status_code,404)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],30)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],31)
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("""INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
                     VALUES(?,'submitted','Repeat',?,'2026-10-01')""",(a['id'],self.admin['id']))

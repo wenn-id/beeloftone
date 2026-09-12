@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -77,8 +77,28 @@ def create_app(database_path):
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
                   status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change'] = 'all'):
+                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','ai_action'] = 'all'):
         return store.approvals(limit, offset, status, kind)
+
+    @app.get('/api/ai/action-proposals', tags=['AI Brain','Approvals'])
+    def ai_action_proposals(user: Actor, limit: Limit = 100,
+                            before: Annotated[int | None, Query(ge=1)] = None,
+                            status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
+        return store.ai_action_proposals(limit,before,status)
+
+    @app.post('/api/ai/action-proposals', status_code=201, tags=['AI Brain','Approvals'])
+    def create_ai_action_proposal(body: AiActionProposalCreate, user: Actor, key: RequestKey):
+        return store.create_ai_action_proposal(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/ai/action-proposals/{proposal_id}', tags=['AI Brain','Approvals'])
+    def ai_action_proposal(proposal_id: str, user: Actor):
+        return store.ai_action_proposal(proposal_id)
+
+    @app.post('/api/ai/action-proposals/{proposal_id}/decisions', status_code=201,
+              tags=['AI Brain','Approvals'])
+    def decide_ai_action_proposal(proposal_id: str, body: AiActionProposalDecision,
+                                  user: Actor, key: RequestKey):
+        return store.decide_ai_action_proposal(proposal_id,body.model_dump(mode='json'),user,key)
 
     @app.get('/api/marketing-budget-requests', tags=['Marketing','Approvals'])
     def marketing_budget_requests(user: Actor, limit: Limit = 100,

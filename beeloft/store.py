@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -105,6 +105,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("marketing_budget_approvals.sql").read_text(encoding="utf-8"))
             if version < 30:
                 db.executescript(Path(__file__).with_name("marketplace_sale_settlements.sql").read_text(encoding="utf-8"))
+            if version < 31:
+                db.executescript(Path(__file__).with_name("ai_action_proposals.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2256,25 +2258,27 @@ class Store:
                 ORDER BY p.sequence DESC LIMIT ?''', (before,before,order_id,order_id,status,status,limit)).fetchall()
             return [self._purchase_request(db, row[0]) for row in ids]
 
+    def _create_purchase_request(self, db, payload, actor):
+        if payload['order_id'] is not None and not db.execute('SELECT 1 FROM orders WHERE id=?', (payload['order_id'],)).fetchone():
+            raise DomainError(404, 'Order produksi tidak ditemukan.')
+        lines = []
+        for line in payload['lines']:
+            material = db.execute('SELECT code,name,unit FROM materials WHERE id=?', (line['material_id'],)).fetchone()
+            if not material:
+                raise DomainError(404, 'Bahan permintaan tidak ditemukan.')
+            self._material_amount(line['quantity'], material['unit'])
+            lines.append(line | dict(material))
+        request_id, timestamp = str(uuid4()), now()
+        db.execute('''INSERT INTO purchase_requests(id,reference,order_id,required_date,estimated_value_minor,lines,reason,actor_id,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)''', (request_id,payload['reference'],payload['order_id'],payload['required_date'],
+                int(Decimal(payload['estimated_value'])*100),json.dumps(lines),payload['reason'],actor['id'],timestamp))
+        db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
+            VALUES(?,'submitted',?,?,?)''', (request_id,payload['reason'],actor['id'],timestamp))
+        return self._purchase_request(db, request_id)
+
     def create_purchase_request(self, payload, actor, key):
-        def perform(db):
-            if payload['order_id'] is not None and not db.execute('SELECT 1 FROM orders WHERE id=?', (payload['order_id'],)).fetchone():
-                raise DomainError(404, 'Order produksi tidak ditemukan.')
-            lines = []
-            for line in payload['lines']:
-                material = db.execute('SELECT code,name,unit FROM materials WHERE id=?', (line['material_id'],)).fetchone()
-                if not material:
-                    raise DomainError(404, 'Bahan permintaan tidak ditemukan.')
-                self._material_amount(line['quantity'], material['unit'])
-                lines.append(line | dict(material))
-            request_id, timestamp = str(uuid4()), now()
-            db.execute('''INSERT INTO purchase_requests(id,reference,order_id,required_date,estimated_value_minor,lines,reason,actor_id,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?)''', (request_id,payload['reference'],payload['order_id'],payload['required_date'],
-                    int(Decimal(payload['estimated_value'])*100),json.dumps(lines),payload['reason'],actor['id'],timestamp))
-            db.execute('''INSERT INTO purchase_request_events(request_id,status,reason,actor_id,created_at)
-                VALUES(?,'submitted',?,?,?)''', (request_id,payload['reason'],actor['id'],timestamp))
-            return self._purchase_request(db, request_id)
-        return self._write(actor, ('admin','operator'), key, 'purchase-request', payload, perform)
+        return self._write(actor, ('admin','operator'), key, 'purchase-request', payload,
+                           lambda db:self._create_purchase_request(db,payload,actor))
 
     def decide_purchase_request(self, request_id, payload, actor, key):
         def perform(db):
@@ -2852,23 +2856,25 @@ class Store:
             return dict(order_id=order_id, reference=order['reference'], basis='latest_bom', complete=not missing,
                         sources=sources, missing_bom=missing, materials=sorted(rows,key=lambda r:(r['code'],r['material_id'])))
 
+    def _create_order(self, db, payload, actor):
+        owner = db.execute("SELECT role FROM users WHERE id=? AND active=1", (payload["owner_id"],)).fetchone()
+        if not owner or owner["role"] not in ("admin", "operator"):
+            raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
+        record = {"id": str(uuid4()), **{k: v for k, v in payload.items() if k != "lines"},
+                  "created_by": actor["id"], "created_at": now()}
+        db.execute("INSERT INTO orders VALUES(:id,:reference,:title,:owner_id,:due_date,:created_by,:created_at)", record)
+        for item in payload["lines"]:
+            if not db.execute("SELECT 1 FROM products WHERE id=?", (item["product_id"],)).fetchone():
+                raise DomainError(404, "SKU tidak ditemukan.")
+            line = str(uuid4())
+            db.execute("INSERT INTO order_lines VALUES(?,?,?,?)", (line, record["id"], item["product_id"], item["quantity"]))
+            db.executemany("INSERT INTO balances VALUES(?,?,?)", [
+                (line, stage, item["quantity"] if stage == "planned" else 0) for stage in STAGES])
+        return self._order(db, record["id"])
+
     def create_order(self, payload, actor, key):
-        def perform(db):
-            owner = db.execute("SELECT role FROM users WHERE id=? AND active=1", (payload["owner_id"],)).fetchone()
-            if not owner or owner["role"] not in ("admin", "operator"):
-                raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
-            record = {"id": str(uuid4()), **{k: v for k, v in payload.items() if k != "lines"},
-                      "created_by": actor["id"], "created_at": now()}
-            db.execute("INSERT INTO orders VALUES(:id,:reference,:title,:owner_id,:due_date,:created_by,:created_at)", record)
-            for item in payload["lines"]:
-                if not db.execute("SELECT 1 FROM products WHERE id=?", (item["product_id"],)).fetchone():
-                    raise DomainError(404, "SKU tidak ditemukan.")
-                line = str(uuid4())
-                db.execute("INSERT INTO order_lines VALUES(?,?,?,?)", (line, record["id"], item["product_id"], item["quantity"]))
-                db.executemany("INSERT INTO balances VALUES(?,?,?)", [
-                    (line, stage, item["quantity"] if stage == "planned" else 0) for stage in STAGES])
-            return self._order(db, record["id"])
-        return self._write(actor, ("admin",), key, "order", payload, perform)
+        return self._write(actor, ("admin",), key, "order", payload,
+                           lambda db:self._create_order(db,payload,actor))
 
     def _order(self, db, order_id):
         row = db.execute("SELECT o.*,u.name AS owner_name FROM orders o JOIN users u ON u.id=o.owner_id WHERE o.id=?", (order_id,)).fetchone()
@@ -3012,6 +3018,108 @@ class Store:
             return self._production_change_request(db, request_id)
         return self._write(actor, ("admin","operator"), key, "production-change-request-decision:"+request_id, payload, perform)
 
+    @staticmethod
+    def _recommendation_fingerprint(recommendation):
+        return hashlib.sha256(json.dumps(recommendation,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+    def _ai_recommendation(self, source_payload, action_kind, subject_id):
+        from beeloft.brain import investigate
+        report=investigate(self,source_payload)
+        subject_key='product_id' if action_kind=='create_production_order' else 'material_id'
+        recommendation=next((row for row in report['recommendations']
+            if row['kind']==action_kind and row['preview'].get(subject_key)==subject_id),None)
+        if recommendation is None:
+            raise DomainError(409,'Rekomendasi tidak lagi tersedia. Jalankan investigasi baru sebelum mengajukan tindakan.')
+        return recommendation
+
+    def _ai_action_proposal(self, db, proposal_id):
+        row=db.execute('''SELECT p.*,u.name AS actor_name FROM ai_action_proposals p
+            JOIN users u ON u.id=p.actor_id WHERE p.id=?''',(proposal_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Proposal tindakan AI tidak ditemukan.')
+        record=dict(row)
+        for field in ('source_payload','recommendation','action_payload'):
+            record[field]=json.loads(record[field])
+        record['history']=[dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
+            FROM ai_action_proposal_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.proposal_id=? ORDER BY e.sequence DESC''',(proposal_id,))]
+        record['status']=record['history'][0]['status']
+        record['revision']=record['history'][0]['sequence']
+        record['executed_entity_type']=record['history'][0]['executed_entity_type']
+        record['executed_entity_id']=record['history'][0]['executed_entity_id']
+        return record
+
+    def create_ai_action_proposal(self, payload, actor, key):
+        source_keys=('question','as_of','window_days','lead_time_days','review_period_days',
+                     'safety_stock_days','batch_multiple')
+        source_payload={name:payload[name] for name in source_keys}
+        def perform(db):
+            recommendation=self._ai_recommendation(source_payload,payload['action_kind'],payload['subject_id'])
+            if payload['action_kind']=='create_production_order':
+                action_payload={'reference':payload['reference'],'title':payload['title'],
+                    'owner_id':payload['owner_id'],'due_date':payload['due_date'],
+                    'lines':[{'product_id':payload['subject_id'],
+                              'quantity':recommendation['preview']['quantity']}]}
+            else:
+                action_payload={'reference':payload['reference'],'order_id':None,
+                    'required_date':payload['required_date'],'estimated_value':payload['estimated_value'],
+                    'reason':payload['reason'],'lines':[{'material_id':payload['subject_id'],
+                        'quantity':recommendation['preview']['quantity']}]}
+            fingerprint=self._recommendation_fingerprint(recommendation)
+            if payload['action_kind']=='create_production_order':
+                if db.execute('SELECT 1 FROM orders WHERE reference=?',(payload['reference'],)).fetchone():
+                    raise DomainError(409,'Referensi order produksi sudah digunakan.')
+            elif db.execute('SELECT 1 FROM purchase_requests WHERE reference=?',(payload['reference'],)).fetchone():
+                raise DomainError(409,'Referensi PR sudah digunakan.')
+            proposal_id,timestamp=str(uuid4()),now()
+            db.execute('''INSERT INTO ai_action_proposals(id,action_kind,subject_id,reference,source_payload,
+                recommendation,recommendation_fingerprint,action_payload,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(proposal_id,payload['action_kind'],payload['subject_id'],
+                payload['reference'],json.dumps(source_payload),json.dumps(recommendation),fingerprint,
+                json.dumps(action_payload),payload['reason'],actor['id'],timestamp))
+            db.execute('''INSERT INTO ai_action_proposal_events(proposal_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)''',(proposal_id,payload['reason'],actor['id'],timestamp))
+            return self._ai_action_proposal(db,proposal_id)
+        return self._write(actor,('admin','operator'),key,'ai-action-proposal',payload,perform)
+
+    def ai_action_proposal(self, proposal_id):
+        with self.transaction() as db:
+            return self._ai_action_proposal(db,proposal_id)
+
+    def ai_action_proposals(self, limit=100, before=None, status='all'):
+        with self.transaction() as db:
+            ids=db.execute('''SELECT p.id FROM ai_action_proposals p WHERE (? IS NULL OR p.sequence<?)
+                AND (?='all' OR (SELECT status FROM ai_action_proposal_events e
+                    WHERE e.proposal_id=p.id ORDER BY e.sequence DESC LIMIT 1)=?)
+                ORDER BY p.sequence DESC LIMIT ?''',(before,before,status,status,limit)).fetchall()
+            return [self._ai_action_proposal(db,row['id']) for row in ids]
+
+    def decide_ai_action_proposal(self, proposal_id, payload, actor, key):
+        def perform(db):
+            proposal=self._ai_action_proposal(db,proposal_id)
+            role=db.execute('SELECT role FROM users WHERE id=?',(actor['id'],)).fetchone()[0]
+            if role!='admin' and not (payload['status']=='cancelled' and proposal['actor_id']==actor['id']):
+                raise DomainError(403,'Hanya admin memutuskan proposal AI; pemohon boleh membatalkan proposalnya.')
+            if proposal['revision']!=payload['expected_revision'] or proposal['status']!='submitted':
+                raise DomainError(409,'Proposal tindakan AI sudah diputuskan. Buka ulang rinciannya.')
+            executed_type=executed_id=None
+            if payload['status']=='approved':
+                current=self._ai_recommendation(proposal['source_payload'],proposal['action_kind'],proposal['subject_id'])
+                if self._recommendation_fingerprint(current)!=proposal['recommendation_fingerprint']:
+                    raise DomainError(409,'Rekomendasi sudah berubah. Tolak proposal ini dan jalankan investigasi baru.')
+                if proposal['action_kind']=='create_production_order':
+                    executed=self._create_order(db,proposal['action_payload'],actor)
+                    executed_type='production_order'
+                else:
+                    executed=self._create_purchase_request(db,proposal['action_payload'],actor)
+                    executed_type='purchase_request'
+                executed_id=executed['id']
+            db.execute('''INSERT INTO ai_action_proposal_events(proposal_id,status,reason,actor_id,
+                executed_entity_type,executed_entity_id,created_at) VALUES(?,?,?,?,?,?,?)''',
+                (proposal_id,payload['status'],payload['reason'],actor['id'],executed_type,executed_id,now()))
+            return self._ai_action_proposal(db,proposal_id)
+        return self._write(actor,('admin','operator'),key,'ai-action-proposal-decision:'+proposal_id,payload,perform)
+
     def approvals(self, limit=100, offset=0, status="pending", kind="all"):
         with self.transaction() as db:
             items = []
@@ -3089,6 +3197,23 @@ class Store:
                         "old_due_date":request["old_due_date"],"new_due_date":request["new_due_date"],
                         "old_owner_name":request["old_owner_name"],"new_owner_name":request["new_owner_name"],
                         "stale":request["stale"]}})
+            if kind in ('all','ai_action'):
+                for row in db.execute('SELECT id FROM ai_action_proposals'):
+                    proposal=self._ai_action_proposal(db,row['id'])
+                    current_status='pending' if proposal['status']=='submitted' else proposal['status']
+                    if status not in ('all',current_status):
+                        continue
+                    action_label='Buat order produksi' if proposal['action_kind']=='create_production_order' else 'Buat purchase request'
+                    items.append({'id':proposal['id'],'kind':'ai_action','department':'AI Brain',
+                        'status':current_status,'reference':proposal['reference'],'title':action_label,
+                        'amount':proposal['action_payload'].get('estimated_value'),'currency':'IDR' if
+                            proposal['action_kind']=='create_purchase_request' else None,
+                        'reason':proposal['reason'],'actor_id':proposal['actor_id'],
+                        'actor_name':proposal['actor_name'],'created_at':proposal['created_at'],
+                        'context':{'action_kind':proposal['action_kind'],'subject_id':proposal['subject_id'],
+                            'recommendation_title':proposal['recommendation']['title'],
+                            'executed_entity_type':proposal['executed_entity_type'],
+                            'executed_entity_id':proposal['executed_entity_id']}})
             items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
             return items[offset:offset+limit]
 
