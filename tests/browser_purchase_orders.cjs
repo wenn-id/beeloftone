@@ -61,10 +61,19 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).waitFor();
   await page.reload();await login(admin);
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
-  await page.getByText('PO-QA-001 · Aktif',{exact:true}).waitFor();
+  await page.getByText('PO-QA-001 · Menunggu keputusan',{exact:true}).waitFor();
   await page.unroute('**/api/purchase-orders');
   assert.equal((await apiGet('/api/purchase-orders')).length,1);
   assert.deepEqual(await apiGet('/api/material-batches'),before);
+  assert.equal(await page.getByRole('button',{name:'Terima bahan dari PO',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Catat kedatangan untuk QC',exact:true}).count(),0);
+  await page.locator('dialog').getByRole('button',{name:'Inbox approval',exact:true}).click();
+  await page.locator('#approval-list').getByText('Purchasing · PO',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Rincian approval PO-QA-001',exact:true}).click();
+  await page.getByRole('button',{name:'Setujui penerbitan PO',exact:true}).click();
+  await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH harga dan pemasok diverifikasi');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('PO-QA-001 · Aktif',{exact:true}).waitFor();
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('dialog').screenshot({path:path.join(artifacts,'beeloft-purchase-order.png')});
   for(const width of [320,390,768]){
@@ -109,5 +118,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Batalkan PR',exact:true}).waitFor();
   assert.equal((await apiGet('/api/purchase-requests/'+pr.id)).status,'approved');
   await page.keyboard.press('Escape');
-  console.log('PO browser QA PASS: supplier, approved PR, exact live total/budget, lost-response reload retry, roles, source links, cancel, mobile/200%.');
+  console.log('PO approval browser QA PASS: supplier, approved PR, pending inbox, receipt/QC lock, approval audit, exact retry, roles, cancel, mobile/200%.');
 };

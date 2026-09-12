@@ -9,7 +9,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const supplier=(await apiGet('/api/suppliers'))[0];
   let pr=await post('/api/purchase-requests',{reference:'PR-QC',required_date:'2026-12-01',estimated_value:'100',reason:'CONTOH QC',lines:[{material_id:m.id,quantity:'3.125'}]},'qc-pr');
   pr=await post('/api/purchase-requests/'+pr.id+'/decisions',{status:'approved',expected_revision:pr.revision,reason:'CONTOH setuju'},'qc-approved');
-  const po=await post('/api/purchase-orders',{reference:'PO-QC',request_id:pr.id,expected_revision:pr.revision,supplier_id:supplier.id,expected_date:'2026-12-02',terms:'CONTOH tunai',reason:'CONTOH pembelian',prices:[{material_id:m.id,unit_price:'10'}]},'qc-po');
+  let po=await post('/api/purchase-orders',{reference:'PO-QC',request_id:pr.id,expected_revision:pr.revision,supplier_id:supplier.id,expected_date:'2026-12-02',terms:'CONTOH tunai',reason:'CONTOH pembelian',prices:[{material_id:m.id,unit_price:'10'}]},'qc-po');
+  po=await post('/api/purchase-orders/'+po.id+'/decisions',{status:'approved',expected_revision:po.revision,reason:'CONTOH penerbitan disetujui'},'qc-po-approved');
   async function openPO(){
     await page.getByRole('button',{name:'Permintaan pembelian',exact:true}).click();
     await page.getByRole('button',{name:'Daftar PO',exact:true}).click();

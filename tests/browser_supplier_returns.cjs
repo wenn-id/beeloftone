@@ -9,7 +9,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   let pr=await post('/api/purchase-requests',{reference:'PR-RETUR',required_date:'2026-12-01',estimated_value:'100',reason:'CONTOH retur',lines:[{material_id:material.id,quantity:'3'}]},'return-pr');
   pr=await post('/api/purchase-requests/'+pr.id+'/decisions',{status:'approved',expected_revision:pr.revision,reason:'CONTOH disetujui'},'return-approve');
   const supplier=(await apiGet('/api/suppliers'))[0];
-  const po=await post('/api/purchase-orders',{reference:'PO-RETUR',request_id:pr.id,expected_revision:pr.revision,supplier_id:supplier.id,expected_date:'2026-12-02',terms:'CONTOH tunai',reason:'CONTOH pembelian',prices:[{material_id:material.id,unit_price:'10'}]},'return-po');
+  let po=await post('/api/purchase-orders',{reference:'PO-RETUR',request_id:pr.id,expected_revision:pr.revision,supplier_id:supplier.id,expected_date:'2026-12-02',terms:'CONTOH tunai',reason:'CONTOH pembelian',prices:[{material_id:material.id,unit_price:'10'}]},'return-po');
+  po=await post('/api/purchase-orders/'+po.id+'/decisions',{status:'approved',expected_revision:po.revision,reason:'CONTOH penerbitan disetujui'},'return-po-approved');
   const intake=await post('/api/purchase-orders/'+po.id+'/qc-intakes',{material_id:material.id,reference:'QC-RETUR',location:'Hold',received_date:'2026-12-02',quantity:'3',reason:'CONTOH tiba'},'return-intake');
   await post('/api/qc-intakes/'+intake.id+'/decisions',{kind:'accept',quantity:'1',reference:'READY-RETUR',location:'Rak siap',reason:'CONTOH layak'},'return-accept');
   await post('/api/qc-intakes/'+intake.id+'/decisions',{kind:'reject',quantity:'2',reason:'CONTOH cacat'},'return-reject');
