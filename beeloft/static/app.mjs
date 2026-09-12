@@ -384,7 +384,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    products:productsDialog,'demand-forecast':demandForecastDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -1764,6 +1764,50 @@ async function contributionMarginDialog(orderId) {
       <p class="hint">Cakupan biaya jual: diskon penjual, refund pelanggan, fee marketplace, biaya kirim penjual, dan biaya variabel lain. Pajak, payment gateway terpisah, iklan, overhead tetap, penanganan retur, dan write-off stok belum dihitung.</p>`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="contribution-margin" data-id="${e(orderId)}">Coba lagi</button>`;}
 }
+
+function demandForecastDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Forecast demand per SKU',`<form id="forecast-form">
+    <p class="hint">Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang tiap periode (hari)','number','required min="7" max="90" step="1" value="28"')}
+      ${field('horizon_days','Horizon forecast (hari)','number','required min="1" max="180" step="1" value="30"')}
+      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
+      <label class="full">Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="forecast-submit" type="submit">Hitung forecast</button></div>
+  </form><p id="forecast-message" class="state" role="status" hidden></p><div id="forecast-results"></div>`);
+  const modal=dialogVersion,version=epoch,form=$('forecast-form'),button=$('forecast-submit');
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async()=>{
+    if(!current())return;
+    button.disabled=true;button.textContent='Menghitung…';
+    message('forecast-message','Menghitung demand dari shipment dan retur aktif…');
+    $('forecast-results').replaceChildren();
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','100');params.set('offset','0');
+      const report=await api.get('/api/demand-forecast?'+params);
+      if(!current())return;
+      message('forecast-message','');
+      const trends={new:'Demand baru',up:'Naik',down:'Turun',flat:'Stabil'};
+      $('forecast-results').innerHTML=`<p class="form-info">Riwayat ${date(report.history_start)}–${date(report.as_of)}<br>Periode lama berakhir ${date(report.previous_period_end)} · periode terbaru mulai ${date(report.recent_period_start)}<br>Horizon ${n(report.horizon_days)} hari · total forecast ${n(Number(report.total_forecast_quantity))} pcs</p>
+        <p class="hint">Hasil berupa estimasi desimal. Angka ini belum memperhitungkan stok tersedia, stok dalam perjalanan, lead time, MOQ, atau safety stock.</p>
+        ${report.items.length?report.items.map(row=>`<article class="material-event" data-forecast-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${n(Number(row.forecast_quantity))} pcs</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><p class="status-label ${row.history_status==='no_history'?'late':''}">${row.history_status==='no_history'?'Belum ada riwayat demand':e(trends[row.trend])+(row.trend_percent!==null?' '+e(row.trend_percent)+'%':'')}</p><dl class="requirement-values"><div><dt>Periode sebelumnya</dt><dd>${n(row.previous_net_demand)} pcs neto</dd></div><div><dt>Periode terbaru</dt><dd>${n(row.recent_net_demand)} pcs neto</dd></div><div><dt>Rata-rata historis</dt><dd>${n(Number(row.historical_daily_rate))} pcs/hari</dd></div><div><dt>Rate forecast</dt><dd>${n(Number(row.forecast_daily_rate))} pcs/hari</dd></div></dl><p class="hint">Shipment ${n(row.shipment_count)} · retur lama ${n(row.previous_returned_quantity)} pcs · retur terbaru ${n(row.recent_returned_quantity)} pcs${row.marketplaces.length?' · '+e(row.marketplaces.join(', ')):''}</p></article>`).join(''):'<p class="state">Tidak ada SKU yang cocok dengan filter.</p>'}
+        ${report.total>report.items.length?`<p class="hint">Menampilkan ${n(report.items.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</p>`:''}`;
+    }catch(error){
+      if(current()){
+        message('forecast-message',error.message,true);
+        $('forecast-message').insertAdjacentHTML('beforeend','<br><button id="forecast-retry" type="button">Coba lagi</button>');
+        $('forecast-retry').onclick=load;
+      }
+    }finally{if(current()){button.disabled=false;button.textContent='Hitung forecast';}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load();};
+}
+$('demand-forecast').onclick=demandForecastDialog;
 $('materials').onclick = showMaterials;
 $('materials-back').onclick = showBoard;
 $('materials-refresh').onclick = () => loadMaterials();
