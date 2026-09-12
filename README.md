@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.37.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand per SKU, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
+Pelacakan produksi internal, versi 0.38.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
 
 ## Coba di Windows
 
@@ -1428,3 +1428,35 @@ sebuah koreksi dicatat pada masa lalu.
 
 Rencana: [demand forecast plan](docs/demand-forecast-plan.md).
 Bukti pengujian: [demand forecast verification](docs/demand-forecast-verification.md).
+
+## Risiko stockout dan rekomendasi pembelian (v0.38)
+
+Pilih **Rekomendasi stok** untuk membandingkan forecast demand dengan stok jual, produksi berjalan,
+lead time, periode review, safety stock, dan kelipatan batch. Sistem menampilkan days of cover,
+estimasi tanggal stockout, reorder point, target stok, serta jumlah produksi baru yang disarankan untuk
+setiap SKU.
+
+Stok tersedia adalah barang sellable yang belum terreservasi. Estimasi stockout hanya memakai stok
+tersedia agar risiko jangka pendek tetap terlihat. Inventory position untuk rekomendasi produksi
+menambahkan order produksi yang masih berada di planned/WIP dan jatuh tempo di dalam horizon. Target
+stok adalah pembulatan ke atas demand selama lead time + review period + safety stock. Kekurangan
+terhadap inventory position dibulatkan ke kelipatan batch yang dipilih.
+
+Rekomendasi produksi baru diterjemahkan menjadi kebutuhan bahan memakai BOM terbaru. Laporan juga
+memasukkan sisa kebutuhan order produksi yang berjalan, lalu mengurangi stok bahan, PR terbuka, dan
+sisa PO terbuka yang tanggal kebutuhannya berada di dalam horizon. Produk tanpa riwayat demand atau
+BOM ditandai eksplisit agar sistem tidak mengubah data yang hilang menjadi rekomendasi nol yang
+terlihat pasti.
+
+API terkait: `GET /api/replenishment-recommendations`. Parameter `as_of`, `window_days`,
+`lead_time_days`, `review_period_days`, `safety_stock_days`, `batch_multiple`, `query`, `marketplace`,
+`limit`, dan `offset` tersedia. Default memakai lead time 14 hari, review 30 hari, safety stock 7
+hari, serta batch 1 pcs. Schema tetap versi 30 karena fitur ini adalah read model.
+
+Angka merupakan dukungan keputusan dan belum membuat order produksi atau PR secara otomatis. Tanggal
+selesai produksi, kapasitas, harga, supplier, MOQ bahan, kalender kerja, promosi, musiman, dan data
+eksternal marketplace belum menentukan hasil. `as_of` membatasi histori demand; stok dan pipeline
+memakai posisi ledger aktif saat laporan dimuat.
+
+Rencana: [stockout and purchase recommendations plan](docs/stockout-purchase-recommendations-plan.md).
+Bukti pengujian: [stockout and purchase recommendations verification](docs/stockout-purchase-recommendations-verification.md).
