@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.38.0"
+    "version": "0.39.0"
   },
   "paths": {
     "/health": {
@@ -434,6 +434,50 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/ai/investigate": {
+      "post": {
+        "tags": [
+          "AI Brain"
+        ],
+        "summary": "Ai Investigate",
+        "operationId": "ai_investigate_api_ai_investigate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestigationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -9584,6 +9628,62 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InvestigationCreate": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 2,
+            "title": "Question"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 7.0,
+            "title": "Window Days",
+            "default": 28
+          },
+          "lead_time_days": {
+            "type": "integer",
+            "maximum": 180.0,
+            "minimum": 1.0,
+            "title": "Lead Time Days",
+            "default": 14
+          },
+          "review_period_days": {
+            "type": "integer",
+            "maximum": 180.0,
+            "minimum": 1.0,
+            "title": "Review Period Days",
+            "default": 30
+          },
+          "safety_stock_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 0.0,
+            "title": "Safety Stock Days",
+            "default": 7
+          },
+          "batch_multiple": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Batch Multiple",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "InvestigationCreate"
       },
       "IssueCreate": {
         "properties": {

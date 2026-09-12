@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.38.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
+Pelacakan produksi internal, versi 0.39.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, serta investigasi bisnis dengan pertanyaan bahasa Indonesia.
 
 ## Coba di Windows
 
@@ -1460,3 +1460,23 @@ memakai posisi ledger aktif saat laporan dimuat.
 
 Rencana: [stockout and purchase recommendations plan](docs/stockout-purchase-recommendations-plan.md).
 Bukti pengujian: [stockout and purchase recommendations verification](docs/stockout-purchase-recommendations-verification.md).
+
+## Investigasi bisnis dengan bahasa natural (v0.39)
+
+Pilih **Tanya Beeloft** dari navigasi utama lalu ajukan pertanyaan tentang kondisi produksi, risiko
+stockout, approval tertunda, margin kontribusi, atau prioritas bisnis. Sistem mengenali intent dengan
+aturan lokal, mencari SKU atau referensi order yang disebut, lalu menyusun jawaban, fakta pendukung,
+temuan, rekomendasi, sumber, dan batas analisis dari read model yang sudah tersedia.
+
+Analisis berjalan sepenuhnya di proses aplikasi. Pertanyaan dan data ledger tidak dikirim ke model
+atau layanan eksternal. Endpoint `POST /api/ai/investigate` bersifat hanya baca walaupun memakai body
+JSON untuk membawa pertanyaan dan asumsi perencanaan. Semua role dapat memakai fitur ini karena hak
+bacanya sama dengan laporan sumber.
+
+Rekomendasi selalu diberi `approval_required: true` dan `executable: false`. Versi ini tidak membuat
+order produksi, PR, keputusan approval, atau transaksi lain. Pengguna tetap harus memeriksa bukti dan
+menjalankan workflow domain yang sesuai. Pemetaan bahasa masih berbasis kata kunci; pertanyaan ambigu
+dapat masuk kategori yang salah.
+
+Rencana: [AI investigation plan](docs/ai-investigation-plan.md).
+Bukti pengujian: [AI investigation verification](docs/ai-investigation-verification.md).
