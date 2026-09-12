@@ -384,7 +384,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    products:productsDialog,'ai-brain':aiInvestigationDialog,'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -1764,6 +1764,72 @@ async function contributionMarginDialog(orderId) {
       <p class="hint">Cakupan biaya jual: diskon penjual, refund pelanggan, fee marketplace, biaya kirim penjual, dan biaya variabel lain. Pajak, payment gateway terpisah, iklan, overhead tetap, penanganan retur, dan write-off stok belum dihitung.</p>`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="contribution-margin" data-id="${e(orderId)}">Coba lagi</button>`;}
 }
+
+function aiInvestigationDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Tanya Beeloft',`<form id="ai-form">
+    <p class="hint">Ajukan pertanyaan tentang produksi, stok, approval, margin, atau prioritas bisnis. Analisis berjalan lokal dan hanya membaca ledger Beeloft.</p>
+    <div class="actions ai-prompts" aria-label="Contoh pertanyaan">
+      <button type="button" data-ai-question="SKU apa yang berisiko stockout?">Risiko stockout</button>
+      <button type="button" data-ai-question="Apa yang menunggu approval?">Approval tertunda</button>
+      <button type="button" data-ai-question="Order produksi mana yang terlambat?">Produksi terlambat</button>
+      <button type="button" data-ai-question="Bagaimana kondisi margin?">Kondisi margin</button>
+      <button type="button" data-ai-question="Apa prioritas hari ini?">Prioritas hari ini</button>
+    </div>
+    <label>Pertanyaan bisnis<textarea id="ai-question" name="question" required minlength="2" maxlength="1000" placeholder="Contoh: SKU COST-UI akan kehabisan stok kapan?"></textarea></label>
+    <details class="ai-assumptions"><summary>Asumsi analisis</summary><div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang window demand (hari)','number','required min="7" max="90" step="1" value="28"')}
+      ${field('lead_time_days','Lead time replenishment (hari)','number','required min="1" max="180" step="1" value="14"')}
+      ${field('review_period_days','Periode review stok (hari)','number','required min="1" max="180" step="1" value="30"')}
+      ${field('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')}
+      ${field('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"')}
+    </div></details>
+    <div class="form-actions"><button class="primary" id="ai-submit" type="submit">Analisis pertanyaan</button></div>
+  </form><p id="ai-message" class="state" role="status" hidden></p><div id="ai-results"></div>`);
+  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit');
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  $('ai-question').focus();
+  document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
+    $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();
+  });
+  const load=async()=>{
+    if(!current())return;
+    button.disabled=true;button.textContent='Menganalisis…';
+    message('ai-message','Membaca ledger produksi, stok, approval, dan margin…');
+    $('ai-results').replaceChildren();
+    try{
+      const raw=Object.fromEntries(new FormData(form));
+      for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
+      const report=await api.post('/api/ai/investigate',raw);
+      if(!current())return;
+      message('ai-message','');
+      const intents={overview:'Ringkasan bisnis',production:'Kondisi produksi',stockout:'Risiko stockout',approvals:'Antrean approval',margin:'Margin kontribusi'};
+      const confidence={high:'tinggi',medium:'sedang',low:'rendah'};
+      const severity={critical:'Kritis',high:'Tinggi',medium:'Sedang',info:'Informasi'};
+      const unit={sku:'SKU',order:'order',issue:'kendala',item:'item',material:'bahan',pcs:'pcs'};
+      const factValue=row=>row.unit==='IDR'?rupiah(String(row.value)):`${n(Number(row.value))} ${unit[row.unit]||row.unit}`;
+      const focus=[...report.focus.products.map(row=>row.sku),...report.focus.orders.map(row=>row.reference)];
+      const facts=report.facts.map(row=>`<div><dt>${e(row.label)}</dt><dd>${e(factValue(row))}</dd></div>`).join('');
+      const findings=report.findings.map(row=>`<article class="material-event" data-ai-finding="${e(row.severity)}"><p class="status-label ${['critical','high'].includes(row.severity)?'late':row.severity==='info'?'done':''}">${e(severity[row.severity]||row.severity)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Sumber: ${e(row.source)}</p></article>`).join('');
+      const recommendations=report.recommendations.map(row=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dapat dijalankan dari workspace ini · sumber ${e(row.source)}</p></article>`).join('');
+      $('ai-results').innerHTML=`<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
+        <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
+        <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
+        <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
+        <details><summary>Batas analisis</summary>${report.limitations.map(item=>`<p class="hint">${e(item)}</p>`).join('')}</details>`;
+    }catch(error){
+      if(current()){
+        message('ai-message',error.message,true);
+        $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button">Coba lagi</button>');
+        $('ai-retry').onclick=load;
+      }
+    }finally{if(current()){button.disabled=false;button.textContent='Analisis pertanyaan';}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load();};
+}
+$('ai-brain').onclick=aiInvestigationDialog;
 
 function demandForecastDialog() {
   if(guardPending())return;

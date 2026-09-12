@@ -20,7 +20,15 @@ const denied = new Api(async () => new Response(JSON.stringify({detail: 'Tidak d
 await assert.rejects(denied.get('/api/orders'), error => error.status === 403 && !error.uncertain);
 const invalid = new Api(async () => new Response(JSON.stringify({detail: [{loc: ['body', 'quantity'], msg: 'Invalid quantity'}]}), {status: 422}));
 await assert.rejects(invalid.get('/api/orders'), error => error.message.includes('quantity'));
-console.log('Client checks PASS: escaping, date, exact retry after uncertain response, auth header, structured errors.');
+const readPosts=[];
+const reader=new Api(async(path,options)=>{readPosts.push({path,options});throw new TypeError('Offline');});
+reader.key='read-key';
+await assert.rejects(reader.post('/api/ai/investigate',{question:'Apa prioritas hari ini?'}),
+  error=>error.uncertain===false&&error.message.startsWith('Data belum dapat dimuat'));
+assert.equal(readPosts[0].options.method,'POST');
+assert.equal(readPosts[0].options.headers['Idempotency-Key'],undefined);
+assert.equal(readPosts[0].options.headers['Content-Type'],'application/json');
+console.log('Client checks PASS: escaping, date, exact write retry, read-only POST, auth header, structured errors.');
 const exported = new Api(async (path, options) => {
   assert.equal(options.headers['X-API-Key'],'test-csv-key');
   return new Response('ID,Catatan\r\n1,"Uji, CSV"\r\n',{headers:{'Content-Type':'text/csv'}});

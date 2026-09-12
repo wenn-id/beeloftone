@@ -16,6 +16,7 @@ export class Api {
   constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; }
   transaction(path, body) { return {path, body: JSON.stringify(body), key: crypto.randomUUID()}; }
   get(path) { return this.request(path); }
+  post(path, body) { return this.request(path, {body:JSON.stringify(body), readOnly:true}); }
   download(path) { return this.request(path, null, true); }
   save(transaction) { return this.request(transaction.path, transaction); }
   async request(path, transaction, download = false) {
@@ -23,7 +24,10 @@ export class Api {
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const headers = {'X-API-Key': this.key};
-      if (transaction) Object.assign(headers, {'Content-Type':'application/json', 'Idempotency-Key': transaction.key});
+      if (transaction) {
+        headers['Content-Type'] = 'application/json';
+        if (transaction.key) headers['Idempotency-Key'] = transaction.key;
+      }
       const response = await this.fetcher(path, {method:transaction ? 'POST' : 'GET', headers,
         body:transaction?.body, signal:controller.signal, cache:'no-store'});
       const data = response.ok && download ? await response.blob() : await response.json();
@@ -34,9 +38,10 @@ export class Api {
       return data;
     } catch (error) {
       if (error.status) throw error;
-      throw Object.assign(new Error(transaction
+      const uncertain = Boolean(transaction && !transaction.readOnly);
+      throw Object.assign(new Error(uncertain
         ? 'Hasil penyimpanan belum terkonfirmasi. Coba ulang di sini; pencatatan yang sama tidak akan digandakan.'
-        : 'Data belum dapat dimuat. Periksa koneksi dan pastikan server Beeloft berjalan.'), {uncertain:Boolean(transaction)});
+        : 'Data belum dapat dimuat. Periksa koneksi dan pastikan server Beeloft berjalan.'), {uncertain});
     } finally { clearTimeout(timeout); }
   }
 }
