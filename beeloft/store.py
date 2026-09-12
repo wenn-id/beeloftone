@@ -942,6 +942,9 @@ class Store:
         record['active_reservation_count']=db.execute('''SELECT COUNT(*) FROM marketplace_reservations m
             WHERE m.receipt_id=? AND NOT EXISTS(
               SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)''',(receipt_id,)).fetchone()[0]
+        record['active_adjustment_count']=db.execute('''SELECT COUNT(*) FROM finished_goods_adjustments a
+            WHERE a.receipt_id=? AND NOT EXISTS(
+              SELECT 1 FROM finished_goods_adjustment_reversals r WHERE r.adjustment_id=a.id)''',(receipt_id,)).fetchone()[0]
         return record
 
     def finished_goods_receipt(self, receipt_id):
