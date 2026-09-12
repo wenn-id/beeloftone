@@ -147,6 +147,9 @@ class MarketplaceReservationsTest(TestCase):
                             'warehouse_movement_reversal_valid'):
                 db.execute('DROP TRIGGER '+trigger)
             db.execute('DROP TRIGGER marketplace_reservation_release_valid')
+            db.execute('DROP TRIGGER marketplace_pick_reversal_valid')
+            db.execute('DROP TABLE marketplace_pack_reversals')
+            db.execute('DROP TABLE marketplace_packs')
             db.execute('DROP TABLE marketplace_pick_reversals')
             db.execute('DROP TABLE marketplace_picks')
             db.execute('DROP TABLE marketplace_reservation_releases')
@@ -154,5 +157,5 @@ class MarketplaceReservationsTest(TestCase):
             db.execute('PRAGMA user_version=19');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],21)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],22)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_reservations').fetchone()[0],0)

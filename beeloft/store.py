@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -83,6 +83,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("marketplace_reservations.sql").read_text(encoding="utf-8"))
             if version < 21:
                 db.executescript(Path(__file__).with_name("marketplace_picking.sql").read_text(encoding="utf-8"))
+            if version < 22:
+                db.executescript(Path(__file__).with_name("marketplace_packing.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -861,6 +863,14 @@ class Store:
             WHERE m.receipt_id=? AND NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
               AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
             GROUP BY p.staging_location COLLATE NOCASE''',(receipt_id,)).fetchall()]
+        packed_to=[dict(row) for row in db.execute('''SELECT p.staging_location AS location,SUM(k.quantity) AS quantity
+            FROM marketplace_packs k JOIN marketplace_picks p ON p.id=k.pick_id
+            JOIN marketplace_reservations m ON m.id=p.reservation_id WHERE m.receipt_id=?
+              AND NOT EXISTS(SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id)
+              AND NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
+              AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+            GROUP BY p.staging_location COLLATE NOCASE''',(receipt_id,)).fetchall()]
+        packed={row['location'].casefold():row['quantity'] for row in packed_to}
         result=[]
         for row in rows:
             item=dict(row)
@@ -871,8 +881,11 @@ class Store:
             item['movable_quantity']=item['available_quantity'] if item['stock_status']=='sellable' else item['quantity']
             if item['quantity']>0:
                 result.append(item)
-        result.extend(dict(row,stock_status='picked',reserved_quantity=0,available_quantity=0,movable_quantity=0)
-                      for row in picked_to if row['quantity']>0)
+        result.extend(dict(row,quantity=row['quantity']-packed.get(row['location'].casefold(),0),stock_status='picked',
+                      reserved_quantity=0,available_quantity=0,movable_quantity=0) for row in picked_to
+                      if row['quantity']-packed.get(row['location'].casefold(),0)>0)
+        result.extend(dict(row,stock_status='packed',reserved_quantity=0,available_quantity=0,movable_quantity=0)
+                      for row in packed_to if row['quantity']>0)
         return sorted(result,key=lambda row:(row['location'].casefold(),row['stock_status']))
 
     def _finished_goods_receipt(self, db, receipt_id):
@@ -970,14 +983,27 @@ class Store:
                 AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
                 AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
                 GROUP BY l.product_id''').fetchall()}
+            packed={row['product_id']:row['quantity'] for row in db.execute('''SELECT l.product_id,SUM(k.quantity) AS quantity
+                FROM marketplace_packs k JOIN marketplace_picks p ON p.id=k.pick_id
+                JOIN marketplace_reservations m ON m.id=p.reservation_id
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id JOIN final_qc_records q ON q.id=x.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+                JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id WHERE NOT EXISTS(
+                  SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id)
+                AND NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
+                AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+                AND NOT EXISTS(SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)
+                GROUP BY l.product_id''').fetchall()}
             result=[]
             for row in rows:
-                item=dict(row);picked_quantity=picked.get(item['product_id'],0)
-                item['sellable_quantity']-=picked_quantity
-                item['picked_quantity']=picked_quantity
+                item=dict(row);picked_total=picked.get(item['product_id'],0);packed_quantity=packed.get(item['product_id'],0)
+                item['sellable_quantity']-=picked_total
+                item['picked_quantity']=picked_total-packed_quantity
+                item['packed_quantity']=packed_quantity
                 item['reserved_quantity']=reserved.get(item['product_id'],0)
                 item['available_quantity']=item['sellable_quantity']-item['reserved_quantity']
-                item['total_quantity']=item['sellable_quantity']+item['hold_quantity']+item['damaged_quantity']+picked_quantity
+                item['total_quantity']=item['sellable_quantity']+item['hold_quantity']+item['damaged_quantity']+picked_total
                 result.append(item)
             return result
 
@@ -1006,6 +1032,18 @@ class Store:
                 UNION ALL SELECT rp.product_id,p.staging_location,'picked',p.quantity FROM marketplace_picks p
                     JOIN marketplace_reservations m ON m.id=p.reservation_id JOIN receipt_products rp ON rp.id=m.receipt_id
                     WHERE NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
+                      AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+                UNION ALL SELECT rp.product_id,p.staging_location,'picked',-k.quantity FROM marketplace_packs k
+                    JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+                    JOIN receipt_products rp ON rp.id=m.receipt_id WHERE NOT EXISTS(
+                      SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id)
+                      AND NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
+                      AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
+                UNION ALL SELECT rp.product_id,p.staging_location,'packed',k.quantity FROM marketplace_packs k
+                    JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+                    JOIN receipt_products rp ON rp.id=m.receipt_id WHERE NOT EXISTS(
+                      SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id)
+                      AND NOT EXISTS(SELECT 1 FROM marketplace_pick_reversals r WHERE r.pick_id=p.id)
                       AND NOT EXISTS(SELECT 1 FROM marketplace_reservation_releases r WHERE r.reservation_id=m.id)
             ) SELECT p.id AS product_id,p.sku,p.name,p.color,p.size,l.location,l.stock_status,
                 SUM(l.quantity) AS quantity FROM ledger l JOIN products p ON p.id=l.product_id
@@ -1232,6 +1270,10 @@ class Store:
             JOIN users u ON u.id=r.actor_id WHERE r.pick_id=?''',(pick_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'active'
+        record['packed_quantity']=db.execute('''SELECT COALESCE(SUM(k.quantity),0) FROM marketplace_packs k
+            WHERE k.pick_id=? AND NOT EXISTS(
+              SELECT 1 FROM marketplace_pack_reversals r WHERE r.pack_id=k.id)''',(pick_id,)).fetchone()[0]
+        record['remaining_quantity']=0 if reversal else record['quantity']-record['packed_quantity']
         return record
 
     def marketplace_pick(self, pick_id):
@@ -1273,10 +1315,74 @@ class Store:
             pick=self._marketplace_pick(db,pick_id)
             if pick['reversal']:
                 raise DomainError(409,'Catatan pick sudah dikoreksi.')
+            if pick['packed_quantity']:
+                raise DomainError(409,'Koreksi semua pack aktif sebelum mengoreksi pick.')
             db.execute('''INSERT INTO marketplace_pick_reversals(pick_id,reason,actor_id,created_at)
                 VALUES(?,?,?,?)''',(pick_id,payload['reason'],actor['id'],now()))
             return self._marketplace_pick(db,pick_id)
         return self._write(actor,('admin',),key,'marketplace-pick-reverse:'+pick_id,payload,perform)
+
+    def _marketplace_pack(self, db, pack_id):
+        row=db.execute('''SELECT k.*,u.name AS actor_name FROM marketplace_packs k
+            JOIN users u ON u.id=k.actor_id WHERE k.id=?''',(pack_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan pack tidak ditemukan.')
+        record=dict(row)
+        source=self._marketplace_pick(db,record['pick_id'])
+        for field in ('reference','reservation_id','reservation_reference','receipt_id','receipt_reference','order_id',
+                      'order_reference','product_id','sku','product_name','color','size','marketplace',
+                      'external_order_reference','location','staging_location','final_qc_record_id',
+                      'final_qc_reference','batch_id','batch_reference'):
+            record['pick_reference' if field=='reference' else field]=source[field]
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM marketplace_pack_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.pack_id=?''',(pack_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'active'
+        return record
+
+    def marketplace_pack(self, pack_id):
+        with self.transaction() as db:
+            return self._marketplace_pack(db,pack_id)
+
+    def marketplace_packs(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT k.id FROM marketplace_packs k JOIN marketplace_picks p ON p.id=k.pick_id
+                JOIN marketplace_reservations m ON m.id=p.reservation_id
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id WHERE c.order_id=?
+                AND (? IS NULL OR k.sequence<?) ORDER BY k.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._marketplace_pack(db,row['id']) for row in ids]
+
+    def create_marketplace_pack(self, pick_id, payload, actor, key):
+        def perform(db):
+            pick=self._marketplace_pick(db,pick_id)
+            if pick['status']!='active':
+                raise DomainError(409,'Pick marketplace harus aktif sebelum pack dicatat.')
+            if payload['packed_date']<pick['picked_date']:
+                raise DomainError(422,'Tanggal pack tidak boleh sebelum tanggal pick.')
+            if payload['quantity']>pick['remaining_quantity']:
+                raise DomainError(409,'Jumlah pack melebihi pick yang belum dipack. Muat ulang pick.')
+            pack_id=str(uuid4())
+            db.execute('''INSERT INTO marketplace_packs(id,reference,pick_id,quantity,packed_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?)''',(pack_id,payload['reference'],pick_id,payload['quantity'],
+                payload['packed_date'],payload['reason'],actor['id'],now()))
+            return self._marketplace_pack(db,pack_id)
+        return self._write(actor,('admin','operator'),key,'marketplace-pack:'+pick_id,payload,perform)
+
+    def reverse_marketplace_pack(self, pack_id, payload, actor, key):
+        def perform(db):
+            pack=self._marketplace_pack(db,pack_id)
+            if pack['reversal']:
+                raise DomainError(409,'Catatan pack sudah dikoreksi.')
+            db.execute('''INSERT INTO marketplace_pack_reversals(pack_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(pack_id,payload['reason'],actor['id'],now()))
+            return self._marketplace_pack(db,pack_id)
+        return self._write(actor,('admin',),key,'marketplace-pack-reverse:'+pack_id,payload,perform)
 
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):

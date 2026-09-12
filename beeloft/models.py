@@ -316,6 +316,12 @@ class MarketplacePickCreate(ReversalCreate):
     picked_date: date
 
 
+class MarketplacePackCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    packed_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 
