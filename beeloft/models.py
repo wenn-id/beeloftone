@@ -330,6 +330,30 @@ class MarketplaceShipmentCreate(ReversalCreate):
     shipped_date: date
 
 
+class MarketplaceReturnCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    return_reason: Literal['too_small', 'too_big', 'wrong_item', 'defect', 'color_mismatch', 'other']
+    return_location: Text
+    stock_status: Literal['sellable', 'hold', 'damaged']
+    returned_date: date
+
+
+class FinishedGoodsAdjustmentCreate(ReversalCreate):
+    reference: Text
+    location: Text
+    stock_status: Literal['sellable', 'hold', 'damaged']
+    quantity_delta: Annotated[int, Field(strict=True, ge=-1_000_000_000, le=1_000_000_000)]
+    adjusted_date: date
+
+    @field_validator('quantity_delta')
+    @classmethod
+    def nonzero_delta(cls, value):
+        if value == 0:
+            raise ValueError('Selisih adjustment tidak boleh nol.')
+        return value
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 

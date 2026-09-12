@@ -161,10 +161,16 @@ class MarketplaceShippingTest(TestCase):
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
             db.execute('DROP TRIGGER marketplace_pack_reversal_valid')
+            db.execute('DROP VIEW finished_goods_reserved_stock')
+            db.execute('DROP VIEW finished_goods_stock_ledger')
+            db.execute('DROP TABLE finished_goods_adjustment_reversals')
+            db.execute('DROP TABLE finished_goods_adjustments')
+            db.execute('DROP TABLE marketplace_return_reversals')
+            db.execute('DROP TABLE marketplace_returns')
             db.execute('DROP TABLE marketplace_shipment_reversals')
             db.execute('DROP TABLE marketplace_shipments')
             db.execute('PRAGMA user_version=22');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],23)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],24)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_shipments').fetchone()[0],0)
