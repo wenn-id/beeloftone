@@ -309,6 +309,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   const packing=await require('./browser_marketplace_packing.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...marketplace,...picking});
   const shipping=await require('./browser_marketplace_shipping.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...marketplace,...picking,...packing});
   await require('./browser_returns_adjustments.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...shipping});
+  await require('./browser_inventory_reconciliation.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');
