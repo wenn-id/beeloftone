@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.36.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
+Pelacakan produksi internal, versi 0.37.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand per SKU, serta inbox approval PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi.
 
 ## Coba di Windows
 
@@ -1403,3 +1403,28 @@ v0.35.
 
 Rencana: [contribution margin plan](docs/contribution-margin-plan.md).
 Bukti pengujian: [contribution margin verification](docs/contribution-margin-verification.md).
+
+## Forecast demand per SKU (v0.37)
+
+Pilih **Forecast demand** dari navigasi utama. Tentukan tanggal akhir data, panjang periode historis,
+horizon forecast, serta filter marketplace atau SKU bila diperlukan. Laporan membagi riwayat menjadi
+dua periode yang sama panjang. Rata-rata harian periode terbaru berbobot 70% dan periode sebelumnya
+30%, lalu rate gabungan dikalikan dengan jumlah hari horizon.
+
+Demand berasal dari shipment marketplace aktif. Retur aktif yang sudah terjadi sampai tanggal
+`as_of` mengurangi demand pada periode tanggal shipment asal. Shipment yang telah dikoreksi tidak
+dihitung. Produk tanpa shipment tetap ditampilkan dengan status **Belum ada riwayat demand**, sehingga
+angka nol tidak disamarkan sebagai hasil observasi.
+
+API terkait: `GET /api/demand-forecast`. Parameter `as_of`, `window_days`, `horizon_days`, `query`,
+`marketplace`, `limit`, dan `offset` tersedia. Default memakai dua window 28 hari dan horizon 30 hari.
+Hasil menyertakan shipment, retur, demand neto, rate historis, rate forecast, tren, serta estimasi pcs
+dua desimal. Schema tetap versi 30 karena laporan dihitung dari ledger penjualan yang sudah ada.
+
+Forecast ini belum menjadi rekomendasi pembelian. Stok tersedia, barang dalam perjalanan, lead time,
+MOQ, safety stock, promosi, musiman, dan data eksternal marketplace belum masuk perhitungan. Tanggal
+`as_of` membatasi tanggal bisnis pada ledger yang saat ini aktif; laporan tidak merekonstruksi kapan
+sebuah koreksi dicatat pada masa lalu.
+
+Rencana: [demand forecast plan](docs/demand-forecast-plan.md).
+Bukti pengujian: [demand forecast verification](docs/demand-forecast-verification.md).
