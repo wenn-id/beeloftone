@@ -384,7 +384,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'demand-forecast':demandForecastDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    products:productsDialog,'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -1808,6 +1808,55 @@ function demandForecastDialog() {
   form.onsubmit=event=>{event.preventDefault();load();};
 }
 $('demand-forecast').onclick=demandForecastDialog;
+
+function replenishmentDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Risiko stockout & rekomendasi',`<form id="replenishment-form">
+    <p class="hint">Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.</p>
+    <div class="form-grid">
+      ${field('as_of','Forecast sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang window demand (hari)','number','required min="7" max="90" step="1" value="28"')}
+      ${field('lead_time_days','Lead time replenishment (hari)','number','required min="1" max="180" step="1" value="14"')}
+      ${field('review_period_days','Periode review stok (hari)','number','required min="1" max="180" step="1" value="30"')}
+      ${field('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')}
+      ${field('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"')}
+      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
+      <label>Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="replenishment-submit" type="submit">Hitung rekomendasi</button></div>
+  </form><p id="replenishment-message" class="state" role="status" hidden></p><div id="replenishment-results"></div>`);
+  const modal=dialogVersion,version=epoch,form=$('replenishment-form'),button=$('replenishment-submit');
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async()=>{
+    if(!current())return;
+    button.disabled=true;button.textContent='Menghitung…';
+    message('replenishment-message','Menggabungkan forecast, stok, produksi, BOM, PR, dan PO…');
+    $('replenishment-results').replaceChildren();
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','100');params.set('offset','0');
+      const report=await api.get('/api/replenishment-recommendations?'+params);
+      if(!current())return;
+      message('replenishment-message','');
+      const risks={out_of_stock:'Stok habis',stockout_before_replenishment:'Stockout sebelum replenishment',
+        below_safety_stock:'Di bawah safety stock',covered:'Stok tercakup',
+        insufficient_history:'Riwayat demand belum cukup',no_demand:'Tidak ada demand pada window'};
+      const products=report.product_recommendations.map(row=>`<article class="material-event" data-replenishment-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${e(risks[row.stockout_risk])}</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Demand forecast</dt><dd>${n(Number(row.forecast_daily_rate))} pcs/hari</dd></div><div><dt>Stok tersedia</dt><dd>${n(row.available_quantity)} pcs</dd></div><div><dt>Produksi berjalan</dt><dd>${n(row.inbound_production_quantity)} pcs</dd></div><div><dt>Days of cover</dt><dd>${row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'}</dd></div><div><dt>Reorder point</dt><dd>${n(row.reorder_point_quantity)} pcs</dd></div><div><dt>Target stok</dt><dd>${n(row.target_stock_quantity)} pcs</dd></div><div><dt>Rekomendasi produksi</dt><dd><strong>${n(row.recommended_production_quantity)} pcs</strong></dd></div></dl><p class="hint">Sellable ${n(row.sellable_quantity)} · terreservasi ${n(row.reserved_quantity)} · hold ${n(row.hold_quantity)} · batch ${n(row.batch_multiple)} pcs${row.projected_stockout_date?' · estimasi stockout '+date(row.projected_stockout_date):''}</p></article>`).join('');
+      const materials=report.material_purchase_recommendations.map(row=>`<article class="material-event" data-replenishment-material="${e(row.code)}"><h3>${e(row.code)} · ${e(row.name)}</h3><p class="status-label ${row.status==='purchase'?'late':'done'}">${row.status==='purchase'?'Perlu pembelian baru':'Kebutuhan tercakup'}</p><dl class="requirement-values"><div><dt>Kebutuhan produksi berjalan</dt><dd>${e(materialQty(row.existing_production_requirement,row.unit))}</dd></div><div><dt>Kebutuhan rekomendasi baru</dt><dd>${e(materialQty(row.recommended_production_requirement,row.unit))}</dd></div><div><dt>Stok bahan</dt><dd>${e(materialQty(row.on_hand_quantity,row.unit))}</dd></div><div><dt>PR terbuka</dt><dd>${e(materialQty(row.open_purchase_request_quantity,row.unit))}</dd></div><div><dt>PO terbuka</dt><dd>${e(materialQty(row.open_purchase_order_quantity,row.unit))}</dd></div><div><dt>Rekomendasi beli</dt><dd><strong>${e(materialQty(row.recommended_purchase_quantity,row.unit))}</strong></dd></div></dl></article>`).join('');
+      const gaps=report.coverage_gaps.map(gap=>`<p>SKU ${e(gap.sku)} belum mempunyai BOM untuk ${gap.context==='active_production'?'produksi yang sedang berjalan':'rekomendasi produksi baru'}.</p>`).join('');
+      $('replenishment-results').innerHTML=`<p class="form-info">Horizon perencanaan sampai ${date(report.planning_horizon_end)} · ${n(report.coverage_days)} hari<br>${n(report.summary.recommended_production_quantity)} pcs direkomendasikan untuk produksi · ${n(report.summary.materials_to_purchase)} bahan perlu dibeli</p><p class="hint">Stok adalah posisi saat ini. Pipeline hanya menghitung order produksi, PR, dan PO bertanggal target di dalam horizon. Estimasi stockout memakai stok tersedia tanpa mengasumsikan tanggal kedatangan produksi berjalan.</p>${gaps?`<article class="material-event"><h3>Data yang perlu dilengkapi</h3>${gaps}</article>`:''}<h3>Risiko dan rekomendasi produksi</h3>${products||'<p class="state">Tidak ada SKU yang cocok dengan filter.</p>'}${report.total>report.product_recommendations.length?`<p class="hint">Menampilkan ${n(report.product_recommendations.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</p>`:''}<h3>Rekomendasi pembelian bahan</h3>${materials||'<p class="state">Belum ada kebutuhan bahan yang dapat dihitung.</p>'}<p class="hint">Rekomendasi pembelian mengurangi stok bahan, PR terbuka, dan sisa PO terbuka. Harga, supplier, MOQ bahan, serta kapasitas produksi belum menentukan hasil.</p>`;
+    }catch(error){
+      if(current()){
+        message('replenishment-message',error.message,true);
+        $('replenishment-message').insertAdjacentHTML('beforeend','<br><button id="replenishment-retry" type="button">Coba lagi</button>');
+        $('replenishment-retry').onclick=load;
+      }
+    }finally{if(current()){button.disabled=false;button.textContent='Hitung rekomendasi';}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load();};
+}
+$('replenishment').onclick=replenishmentDialog;
 $('materials').onclick = showMaterials;
 $('materials-back').onclick = showBoard;
 $('materials-refresh').onclick = () => loadMaterials();
