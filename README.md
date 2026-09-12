@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.39.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, serta investigasi bisnis dengan pertanyaan bahasa Indonesia.
+Pelacakan produksi internal, versi 0.40.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, serta tindakan AI yang memerlukan approval.
 
 ## Coba di Windows
 
@@ -1480,3 +1480,36 @@ dapat masuk kategori yang salah.
 
 Rencana: [AI investigation plan](docs/ai-investigation-plan.md).
 Bukti pengujian: [AI investigation verification](docs/ai-investigation-verification.md).
+
+## Proposal dan eksekusi tindakan AI (v0.40)
+
+Admin/operator dapat memilih **Ajukan untuk approval** pada rekomendasi pembuatan order produksi atau
+purchase request. Form melengkapi data operasional yang tidak boleh ditebak sistem, seperti referensi,
+PIC, target selesai, tanggal kebutuhan, estimasi nilai, dan alasan. Pengajuan menyimpan snapshot
+pertanyaan, asumsi perencanaan, rekomendasi, payload tindakan, pengaju, dan waktu dalam ledger
+immutable. Belum ada order atau PR yang dibuat pada tahap ini.
+
+Proposal masuk ke **Inbox approval** sebagai jenis **AI Brain · tindakan**. Viewer dapat membaca tetapi
+tidak memutuskan. Admin dapat menyetujui, menolak, atau membatalkan; pemohon dapat membatalkan
+proposalnya sendiri selama masih menunggu. Sebelum approval dijalankan, sistem menghitung ulang
+rekomendasi dari ledger aktif. Perubahan stok, demand, produksi, BOM, PR, atau PO yang mengubah hasil
+menjadikan proposal stale dan membatalkan seluruh eksekusi.
+
+Approval order produksi membuat satu order beserta saldo planned dalam transaksi yang sama dengan
+event keputusan. Approval purchase request membuat PR berstatus submitted, sehingga keputusan
+pembeliannya tetap berjalan melalui approval purchasing yang sudah ada. Setiap hasil tindakan
+ditautkan kembali ke proposal dan dapat dibuka dari riwayat approval.
+
+API terkait:
+
+- `POST /api/ai/action-proposals`.
+- `GET /api/ai/action-proposals?status=...`.
+- `GET /api/ai/action-proposals/{id}`.
+- `POST /api/ai/action-proposals/{id}/decisions`.
+
+Schema 30 → 31 menambahkan proposal dan event keputusan append-only. Versi ini belum menjalankan
+perubahan jadwal, approval massal, integrasi eksternal, atau tindakan bebas di luar dua workflow yang
+sudah memiliki guard domain.
+
+Rencana: [AI approved actions plan](docs/ai-approved-actions-plan.md).
+Bukti pengujian: [AI approved actions verification](docs/ai-approved-actions-verification.md).
