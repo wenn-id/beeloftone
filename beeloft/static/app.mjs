@@ -240,6 +240,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
       else if (path === '/api/marketing-budget-requests' || path.startsWith('/api/marketing-budget-requests/')) marketingBudgetRequestDialog(result.id);
+      else if (path === '/api/ai/investigations' || /^\/api\/ai\/investigations\/[^/]+\/feedback$/.test(path)) aiInvestigationDetailDialog(result.id);
       else if (path === '/api/ai/action-proposals' || path.startsWith('/api/ai/action-proposals/')) aiActionProposalDialog(result.id);
       else if (path === '/api/suppliers') suppliersDialog();
       else if (path.startsWith('/api/qc-') || path.startsWith('/api/supplier-returns/') || path.endsWith('/qc-intakes')) {
@@ -385,7 +386,9 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-action-proposal':()=>aiActionProposalDialog(id),'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
+    'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
+    'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -1766,11 +1769,79 @@ async function contributionMarginDialog(orderId) {
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="contribution-margin" data-id="${e(orderId)}">Coba lagi</button>`;}
 }
 
+function renderAiInvestigation(report,target,source=report.source_payload) {
+  const intents={overview:'Ringkasan bisnis',production:'Kondisi produksi',stockout:'Risiko stockout',approvals:'Antrean approval',margin:'Margin kontribusi'};
+  const confidence={high:'tinggi',medium:'sedang',low:'rendah'};
+  const severity={critical:'Kritis',high:'Tinggi',medium:'Sedang',info:'Informasi'};
+  const unit={sku:'SKU',order:'order',issue:'kendala',item:'item',material:'bahan',pcs:'pcs'};
+  const factValue=row=>row.unit==='IDR'?rupiah(String(row.value)):`${n(Number(row.value))} ${unit[row.unit]||row.unit}`;
+  const focus=[...report.focus.products.map(row=>row.sku),...report.focus.orders.map(row=>row.reference)];
+  const facts=report.facts.map(row=>`<div><dt>${e(row.label)}</dt><dd>${e(factValue(row))}</dd></div>`).join('');
+  const findings=report.findings.map(row=>`<article class="material-event" data-ai-finding="${e(row.severity)}"><p class="status-label ${['critical','high'].includes(row.severity)?'late':row.severity==='info'?'done':''}">${e(severity[row.severity]||row.severity)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Sumber: ${e(row.source)}</p></article>`).join('');
+  const supported=new Set(['create_production_order','create_purchase_request']);
+  const recommendations=report.recommendations.map((row,index)=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dijalankan · sumber ${e(row.source)}</p>${user.role!=='viewer'&&supported.has(row.kind)?`<button type="button" data-ai-proposal="${index}">Ajukan untuk approval</button>`:''}</article>`).join('');
+  const feedback=report.feedback_summary||{helpful:0,not_helpful:0,respondents:0};
+  const actionStatus={submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+  const links=(report.linked_actions||[]).map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(actionStatus[row.status]||row.status)}</h3><p>${e(row.recommendation.title)}</p><button data-action="ai-action-proposal" data-id="${e(row.id)}">Buka proposal tindakan</button></article>`).join('');
+  target.innerHTML=`${report.id?`<p class="form-info">Disimpan ${e(report.actor_name)} · ${purchaseStamp(report.created_at)}</p>`:''}<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
+    <div class="actions"><button data-action="ai-investigations">Riwayat investigasi</button></div>
+    <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
+    <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
+    <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
+    ${report.id?`<h3>Feedback tim</h3><p>${n(feedback.helpful)} membantu · ${n(feedback.not_helpful)} perlu diperbaiki · ${n(feedback.respondents)} responden</p><div class="actions"><button data-ai-feedback="helpful">Jawaban membantu</button><button data-ai-feedback="not_helpful">Perlu diperbaiki</button></div>`:''}
+    ${links?`<h3>Tindakan dari investigasi ini</h3>${links}`:''}
+    <details><summary>Batas analisis</summary>${report.limitations.map(item=>`<p class="hint">${e(item)}</p>`).join('')}</details>`;
+  target.querySelectorAll('[data-ai-proposal]').forEach(proposal=>proposal.onclick=()=>
+    aiActionProposalForm(report.recommendations[Number(proposal.dataset.aiProposal)],
+      {...source,investigation_id:report.id}));
+  target.querySelectorAll('[data-ai-feedback]').forEach(button=>button.onclick=()=>{
+    const rating=button.dataset.aiFeedback;
+    formDialog(rating==='helpful'?'Catat jawaban membantu':'Catat yang perlu diperbaiki',materialReason,
+      form=>({rating,reason:new FormData(form).get('reason').trim()}),
+      '/api/ai/investigations/'+encodeURIComponent(report.id)+'/feedback',
+      'Feedback tersimpan sebagai event append-only. Respons terbaru Anda dipakai dalam ringkasan.');
+  });
+}
+
+async function aiInvestigationsDialog() {
+  if(guardPending())return;
+  openDialog('Riwayat investigasi',`<form id="ai-history-filter"><div class="form-grid"><label>Cari pertanyaan<input name="q" maxlength="160"></label><label>Jenis analisis<select name="intent"><option value="all">Semua jenis</option><option value="overview">Ringkasan bisnis</option><option value="production">Kondisi produksi</option><option value="stockout">Risiko stockout</option><option value="approvals">Antrean approval</option><option value="margin">Margin kontribusi</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="ai-brain">Tanya Beeloft</button></div></form><p id="ai-history-message" class="state" role="status"></p><div id="ai-history-list"></div><button id="ai-history-more" type="button">Muat investigasi sebelumnya</button>`);
+  const version=epoch,modal=dialogVersion,form=$('ai-history-filter'),list=$('ai-history-list'),more=$('ai-history-more');
+  let before=null;
+  const load=async reset=>{
+    if(reset){before=null;list.replaceChildren();}
+    more.disabled=true;message('ai-history-message','Memuat riwayat investigasi…');
+    try{
+      const values=Object.fromEntries(new FormData(form));
+      const query=new URLSearchParams({limit:50,intent:values.intent,q:values.q.trim()});
+      if(before)query.set('before',before);
+      const rows=await api.get('/api/ai/investigations?'+query);
+      if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+      message('ai-history-message',rows.length?'':list.children.length?'Tidak ada riwayat yang lebih lama.':'Belum ada investigasi tersimpan.');
+      list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(row.interpretation)}</p><h3>${e(row.question)}</h3><p>${e(row.answer)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)} · ${n(row.feedback_summary.respondents)} feedback · ${n(row.action_count)} tindakan</p><button data-action="ai-investigation" data-id="${e(row.id)}">Buka investigasi</button></article>`).join(''));
+      before=rows.at(-1)?.sequence||before;more.hidden=rows.length<50;
+    }catch(error){if(version===epoch&&modal===dialogVersion)message('ai-history-message',error.message,true);}
+    finally{if(version===epoch&&modal===dialogVersion)more.disabled=false;}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};more.onclick=()=>load(false);load(true);
+}
+
+async function aiInvestigationDetailDialog(investigationId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Investigasi tersimpan','<p class="state">Memuat investigasi…</p>');const modal=dialogVersion;
+  try{
+    const report=await api.get('/api/ai/investigations/'+encodeURIComponent(investigationId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    renderAiInvestigation(report,$('dialog-content'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-investigation" data-id="${e(investigationId)}">Coba lagi</button>`;}
+}
+
 function aiInvestigationDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   openDialog('Tanya Beeloft',`<form id="ai-form">
     <p class="hint">Ajukan pertanyaan tentang produksi, stok, approval, margin, atau prioritas bisnis. Analisis berjalan lokal dan hanya membaca ledger Beeloft.</p>
+    <div class="actions"><button type="button" data-action="ai-investigations">Riwayat investigasi</button></div>
     <div class="actions ai-prompts" aria-label="Contoh pertanyaan">
       <button type="button" data-ai-question="SKU apa yang berisiko stockout?">Risiko stockout</button>
       <button type="button" data-ai-question="Apa yang menunggu approval?">Approval tertunda</button>
@@ -1787,49 +1858,47 @@ function aiInvestigationDialog() {
       ${field('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')}
       ${field('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"')}
     </div></details>
-    <div class="form-actions"><button class="primary" id="ai-submit" type="submit">Analisis pertanyaan</button></div>
+    <div class="form-actions"><button type="button" id="ai-reauth" hidden>Masuk ulang</button><button class="primary" id="ai-submit" type="submit">Analisis dan simpan</button></div>
   </form><p id="ai-message" class="state" role="status" hidden></p><div id="ai-results"></div>`);
-  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit');
+  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit'),reauth=$('ai-reauth'),storageKey=pendingKey();
+  let transaction=null;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
+  reauth.onclick=logout;
   $('ai-question').focus();
   document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
     $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();
   });
   const load=async()=>{
     if(!current())return;
-    button.disabled=true;button.textContent='Menganalisis…';
-    message('ai-message','Membaca ledger produksi, stok, approval, dan margin…');
+    button.disabled=true;button.textContent='Menganalisis…';modalBusy=true;
+    message('ai-message','Membaca ledger lalu menyimpan snapshot investigasi…');
     $('ai-results').replaceChildren();
     try{
-      const raw=Object.fromEntries(new FormData(form));
-      for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
-      const report=await api.post('/api/ai/investigate',raw);
+      if(!transaction){
+        const raw=Object.fromEntries(new FormData(form));
+        for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
+        transaction=api.transaction('/api/ai/investigations',raw);
+        sessionStorage.setItem(storageKey,JSON.stringify({transaction,title:'Simpan investigasi AI',
+          info:'Pertanyaan dan snapshot bukti disimpan satu kali.'}));
+      }
+      const report=await api.save(transaction);
+      clearPending(storageKey,transaction);
       if(!current())return;
-      message('ai-message','');
-      const intents={overview:'Ringkasan bisnis',production:'Kondisi produksi',stockout:'Risiko stockout',approvals:'Antrean approval',margin:'Margin kontribusi'};
-      const confidence={high:'tinggi',medium:'sedang',low:'rendah'};
-      const severity={critical:'Kritis',high:'Tinggi',medium:'Sedang',info:'Informasi'};
-      const unit={sku:'SKU',order:'order',issue:'kendala',item:'item',material:'bahan',pcs:'pcs'};
-      const factValue=row=>row.unit==='IDR'?rupiah(String(row.value)):`${n(Number(row.value))} ${unit[row.unit]||row.unit}`;
-      const focus=[...report.focus.products.map(row=>row.sku),...report.focus.orders.map(row=>row.reference)];
-      const facts=report.facts.map(row=>`<div><dt>${e(row.label)}</dt><dd>${e(factValue(row))}</dd></div>`).join('');
-      const findings=report.findings.map(row=>`<article class="material-event" data-ai-finding="${e(row.severity)}"><p class="status-label ${['critical','high'].includes(row.severity)?'late':row.severity==='info'?'done':''}">${e(severity[row.severity]||row.severity)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Sumber: ${e(row.source)}</p></article>`).join('');
-      const supported=new Set(['create_production_order','create_purchase_request']);
-      const recommendations=report.recommendations.map((row,index)=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dijalankan · sumber ${e(row.source)}</p>${user.role!=='viewer'&&supported.has(row.kind)?`<button type="button" data-ai-proposal="${index}">Ajukan untuk approval</button>`:''}</article>`).join('');
-      $('ai-results').innerHTML=`<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
-        <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
-        <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
-        <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
-        <details><summary>Batas analisis</summary>${report.limitations.map(item=>`<p class="hint">${e(item)}</p>`).join('')}</details>`;
-      $('ai-results').querySelectorAll('[data-ai-proposal]').forEach(proposal=>proposal.onclick=()=>
-        aiActionProposalForm(report.recommendations[Number(proposal.dataset.aiProposal)],raw));
+      transaction=null;unresolved=false;modalBusy=false;lock(false);reauth.hidden=true;message('ai-message','');
+      renderAiInvestigation(report,$('ai-results'));
+      notify('Investigasi tersimpan.');
     }catch(error){
       if(current()){
-        message('ai-message',error.message,true);
+        const denied=error.status===401||error.status===403;
+        unresolved=Boolean(error.uncertain||(unresolved&&denied));
+        if(!unresolved){clearPending(storageKey,transaction);transaction=null;}
+        lock(unresolved);reauth.hidden=!denied;
+        message('ai-message',error.message+(unresolved&&denied?' Masuk ulang dengan akun yang sama untuk memastikan snapshot tidak digandakan.':''),true);
         $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button">Coba lagi</button>');
         $('ai-retry').onclick=load;
       }
-    }finally{if(current()){button.disabled=false;button.textContent='Analisis pertanyaan';}}
+    }finally{if(current()){modalBusy=false;button.disabled=false;button.textContent=unresolved?'Coba ulang penyimpanan':'Analisis dan simpan';}}
   };
   form.onsubmit=event=>{event.preventDefault();load();};
 }
@@ -1875,7 +1944,7 @@ async function aiActionProposalDialog(proposalId) {
     if(user.role==='admin'&&row.status==='submitted')decisions.push(['approved','Setujui dan jalankan'],['rejected','Tolak proposal']);
     if(row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id))decisions.push(['cancelled','Batalkan proposal']);
     const executed=row.executed_entity_id?`<p class="form-info">Tindakan selesai. ${production?'Order produksi':'Purchase request'} sudah dibuat.</p><button data-action="${production?'detail':'purchase-request'}" data-id="${e(row.executed_entity_id)}">Buka hasil tindakan</button>`:'';
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><p class="eyebrow">${e(action)}</p><h3>${e(row.recommendation.title)}</h3>${details}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Saat approval, sistem menghitung ulang rekomendasi dan membatalkan eksekusi bila sumber berubah.</p>${executed}<div class="actions">${decisions.map(([status,label])=>`<button data-ai-action-decision="${status}">${label}</button>`).join('')}<button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><p class="eyebrow">${e(action)}</p><h3>${e(row.recommendation.title)}</h3>${details}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Saat approval, sistem menghitung ulang rekomendasi dan membatalkan eksekusi bila sumber berubah.</p>${executed}<div class="actions">${decisions.map(([status,label])=>`<button data-ai-action-decision="${status}">${label}</button>`).join('')}${row.investigation_id?`<button data-action="ai-investigation" data-id="${e(row.investigation_id)}">Buka investigasi asal</button>`:''}<button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
     $('dialog-content').querySelectorAll('[data-ai-action-decision]').forEach(button=>button.onclick=()=>{
       const decision=button.dataset.aiActionDecision;
       formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
