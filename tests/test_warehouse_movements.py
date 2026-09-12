@@ -156,6 +156,9 @@ class WarehouseMovementsTest(TestCase):
             db.execute('DROP TRIGGER finished_goods_reversal_valid')
             db.execute('DROP TRIGGER marketplace_reservation_release_valid')
             db.execute('DROP TRIGGER marketplace_pick_reversal_valid')
+            db.execute('DROP TRIGGER marketplace_pack_reversal_valid')
+            db.execute('DROP TABLE marketplace_shipment_reversals')
+            db.execute('DROP TABLE marketplace_shipments')
             db.execute('DROP TABLE marketplace_pack_reversals')
             db.execute('DROP TABLE marketplace_packs')
             db.execute('DROP TABLE marketplace_pick_reversals')
@@ -167,5 +170,5 @@ class WarehouseMovementsTest(TestCase):
             db.execute('PRAGMA user_version=18');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],22)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],23)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM warehouse_movements').fetchone()[0],0)

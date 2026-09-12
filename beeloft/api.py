@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsReceiptCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.reports import activity_csv
@@ -387,6 +387,23 @@ def create_app(database_path):
     @app.post('/api/marketplace-packs/{pack_id}/reverse', status_code=201, tags=['Marketplace'])
     def reverse_marketplace_pack(pack_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_marketplace_pack(pack_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/marketplace-packs/{pack_id}/shipments', status_code=201, tags=['Marketplace'])
+    def create_marketplace_shipment(pack_id: str, body: MarketplaceShipmentCreate, user: Actor, key: RequestKey):
+        return store.create_marketplace_shipment(pack_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/marketplace-shipments', tags=['Marketplace'])
+    def marketplace_shipments(order_id: str, user: Actor, limit: Limit = 100,
+                              before: Annotated[int | None, Query(ge=1)] = None):
+        return store.marketplace_shipments(order_id, limit, before)
+
+    @app.get('/api/marketplace-shipments/{shipment_id}', tags=['Marketplace'])
+    def marketplace_shipment(shipment_id: str, user: Actor):
+        return store.marketplace_shipment(shipment_id)
+
+    @app.post('/api/marketplace-shipments/{shipment_id}/reverse', status_code=201, tags=['Marketplace'])
+    def reverse_marketplace_shipment(shipment_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_marketplace_shipment(shipment_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-consumption', status_code=201, tags=['Materials'])
     def consume_material(body: MaterialConsumption, user: Actor, key: RequestKey):

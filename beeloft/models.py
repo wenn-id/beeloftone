@@ -322,6 +322,14 @@ class MarketplacePackCreate(ReversalCreate):
     packed_date: date
 
 
+class MarketplaceShipmentCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    carrier: Text
+    tracking_number: Text
+    shipped_date: date
+
+
 class BomComponent(MaterialQuantity):
     material_id: Text
 
