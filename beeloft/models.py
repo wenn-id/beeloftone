@@ -89,6 +89,16 @@ class ProductionChangeRequestCreate(OrderChange):
     reference: Text
 
 
+class InvestigationCreate(Input):
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=1000)]
+    as_of: date = Field(default_factory=date.today)
+    window_days: Annotated[int, Field(strict=True, ge=7, le=90)] = 28
+    lead_time_days: Annotated[int, Field(strict=True, ge=1, le=180)] = 14
+    review_period_days: Annotated[int, Field(strict=True, ge=1, le=180)] = 30
+    safety_stock_days: Annotated[int, Field(strict=True, ge=0, le=90)] = 7
+    batch_multiple: Annotated[int, Field(strict=True, ge=1, le=100_000)] = 1
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

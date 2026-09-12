@@ -9,12 +9,13 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
+from beeloft.brain import investigate
 from beeloft.reports import activity_csv
 
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
@@ -102,6 +103,10 @@ def create_app(database_path):
     @app.get("/api/stages", tags=["Production"])
     def stages(user: Actor):
         return {"stages": STAGES, "transitions": sorted(TRANSITIONS), "quantity_unit": "pcs"}
+
+    @app.post('/api/ai/investigate', tags=['AI Brain'])
+    def ai_investigate(body: InvestigationCreate, user: Actor):
+        return investigate(store, body.model_dump(mode='json'))
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):
