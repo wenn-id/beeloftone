@@ -1717,6 +1717,82 @@ class Store:
                 'coverage_gaps':gaps,'scope':['sales_settlements','active_shipments','active_returns','production_cost_allocation'],
                 'excluded_costs':['tax','payment_gateway_fee','advertising','fixed_overhead','return_handling','inventory_write_off']}
 
+    def demand_forecast(self, as_of, window_days=28, horizon_days=30, query='', marketplace='',
+                        limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        recent_start=as_of_date-timedelta(days=window_days-1)
+        previous_end=recent_start-timedelta(days=1)
+        previous_start=previous_end-timedelta(days=window_days-1)
+        with self.transaction() as db:
+            term=query.strip().casefold()
+            products=[dict(row) for row in db.execute('''SELECT id,sku,name,color,size FROM products
+                WHERE ?='' OR instr(lower(sku),?)>0 OR instr(lower(name),?)>0
+                    OR instr(lower(color),?)>0 OR instr(lower(size),?)>0
+                ORDER BY sku,id''',(term,term,term,term,term))]
+            sales=db.execute('''SELECT product.id AS product_id,s.id AS shipment_id,s.shipped_date,
+                s.quantity,m.marketplace,COALESCE((SELECT SUM(t.quantity) FROM marketplace_returns t
+                  WHERE t.shipment_id=s.id AND t.returned_date<=? AND NOT EXISTS(
+                    SELECT 1 FROM marketplace_return_reversals z WHERE z.return_id=t.id)),0) AS returned_quantity
+                FROM marketplace_shipments s JOIN marketplace_packs k ON k.id=s.pack_id
+                JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+                JOIN finished_goods_receipts x ON x.id=m.receipt_id
+                JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN movements source ON source.id=b.output_movement_id JOIN order_lines l ON l.id=source.line_id
+                JOIN products product ON product.id=l.product_id
+                WHERE s.shipped_date BETWEEN ? AND ?
+                  AND (?='' OR m.marketplace=? COLLATE NOCASE)
+                  AND NOT EXISTS(SELECT 1 FROM marketplace_shipment_reversals r WHERE r.shipment_id=s.id)
+                ORDER BY s.shipped_date,s.sequence''',(as_of_date.isoformat(),previous_start.isoformat(),
+                as_of_date.isoformat(),marketplace.strip(),marketplace.strip())).fetchall()
+        grouped={product['id']:{'product':product,'previous_shipped':0,'previous_returned':0,
+            'recent_shipped':0,'recent_returned':0,'shipment_count':0,'marketplaces':set()}
+            for product in products}
+        for row in sales:
+            item=grouped.get(row['product_id'])
+            if not item:
+                continue
+            prefix='recent' if row['shipped_date']>=recent_start.isoformat() else 'previous'
+            item[prefix+'_shipped']+=row['quantity']
+            item[prefix+'_returned']+=row['returned_quantity']
+            item['shipment_count']+=1
+            item['marketplaces'].add(row['marketplace'])
+        items=[]
+        for item in grouped.values():
+            previous=item['previous_shipped']-item['previous_returned']
+            recent=item['recent_shipped']-item['recent_returned']
+            previous_rate=Decimal(previous)/window_days
+            recent_rate=Decimal(recent)/window_days
+            forecast_rate=recent_rate*Decimal('.70')+previous_rate*Decimal('.30')
+            forecast=(forecast_rate*horizon_days).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
+            historical_rate=(Decimal(previous+recent)/(window_days*2)).quantize(
+                Decimal('.0001'),rounding=ROUND_HALF_UP)
+            trend_percent=None
+            if previous:
+                trend_percent=format(((Decimal(recent-previous)/previous)*100).quantize(
+                    Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+            trend='new' if not previous and recent else ('up' if recent>previous else 'down' if recent<previous else 'flat')
+            product=item['product']
+            items.append(product | {'history_status':'observed' if item['shipment_count'] else 'no_history',
+                'shipment_count':item['shipment_count'],'marketplaces':sorted(item['marketplaces'],key=str.casefold),
+                'previous_shipped_quantity':item['previous_shipped'],
+                'previous_returned_quantity':item['previous_returned'],'previous_net_demand':previous,
+                'recent_shipped_quantity':item['recent_shipped'],'recent_returned_quantity':item['recent_returned'],
+                'recent_net_demand':recent,'historical_daily_rate':format(historical_rate,'.4f'),
+                'forecast_daily_rate':format(forecast_rate.quantize(Decimal('.0001'),rounding=ROUND_HALF_UP),'.4f'),
+                'forecast_quantity':format(forecast,'.2f'),'trend':trend,'trend_percent':trend_percent})
+        items.sort(key=lambda row:(-Decimal(row['forecast_quantity']),row['sku'].casefold(),row['id']))
+        total=len(items)
+        page=items[offset:offset+limit]
+        total_forecast=sum((Decimal(row['forecast_quantity']) for row in items),Decimal(0))
+        return {'as_of':as_of_date.isoformat(),'window_days':window_days,'horizon_days':horizon_days,
+            'history_start':previous_start.isoformat(),'previous_period_end':previous_end.isoformat(),
+            'recent_period_start':recent_start.isoformat(),'marketplace':marketplace.strip() or None,
+            'query':query.strip(),'method':'weighted_two_window_average','recent_weight':'0.70',
+            'previous_weight':'0.30','total':total,'offset':offset,'limit':limit,
+            'total_forecast_quantity':format(total_forecast.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f'),
+            'items':page}
+
     def _marketplace_return(self, db, return_id):
         row=db.execute('''SELECT t.*,u.name AS actor_name FROM marketplace_returns t
             JOIN users u ON u.id=t.actor_id WHERE t.id=?''',(return_id,)).fetchone()

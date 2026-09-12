@@ -482,6 +482,16 @@ def create_app(database_path):
     def contribution_margin(order_id: str, user: Actor):
         return store.contribution_margin(order_id)
 
+    @app.get('/api/demand-forecast', tags=['Economics'])
+    def demand_forecast(user: Actor, as_of: date | None = None,
+                        window_days: Annotated[int, Query(ge=7, le=90)] = 28,
+                        horizon_days: Annotated[int, Query(ge=1, le=180)] = 30,
+                        query: Annotated[str, Query(max_length=160)] = '',
+                        marketplace: Annotated[str, Query(max_length=160)] = '',
+                        limit: Limit = 100, offset: Offset = 0):
+        return store.demand_forecast(as_of or date.today(), window_days, horizon_days,
+                                     query, marketplace, limit, offset)
+
     @app.post('/api/marketplace-shipments/{shipment_id}/returns', status_code=201, tags=['Marketplace'])
     def create_marketplace_return(shipment_id: str, body: MarketplaceReturnCreate, user: Actor, key: RequestKey):
         return store.create_marketplace_return(shipment_id, body.model_dump(mode='json'), user, key)
