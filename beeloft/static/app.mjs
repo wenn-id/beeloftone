@@ -240,6 +240,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
       else if (path === '/api/marketing-budget-requests' || path.startsWith('/api/marketing-budget-requests/')) marketingBudgetRequestDialog(result.id);
+      else if (path === '/api/ai/action-proposals' || path.startsWith('/api/ai/action-proposals/')) aiActionProposalDialog(result.id);
       else if (path === '/api/suppliers') suppliersDialog();
       else if (path.startsWith('/api/qc-') || path.startsWith('/api/supplier-returns/') || path.endsWith('/qc-intakes')) {
         if (view === 'materials') loadMaterials();
@@ -384,7 +385,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'ai-brain':aiInvestigationDialog,'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-action-proposal':()=>aiActionProposalDialog(id),'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -1813,12 +1814,15 @@ function aiInvestigationDialog() {
       const focus=[...report.focus.products.map(row=>row.sku),...report.focus.orders.map(row=>row.reference)];
       const facts=report.facts.map(row=>`<div><dt>${e(row.label)}</dt><dd>${e(factValue(row))}</dd></div>`).join('');
       const findings=report.findings.map(row=>`<article class="material-event" data-ai-finding="${e(row.severity)}"><p class="status-label ${['critical','high'].includes(row.severity)?'late':row.severity==='info'?'done':''}">${e(severity[row.severity]||row.severity)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Sumber: ${e(row.source)}</p></article>`).join('');
-      const recommendations=report.recommendations.map(row=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dapat dijalankan dari workspace ini · sumber ${e(row.source)}</p></article>`).join('');
+      const supported=new Set(['create_production_order','create_purchase_request']);
+      const recommendations=report.recommendations.map((row,index)=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dijalankan · sumber ${e(row.source)}</p>${user.role!=='viewer'&&supported.has(row.kind)?`<button type="button" data-ai-proposal="${index}">Ajukan untuk approval</button>`:''}</article>`).join('');
       $('ai-results').innerHTML=`<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
         <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
         <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
         <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
         <details><summary>Batas analisis</summary>${report.limitations.map(item=>`<p class="hint">${e(item)}</p>`).join('')}</details>`;
+      $('ai-results').querySelectorAll('[data-ai-proposal]').forEach(proposal=>proposal.onclick=()=>
+        aiActionProposalForm(report.recommendations[Number(proposal.dataset.aiProposal)],raw));
     }catch(error){
       if(current()){
         message('ai-message',error.message,true);
@@ -1830,6 +1834,56 @@ function aiInvestigationDialog() {
   form.onsubmit=event=>{event.preventDefault();load();};
 }
 $('ai-brain').onclick=aiInvestigationDialog;
+
+async function aiActionProposalForm(recommendation,source) {
+  if(guardPending())return;
+  const common=form=>({...source,action_kind:recommendation.kind,
+    subject_id:recommendation.preview.product_id||recommendation.preview.material_id,
+    ...Object.fromEntries(new FormData(form))});
+  if(recommendation.kind==='create_production_order'){
+    const version=epoch;openDialog('Ajukan order produksi','<p class="state">Memuat daftar PIC…</p>');const modal=dialogVersion;
+    try{
+      const users=(await api.get('/api/users')).filter(row=>row.active&&row.role!=='viewer');
+      if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+      formDialog('Ajukan order produksi',field('reference','Referensi order','text','required maxlength="160"')+
+        field('title','Nama order','text','required maxlength="160"')+
+        `<label>PIC produksi<select name="owner_id" required>${users.map(row=>option(row.id,row.name)).join('')}</select></label>`+
+        field('due_date','Target selesai','date','required')+materialReason,
+        common,'/api/ai/action-proposals',
+        `${recommendation.title} · ${n(recommendation.preview.quantity)} pcs. Order baru dibuat hanya setelah admin menyetujui proposal dan rekomendasi masih sama.`);
+    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-brain">Kembali ke investigasi</button>`;}
+  }else{
+    formDialog('Ajukan purchase request',field('reference','Referensi PR','text','required maxlength="160"')+
+      field('required_date','Tanggal kebutuhan','date','required')+
+      field('estimated_value','Estimasi total (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+materialReason,
+      common,'/api/ai/action-proposals',
+      `${recommendation.title} · ${materialQty(recommendation.preview.quantity,recommendation.preview.unit)}. PR dibuat setelah admin menyetujui proposal; PR tersebut tetap masuk workflow approval purchasing.`);
+  }
+}
+
+async function aiActionProposalDialog(proposalId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Proposal tindakan AI','<p class="state">Memuat proposal…</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/ai/action-proposals/'+encodeURIComponent(proposalId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const production=row.action_kind==='create_production_order',action=production?'Buat order produksi':'Buat purchase request';
+    const payload=row.action_payload,quantity=payload.lines[0].quantity;
+    const details=production?`<p>${e(payload.title)} · ${n(quantity)} pcs · target ${date(payload.due_date)}</p>`:
+      `<p>${e(materialQty(quantity,row.recommendation.preview.unit))} · dibutuhkan ${date(payload.required_date)} · ${e(rupiah(payload.estimated_value))}</p>`;
+    const decisions=[];
+    if(user.role==='admin'&&row.status==='submitted')decisions.push(['approved','Setujui dan jalankan'],['rejected','Tolak proposal']);
+    if(row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id))decisions.push(['cancelled','Batalkan proposal']);
+    const executed=row.executed_entity_id?`<p class="form-info">Tindakan selesai. ${production?'Order produksi':'Purchase request'} sudah dibuat.</p><button data-action="${production?'detail':'purchase-request'}" data-id="${e(row.executed_entity_id)}">Buka hasil tindakan</button>`:'';
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><p class="eyebrow">${e(action)}</p><h3>${e(row.recommendation.title)}</h3>${details}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Saat approval, sistem menghitung ulang rekomendasi dan membatalkan eksekusi bila sumber berubah.</p>${executed}<div class="actions">${decisions.map(([status,label])=>`<button data-ai-action-decision="${status}">${label}</button>`).join('')}<button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    $('dialog-content').querySelectorAll('[data-ai-action-decision]').forEach(button=>button.onclick=()=>{
+      const decision=button.dataset.aiActionDecision;
+      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+        '/api/ai/action-proposals/'+encodeURIComponent(row.id)+'/decisions',
+        `${row.reference} · ${action}. ${decision==='approved'?'Rekomendasi diperiksa ulang lalu tindakan dijalankan dalam satu transaksi.':'Keputusan tersimpan permanen.'}`);
+    });
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-action-proposal" data-id="${e(proposalId)}">Coba lagi</button>`;}
+}
 
 function demandForecastDialog() {
   if(guardPending())return;
@@ -1933,8 +1987,8 @@ $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
 const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
-const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order'};
-const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request'};
+const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',ai_action:'AI Brain · tindakan'};
+const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',ai_action:'ai-action-proposal'};
 const rupiah = value => 'Rp' + BigInt(value.split('.')[0]).toLocaleString('id-ID') + ',' + value.split('.')[1];
 const purchaseStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
 $('purchase-requests').onclick = () => purchaseRequestsDialog();
@@ -1945,7 +1999,7 @@ async function approvalsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan PR, penerbitan PO, pembayaran supplier, budget marketing, dan perubahan produksi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan PR, penerbitan PO, pembayaran supplier, budget marketing, perubahan produksi, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
@@ -1953,7 +2007,7 @@ async function approvalsDialog() {
     try{
       const rows=await api.get('/api/approvals?'+new URLSearchParams({limit:25,offset,status:$('approval-status').value,kind:$('approval-kind').value}));
       if(!current()||gen!==generation)return;
-      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${row.kind==='purchase_request'?`<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='purchase_order'?`<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='supplier_payment'?`<p>Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}</p>`:row.kind==='marketing_budget'?`<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`:`<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
+      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${row.kind==='purchase_request'?`<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='purchase_order'?`<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='supplier_payment'?`<p>Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}</p>`:row.kind==='marketing_budget'?`<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`:row.kind==='ai_action'?`<p>${e(row.context.recommendation_title)}</p>`:`<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
       if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
     }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
