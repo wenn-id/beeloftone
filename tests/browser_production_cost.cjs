@@ -42,10 +42,13 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
   const batch=await post('/api/purchase-orders/'+po.id+'/receipts',{material_id:material.id,
     reference:'COST-BATCH-UI',location:'Rak biaya',received_date:'2026-12-02',quantity:'2',
     reason:'CONTOH bahan diterima'},'cost-receipt');
+  await post('/api/movements',{line_id:order.lines[0].id,from_stage:'planned',to_stage:'cutting',
+    quantity:10,reason:'CONTOH mulai cutting costing'},'cost-start-cutting');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'2',
     reason:'CONTOH keluar untuk produksi'},'cost-issue');
-  await post('/api/material-consumption',{issue_id:issue.id,used:'1.5',waste:'0.5',
-    reason:'CONTOH pemakaian dan waste'},'cost-consumption');
+  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'COST-CUT-UI',
+    issue_id:issue.id,used:'1.5',waste:'0.5',reason:'CONTOH pemakaian dan waste',
+    outputs:[{line_id:order.lines[0].id,quantity:10}]},'cost-cutting');
   const empty=await post('/api/orders',{reference:'DEMO-COST-GAP-UI',title:'CONTOH biaya belum lengkap',
     owner_id:owner.id,due_date:'2026-12-31',lines:[{product_id:product.id,quantity:5}]},'cost-empty-order');
 
@@ -89,4 +92,5 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Reset filter',exact:true}).click();
   await page.locator('.order-row').first().waitFor();
   console.log('Production cost browser QA PASS: exact PO material cost, explicit coverage gap, error retry, viewer access, escaping, mobile/200%.');
+  return {costOrder:order,costRun:run};
 };
