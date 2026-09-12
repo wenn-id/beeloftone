@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -99,6 +99,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("unified_approvals.sql").read_text(encoding="utf-8"))
             if version < 27:
                 db.executescript(Path(__file__).with_name("purchase_order_approvals.sql").read_text(encoding="utf-8"))
+            if version < 28:
+                db.executescript(Path(__file__).with_name("supplier_payment_approvals.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1897,7 +1899,8 @@ class Store:
         record = dict(row)
         record['supplier'] = json.loads(record['supplier'])
         record['lines'] = json.loads(record['lines'])
-        record['total'] = format(Decimal(record.pop('total_minor')) / 100, '.2f')
+        total_minor = record.pop('total_minor')
+        record['total'] = format(Decimal(total_minor) / 100, '.2f')
         record['currency'] = 'IDR'
         record['approval_history'] = [dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
             FROM purchase_order_approval_events e JOIN users u ON u.id=e.actor_id
@@ -1947,6 +1950,18 @@ class Store:
             line['return_pending'] = self._material_decimal(returns[1])
         record['fulfillment'] = ('received' if all(l['remaining']=='0.000' for l in record['lines'])
                                  else 'partial' if received else 'pending')
+        payment_totals = db.execute("""SELECT
+            COALESCE(SUM(CASE WHEN status='submitted' THEN amount_minor ELSE 0 END),0),
+            COALESCE(SUM(CASE WHEN status='approved' THEN amount_minor ELSE 0 END),0)
+            FROM (SELECT r.amount_minor,(SELECT status FROM supplier_payment_request_events e
+                WHERE e.request_id=r.id ORDER BY e.sequence DESC LIMIT 1) AS status
+                FROM supplier_payment_requests r WHERE r.purchase_order_id=?)""", (order_id,)).fetchone()
+        received_value_minor = sum(int((Decimal(line['received'])*Decimal(line['unit_price'])*100).quantize(
+            Decimal('1'),rounding=ROUND_HALF_UP)) for line in record['lines'])
+        record['payment_received_value'] = format(Decimal(received_value_minor)/100,'.2f')
+        record['payment_pending'] = format(Decimal(payment_totals[0])/100,'.2f')
+        record['payment_approved'] = format(Decimal(payment_totals[1])/100,'.2f')
+        record['payment_remaining'] = format(Decimal(received_value_minor-payment_totals[0]-payment_totals[1])/100,'.2f')
         return record
 
     def purchase_order(self, order_id):
@@ -2057,6 +2072,71 @@ class Store:
             db.execute('INSERT INTO purchase_order_receipts(batch_id,purchase_order_id) VALUES(?,?)', (batch['id'],order_id))
             return self._material_batch(db, batch['id'])
         return self._write(actor, ('admin','operator'), key, 'purchase-order-receipt:'+order_id, payload, perform)
+
+    def _supplier_payment_request(self, db, request_id):
+        row = db.execute("""SELECT r.*,p.reference AS purchase_order_reference,p.supplier,
+            a.name AS actor_name FROM supplier_payment_requests r
+            JOIN purchase_orders p ON p.id=r.purchase_order_id
+            JOIN users a ON a.id=r.actor_id WHERE r.id=?""", (request_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Permintaan pembayaran supplier tidak ditemukan.')
+        record = dict(row)
+        record['supplier'] = json.loads(record['supplier'])
+        record['amount'] = format(Decimal(record.pop('amount_minor'))/100,'.2f')
+        record['currency'] = 'IDR'
+        record['history'] = [dict(event) for event in db.execute("""SELECT e.*,u.name AS actor_name
+            FROM supplier_payment_request_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.request_id=? ORDER BY e.sequence DESC""", (request_id,))]
+        record['status'] = record['history'][0]['status']
+        record['revision'] = record['history'][0]['sequence']
+        return record
+
+    def supplier_payment_request(self, request_id):
+        with self.transaction() as db:
+            return self._supplier_payment_request(db, request_id)
+
+    def supplier_payment_requests(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM purchase_orders WHERE id=?', (order_id,)).fetchone():
+                raise DomainError(404, 'PO tidak ditemukan.')
+            ids = db.execute("""SELECT id FROM supplier_payment_requests WHERE purchase_order_id=?
+                AND (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?""",
+                (order_id,before,before,limit)).fetchall()
+            return [self._supplier_payment_request(db, row['id']) for row in ids]
+
+    def create_supplier_payment_request(self, order_id, payload, actor, key):
+        def perform(db):
+            po = self._purchase_order(db, order_id)
+            if po['status'] not in ('issued','closed') or po['fulfillment']=='pending':
+                raise DomainError(409, 'Pembayaran hanya dapat diajukan untuk PO approved yang sudah memiliki penerimaan.')
+            amount_minor = int(Decimal(payload['amount'])*100)
+            if amount_minor > int(Decimal(po['payment_remaining'])*100):
+                raise DomainError(409, 'Nominal pembayaran melebihi sisa nilai PO yang belum diajukan.')
+            request_id, timestamp = str(uuid4()), now()
+            db.execute("""INSERT INTO supplier_payment_requests(id,reference,purchase_order_id,invoice_reference,
+                invoice_date,due_date,amount_minor,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""", (request_id,payload['reference'],order_id,
+                payload['invoice_reference'],payload['invoice_date'],payload['due_date'],amount_minor,
+                payload['reason'],actor['id'],timestamp))
+            db.execute("""INSERT INTO supplier_payment_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)""", (request_id,payload['reason'],actor['id'],timestamp))
+            return self._supplier_payment_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'supplier-payment-request:'+order_id, payload, perform)
+
+    def decide_supplier_payment_request(self, request_id, payload, actor, key):
+        def perform(db):
+            request = self._supplier_payment_request(db, request_id)
+            role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
+            if role!='admin' and not (payload['status']=='cancelled' and request['actor_id']==actor['id']):
+                raise DomainError(403, 'Hanya admin memutuskan pembayaran; pemohon boleh membatalkan pengajuannya.')
+            if request['revision']!=payload['expected_revision']:
+                raise DomainError(409, 'Permintaan pembayaran sudah berubah. Buka ulang rincian keputusan terbaru.')
+            if request['status']!='submitted':
+                raise DomainError(409, 'Permintaan pembayaran sudah diputuskan.')
+            db.execute("""INSERT INTO supplier_payment_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)""", (request_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._supplier_payment_request(db, request_id)
+        return self._write(actor, ('admin','operator'), key, 'supplier-payment-decision:'+request_id, payload, perform)
 
     def _quality_intake(self, db, intake_id):
         row = db.execute('''SELECT q.*,m.code,m.name,m.unit,u.name AS actor_name,p.reference AS purchase_order_reference,
@@ -2487,6 +2567,23 @@ class Store:
                         "created_at":order["created_at"],"context":{"request_id":order["request_id"],
                         "request_reference":order["request_reference"],"supplier_name":order["supplier"]["name"],
                         "expected_date":order["expected_date"],"line_count":len(order["lines"])}})
+            if kind in ("all","supplier_payment"):
+                for row in db.execute("SELECT id FROM supplier_payment_requests"):
+                    request = self._supplier_payment_request(db, row["id"])
+                    current_status = "pending" if request["status"]=="submitted" else request["status"]
+                    if status not in ("all",current_status):
+                        continue
+                    items.append({"id":request["id"],"kind":"supplier_payment","department":"Finance",
+                        "status":current_status,"reference":request["reference"],
+                        "title":request["supplier"]["name"]+" · PO "+request["purchase_order_reference"],
+                        "amount":request["amount"],"currency":"IDR","reason":request["reason"],
+                        "actor_id":request["actor_id"],"actor_name":request["actor_name"],
+                        "created_at":request["created_at"],"context":{
+                        "purchase_order_id":request["purchase_order_id"],
+                        "purchase_order_reference":request["purchase_order_reference"],
+                        "supplier_name":request["supplier"]["name"],
+                        "invoice_reference":request["invoice_reference"],
+                        "invoice_date":request["invoice_date"],"due_date":request["due_date"]}})
             if kind in ("all","production_change"):
                 for row in db.execute("SELECT id FROM production_change_requests"):
                     request = self._production_change_request(db, row["id"])
