@@ -85,6 +85,10 @@ class OrderChange(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class ProductionChangeRequestCreate(OrderChange):
+    reference: Text
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

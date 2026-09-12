@@ -30,7 +30,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -95,6 +95,8 @@ class Store:
                     db.execute('''ALTER TABLE finished_goods_adjustments ADD COLUMN stock_count_id TEXT
                         REFERENCES finished_goods_stock_counts(id)''')
                 db.executescript(Path(__file__).with_name("inventory_reconciliation.sql").read_text(encoding="utf-8"))
+            if version < 26:
+                db.executescript(Path(__file__).with_name("unified_approvals.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2310,24 +2312,27 @@ class Store:
         with self.transaction() as db:
             return self._order(db, order_id)
 
+    def _apply_order_change(self, db, order_id, payload, actor):
+        original = self._order(db, order_id)
+        if original["revision"] != payload["expected_revision"]:
+            raise DomainError(409, "Jadwal atau PIC sudah diubah. Tutup form, muat ulang order, lalu periksa perubahan terbaru.")
+        if not db.execute("SELECT 1 FROM users WHERE id=? AND active=1 AND role IN ('admin','operator')",
+                          (payload["owner_id"],)).fetchone():
+            raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
+        if original["due_date"] == payload["due_date"] and original["owner_id"] == payload["owner_id"]:
+            raise DomainError(422, "Belum ada perubahan tenggat atau PIC.")
+        record = {"id": str(uuid4()), "order_id": order_id, "old_due_date": original["due_date"],
+                  "new_due_date": payload["due_date"], "old_owner_id": original["owner_id"],
+                  "new_owner_id": payload["owner_id"], "reason": payload["reason"],
+                  "actor_id": actor["id"], "created_at": now()}
+        db.execute("UPDATE orders SET due_date=?,owner_id=? WHERE id=?", (payload["due_date"], payload["owner_id"], order_id))
+        db.execute("""INSERT INTO order_changes(id,order_id,old_due_date,new_due_date,old_owner_id,new_owner_id,reason,actor_id,created_at)
+            VALUES(:id,:order_id,:old_due_date,:new_due_date,:old_owner_id,:new_owner_id,:reason,:actor_id,:created_at)""", record)
+        return self._order(db, order_id), record["id"]
+
     def change_order(self, order_id, payload, actor, key):
         def perform(db):
-            original = self._order(db, order_id)
-            if original["revision"] != payload["expected_revision"]:
-                raise DomainError(409, "Jadwal atau PIC sudah diubah. Tutup form, muat ulang order, lalu periksa perubahan terbaru.")
-            if not db.execute("SELECT 1 FROM users WHERE id=? AND active=1 AND role IN ('admin','operator')",
-                              (payload["owner_id"],)).fetchone():
-                raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
-            if original["due_date"] == payload["due_date"] and original["owner_id"] == payload["owner_id"]:
-                raise DomainError(422, "Belum ada perubahan tenggat atau PIC.")
-            record = {"id": str(uuid4()), "order_id": order_id, "old_due_date": original["due_date"],
-                      "new_due_date": payload["due_date"], "old_owner_id": original["owner_id"],
-                      "new_owner_id": payload["owner_id"], "reason": payload["reason"],
-                      "actor_id": actor["id"], "created_at": now()}
-            db.execute("UPDATE orders SET due_date=?,owner_id=? WHERE id=?", (payload["due_date"], payload["owner_id"], order_id))
-            db.execute("""INSERT INTO order_changes(id,order_id,old_due_date,new_due_date,old_owner_id,new_owner_id,reason,actor_id,created_at)
-                VALUES(:id,:order_id,:old_due_date,:new_due_date,:old_owner_id,:new_owner_id,:reason,:actor_id,:created_at)""", record)
-            return self._order(db, order_id)
+            return self._apply_order_change(db, order_id, payload, actor)[0]
         return self._write(actor, ("admin",), key, "change-order:" + order_id, payload, perform)
 
     def order_changes(self, order_id, limit=100, before=None):
@@ -2339,6 +2344,121 @@ class Store:
                 JOIN users a ON a.id=c.actor_id JOIN users old ON old.id=c.old_owner_id
                 JOIN users new ON new.id=c.new_owner_id WHERE c.order_id=? AND (? IS NULL OR c.sequence<?)
                 ORDER BY c.sequence DESC LIMIT ?""", (order_id, before, before, limit))]
+
+    def _production_change_request(self, db, request_id):
+        row = db.execute("""SELECT r.*,o.reference AS order_reference,o.title AS order_title,
+            a.name AS actor_name,old.name AS old_owner_name,new.name AS new_owner_name
+            FROM production_change_requests r JOIN orders o ON o.id=r.order_id
+            JOIN users a ON a.id=r.actor_id JOIN users old ON old.id=r.old_owner_id
+            JOIN users new ON new.id=r.new_owner_id WHERE r.id=?""", (request_id,)).fetchone()
+        if not row:
+            raise DomainError(404, "Permintaan perubahan produksi tidak ditemukan.")
+        record = dict(row)
+        record["history"] = [dict(event) for event in db.execute("""SELECT e.*,u.name AS actor_name
+            FROM production_change_request_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.request_id=? ORDER BY e.sequence DESC""", (request_id,))]
+        record["status"] = record["history"][0]["status"]
+        record["revision"] = record["history"][0]["sequence"]
+        current = self._order(db, record["order_id"])
+        record["current_due_date"] = current["due_date"]
+        record["current_owner_id"] = current["owner_id"]
+        record["current_owner_name"] = current["owner_name"]
+        record["current_order_revision"] = current["revision"]
+        record["stale"] = record["status"] == "submitted" and current["revision"] != record["expected_revision"]
+        return record
+
+    def production_change_request(self, request_id):
+        with self.transaction() as db:
+            return self._production_change_request(db, request_id)
+
+    def production_change_requests(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone():
+                raise DomainError(404, "Order produksi tidak ditemukan.")
+            ids = db.execute("""SELECT id FROM production_change_requests WHERE order_id=?
+                AND (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?""",
+                (order_id,before,before,limit)).fetchall()
+            return [self._production_change_request(db, row["id"]) for row in ids]
+
+    def create_production_change_request(self, order_id, payload, actor, key):
+        def perform(db):
+            order = self._order(db, order_id)
+            if order["revision"] != payload["expected_revision"]:
+                raise DomainError(409, "Jadwal atau PIC sudah berubah. Muat ulang order sebelum mengajukan persetujuan.")
+            if not db.execute("SELECT 1 FROM users WHERE id=? AND active=1 AND role IN ('admin','operator')",
+                              (payload["owner_id"],)).fetchone():
+                raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
+            if order["due_date"] == payload["due_date"] and order["owner_id"] == payload["owner_id"]:
+                raise DomainError(422, "Belum ada perubahan tenggat atau PIC.")
+            pending = db.execute("""SELECT 1 FROM production_change_requests r WHERE r.order_id=? AND
+                (SELECT status FROM production_change_request_events e WHERE e.request_id=r.id
+                 ORDER BY e.sequence DESC LIMIT 1)='submitted'""", (order_id,)).fetchone()
+            if pending:
+                raise DomainError(409, "Order ini masih memiliki permintaan perubahan yang menunggu keputusan.")
+            request_id, timestamp = str(uuid4()), now()
+            db.execute("""INSERT INTO production_change_requests(id,reference,order_id,old_due_date,new_due_date,
+                old_owner_id,new_owner_id,expected_revision,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (request_id,payload["reference"],order_id,order["due_date"],
+                payload["due_date"],order["owner_id"],payload["owner_id"],payload["expected_revision"],
+                payload["reason"],actor["id"],timestamp))
+            db.execute("""INSERT INTO production_change_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)""", (request_id,payload["reason"],actor["id"],timestamp))
+            return self._production_change_request(db, request_id)
+        return self._write(actor, ("admin","operator"), key, "production-change-request:"+order_id, payload, perform)
+
+    def decide_production_change_request(self, request_id, payload, actor, key):
+        def perform(db):
+            request = self._production_change_request(db, request_id)
+            role = db.execute("SELECT role FROM users WHERE id=?", (actor["id"],)).fetchone()[0]
+            if role != "admin" and not (payload["status"] == "cancelled" and request["actor_id"] == actor["id"]):
+                raise DomainError(403, "Hanya admin memutuskan perubahan produksi; pemohon boleh membatalkan pengajuannya.")
+            if request["revision"] != payload["expected_revision"]:
+                raise DomainError(409, "Permintaan perubahan produksi sudah diputuskan. Buka ulang rinciannya.")
+            if request["status"] != "submitted":
+                raise DomainError(409, "Permintaan perubahan produksi sudah diputuskan.")
+            order_change_id = None
+            if payload["status"] == "approved":
+                _, order_change_id = self._apply_order_change(db, request["order_id"], {
+                    "owner_id": request["new_owner_id"], "due_date": request["new_due_date"],
+                    "expected_revision": request["expected_revision"], "reason": request["reason"]}, actor)
+            db.execute("""INSERT INTO production_change_request_events(request_id,status,reason,actor_id,order_change_id,created_at)
+                VALUES(?,?,?,?,?,?)""", (request_id,payload["status"],payload["reason"],actor["id"],order_change_id,now()))
+            return self._production_change_request(db, request_id)
+        return self._write(actor, ("admin","operator"), key, "production-change-request-decision:"+request_id, payload, perform)
+
+    def approvals(self, limit=100, offset=0, status="pending", kind="all"):
+        with self.transaction() as db:
+            items = []
+            if kind in ("all","purchase_request"):
+                for row in db.execute("SELECT id FROM purchase_requests"):
+                    request = self._purchase_request(db, row["id"])
+                    current_status = "pending" if request["status"] == "submitted" else request["status"]
+                    if status not in ("all", current_status):
+                        continue
+                    items.append({"id":request["id"],"kind":"purchase_request","department":"Purchasing",
+                        "status":current_status,"reference":request["reference"],
+                        "title":request["order_reference"] or "Permintaan pembelian umum",
+                        "amount":request["estimated_value"],"currency":"IDR","reason":request["reason"],
+                        "actor_id":request["actor_id"],"actor_name":request["actor_name"],
+                        "created_at":request["created_at"],"context":{"required_date":request["required_date"],
+                        "line_count":len(request["lines"]),"order_id":request["order_id"]}})
+            if kind in ("all","production_change"):
+                for row in db.execute("SELECT id FROM production_change_requests"):
+                    request = self._production_change_request(db, row["id"])
+                    current_status = "pending" if request["status"] == "submitted" else request["status"]
+                    if status not in ("all", current_status):
+                        continue
+                    items.append({"id":request["id"],"kind":"production_change","department":"Production",
+                        "status":current_status,"reference":request["reference"],
+                        "title":request["order_reference"]+" · "+request["order_title"],
+                        "amount":None,"currency":None,"reason":request["reason"],
+                        "actor_id":request["actor_id"],"actor_name":request["actor_name"],
+                        "created_at":request["created_at"],"context":{"order_id":request["order_id"],
+                        "old_due_date":request["old_due_date"],"new_due_date":request["new_due_date"],
+                        "old_owner_name":request["old_owner_name"],"new_owner_name":request["new_owner_name"],
+                        "stale":request["stale"]}})
+            items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
+            return items[offset:offset+limit]
 
     def orders(self, limit=100, offset=0):
         with self.transaction() as db:

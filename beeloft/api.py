@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -72,6 +72,12 @@ def create_app(database_path):
     @app.get("/api/users", tags=["Access"])
     def users(user: Actor):
         return store.users()
+
+    @app.get("/api/approvals", tags=["Approvals"])
+    def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                  status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
+                  kind: Literal['all','purchase_request','production_change'] = 'all'):
+        return store.approvals(limit, offset, status, kind)
 
     @app.get("/api/stages", tags=["Production"])
     def stages(user: Actor):
@@ -559,6 +565,25 @@ def create_app(database_path):
     def order_changes(order_id: str, user: Actor, limit: Limit = 100,
                       before: Annotated[int | None, Query(ge=1)] = None):
         return store.order_changes(order_id, limit, before)
+
+    @app.post("/api/orders/{order_id}/change-requests", status_code=201, tags=["Approvals"])
+    def create_production_change_request(order_id: str, body: ProductionChangeRequestCreate,
+                                         user: Actor, key: RequestKey):
+        return store.create_production_change_request(order_id, body.model_dump(mode="json"), user, key)
+
+    @app.get("/api/orders/{order_id}/change-requests", tags=["Approvals"])
+    def production_change_requests(order_id: str, user: Actor, limit: Limit = 100,
+                                   before: Annotated[int | None, Query(ge=1)] = None):
+        return store.production_change_requests(order_id, limit, before)
+
+    @app.get("/api/production-change-requests/{request_id}", tags=["Approvals"])
+    def production_change_request(request_id: str, user: Actor):
+        return store.production_change_request(request_id)
+
+    @app.post("/api/production-change-requests/{request_id}/decisions", status_code=201, tags=["Approvals"])
+    def decide_production_change_request(request_id: str, body: PurchaseRequestDecision,
+                                         user: Actor, key: RequestKey):
+        return store.decide_production_change_request(request_id, body.model_dump(mode="json"), user, key)
 
     @app.get("/api/activity", tags=["Reports"])
     def activity(user: Actor, day: date | None = None, limit: Limit = 50, kind: ActivityKind = "all",
