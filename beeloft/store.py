@@ -1331,7 +1331,7 @@ class Store:
         source=self._marketplace_pick(db,record['pick_id'])
         for field in ('reference','reservation_id','reservation_reference','receipt_id','receipt_reference','order_id',
                       'order_reference','product_id','sku','product_name','color','size','marketplace',
-                      'external_order_reference','location','staging_location','final_qc_record_id',
+                      'external_order_reference','location','staging_location','picked_date','final_qc_record_id',
                       'final_qc_reference','batch_id','batch_reference'):
             record['pick_reference' if field=='reference' else field]=source[field]
         reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM marketplace_pack_reversals r

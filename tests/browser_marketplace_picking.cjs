@@ -74,5 +74,9 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
   inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.picked_quantity,inventory.reserved_quantity,
     inventory.available_quantity],[12,0,6,6]);
+  const packSource=await post('/api/marketplace-reservations/'+reservation.id+'/picks',{
+    reference:'PICK-PACK-SOURCE',quantity:4,staging_location:'Meja Packing B',picked_date:'2026-09-25',
+    reason:'CONTOH sumber pack berikutnya'},'pick-pack-source');
   console.log('Marketplace picking browser QA PASS: staging inventory, partial pick, retry, roles, release guard, correction, mobile/200%.');
+  return {pick:packSource};
 };
