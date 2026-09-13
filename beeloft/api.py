@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioStockSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -171,6 +171,23 @@ def create_app(database_path):
     @app.get('/api/integration-sync-runs/{run_id}', tags=['Integrations'])
     def integration_sync_run(run_id: str, user: Actor):
         return store.integration_sync_run(run_id)
+
+    @app.post('/api/integrations/jubelio/finished-goods-snapshots', status_code=201, tags=['Integrations'])
+    def import_jubelio_stock_snapshot(body: JubelioStockSnapshotImport, user: Actor, key: RequestKey):
+        return store.import_jubelio_stock_snapshot(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/integrations/jubelio/finished-goods-snapshots', tags=['Integrations'])
+    def jubelio_stock_snapshots(user: Actor, limit: Limit = 100,
+                                before: Annotated[int | None, Query(ge=1)] = None):
+        return store.jubelio_stock_snapshots(limit,before)
+
+    @app.get('/api/integrations/jubelio/finished-goods-snapshots/{batch_id}', tags=['Integrations'])
+    def jubelio_stock_snapshot(batch_id: str, user: Actor):
+        return store.jubelio_stock_snapshot(batch_id)
+
+    @app.get('/api/integrations/jubelio/finished-goods-reconciliation', tags=['Integrations'])
+    def jubelio_stock_reconciliation(user: Actor):
+        return store.jubelio_stock_reconciliation()
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

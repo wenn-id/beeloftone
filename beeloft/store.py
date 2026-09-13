@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -125,6 +125,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("integration_sync.sql").read_text(encoding="utf-8"))
             if version < 34:
                 db.executescript(Path(__file__).with_name("product_external_mappings.sql").read_text(encoding="utf-8"))
+            if version < 35:
+                db.executescript(Path(__file__).with_name("jubelio_stock_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -339,6 +341,108 @@ class Store:
                 AND (? IS NULL OR e.sequence<?) ORDER BY e.sequence DESC LIMIT ?''',
                 (product_id,system,before,before,limit)).fetchall()
             return [dict(row) for row in rows]
+
+    def _jubelio_stock_snapshot(self, db, batch_id):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM jubelio_stock_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot stok Jubelio tidak ditemukan.')
+        record=dict(row)
+        record['items']=[dict(item) for item in db.execute('''SELECT i.*,p.sku,p.name AS product_name,
+            p.color,p.size FROM jubelio_stock_snapshot_items i JOIN products p ON p.id=i.product_id
+            WHERE i.batch_id=? ORDER BY p.sku,p.id''',(batch_id,))]
+        record['quarantine']=[dict(item) for item in db.execute('''SELECT * FROM jubelio_stock_quarantine_items
+            WHERE batch_id=? ORDER BY external_sku COLLATE NOCASE,external_id''',(batch_id,))]
+        record['accepted_count']=len(record['items']);record['rejected_count']=len(record['quarantine'])
+        return record
+
+    def import_jubelio_stock_snapshot(self, payload, actor, key):
+        def perform(db):
+            accepted=[];rejected=[]
+            for item in payload['items']:
+                matches=db.execute('''SELECT e.product_id,e.external_id,e.external_sku FROM product_external_mapping_events e
+                    WHERE e.system='jubelio' AND e.status='mapped' AND e.sequence=(SELECT MAX(x.sequence)
+                        FROM product_external_mapping_events x WHERE x.product_id=e.product_id AND x.system=e.system)
+                    AND (e.external_id=? OR e.external_sku=? COLLATE NOCASE)''',
+                    (item['external_id'],item['external_sku'])).fetchall()
+                exact=[row for row in matches if row['external_id']==item['external_id']
+                       and row['external_sku'].casefold()==item['external_sku'].casefold()]
+                if len(exact)==1:
+                    accepted.append((item,exact[0]['product_id']))
+                else:
+                    issue='unmapped' if not matches else 'mapping_mismatch'
+                    detail=('Belum ada mapping aktif untuk identifier Jubelio ini.' if issue=='unmapped'
+                            else 'ID dan SKU eksternal tidak menunjuk ke mapping produk yang sama.')
+                    rejected.append((item,issue,detail))
+            run_id=str(uuid4());failed=len(rejected)>0
+            error=f'{len(rejected)} record stok Jubelio dikarantina.' if failed else ''
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'jubelio','finished_goods','failed' if failed else 'succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['items']),len(accepted),
+                payload['external_cursor'],error,payload['reason'],actor['id'],now()))
+            batch_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO jubelio_stock_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for item,product_id in accepted:
+                db.execute('''INSERT INTO jubelio_stock_snapshot_items
+                    (id,batch_id,product_id,external_id,external_sku,sellable_quantity,reserved_quantity)
+                    VALUES(?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,product_id,item['external_id'],
+                    item['external_sku'],item['sellable_quantity'],item['reserved_quantity']))
+            for item,issue,detail in rejected:
+                db.execute('''INSERT INTO jubelio_stock_quarantine_items
+                    (id,batch_id,external_id,external_sku,sellable_quantity,reserved_quantity,issue,detail)
+                    VALUES(?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,item['external_id'],item['external_sku'],
+                    item['sellable_quantity'],item['reserved_quantity'],issue,detail))
+            return self._jubelio_stock_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'jubelio-stock-snapshot',payload,perform)
+
+    def jubelio_stock_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._jubelio_stock_snapshot(db,batch_id)
+
+    def jubelio_stock_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM jubelio_stock_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',
+                (before,before,limit)).fetchall()
+            return [self._jubelio_stock_snapshot(db,row['id']) for row in rows]
+
+    def jubelio_stock_reconciliation(self):
+        internal={row['product_id']:row for row in self.finished_goods_inventory(1_000_000_000,0)}
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM jubelio_stock_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'summary':{'mapped_products':0,'matched':0,'mismatched':0,
+                    'missing_from_snapshot':0,'quarantined':0},'items':[],'quarantine':[]}
+            snapshot=self._jubelio_stock_snapshot(db,latest['id'])
+            snap={row['product_id']:row for row in snapshot['items']}
+            mappings=db.execute('''SELECT e.product_id,p.sku,p.name AS product_name,p.color,p.size
+                FROM product_external_mapping_events e JOIN products p ON p.id=e.product_id
+                WHERE e.system='jubelio' AND e.status='mapped' AND e.sequence=(SELECT MAX(x.sequence)
+                    FROM product_external_mapping_events x WHERE x.product_id=e.product_id AND x.system=e.system)
+                ORDER BY p.sku,p.id''').fetchall()
+            items=[]
+            for mapping in mappings:
+                external=snap.get(mapping['product_id']);core=internal.get(mapping['product_id'],{})
+                beeloft=core.get('available_quantity',0)
+                if external:
+                    jubelio=external['sellable_quantity']-external['reserved_quantity']
+                    variance=jubelio-beeloft;status='matched' if variance==0 else 'mismatched'
+                else:
+                    jubelio=None;variance=None;status='missing_from_snapshot'
+                items.append(dict(mapping)|{'beeloft_available_quantity':beeloft,
+                    'jubelio_available_quantity':jubelio,'variance_quantity':variance,'status':status})
+            summary={'mapped_products':len(items),'matched':sum(x['status']=='matched' for x in items),
+                'mismatched':sum(x['status']=='mismatched' for x in items),
+                'missing_from_snapshot':sum(x['status']=='missing_from_snapshot' for x in items),
+                'quarantined':len(snapshot['quarantine'])}
+            return {'snapshot':{key:snapshot[key] for key in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+                'records_read','records_written','error','created_at')},'summary':summary,
+                'items':items,'quarantine':snapshot['quarantine']}
 
     def create_material(self, payload, actor, key):
         def perform(db):

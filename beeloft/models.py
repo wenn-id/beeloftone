@@ -195,6 +195,45 @@ class ProductExternalMappingSave(Input):
         return self
 
 
+class JubelioStockSnapshotItem(Input):
+    external_id: Text
+    external_sku: Text
+    sellable_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+    reserved_quantity: Annotated[int, Field(strict=True, ge=0, le=1_000_000_000)]
+
+    @model_validator(mode='after')
+    def reserved_within_sellable(self):
+        if self.reserved_quantity>self.sellable_quantity:
+            raise ValueError('Reserved Jubelio tidak boleh melebihi sellable.')
+        return self
+
+
+class JubelioStockSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    items: list[JubelioStockSnapshotItem] = Field(max_length=500)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        ids=[item.external_id for item in self.items]
+        skus=[item.external_sku.casefold() for item in self.items]
+        if len(ids)!=len(set(ids)) or len(skus)!=len(set(skus)):
+            raise ValueError('Snapshot tidak boleh memuat ID atau SKU eksternal ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 
