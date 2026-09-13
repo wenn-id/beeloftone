@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.43.0"
+    "version": "0.44.0"
   },
   "paths": {
     "/health": {
@@ -1259,6 +1259,196 @@
             }
           }
         }
+      }
+    },
+    "/api/integrations/jubelio/finished-goods-snapshots": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Import Jubelio Stock Snapshot",
+        "operationId": "import_jubelio_stock_snapshot_api_integrations_jubelio_finished_goods_snapshots_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JubelioStockSnapshotImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Stock Snapshots",
+        "operationId": "jubelio_stock_snapshots_api_integrations_jubelio_finished_goods_snapshots_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/jubelio/finished-goods-snapshots/{batch_id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Stock Snapshot",
+        "operationId": "jubelio_stock_snapshot_api_integrations_jubelio_finished_goods_snapshots__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/jubelio/finished-goods-reconciliation": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Stock Reconciliation",
+        "operationId": "jubelio_stock_reconciliation_api_integrations_jubelio_finished_goods_reconciliation_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/api/products": {
@@ -11126,6 +11316,92 @@
         ],
         "title": "IssueResolve"
       },
+      "JubelioStockSnapshotImport": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "snapshot_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Snapshot At"
+          },
+          "external_cursor": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "External Cursor",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JubelioStockSnapshotItem"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "snapshot_at",
+          "reason",
+          "items"
+        ],
+        "title": "JubelioStockSnapshotImport"
+      },
+      "JubelioStockSnapshotItem": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Id"
+          },
+          "external_sku": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Sku"
+          },
+          "sellable_quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Sellable Quantity"
+          },
+          "reserved_quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 0.0,
+            "title": "Reserved Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_id",
+          "external_sku",
+          "sellable_quantity",
+          "reserved_quantity"
+        ],
+        "title": "JubelioStockSnapshotItem"
+      },
       "MarketingBudgetRequestCreate": {
         "properties": {
           "reason": {
@@ -12583,13 +12859,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",
