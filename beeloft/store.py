@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -135,6 +135,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("jubelio_listing_snapshots.sql").read_text(encoding="utf-8"))
             if version < 39:
                 db.executescript(Path(__file__).with_name("mekari_finance_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 40:
+                db.executescript(Path(__file__).with_name("mekari_payable_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -915,6 +917,110 @@ class Store:
             'records_read','records_written','error','created_at')}
         return {'snapshot':header,'current':snapshot['periods'][0] if snapshot['periods'] else None,
                 'periods':snapshot['periods']}
+
+    @staticmethod
+    def _mekari_payable_record(row, as_of):
+        record=dict(row)
+        original=Decimal(record.pop('original_amount_minor'))/100
+        paid=Decimal(record.pop('paid_amount_minor'))/100
+        outstanding=Decimal() if record['status']=='void' else original-paid
+        remaining_days=(date.fromisoformat(record['due_date'])-date.fromisoformat(as_of)).days
+        record.update(original_amount=format(original,'.2f'),paid_amount=format(paid,'.2f'),
+                      outstanding_amount=format(outstanding,'.2f'),
+                      overdue=outstanding>0 and remaining_days<0,
+                      due_in_days=remaining_days if outstanding>0 else None)
+        return record
+
+    def _mekari_payable_snapshot(self, db, batch_id, include_payables=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM mekari_payable_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot utang Mekari tidak ditemukan.')
+        record=dict(row)
+        record['payable_count']=db.execute('SELECT COUNT(*) FROM mekari_payable_snapshot_records WHERE batch_id=?',
+                                           (batch_id,)).fetchone()[0]
+        if include_payables:
+            record['payables']=[self._mekari_payable_record(source,record['as_of']) for source in db.execute('''
+                SELECT * FROM mekari_payable_snapshot_records WHERE batch_id=?
+                ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'partially_paid' THEN 1 ELSE 2 END,
+                due_date,reference COLLATE NOCASE,sequence''',(batch_id,))]
+        return record
+
+    def import_mekari_payable_snapshot(self, payload, actor, key):
+        def perform(db):
+            run_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'mekari','payables','succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['payables']),len(payload['payables']),
+                payload['external_cursor'],'',payload['reason'],actor['id'],created))
+            batch_id=str(uuid4())
+            db.execute('''INSERT INTO mekari_payable_snapshot_batches
+                (id,sync_run_id,snapshot_at,as_of,actor_id,created_at) VALUES(?,?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],payload['as_of'],actor['id'],created))
+            for payable in payload['payables']:
+                db.execute('''INSERT INTO mekari_payable_snapshot_records(id,batch_id,external_payable_id,
+                    reference,external_supplier_id,supplier_name,invoice_date,due_date,status,currency,
+                    original_amount_minor,paid_amount_minor,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (str(uuid4()),batch_id,payable['external_payable_id'],payable['reference'],
+                     payable['external_supplier_id'],payable['supplier_name'],payable['invoice_date'],
+                     payable['due_date'],payable['status'],payable['currency'],
+                     int(Decimal(payable['original_amount'])*100),int(Decimal(payable['paid_amount'])*100),
+                     payable['updated_at']))
+            return self._mekari_payable_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'mekari-payable-snapshot',payload,perform)
+
+    def mekari_payable_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._mekari_payable_snapshot(db,batch_id)
+
+    def mekari_payable_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM mekari_payable_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._mekari_payable_snapshot(db,row['id'],False) for row in rows]
+
+    def mekari_payables_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM mekari_payable_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'summary':{'accepted_payables':0,'open':0,'partially_paid':0,
+                    'paid':0,'void':0,'total_original':'0.00','total_paid':'0.00','total_outstanding':'0.00',
+                    'overdue_count':0,'overdue_amount':'0.00','due_next_7_days_count':0,
+                    'due_next_7_days_amount':'0.00'},'suppliers':[],'payables':[]}
+            snapshot=self._mekari_payable_snapshot(db,latest['id'])
+        active=[row for row in snapshot['payables'] if row['status']!='void']
+        unpaid=[row for row in active if Decimal(row['outstanding_amount'])>0]
+        overdue=[row for row in unpaid if row['overdue']]
+        due_soon=[row for row in unpaid if 0<=row['due_in_days']<=7]
+        statuses={status:sum(row['status']==status for row in snapshot['payables'])
+                  for status in ('open','partially_paid','paid','void')}
+        groups={}
+        for row in snapshot['payables']:
+            group=groups.setdefault(row['external_supplier_id'],{'external_supplier_id':row['external_supplier_id'],
+                'supplier_name':row['supplier_name'],'invoices':0,'outstanding_invoices':0,
+                'outstanding_minor':0,'overdue_invoices':0,'overdue_minor':0})
+            group['invoices']+=1
+            amount=int(Decimal(row['outstanding_amount'])*100)
+            if amount:
+                group['outstanding_invoices']+=1;group['outstanding_minor']+=amount
+            if row['overdue']:
+                group['overdue_invoices']+=1;group['overdue_minor']+=amount
+        suppliers=[]
+        for group in sorted(groups.values(),key=lambda row:(row['supplier_name'].casefold(),row['external_supplier_id'])):
+            group['outstanding_amount']=format(Decimal(group.pop('outstanding_minor'))/100,'.2f')
+            group['overdue_amount']=format(Decimal(group.pop('overdue_minor'))/100,'.2f');suppliers.append(group)
+        total=lambda rows,name:format(sum((Decimal(row[name]) for row in rows),Decimal()),'.2f')
+        summary={'accepted_payables':len(snapshot['payables']),**statuses,
+            'total_original':total(active,'original_amount'),'total_paid':total(active,'paid_amount'),
+            'total_outstanding':total(unpaid,'outstanding_amount'),'overdue_count':len(overdue),
+            'overdue_amount':total(overdue,'outstanding_amount'),'due_next_7_days_count':len(due_soon),
+            'due_next_7_days_amount':total(due_soon,'outstanding_amount')}
+        header={name:snapshot[name] for name in ('id','sequence','snapshot_at','as_of','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'summary':summary,'suppliers':suppliers,'payables':snapshot['payables']}
 
     def create_material(self, payload, actor, key):
         def perform(db):

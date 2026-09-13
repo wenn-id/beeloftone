@@ -479,6 +479,77 @@ class MekariFinanceSnapshotImport(Input):
         return self
 
 
+class MekariPayableSnapshotRecord(Input):
+    external_payable_id: Text
+    reference: Text
+    external_supplier_id: Text
+    supplier_name: Text
+    invoice_date: date
+    due_date: date
+    status: Literal['open','partially_paid','paid','void']
+    currency: Literal['IDR'] = 'IDR'
+    original_amount: FinanceAmount
+    paid_amount: FinanceAmount
+    updated_at: datetime
+
+    @field_validator('original_amount','paid_amount')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount=Decimal(value)
+        if amount>1_000_000_000_000_000:
+            raise ValueError('Nilai utang maksimal Rp1.000.000.000.000.000.')
+        return format(amount,'.2f')
+
+    @field_validator('updated_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu pembaruan utang harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_payable(self):
+        original=Decimal(self.original_amount);paid=Decimal(self.paid_amount)
+        if original<=0:
+            raise ValueError('Nilai invoice harus positif.')
+        if self.due_date<self.invoice_date:
+            raise ValueError('Jatuh tempo tidak boleh sebelum tanggal invoice.')
+        if paid>original:
+            raise ValueError('Nilai dibayar tidak boleh melebihi nilai invoice.')
+        valid=(self.status=='open' and paid==0) or (self.status=='partially_paid' and 0<paid<original) \
+            or (self.status=='paid' and paid==original) or (self.status=='void' and paid==0)
+        if not valid:
+            raise ValueError('Status utang tidak konsisten dengan nilai yang sudah dibayar.')
+        return self
+
+
+class MekariPayableSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    as_of: date
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    payables: list[MekariPayableSnapshotRecord] = Field(max_length=1000)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        ids=[record.external_payable_id for record in self.payables]
+        references=[(record.external_supplier_id,record.reference.casefold()) for record in self.payables]
+        if len(ids)!=len(set(ids)) or len(references)!=len(set(references)):
+            raise ValueError('Snapshot tidak boleh memuat ID atau referensi utang supplier ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 
