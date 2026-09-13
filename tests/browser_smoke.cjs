@@ -35,7 +35,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
       'Idempotency-Key':key,'Content-Type':'application/json'},body:JSON.stringify(body)});
     const text=await response.text();assert.equal(response.status,201,text);return JSON.parse(text);
   }
+  const ssoStatus=page.waitForResponse(response=>response.url()===base+'/api/sso');
   await page.goto(base);
+  await ssoStatus;
+  assert.equal(await page.locator('#sso-login').isHidden(),true);
   await page.getByLabel('Kunci akses',{exact:true}).fill('invalid');
   await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
   await page.locator('#login-error:not([hidden])').waitFor();

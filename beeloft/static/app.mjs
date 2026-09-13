@@ -50,6 +50,7 @@ async function logout(revoke=true) {
   finally{clearWorkspace();$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
 }
 $('logout').onclick = () => logout();
+$('sso-login').onclick = () => location.assign('/api/sso/login');
 function fail(error, target) {
   if (error.status === 401) { logout(false); message('login-error', 'Sesi berakhir. Masukkan kembali kunci akses yang aktif.', true); }
   else message(target, error.message, true);
@@ -82,6 +83,15 @@ async function restoreSession() {
   }catch(error){if(version===epoch&&error.status!==401)message('login-error',error.message,true);}
   finally{$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
 }
+async function loadLoginOptions() {
+  try {
+    const sso=await api.get('/api/sso');
+    if(!sso.enabled)return;
+    $('login-copy').textContent='Gunakan identitas perusahaan atau kunci akses lokal.';
+    $('sso-login').textContent=`Masuk dengan ${sso.label}`;$('sso-login').hidden=false;$('sso-separator').hidden=false;
+  } catch {}
+}
+loadLoginOptions();
 restoreSession();
 
 function statusHTML(order) {
