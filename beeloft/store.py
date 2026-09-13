@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -133,6 +133,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("jubelio_return_snapshots.sql").read_text(encoding="utf-8"))
             if version < 38:
                 db.executescript(Path(__file__).with_name("jubelio_listing_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 39:
+                db.executescript(Path(__file__).with_name("mekari_finance_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -836,6 +838,83 @@ class Store:
             'records_read','records_written','error','created_at')}
         return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
             'listings':snapshot['listings'],'quarantine':snapshot['quarantine']}
+
+    @staticmethod
+    def _mekari_finance_period(row):
+        record=dict(row)
+        fields=('gross_revenue','sales_returns','cost_of_goods_sold','operating_expenses',
+                'other_income','other_expenses','cash_balance','receivables_balance','payables_balance')
+        for name in fields:
+            record[name]=format(Decimal(record.pop(name+'_minor'))/100,'.2f')
+        net_revenue=Decimal(record['gross_revenue'])-Decimal(record['sales_returns'])
+        gross_profit=net_revenue-Decimal(record['cost_of_goods_sold'])
+        net_profit=gross_profit-Decimal(record['operating_expenses'])+Decimal(record['other_income'])-Decimal(record['other_expenses'])
+        net_liquidity=Decimal(record['cash_balance'])+Decimal(record['receivables_balance'])-Decimal(record['payables_balance'])
+        record.update(net_revenue=format(net_revenue,'.2f'),gross_profit=format(gross_profit,'.2f'),
+                      net_profit=format(net_profit,'.2f'),net_liquidity=format(net_liquidity,'.2f'))
+        return record
+
+    def _mekari_finance_snapshot(self, db, batch_id, include_periods=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM mekari_finance_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot keuangan Mekari tidak ditemukan.')
+        record=dict(row)
+        record['period_count']=db.execute('SELECT COUNT(*) FROM mekari_finance_snapshot_periods WHERE batch_id=?',
+                                          (batch_id,)).fetchone()[0]
+        if include_periods:
+            record['periods']=[self._mekari_finance_period(source) for source in db.execute('''
+                SELECT * FROM mekari_finance_snapshot_periods WHERE batch_id=?
+                ORDER BY period_end DESC,period_start DESC,sequence DESC''',(batch_id,))]
+        return record
+
+    def import_mekari_finance_snapshot(self, payload, actor, key):
+        def perform(db):
+            run_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'mekari','finance_summary','succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['periods']),len(payload['periods']),
+                payload['external_cursor'],'',payload['reason'],actor['id'],created))
+            batch_id=str(uuid4())
+            db.execute('''INSERT INTO mekari_finance_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for period in payload['periods']:
+                values=[int(Decimal(period[name])*100) for name in ('gross_revenue','sales_returns',
+                    'cost_of_goods_sold','operating_expenses','other_income','other_expenses','cash_balance',
+                    'receivables_balance','payables_balance')]
+                db.execute('''INSERT INTO mekari_finance_snapshot_periods(id,batch_id,source_report_id,
+                    period_start,period_end,currency,gross_revenue_minor,sales_returns_minor,
+                    cost_of_goods_sold_minor,operating_expenses_minor,other_income_minor,other_expenses_minor,
+                    cash_balance_minor,receivables_balance_minor,payables_balance_minor)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,period['source_report_id'],
+                    period['period_start'],period['period_end'],period['currency'],*values))
+            return self._mekari_finance_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'mekari-finance-snapshot',payload,perform)
+
+    def mekari_finance_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._mekari_finance_snapshot(db,batch_id)
+
+    def mekari_finance_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM mekari_finance_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._mekari_finance_snapshot(db,row['id'],False) for row in rows]
+
+    def mekari_finance_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM mekari_finance_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'current':None,'periods':[]}
+            snapshot=self._mekari_finance_snapshot(db,latest['id'])
+        header={name:snapshot[name] for name in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'current':snapshot['periods'][0] if snapshot['periods'] else None,
+                'periods':snapshot['periods']}
 
     def create_material(self, payload, actor, key):
         def perform(db):

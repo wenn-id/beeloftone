@@ -417,6 +417,68 @@ class JubelioListingSnapshotImport(Input):
         return self
 
 
+FinanceAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,15}(\.[0-9]{1,2})?$", max_length=18)]
+
+
+class MekariFinanceSnapshotPeriod(Input):
+    source_report_id: Text
+    period_start: date
+    period_end: date
+    currency: Literal['IDR'] = 'IDR'
+    gross_revenue: FinanceAmount
+    sales_returns: FinanceAmount
+    cost_of_goods_sold: FinanceAmount
+    operating_expenses: FinanceAmount
+    other_income: FinanceAmount
+    other_expenses: FinanceAmount
+    cash_balance: FinanceAmount
+    receivables_balance: FinanceAmount
+    payables_balance: FinanceAmount
+
+    @field_validator('gross_revenue','sales_returns','cost_of_goods_sold','operating_expenses',
+                     'other_income','other_expenses','cash_balance','receivables_balance','payables_balance')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount=Decimal(value)
+        if amount>1_000_000_000_000_000:
+            raise ValueError('Nilai keuangan maksimal Rp1.000.000.000.000.000.')
+        return format(amount,'.2f')
+
+    @model_validator(mode='after')
+    def valid_period(self):
+        if self.period_end<self.period_start:
+            raise ValueError('Akhir periode tidak boleh sebelum awal periode.')
+        if Decimal(self.sales_returns)>Decimal(self.gross_revenue):
+            raise ValueError('Retur penjualan tidak boleh melebihi pendapatan kotor.')
+        return self
+
+
+class MekariFinanceSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    periods: list[MekariFinanceSnapshotPeriod] = Field(max_length=120)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        report_ids=[period.source_report_id for period in self.periods]
+        ranges=[(period.period_start,period.period_end) for period in self.periods]
+        if len(report_ids)!=len(set(report_ids)) or len(ranges)!=len(set(ranges)):
+            raise ValueError('Snapshot tidak boleh memuat ID laporan atau periode ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 
