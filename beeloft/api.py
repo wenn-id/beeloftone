@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -290,6 +290,23 @@ def create_app(database_path):
     @app.get('/api/integrations/mekari/receivables-summary', tags=['Integrations'])
     def mekari_receivables_summary(user: Actor):
         return store.mekari_receivables_summary()
+
+    @app.post('/api/integrations/mekari/payroll-snapshots', status_code=201, tags=['Integrations'])
+    def import_mekari_payroll_snapshot(body: MekariPayrollSnapshotImport, user: Actor, key: RequestKey):
+        return store.import_mekari_payroll_snapshot(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/integrations/mekari/payroll-snapshots', tags=['Integrations'])
+    def mekari_payroll_snapshots(user: Actor, limit: Limit = 100,
+                                 before: Annotated[int | None, Query(ge=1)] = None):
+        return store.mekari_payroll_snapshots(limit,before)
+
+    @app.get('/api/integrations/mekari/payroll-snapshots/{batch_id}', tags=['Integrations'])
+    def mekari_payroll_snapshot(batch_id: str, user: Actor):
+        return store.mekari_payroll_snapshot(batch_id)
+
+    @app.get('/api/integrations/mekari/payroll-summary', tags=['Integrations'])
+    def mekari_payroll_summary(user: Actor):
+        return store.mekari_payroll_summary()
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

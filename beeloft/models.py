@@ -621,6 +621,73 @@ class MekariReceivableSnapshotImport(Input):
         return self
 
 
+class MekariPayrollSnapshotPeriod(Input):
+    external_payroll_id: Text
+    period_start: date
+    period_end: date
+    status: Literal['draft','reviewing','approved','paid','cancelled']
+    currency: Literal['IDR'] = 'IDR'
+    employee_count: int = Field(ge=0, le=1_000_000)
+    gross_pay: FinanceAmount
+    employee_deductions: FinanceAmount
+    employer_contributions: FinanceAmount
+    payment_date: date | None = None
+    updated_at: datetime
+
+    @field_validator('gross_pay','employee_deductions','employer_contributions')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount=Decimal(value)
+        if amount>1_000_000_000_000_000:
+            raise ValueError('Nilai payroll maksimal Rp1.000.000.000.000.000.')
+        return format(amount,'.2f')
+
+    @field_validator('updated_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu pembaruan payroll harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_period(self):
+        if self.period_end<self.period_start:
+            raise ValueError('Akhir periode payroll tidak boleh sebelum awal periode.')
+        if Decimal(self.employee_deductions)>Decimal(self.gross_pay):
+            raise ValueError('Potongan karyawan tidak boleh melebihi gaji bruto.')
+        if (self.status=='paid')!=(self.payment_date is not None):
+            raise ValueError('Tanggal pembayaran hanya wajib untuk payroll berstatus dibayar.')
+        if self.payment_date is not None and self.payment_date<self.period_start:
+            raise ValueError('Tanggal pembayaran tidak boleh sebelum awal periode payroll.')
+        return self
+
+
+class MekariPayrollSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    periods: list[MekariPayrollSnapshotPeriod] = Field(max_length=120)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        payroll_ids=[period.external_payroll_id for period in self.periods]
+        ranges=[(period.period_start,period.period_end) for period in self.periods]
+        if len(payroll_ids)!=len(set(payroll_ids)) or len(ranges)!=len(set(ranges)):
+            raise ValueError('Snapshot tidak boleh memuat ID payroll atau periode ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

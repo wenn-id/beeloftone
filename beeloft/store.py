@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -139,6 +139,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("mekari_payable_snapshots.sql").read_text(encoding="utf-8"))
             if version < 41:
                 db.executescript(Path(__file__).with_name("mekari_receivable_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 42:
+                db.executescript(Path(__file__).with_name("mekari_payroll_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1127,6 +1129,80 @@ class Store:
         header={name:snapshot[name] for name in ('id','sequence','snapshot_at','as_of','sync_run_id','sync_status',
             'records_read','records_written','error','created_at')}
         return {'snapshot':header,'summary':summary,'customers':customers,'receivables':snapshot['receivables']}
+
+    @staticmethod
+    def _mekari_payroll_period(row):
+        record=dict(row)
+        for name in ('gross_pay','employee_deductions','employer_contributions'):
+            record[name]=format(Decimal(record.pop(name+'_minor'))/100,'.2f')
+        net_pay=Decimal(record['gross_pay'])-Decimal(record['employee_deductions'])
+        employer_cost=Decimal(record['gross_pay'])+Decimal(record['employer_contributions'])
+        record.update(net_pay=format(net_pay,'.2f'),total_employer_cost=format(employer_cost,'.2f'))
+        return record
+
+    def _mekari_payroll_snapshot(self, db, batch_id, include_periods=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM mekari_payroll_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot payroll Mekari tidak ditemukan.')
+        record=dict(row)
+        record['period_count']=db.execute('SELECT COUNT(*) FROM mekari_payroll_snapshot_periods WHERE batch_id=?',
+                                          (batch_id,)).fetchone()[0]
+        if include_periods:
+            record['periods']=[self._mekari_payroll_period(source) for source in db.execute('''
+                SELECT * FROM mekari_payroll_snapshot_periods WHERE batch_id=?
+                ORDER BY period_end DESC,period_start DESC,sequence DESC''',(batch_id,))]
+        return record
+
+    def import_mekari_payroll_snapshot(self, payload, actor, key):
+        def perform(db):
+            run_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'mekari','payroll','succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['periods']),len(payload['periods']),
+                payload['external_cursor'],'',payload['reason'],actor['id'],created))
+            batch_id=str(uuid4())
+            db.execute('''INSERT INTO mekari_payroll_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for period in payload['periods']:
+                values=[int(Decimal(period[name])*100) for name in
+                        ('gross_pay','employee_deductions','employer_contributions')]
+                db.execute('''INSERT INTO mekari_payroll_snapshot_periods(id,batch_id,external_payroll_id,
+                    period_start,period_end,status,currency,employee_count,gross_pay_minor,
+                    employee_deductions_minor,employer_contributions_minor,payment_date,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,period['external_payroll_id'],
+                    period['period_start'],period['period_end'],period['status'],period['currency'],
+                    period['employee_count'],*values,period['payment_date'],period['updated_at']))
+            return self._mekari_payroll_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'mekari-payroll-snapshot',payload,perform)
+
+    def mekari_payroll_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._mekari_payroll_snapshot(db,batch_id)
+
+    def mekari_payroll_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM mekari_payroll_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._mekari_payroll_snapshot(db,row['id'],False) for row in rows]
+
+    def mekari_payroll_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM mekari_payroll_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'current':None,'status_counts':{'draft':0,'reviewing':0,
+                    'approved':0,'paid':0,'cancelled':0},'periods':[]}
+            snapshot=self._mekari_payroll_snapshot(db,latest['id'])
+        statuses={status:sum(row['status']==status for row in snapshot['periods'])
+                  for status in ('draft','reviewing','approved','paid','cancelled')}
+        header={name:snapshot[name] for name in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'current':snapshot['periods'][0] if snapshot['periods'] else None,
+                'status_counts':statuses,'periods':snapshot['periods']}
 
     def create_material(self, payload, actor, key):
         def perform(db):
