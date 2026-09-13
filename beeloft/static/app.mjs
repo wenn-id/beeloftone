@@ -252,6 +252,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         purchaseOrderDialog(result.purchase_order_id || result.id);
       }
       else if (path.startsWith('/api/purchase-requests')) purchaseRequestDialog(result.id);
+      else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) productMappingDialog(result.product_id);
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
       else if (view === 'materials') loadMaterials();
       else if (view === 'detail' && selected) openDetail(selected.id);
@@ -300,7 +301,7 @@ function reverseForm(id) {
 }
 async function allRows(path, extra={}) {
   let rows = [], page;
-  do { page = await api.get(path+'?'+new URLSearchParams({...extra,limit:500,offset:rows.length})); rows.push(...page); } while (page.length === 500);
+  do { page = await api.get(path+(path.includes('?')?'&':'?')+new URLSearchParams({...extra,limit:500,offset:rows.length})); rows.push(...page); } while (page.length === 500);
   return rows;
 }
 async function productsDialog() {
@@ -309,14 +310,44 @@ async function productsDialog() {
   openDialog('Master SKU', '<p class="state">Memuat daftar SKU…</p>');
   const modalVersion = dialogVersion;
   try {
-    const products = await allRows('/api/products');
+    const [products,mappings] = await Promise.all([allRows('/api/products'),allRows('/api/product-external-mappings',{system:'jubelio'})]);
     if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
-    $('dialog-content').innerHTML = `<div class="product-list">${products.length ? products.map(p => `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span></div><button type="button" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button></div>`).join('') : '<p>Belum ada SKU. Tambahkan produk untuk membuat order pertama.</p>'}</div>${user.role === 'admin' ? '<button class="primary" data-action="new-product">Tambah SKU</button>' : ''}`;
+    const byProduct=new Map(mappings.map(row=>[row.product_id,row]));
+    $('dialog-content').innerHTML = `<p class="hint">Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk.</p><div class="product-list">${products.length ? products.map(p => {const mapping=byProduct.get(p.id);return `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span><span class="hint">Jubelio · ${mapping?.status==='mapped'?e(mapping.external_sku):'Belum dipetakan'}</span></div><div class="actions"><button type="button" data-action="product-mapping" data-id="${e(p.id)}" aria-label="Jubelio ${e(p.sku)}">Jubelio</button><button type="button" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button></div></div>`;}).join('') : '<p>Belum ada SKU. Tambahkan produk untuk membuat order pertama.</p>'}</div>${user.role === 'admin' ? '<button class="primary" data-action="new-product">Tambah SKU</button>' : ''}`;
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="products">Coba lagi</button>`; }
 }
 function productForm() {
   if (guardPending()) return;
   formDialog('Tambah SKU', field('sku','Kode SKU','text','required maxlength="160"') + field('name','Nama produk','text','required maxlength="160"') + field('color','Warna','text','maxlength="80"') + field('size','Ukuran','text','maxlength="40"'), form => Object.fromEntries(new FormData(form)), '/api/products', 'Gunakan satu kode SKU untuk setiap kombinasi produk, warna, dan ukuran.');
+}
+async function productMappingDialog(productId) {
+  if (guardPending()) return;
+  const version=epoch;openDialog('Mapping SKU Jubelio','<p class="state">Memuat mapping…</p>');const modal=dialogVersion;
+  try {
+    const row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const mapped=row.status==='mapped';
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.sku)} · ${e(row.product_name)}</p><p class="hint">Jubelio adalah sumber order marketplace dan stok jual. Mapping ini hanya mencocokkan identitas; belum menjalankan sinkronisasi.</p><article class="material-event"><h3>${mapped?'Terhubung':'Belum dipetakan'}</h3>${mapped?`<p>SKU Jubelio <strong>${e(row.external_sku)}</strong></p><p>ID eksternal <strong>${e(row.external_id)}</strong></p><p class="reason">${e(row.reason)}</p><p class="hint">Revisi ${n(row.revision)} · ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`:'<p>Worker tidak boleh mengimpor data untuk SKU ini sebelum identitas Jubelio dipetakan.</p>'}</article><div class="actions">${user.role==='admin'?`<button class="primary" data-action="edit-product-mapping" data-id="${e(productId)}">${mapped?'Ubah mapping':'Hubungkan Jubelio'}</button>${mapped?`<button data-action="unmap-product" data-id="${e(productId)}">Lepaskan mapping</button>`:''}`:''}<button data-action="product-mapping-history" data-id="${e(productId)}">Riwayat mapping</button><button data-action="products">Kembali ke Master SKU</button></div>`;
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="product-mapping" data-id="${e(productId)}">Coba lagi</button>`;}
+}
+async function productMappingForm(productId) {
+  if(guardPending())return;
+  const version=epoch, row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
+  if(version!==epoch)return;
+  formDialog(row.status==='mapped'?'Ubah mapping Jubelio':'Hubungkan SKU ke Jubelio',field('external_id','ID eksternal Jubelio','text','required maxlength="160"')+field('external_sku','SKU Jubelio','text','required maxlength="160"')+'<label class="full">Alasan mapping<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{const data=new FormData(form);return {expected_revision:row.revision,action:'mapped',external_id:data.get('external_id').trim(),external_sku:data.get('external_sku').trim(),reason:data.get('reason').trim()};},`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`,`${row.sku} · simpan identifier persis seperti yang diberikan Jubelio.`);
+  $('action-form').elements.external_id.value=row.external_id;$('action-form').elements.external_sku.value=row.external_sku;
+}
+async function unmapProductForm(productId) {
+  if(guardPending())return;
+  const version=epoch,row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
+  if(version!==epoch||row.status!=='mapped')return productMappingDialog(productId);
+  formDialog('Lepaskan mapping Jubelio','<label class="full">Alasan pelepasan<textarea name="reason" required maxlength="1000"></textarea></label>',form=>({expected_revision:row.revision,action:'unmapped',external_id:'',external_sku:'',reason:new FormData(form).get('reason').trim()}),`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`,`${row.sku} · ${row.external_sku}\nWorker tidak boleh mencocokkan SKU ini setelah mapping dilepas.`);
+}
+async function productMappingHistoryDialog(productId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Riwayat mapping Jubelio','<div id="product-mapping-history"><p class="state">Memuat riwayat…</p></div><p id="product-mapping-history-error" class="error" role="alert" hidden></p><button id="product-mapping-history-more">Muat riwayat sebelumnya</button>');const modal=dialogVersion;let before=null;
+  async function load(){const button=$('product-mapping-history-more');button.disabled=true;message('product-mapping-history-error','');try{const rows=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio/history?`+new URLSearchParams({limit:20,...(before?{before}:{})}));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;if(!before)$('product-mapping-history').replaceChildren();$('product-mapping-history').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>Revisi ${n(row.revision)} · ${row.status==='mapped'?'Terhubung':'Dilepas'}</h3>${row.status==='mapped'?`<p>${e(row.external_sku)} · ${e(row.external_id)}</p>`:''}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p></article>`).join(''));if(!before&&!rows.length)$('product-mapping-history').innerHTML='<p class="state">Belum ada riwayat mapping.</p>';before=rows.at(-1)?.sequence||before;button.hidden=rows.length<20;}catch(error){if(version===epoch&&modal===dialogVersion){message('product-mapping-history-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}finally{button.disabled=false;}}
+  $('product-mapping-history-more').onclick=load;await load();
 }
 async function orderForm() {
   if (guardPending()) return;
@@ -367,6 +398,8 @@ document.addEventListener('click', event => {
     'qc-intake':()=>qualityIntakeDialog(id),
     'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
     bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
+    'product-mapping':()=>productMappingDialog(id),'edit-product-mapping':()=>productMappingForm(id),
+    'unmap-product':()=>unmapProductForm(id),'product-mapping-history':()=>productMappingHistoryDialog(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
     bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),
     'sewing-jobs':()=>sewingJobsDialog(id || selected?.id),'new-sewing-job':()=>sewingJobForm(id),'sewing-job':()=>sewingJobDialog(id),
@@ -1780,7 +1813,7 @@ async function integrationsDialog() {
     const report=await api.get('/api/integrations');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
-    $('dialog-content').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Muat ulang status</button></div>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3><p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
+    $('dialog-content').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Muat ulang status</button></div>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><button data-action="products">Buka Master SKU</button>`:''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="integrations">Coba lagi</button>`;}
 }
 $('integrations').onclick=integrationsDialog;
@@ -1789,8 +1822,9 @@ async function integrationRunsDialog() {
   if(guardPending())return;
   openDialog('Riwayat sinkronisasi',`<p class="hint">Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.</p><form id="integration-run-filter"><div class="form-grid"><label>Sistem<select name="system"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label>Status<select name="status"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="integrations">Kesehatan integrasi</button></div></form><p id="integration-run-message" class="state" role="status"></p><div id="integration-run-list"></div><button id="integration-run-more" type="button">Muat run sebelumnya</button>`);
   const version=epoch,modal=dialogVersion,form=$('integration-run-filter'),list=$('integration-run-list'),more=$('integration-run-more');
-  let before=null;
+  let before=null,generation=0;
   const load=async reset=>{
+    const request=++generation;
     if(reset){before=null;list.replaceChildren();}
     more.disabled=true;message('integration-run-message','Memuat ledger sinkronisasi…');
     try{
@@ -1798,12 +1832,12 @@ async function integrationRunsDialog() {
       const query=new URLSearchParams({limit:50,system:values.system,status:values.status});
       if(before)query.set('before',before);
       const rows=await api.get('/api/integration-sync-runs?'+query);
-      if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+      if(version!==epoch||modal!==dialogVersion||!$('dialog').open||request!==generation)return;
       message('integration-run-message',rows.length?'':list.children.length?'Tidak ada run yang lebih lama.':'Belum ada run sinkronisasi yang cocok.');
       list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="status-label ${row.status==='succeeded'?'done':'late'}">${row.status==='succeeded'?'Berhasil':'Gagal'}</p><h3>${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)}</h3><p>Dibaca ${n(row.records_read)} · ditulis ${n(row.records_written)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Selesai ${purchaseStamp(row.finished_at)} · dicatat ${e(row.actor_name)}</p><button data-action="integration-run" data-id="${e(row.id)}">Buka rincian run</button></article>`).join(''));
       before=rows.at(-1)?.sequence||before;more.hidden=rows.length<50;
-    }catch(error){if(version===epoch&&modal===dialogVersion)message('integration-run-message',error.message,true);}
-    finally{if(version===epoch&&modal===dialogVersion)more.disabled=false;}
+    }catch(error){if(version===epoch&&modal===dialogVersion&&request===generation)message('integration-run-message',error.message,true);}
+    finally{if(version===epoch&&modal===dialogVersion&&request===generation)more.disabled=false;}
   };
   form.onsubmit=event=>{event.preventDefault();load(true);};more.onclick=()=>load(false);load(true);
 }

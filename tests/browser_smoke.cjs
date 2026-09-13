@@ -309,6 +309,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_demand_forecast.cjs')({page,login,viewer,apiGet,work});
   await require('./browser_replenishment_recommendations.cjs')({page,login,admin,viewer,apiGet,work,...productionCost});
   await require('./browser_integrations.cjs')({page,login,admin,operator,viewer,apiGet,apiPost,work});
+  await require('./browser_product_external_mappings.cjs')({page,login,admin,viewer,apiGet,work});
   await require('./browser_ai_investigation.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_cutting.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_bundles.cjs')({page,login,admin,operator,viewer,apiGet,work});
