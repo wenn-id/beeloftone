@@ -234,7 +234,7 @@ class SewingJobTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],43)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],44)
         self.assertEqual(self.client.get('/api/orders/'+order['id']+'/sewing-jobs').json(), [])
         current = self.client.get('/api/bundles/'+bundle['id']).json()
         self.assertEqual((current['sewing_allocated_quantity'], current['sewing_unassigned_quantity']), (0, 20))

@@ -22,6 +22,12 @@ class CliTest(unittest.TestCase):
             credentials = json.loads(demo.stdout)
             self.assertEqual(len(credentials["users"]), 3)
             self.assertNotEqual(run("demo").returncode, 0)
+            issuer="https://identity.example"
+            linked=run("oidc-link","--issuer",issuer,"--subject","admin-subject",
+                       "--user-id",credentials["users"][0]["id"])
+            self.assertEqual(linked.returncode,0,linked.stderr)
+            self.assertEqual(json.loads(linked.stdout)["subject"],"admin-subject")
+            self.assertEqual(run("oidc-unlink","--issuer",issuer,"--subject","admin-subject").returncode,0)
             backup = Path(folder) / "backup.sqlite3"
             self.assertEqual(run("backup", str(backup)).returncode, 0)
             self.assertNotEqual(run("backup", str(backup)).returncode, 0)

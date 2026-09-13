@@ -22,6 +22,13 @@ def main():
     user.add_argument("--role", choices=["admin", "operator", "viewer"], required=True)
     disable = commands.add_parser("disable-user", help="Nonaktifkan akun dan API key")
     disable.add_argument("user_id")
+    oidc_link = commands.add_parser("oidc-link", help="Tautkan identitas OIDC ke akun Beeloft")
+    oidc_link.add_argument("--issuer", required=True)
+    oidc_link.add_argument("--subject", required=True)
+    oidc_link.add_argument("--user-id", required=True)
+    oidc_unlink = commands.add_parser("oidc-unlink", help="Lepaskan identitas OIDC dari akun Beeloft")
+    oidc_unlink.add_argument("--issuer", required=True)
+    oidc_unlink.add_argument("--subject", required=True)
     backup = commands.add_parser("backup", help="Backup konsisten tanpa menimpa file")
     backup.add_argument("destination")
     commands.add_parser("demo", help="Buat database contoh BARU; tidak menimpa database")
@@ -29,7 +36,7 @@ def main():
     path = Path(args.db).resolve()
 
     try:
-        if args.command in ("backup", "disable-user") and not path.is_file():
+        if args.command in ("backup", "disable-user", "oidc-link", "oidc-unlink") and not path.is_file():
             parser.error("Database sumber belum ada.")
         if args.command == "demo":
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,6 +53,11 @@ def main():
         elif args.command == "disable-user":
             store.disable_user(args.user_id)
             result = {"disabled_user": args.user_id}
+        elif args.command == "oidc-link":
+            result = store.link_oidc_identity(args.issuer, args.subject, args.user_id)
+        elif args.command == "oidc-unlink":
+            store.unlink_oidc_identity(args.issuer, args.subject)
+            result = {"unlinked_issuer": args.issuer.rstrip('/'), "unlinked_subject": args.subject}
         elif args.command == "backup":
             store.backup(args.destination)
             result = {"backup": str(Path(args.destination).resolve())}

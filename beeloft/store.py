@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -143,6 +143,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("mekari_payroll_snapshots.sql").read_text(encoding="utf-8"))
             if version < 43:
                 db.executescript(Path(__file__).with_name("browser_sessions.sql").read_text(encoding="utf-8"))
+            if version < 44:
+                db.executescript(Path(__file__).with_name("oidc_sso.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -179,19 +181,29 @@ class Store:
                 raise DomainError(401, "API key tidak valid atau akun nonaktif.")
             return dict(user)
 
-    def create_browser_session(self, key, lifetime_hours=8):
+    def _create_browser_session(self, db, user_id, lifetime_hours):
         token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
         created=datetime.now(timezone.utc);expires=created+timedelta(hours=lifetime_hours)
+        user=db.execute('SELECT id,name,role FROM users WHERE id=? AND active=1',(user_id,)).fetchone()
+        if not user:
+            raise DomainError(401,'Akun tidak ditemukan atau nonaktif.')
+        db.execute('DELETE FROM browser_sessions WHERE expires_at<=?',(created.isoformat(),))
+        db.execute('''INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,created_at,expires_at)
+            VALUES(?,?,?,?,?)''',(hashlib.sha256(token.encode()).hexdigest(),
+            hashlib.sha256(csrf.encode()).hexdigest(),user['id'],created.isoformat(),expires.isoformat()))
+        return dict(user),token,csrf
+
+    def create_browser_session(self, key, lifetime_hours=8):
         with self.transaction(write=True) as db:
             user=db.execute('SELECT id,name,role FROM users WHERE key_hash=? AND active=1',
                 (hashlib.sha256(key.encode()).hexdigest(),)).fetchone()
             if not user:
                 raise DomainError(401,'API key tidak valid atau akun nonaktif.')
-            db.execute('DELETE FROM browser_sessions WHERE expires_at<=?',(created.isoformat(),))
-            db.execute('''INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,created_at,expires_at)
-                VALUES(?,?,?,?,?)''',(hashlib.sha256(token.encode()).hexdigest(),
-                hashlib.sha256(csrf.encode()).hexdigest(),user['id'],created.isoformat(),expires.isoformat()))
-            return dict(user),token,csrf
+            return self._create_browser_session(db,user['id'],lifetime_hours)
+
+    def create_browser_session_for_user(self, user_id, lifetime_hours=8):
+        with self.transaction(write=True) as db:
+            return self._create_browser_session(db,user_id,lifetime_hours)
 
     def authenticate_browser_session(self, token, csrf_token=None, require_csrf=False):
         token_hash=hashlib.sha256(token.encode()).hexdigest()
@@ -211,6 +223,67 @@ class Store:
         with self.transaction(write=True) as db:
             db.execute('DELETE FROM browser_sessions WHERE token_hash=?',
                        (hashlib.sha256(token.encode()).hexdigest(),))
+
+    @staticmethod
+    def _oidc_identity_values(issuer, subject):
+        issuer=issuer.strip().rstrip('/');subject=subject.strip()
+        if not issuer.startswith('https://') or not 8<=len(issuer)<=500:
+            raise DomainError(422,'Issuer OIDC harus berupa URL HTTPS yang valid.')
+        if not 1<=len(subject)<=500:
+            raise DomainError(422,'Subject OIDC wajib diisi dan maksimal 500 karakter.')
+        return issuer,subject
+
+    def link_oidc_identity(self, issuer, subject, user_id):
+        issuer,subject=self._oidc_identity_values(issuer,subject)
+        with self.transaction(write=True) as db:
+            user=db.execute('SELECT id,name,role,active FROM users WHERE id=?',(user_id,)).fetchone()
+            if not user:
+                raise DomainError(404,'Pengguna tidak ditemukan.')
+            try:
+                db.execute('''INSERT INTO oidc_identities(issuer,subject,user_id,created_at)
+                    VALUES(?,?,?,?)''',(issuer,subject,user_id,now()))
+            except sqlite3.IntegrityError as exc:
+                raise DomainError(409,'Identitas atau pengguna sudah ditautkan untuk issuer ini.') from exc
+            return {'issuer':issuer,'subject':subject,'user_id':user_id,
+                    'user_name':user['name'],'role':user['role'],'active':user['active']}
+
+    def unlink_oidc_identity(self, issuer, subject):
+        issuer,subject=self._oidc_identity_values(issuer,subject)
+        with self.transaction(write=True) as db:
+            deleted=db.execute('DELETE FROM oidc_identities WHERE issuer=? AND subject=?',(issuer,subject))
+            if deleted.rowcount!=1:
+                raise DomainError(404,'Identitas OIDC tidak ditemukan.')
+
+    def authenticate_oidc_identity(self, issuer, subject):
+        issuer,subject=self._oidc_identity_values(issuer,subject)
+        with self.transaction(write=True) as db:
+            row=db.execute('''SELECT u.id,u.name,u.role,u.active FROM oidc_identities i
+                JOIN users u ON u.id=i.user_id WHERE i.issuer=? AND i.subject=?''',(issuer,subject)).fetchone()
+            if not row:
+                raise DomainError(403,'Identitas SSO belum ditautkan ke akun Beeloft.')
+            if not row['active']:
+                raise DomainError(401,'Akun Beeloft untuk identitas SSO ini nonaktif.')
+            db.execute('UPDATE oidc_identities SET last_login_at=? WHERE issuer=? AND subject=?',
+                       (now(),issuer,subject))
+            return {name:row[name] for name in ('id','name','role')}
+
+    def create_oidc_login_attempt(self, state, nonce, verifier, lifetime_minutes=10):
+        created=datetime.now(timezone.utc);expires=created+timedelta(minutes=lifetime_minutes)
+        with self.transaction(write=True) as db:
+            db.execute('DELETE FROM oidc_login_attempts WHERE expires_at<=?',(created.isoformat(),))
+            db.execute('''INSERT INTO oidc_login_attempts(state_hash,nonce_hash,code_verifier,created_at,expires_at)
+                VALUES(?,?,?,?,?)''',(hashlib.sha256(state.encode()).hexdigest(),
+                hashlib.sha256(nonce.encode()).hexdigest(),verifier,created.isoformat(),expires.isoformat()))
+
+    def consume_oidc_login_attempt(self, state):
+        state_hash=hashlib.sha256(state.encode()).hexdigest()
+        with self.transaction(write=True) as db:
+            row=db.execute('''SELECT nonce_hash,code_verifier FROM oidc_login_attempts
+                WHERE state_hash=? AND expires_at>?''',(state_hash,now())).fetchone()
+            db.execute('DELETE FROM oidc_login_attempts WHERE state_hash=?',(state_hash,))
+            if not row:
+                raise DomainError(401,'State login OIDC tidak valid atau kedaluwarsa.')
+            return dict(row)
 
     def disable_user(self, user_id):
         with self.transaction(write=True) as db:

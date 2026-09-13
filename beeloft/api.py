@@ -1,11 +1,12 @@
 import sqlite3
+import secrets
 import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
@@ -16,17 +17,21 @@ from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, 
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
+from beeloft.oidc import OidcClient, OidcConfig, OidcError
 from beeloft.reports import activity_csv
 
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
 MAX_EXPORT_ROWS = 10_000
 
 
-def create_app(database_path):
+def create_app(database_path, oidc_config=None, oidc_transport=None):
     app = FastAPI(title="Beeloft One · Production API", version="0.52.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
+    oidc_config = oidc_config or OidcConfig.from_env()
+    oidc = OidcClient(oidc_config, oidc_transport) if oidc_config else None
     app.state.store = store
+    app.state.oidc = oidc
     static = Path(__file__).with_name("static")
     app.mount("/static", StaticFiles(directory=static), name="static")
 
@@ -53,6 +58,11 @@ def create_app(database_path):
     async def domain_error(request, exc):
         return JSONResponse(status_code=exc.status, content={"detail": exc.message})
 
+    @app.exception_handler(OidcError)
+    async def oidc_error(request, exc):
+        return JSONResponse(status_code=exc.status, headers={'Cache-Control':'no-store'},
+                            content={"detail": exc.message})
+
     @app.exception_handler(sqlite3.IntegrityError)
     async def integrity_error(request, exc):
         return JSONResponse(status_code=409, content={"detail": "Data duplikat atau melanggar aturan database. Periksa kode SKU/bahan dan referensi order/batch."})
@@ -70,16 +80,56 @@ def create_app(database_path):
             db.execute("SELECT 1").fetchone()
         return {"status": "ok"}
 
-    @app.post('/api/session', tags=['Access'])
-    def create_session(body: BrowserSessionLogin, request: Request, response: Response):
-        user,token,csrf=store.create_browser_session(body.api_key)
+    def session_cookies(request, response, token, csrf):
         secure=request.url.scheme=='https'
         response.set_cookie('beeloft_session',token,max_age=8*60*60,httponly=True,
                             secure=secure,samesite='strict',path='/')
         response.set_cookie('beeloft_csrf',csrf,max_age=8*60*60,httponly=False,
                             secure=secure,samesite='strict',path='/')
         response.headers['Cache-Control']='no-store'
+
+    @app.post('/api/session', tags=['Access'])
+    def create_session(body: BrowserSessionLogin, request: Request, response: Response):
+        user,token,csrf=store.create_browser_session(body.api_key)
+        session_cookies(request,response,token,csrf)
         return user
+
+    @app.get('/api/sso', tags=['Access'])
+    def sso_status():
+        return {'enabled':bool(oidc),'label':oidc.config.label if oidc else '',
+                'login_url':'/api/sso/login' if oidc else ''}
+
+    @app.get('/api/sso/login', tags=['Access'])
+    def sso_login(request: Request):
+        if not oidc:
+            raise OidcError(404,'Login SSO belum dikonfigurasi.')
+        url,state,nonce,verifier=oidc.authorization_request()
+        store.create_oidc_login_attempt(state,nonce,verifier)
+        response=RedirectResponse(url,status_code=302,headers={'Cache-Control':'no-store'})
+        response.set_cookie('beeloft_oidc_state',state,max_age=10*60,httponly=True,
+                            secure=request.url.scheme=='https',samesite='lax',path='/api/sso/callback')
+        return response
+
+    @app.get('/api/sso/callback', tags=['Access'])
+    def sso_callback(request: Request,
+                     code: Annotated[str | None, Query(min_length=1,max_length=4096)] = None,
+                     state: Annotated[str | None, Query(min_length=1,max_length=512)] = None,
+                     error: Annotated[str | None, Query(max_length=160)] = None):
+        if not oidc:
+            raise OidcError(404,'Login SSO belum dikonfigurasi.')
+        if error or not code or not state:
+            raise OidcError(401,'Login dibatalkan atau ditolak oleh penyedia identitas.')
+        browser_state=request.cookies.get('beeloft_oidc_state','')
+        if not secrets.compare_digest(browser_state,state):
+            raise OidcError(401,'State login OIDC tidak cocok dengan browser.')
+        attempt=store.consume_oidc_login_attempt(state)
+        identity=oidc.exchange(code,attempt['code_verifier'],attempt['nonce_hash'])
+        user=store.authenticate_oidc_identity(identity['issuer'],identity['subject'])
+        user,token,csrf=store.create_browser_session_for_user(user['id'])
+        response=RedirectResponse('/',status_code=303)
+        session_cookies(request,response,token,csrf)
+        response.delete_cookie('beeloft_oidc_state',path='/api/sso/callback')
+        return response
 
     @app.post('/api/session/logout', tags=['Access'])
     def close_session(request: Request, response: Response, user: Actor):
