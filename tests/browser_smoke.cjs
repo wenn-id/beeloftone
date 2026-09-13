@@ -14,7 +14,14 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   async function login(key) {
-    await page.getByLabel('Kunci akses',{exact:true}).fill(key);
+    await page.locator('#main:not([aria-busy])').waitFor();
+    const access=page.getByLabel('Kunci akses',{exact:true});
+    if(!await access.isVisible()){
+      if(await page.getByRole('heading',{name:'Konfirmasi pencatatan sebelumnya',exact:true}).isVisible())return;
+      await page.getByRole('button',{name:'Keluar',exact:true}).click();
+      await access.waitFor();
+    }
+    await access.fill(key);
     await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
     await page.getByRole('heading',{name:'Yang sedang dikerjakan.'}).waitFor();
     await page.locator('#summary dd').first().waitFor();
@@ -33,6 +40,21 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
   await page.locator('#login-error:not([hidden])').waitFor();
   await login(admin);
+  const authCookies=await page.context().cookies(base);
+  const sessionCookie=authCookies.find(row=>row.name==='beeloft_session');
+  const csrfCookie=authCookies.find(row=>row.name==='beeloft_csrf');
+  assert.ok(sessionCookie?.httpOnly);assert.equal(sessionCookie.sameSite,'Strict');
+  assert.equal(csrfCookie?.httpOnly,false);assert.equal(csrfCookie?.sameSite,'Strict');
+  const browserApiHeaders=[];
+  const capture=request=>{if(request.url().startsWith(base+'/api/'))browserApiHeaders.push(request.headers());};
+  page.on('request',capture);
+  await page.reload();
+  await page.getByRole('heading',{name:'Yang sedang dikerjakan.'}).waitFor();
+  await page.locator('#summary dd').first().waitFor();
+  page.off('request',capture);
+  assert.ok(browserApiHeaders.length>=3);
+  assert.ok(browserApiHeaders.every(headers=>!('x-api-key' in headers)));
+  assert.equal(await page.getByLabel('Kunci akses',{exact:true}).inputValue(),'');
   await page.getByRole('button',{name:'Cadangan data',exact:true}).click();
   let failBackup = true;
   await page.route('**/api/backup',async route => {

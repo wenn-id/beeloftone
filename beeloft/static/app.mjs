@@ -31,7 +31,7 @@ function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
 }
-function logout() {
+function clearWorkspace() {
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   $('backup').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -44,27 +44,45 @@ function logout() {
   $('summary').replaceChildren(); $('detail-content').replaceChildren(); $('dialog-content').replaceChildren();
   $('notice').hidden = true; $('access-key').focus();
 }
-$('logout').onclick = logout;
+async function logout(revoke=true) {
+  $('main').setAttribute('aria-busy','true');$('login-view').setAttribute('inert','');
+  try{if(revoke&&user)await api.post('/api/session/logout',{});}catch{}
+  finally{clearWorkspace();$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
+}
+$('logout').onclick = () => logout();
 function fail(error, target) {
-  if (error.status === 401) { logout(); message('login-error', 'Akses berakhir. Masukkan kembali kunci akses yang aktif.', true); }
+  if (error.status === 401) { logout(false); message('login-error', 'Sesi berakhir. Masukkan kembali kunci akses yang aktif.', true); }
   else message(target, error.message, true);
+}
+function enterWorkspace(me,workflow) {
+  user=me;transitions=workflow.transitions;$('access-key').value='';
+  $('account-name').textContent=`${me.name} · ${me.role}`;
+  $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
+  $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';offset=0;showBoard();
+  const pending=readPending();if(pending)recover(pending);
 }
 $('login-form').onsubmit = async event => {
   event.preventDefault(); const button = event.currentTarget.querySelector('button');
   button.disabled = true; button.textContent = 'Memeriksa akses…'; message('login-error', '');
-  api.key = $('access-key').value.trim(); const version = ++epoch;
+  const key=$('access-key').value.trim(),version=++epoch;
   try {
+    await api.post('/api/session',{api_key:key});
     const [me, workflow] = await Promise.all([api.get('/api/me'), api.get('/api/stages')]);
     if (version !== epoch) return;
-    user = me; transitions = workflow.transitions; $('access-key').value = '';
-    $('account-name').textContent = `${me.name} · ${me.role}`;
-    $('login-view').hidden = true; $('workspace').hidden = false; $('logout').hidden = false;
-    $('new-order').hidden = me.role !== 'admin'; $('backup').hidden = me.role !== 'admin'; offset = 0; showBoard();
-    const pending = readPending();
-    if (pending) recover(pending);
-  } catch (error) { if (version === epoch) { api.key = ''; message('login-error', error.message, true); } }
+    enterWorkspace(me,workflow);
+  } catch (error) { if (version === epoch) message('login-error', error.message, true); }
   finally { button.disabled = false; button.textContent = 'Buka ruang produksi'; }
 };
+
+async function restoreSession() {
+  const version=++epoch;
+  try{
+    const [me,workflow]=await Promise.all([api.get('/api/me'),api.get('/api/stages')]);
+    if(version===epoch)enterWorkspace(me,workflow);
+  }catch(error){if(version===epoch&&error.status!==401)message('login-error',error.message,true);}
+  finally{$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
+}
+restoreSession();
 
 function statusHTML(order) {
   if (order.overdue) return '<span class="status-label late">Lewat target</span>';

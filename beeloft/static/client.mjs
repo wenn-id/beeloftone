@@ -13,7 +13,7 @@ export function displayDate(value) {
 }
 
 export class Api {
-  constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; }
+  constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; this.csrf = ''; }
   transaction(path, body) { return {path, body: JSON.stringify(body), key: crypto.randomUUID()}; }
   get(path) { return this.request(path); }
   post(path, body) { return this.request(path, {body:JSON.stringify(body), readOnly:true}); }
@@ -23,13 +23,19 @@ export class Api {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const headers = {'X-API-Key': this.key};
+      const headers = {};
+      if (this.key) headers['X-API-Key'] = this.key;
       if (transaction) {
         headers['Content-Type'] = 'application/json';
         if (transaction.key) headers['Idempotency-Key'] = transaction.key;
+        if (!this.key) {
+          const cookie = typeof document === 'undefined' ? '' : document.cookie.split('; ').find(row => row.startsWith('beeloft_csrf='))?.slice(13);
+          const csrf = this.csrf || (cookie ? decodeURIComponent(cookie) : '');
+          if (csrf) headers['X-CSRF-Token'] = csrf;
+        }
       }
       const response = await this.fetcher(path, {method:transaction ? 'POST' : 'GET', headers,
-        body:transaction?.body, signal:controller.signal, cache:'no-store'});
+        body:transaction?.body, signal:controller.signal, cache:'no-store', credentials:'same-origin'});
       const data = response.ok && download ? await response.blob() : await response.json();
       if (!response.ok) {
         const detail = Array.isArray(data.detail) ? data.detail.map(item => `${item.loc.at(-1)}: ${item.msg}`).join('; ') : data.detail;

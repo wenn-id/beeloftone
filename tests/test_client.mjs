@@ -16,6 +16,7 @@ assert.deepEqual(await api.save(transaction), {id: 'saved-once'});
 assert.equal(requests[0].options.headers['Idempotency-Key'], requests[1].options.headers['Idempotency-Key']);
 assert.equal(requests[0].options.body, requests[1].options.body);
 assert.equal(requests[0].options.headers['X-API-Key'], 'test-only-key');
+assert.equal(requests[0].options.credentials,'same-origin');
 const denied = new Api(async () => new Response(JSON.stringify({detail: 'Tidak diizinkan'}), {status: 403}));
 await assert.rejects(denied.get('/api/orders'), error => error.status === 403 && !error.uncertain);
 const invalid = new Api(async () => new Response(JSON.stringify({detail: [{loc: ['body', 'quantity'], msg: 'Invalid quantity'}]}), {status: 422}));
@@ -28,6 +29,13 @@ await assert.rejects(reader.post('/api/ai/investigate',{question:'Apa prioritas 
 assert.equal(readPosts[0].options.method,'POST');
 assert.equal(readPosts[0].options.headers['Idempotency-Key'],undefined);
 assert.equal(readPosts[0].options.headers['Content-Type'],'application/json');
+const sessionRequests=[];
+const sessionApi=new Api(async(path,options)=>{sessionRequests.push({path,options});return new Response('{}');});
+sessionApi.csrf='csrf-test-token';
+await sessionApi.save(sessionApi.transaction('/api/products',{sku:'SESSION'}));
+assert.equal(sessionRequests[0].options.headers['X-API-Key'],undefined);
+assert.equal(sessionRequests[0].options.headers['X-CSRF-Token'],'csrf-test-token');
+assert.equal(sessionRequests[0].options.credentials,'same-origin');
 console.log('Client checks PASS: escaping, date, exact write retry, read-only POST, auth header, structured errors.');
 const exported = new Api(async (path, options) => {
   assert.equal(options.headers['X-API-Key'],'test-csv-key');
