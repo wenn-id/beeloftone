@@ -177,5 +177,5 @@ class ContributionMarginTest(TestCase):
             db.commit()
         Store(fresh)
         with closing(sqlite3.connect(fresh)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],40)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],41)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_sale_settlements').fetchone()[0],0)

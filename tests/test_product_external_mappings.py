@@ -115,5 +115,5 @@ class ProductExternalMappingTest(TestCase):
             db.execute('PRAGMA user_version=33');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],40)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],41)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM product_external_mapping_events').fetchone()[0],0)

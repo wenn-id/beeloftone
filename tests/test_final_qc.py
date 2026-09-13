@@ -173,5 +173,5 @@ class FinalQcTest(TestCase):
             db.execute('PRAGMA user_version=16');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],40)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],41)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM final_qc_records').fetchone()[0],0)
