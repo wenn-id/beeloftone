@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.45.0"
+    "version": "0.46.0"
   },
   "paths": {
     "/health": {
@@ -1624,6 +1624,196 @@
         ],
         "summary": "Jubelio Order Summary",
         "operationId": "jubelio_order_summary_api_integrations_jubelio_order_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/jubelio/return-snapshots": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Import Jubelio Return Snapshot",
+        "operationId": "import_jubelio_return_snapshot_api_integrations_jubelio_return_snapshots_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JubelioReturnSnapshotImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Return Snapshots",
+        "operationId": "jubelio_return_snapshots_api_integrations_jubelio_return_snapshots_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/jubelio/return-snapshots/{batch_id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Return Snapshot",
+        "operationId": "jubelio_return_snapshot_api_integrations_jubelio_return_snapshots__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/jubelio/return-summary": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Jubelio Return Summary",
+        "operationId": "jubelio_return_summary_api_integrations_jubelio_return_summary_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11648,6 +11838,165 @@
           "lines"
         ],
         "title": "JubelioOrderSnapshotRecord"
+      },
+      "JubelioReturnSnapshotImport": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "snapshot_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Snapshot At"
+          },
+          "external_cursor": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "External Cursor",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "returns": {
+            "items": {
+              "$ref": "#/components/schemas/JubelioReturnSnapshotRecord"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Returns"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "snapshot_at",
+          "reason",
+          "returns"
+        ],
+        "title": "JubelioReturnSnapshotImport"
+      },
+      "JubelioReturnSnapshotLine": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Id"
+          },
+          "external_sku": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Sku"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_id",
+          "external_sku",
+          "quantity"
+        ],
+        "title": "JubelioReturnSnapshotLine"
+      },
+      "JubelioReturnSnapshotRecord": {
+        "properties": {
+          "external_return_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Return Id"
+          },
+          "external_return_reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Return Reference"
+          },
+          "external_order_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Order Id"
+          },
+          "external_order_reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Order Reference"
+          },
+          "marketplace": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Marketplace"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "in_transit",
+              "received",
+              "refunded",
+              "rejected",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "refund_amount": {
+            "type": "string",
+            "maxLength": 16,
+            "pattern": "^[0-9]{1,13}(\\.[0-9]{1,2})?$",
+            "title": "Refund Amount"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/JubelioReturnSnapshotLine"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Lines"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_return_id",
+          "external_return_reference",
+          "external_order_id",
+          "external_order_reference",
+          "marketplace",
+          "status",
+          "updated_at",
+          "refund_amount",
+          "lines"
+        ],
+        "title": "JubelioReturnSnapshotRecord"
       },
       "JubelioStockSnapshotImport": {
         "properties": {
