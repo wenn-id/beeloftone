@@ -67,10 +67,13 @@ class OidcConfig:
 
 class UrlTransport:
     @staticmethod
-    def _read(request):
+    def _read(request, http_error_status=503):
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 content = response.read(1_000_001)
+        except urllib.error.HTTPError as exc:
+            message = 'Penyedia identitas menolak pertukaran code.' if http_error_status == 401 else 'Penyedia identitas belum dapat dihubungi.'
+            raise OidcError(http_error_status, message) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise OidcError(503, 'Penyedia identitas belum dapat dihubungi.') from exc
         if len(content) > 1_000_000:
@@ -89,7 +92,7 @@ class UrlTransport:
         if basic_auth:
             encoded=base64.b64encode(f'{basic_auth[0]}:{basic_auth[1]}'.encode()).decode()
             headers['Authorization']='Basic '+encoded
-        return self._read(urllib.request.Request(url, data=body, headers=headers))
+        return self._read(urllib.request.Request(url, data=body, headers=headers),http_error_status=401)
 
 
 class OidcClient:
@@ -160,7 +163,8 @@ class OidcClient:
             supported = metadata.get('id_token_signing_alg_values_supported', [])
             if algorithm not in self.SAFE_ALGORITHMS or algorithm not in supported:
                 raise OidcError(401, 'Algoritma ID token tidak diizinkan.')
-            candidates = [key for key in keys if key.get('kid') == header.get('kid')]
+            candidates = [key for key in keys if key.get('kid') == header.get('kid')
+                          and key.get('use','sig') == 'sig']
             if not candidates and header.get('kid') is None and len(keys) == 1:
                 candidates = keys
             if len(candidates) != 1:
@@ -177,7 +181,9 @@ class OidcClient:
         if not secrets.compare_digest(supplied_nonce, nonce_hash):
             raise OidcError(401, 'Nonce login OIDC tidak cocok.')
         audience = claims['aud']
-        if isinstance(audience, list) and len(audience) > 1 and claims.get('azp') != self.config.client_id:
+        if claims.get('azp') is not None and claims['azp'] != self.config.client_id:
+            raise OidcError(401, 'Authorized party ID token tidak cocok.')
+        if isinstance(audience, list) and len(audience) > 1 and 'azp' not in claims:
             raise OidcError(401, 'Authorized party ID token tidak cocok.')
         subject = str(claims['sub']).strip()
         if not 1 <= len(subject) <= 500:

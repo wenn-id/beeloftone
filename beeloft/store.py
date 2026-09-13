@@ -6,6 +6,7 @@ from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
@@ -227,7 +228,9 @@ class Store:
     @staticmethod
     def _oidc_identity_values(issuer, subject):
         issuer=issuer.strip().rstrip('/');subject=subject.strip()
-        if not issuer.startswith('https://') or not 8<=len(issuer)<=500:
+        parsed=urlsplit(issuer)
+        if (parsed.scheme!='https' or not parsed.netloc or parsed.fragment or parsed.query
+                or parsed.username or parsed.password or not 8<=len(issuer)<=500):
             raise DomainError(422,'Issuer OIDC harus berupa URL HTTPS yang valid.')
         if not 1<=len(subject)<=500:
             raise DomainError(422,'Subject OIDC wajib diisi dan maksimal 500 karakter.')
