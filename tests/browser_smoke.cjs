@@ -23,6 +23,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
     const response = await fetch(base+url,{headers:{'X-API-Key':admin}});
     assert.equal(response.status,200); return response.json();
   }
+  async function apiPost(url,body,key=crypto.randomUUID()) {
+    const response=await fetch(base+url,{method:'POST',headers:{'X-API-Key':admin,
+      'Idempotency-Key':key,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const text=await response.text();assert.equal(response.status,201,text);return JSON.parse(text);
+  }
   await page.goto(base);
   await page.getByLabel('Kunci akses',{exact:true}).fill('invalid');
   await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
@@ -303,6 +308,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_contribution_margin.cjs')({page,login,admin,operator,viewer,apiGet,work,...productionCost});
   await require('./browser_demand_forecast.cjs')({page,login,viewer,apiGet,work});
   await require('./browser_replenishment_recommendations.cjs')({page,login,admin,viewer,apiGet,work,...productionCost});
+  await require('./browser_integrations.cjs')({page,login,admin,operator,viewer,apiGet,apiPost,work});
   await require('./browser_ai_investigation.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_cutting.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_bundles.cjs')({page,login,admin,operator,viewer,apiGet,work});

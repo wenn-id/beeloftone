@@ -388,6 +388,8 @@ document.addEventListener('click', event => {
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
     products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
     'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
+    integrations:integrationsDialog,'integration-runs':integrationRunsDialog,
+    'integration-run':()=>integrationRunDialog(id),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
@@ -1767,6 +1769,54 @@ async function contributionMarginDialog(orderId) {
       <div class="actions"><button data-action="production-cost" data-id="${e(report.order_id)}">Biaya produksi</button><button data-action="marketplace-shipments" data-id="${e(report.order_id)}">Riwayat shipping</button></div>
       <p class="hint">Cakupan biaya jual: diskon penjual, refund pelanggan, fee marketplace, biaya kirim penjual, dan biaya variabel lain. Pajak, payment gateway terpisah, iklan, overhead tetap, penanganan retur, dan write-off stok belum dihitung.</p>`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="contribution-margin" data-id="${e(orderId)}">Coba lagi</button>`;}
+}
+
+const integrationHealth={healthy:'Sehat',failed:'Gagal',stale:'Stale',never_synced:'Belum pernah sync',incomplete:'Belum lengkap'};
+
+async function integrationsDialog() {
+  if(guardPending())return;
+  const version=epoch;openDialog('Kesehatan integrasi','<p class="state">Memuat kontrak dan status sinkronisasi…</p>');const modal=dialogVersion;
+  try{
+    const report=await api.get('/api/integrations');
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
+    $('dialog-content').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Muat ulang status</button></div>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3><p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="integrations">Coba lagi</button>`;}
+}
+$('integrations').onclick=integrationsDialog;
+
+async function integrationRunsDialog() {
+  if(guardPending())return;
+  openDialog('Riwayat sinkronisasi',`<p class="hint">Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.</p><form id="integration-run-filter"><div class="form-grid"><label>Sistem<select name="system"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label>Status<select name="status"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="integrations">Kesehatan integrasi</button></div></form><p id="integration-run-message" class="state" role="status"></p><div id="integration-run-list"></div><button id="integration-run-more" type="button">Muat run sebelumnya</button>`);
+  const version=epoch,modal=dialogVersion,form=$('integration-run-filter'),list=$('integration-run-list'),more=$('integration-run-more');
+  let before=null;
+  const load=async reset=>{
+    if(reset){before=null;list.replaceChildren();}
+    more.disabled=true;message('integration-run-message','Memuat ledger sinkronisasi…');
+    try{
+      const values=Object.fromEntries(new FormData(form));
+      const query=new URLSearchParams({limit:50,system:values.system,status:values.status});
+      if(before)query.set('before',before);
+      const rows=await api.get('/api/integration-sync-runs?'+query);
+      if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+      message('integration-run-message',rows.length?'':list.children.length?'Tidak ada run yang lebih lama.':'Belum ada run sinkronisasi yang cocok.');
+      list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="status-label ${row.status==='succeeded'?'done':'late'}">${row.status==='succeeded'?'Berhasil':'Gagal'}</p><h3>${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)}</h3><p>Dibaca ${n(row.records_read)} · ditulis ${n(row.records_written)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Selesai ${purchaseStamp(row.finished_at)} · dicatat ${e(row.actor_name)}</p><button data-action="integration-run" data-id="${e(row.id)}">Buka rincian run</button></article>`).join(''));
+      before=rows.at(-1)?.sequence||before;more.hidden=rows.length<50;
+    }catch(error){if(version===epoch&&modal===dialogVersion)message('integration-run-message',error.message,true);}
+    finally{if(version===epoch&&modal===dialogVersion)more.disabled=false;}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};more.onclick=()=>load(false);load(true);
+}
+
+async function integrationRunDialog(runId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian sinkronisasi','<p class="state">Memuat run sinkronisasi…</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/integration-sync-runs/'+encodeURIComponent(runId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const duration=Math.max(0,Math.round((new Date(row.finished_at)-new Date(row.started_at))/1000));
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)} · ${row.status==='succeeded'?'Berhasil':'Gagal'}</p><dl class="requirement-values"><div><dt>Mulai</dt><dd>${purchaseStamp(row.started_at)}</dd></div><div><dt>Selesai</dt><dd>${purchaseStamp(row.finished_at)}</dd></div><div><dt>Durasi</dt><dd>${n(duration)} detik</dd></div><div><dt>Record dibaca</dt><dd>${n(row.records_read)}</dd></div><div><dt>Record ditulis</dt><dd>${n(row.records_written)}</dd></div></dl>${row.error?`<h3>Error connector</h3><p class="error">${e(row.error)}</p>`:''}<h3>Alasan / konteks</h3><p class="reason">${e(row.reason)}</p><p class="hint">Cursor eksternal: ${e(row.external_cursor||'tidak dicatat')}<br>Dicatat ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Kesehatan integrasi</button></div>`;
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="integration-run" data-id="${e(runId)}">Coba lagi</button>`;}
 }
 
 function renderAiInvestigation(report,target,source=report.source_payload) {
