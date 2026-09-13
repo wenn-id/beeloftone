@@ -17,6 +17,7 @@ from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, 
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
+from beeloft.command_center import build_command_center
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
 from beeloft.reports import activity_csv
 
@@ -25,7 +26,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.53.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.54.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -146,6 +147,10 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get("/api/users", tags=["Access"])
     def users(user: Actor):
         return store.users()
+
+    @app.get('/api/command-center', tags=['Management'])
+    def command_center(user: Actor):
+        return build_command_center(store)
 
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,

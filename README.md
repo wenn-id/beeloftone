@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.53.0. Dashboard dan API memakai database lokal yang sama: order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio serta ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari.
+Pelacakan produksi internal, versi 0.54.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, hasil cutting, identitas bundle, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio serta ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari.
 
 ## Coba di Windows
 
@@ -1903,3 +1903,29 @@ halaman admin untuk mengelola mapping.
 
 Rencana: [OIDC SSO plan](docs/oidc-sso-plan.md).
 Bukti pengujian: [OIDC SSO verification](docs/oidc-sso-verification.md).
+
+
+## Management command center (v0.54)
+
+Menu **Command center** menyatukan angka yang sebelumnya tersebar di papan produksi, inbox approval,
+rekomendasi stok, kesehatan integrasi, snapshot penjualan Jubelio, serta snapshot keuangan Mekari.
+Ringkasan teratas menunjukkan order aktif, keputusan yang menunggu, jumlah exception, dan laba bersih
+periode terakhir. Daftar perhatian mengurutkan kondisi kritis lebih dahulu dan membawa pengguna ke
+filter atau dialog sumbernya.
+
+Angka vendor selalu menampilkan waktu snapshot sumber. Data yang belum pernah disinkronkan tetap
+ditandai belum tersedia dan scope integrasi masuk antrean perhatian; aplikasi tidak mengubahnya menjadi
+nol yang terlihat seolah sudah terverifikasi. Command center bersifat read-only dan tersedia bagi semua
+role aktif. Hak membuat pencatatan atau keputusan tetap diperiksa oleh endpoint domain tujuan.
+
+API terkait:
+
+- `GET /api/command-center`.
+
+Schema tetap 44 karena milestone ini hanya membentuk read model dari ledger yang sudah ada. Agregasi
+replenishment memakai default operasional: histori 28 hari, lead time 14 hari, review 30 hari, dan safety
+stock 7 hari. Parameter tersebut belum dapat diubah dari Command Center; analisis khusus tetap tersedia
+melalui menu **Rekomendasi stok**.
+
+Rencana: [Management command center plan](docs/management-command-center-plan.md).
+Bukti pengujian: [Management command center verification](docs/management-command-center-verification.md).

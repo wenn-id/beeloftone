@@ -11,6 +11,7 @@ let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', 
 let dialogVersion = 0;
 let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
+let commandCenterRequest = 0;
 let exportBusy = false;
 let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
@@ -32,6 +33,8 @@ function message(id, text, error = false) {
   $(id).classList.toggle('error', error);
 }
 function clearWorkspace() {
+  commandCenterRequest++; $('command-center-summary').replaceChildren();
+  $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   $('backup').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -104,6 +107,7 @@ function issueBadge(order) {
   return order.open_issues ? `<span class="status-label late">${n(order.open_issues)} kendala terbuka</span>` : '';
 }
 function showBoard() {
+  commandCenterRequest++; $('command-center-view').hidden = true;
   materialsRequest++; $('materials-view').hidden = true;
   activityRequest++; $('activity-view').hidden = true;
   view = 'board'; detailRequest++; selected = null;
@@ -119,6 +123,53 @@ function resetBoardFilters() { $('search').value = ''; $('status').value = 'all'
 $('reset-board').onclick = () => { resetBoardFilters(); loadBoard(); };
 $('previous').onclick = () => { offset = Math.max(0, offset - 25); loadBoard(); };
 $('next').onclick = () => { offset += 25; loadBoard(); };
+
+function commandMoney(value) {
+  const [whole,fraction='00'] = String(value || '0.00').split('.');
+  return `Rp${BigInt(whole).toLocaleString('id-ID')},${fraction.padEnd(2,'0').slice(0,2)}`;
+}
+function commandSource(value) {
+  return value ? `Snapshot ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value))}` : 'Snapshot belum tersedia';
+}
+function showCommandOrders(status) {
+  resetBoardFilters(); $('status').value=status; showBoard();
+}
+async function showCommandCenter() {
+  if(guardPending())return;
+  materialsRequest++; activityRequest++; boardRequest++; detailRequest++; selected=null;
+  view='command-center'; $('materials-view').hidden=true; $('activity-view').hidden=true;
+  $('board-view').hidden=true; $('detail-view').hidden=true; $('command-center-view').hidden=false;
+  const version=epoch,request=++commandCenterRequest;
+  message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');
+  $('command-center-content').hidden=true;$('command-center-summary').setAttribute('aria-busy','true');
+  try{
+    const report=await api.get('/api/command-center');
+    if(version!==epoch||request!==commandCenterRequest||view!=='command-center')return;
+    const action={production_overdue:'command-production-overdue',production_issues:'command-production-issues',
+      replenishment:'replenishment',approvals:'approvals',jubelio_stock:'jubelio-stock-reconciliation',
+      mekari_payables:'mekari-payables-summary',mekari_receivables:'mekari-receivables-summary',integrations:'integrations'};
+    $('command-center-summary').innerHTML=[
+      ['Order aktif',report.production.active_orders,'order'],
+      ['Keputusan',report.approvals.pending_count,'menunggu'],
+      ['Exception',report.status.attention_count,'perlu perhatian'],
+      ['Laba bersih',report.finance.current?commandMoney(report.finance.current.net_profit):'—',report.finance.current?'periode terakhir':'belum ada data']
+    ].map(([label,value,unit])=>`<div><dt>${e(label)}</dt><dd>${typeof value==='number'?n(value):e(value)} <small>${e(unit)}</small></dd></div>`).join('');
+    $('command-center-summary').removeAttribute('aria-busy');
+    $('command-center-attention').innerHTML=report.attention.length?report.attention.map(row=>`<article class="command-attention ${e(row.priority)}" data-command-attention="${e(row.id)}"><p class="status-label ${row.priority==='critical'?'late':''}">${row.priority==='critical'?'Kritis':'Perlu perhatian'} · ${e(row.kind)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><button data-action="${e(action[row.action])}">${e(row.action_label)}</button></article>`).join(''):'<p class="state">Tidak ada exception aktif dari sumber yang sudah tersambung.</p>';
+    const finance=report.finance.current;
+    $('command-center-snapshots').innerHTML=`
+      <article class="command-snapshot" data-command-snapshot="production"><h3>Produksi</h3><dl class="command-values"><dt>Lewat target</dt><dd>${n(report.production.overdue_orders)} order</dd><dt>Dalam proses</dt><dd>${n(report.production.in_progress_quantity)} pcs</dd><dt>Rework</dt><dd>${n(report.production.rework_quantity)} pcs</dd></dl><button data-action="command-production-overdue">Buka papan produksi</button></article>
+      <article class="command-snapshot" data-command-snapshot="inventory"><h3>Stok &amp; bahan</h3><dl class="command-values"><dt>SKU berisiko</dt><dd>${n(report.inventory.out_of_stock+report.inventory.at_risk)}</dd><dt>Perlu produksi</dt><dd>${n(report.inventory.recommended_production_quantity)} pcs</dd><dt>Bahan perlu dibeli</dt><dd>${n(report.inventory.materials_to_purchase)}</dd><dt>Mismatch Jubelio</dt><dd>${n(report.inventory.mismatched+report.inventory.missing_from_snapshot+report.inventory.quarantined)}</dd></dl><p class="command-source">${e(commandSource(report.inventory.snapshot_at))}</p><button data-action="replenishment">Buka rekomendasi stok</button></article>
+      <article class="command-snapshot" data-command-snapshot="sales"><h3>Penjualan Jubelio</h3><dl class="command-values"><dt>Order diterima</dt><dd>${n(report.sales.accepted_orders)}</dd><dt>Unit selesai</dt><dd>${n(report.sales.units)} pcs</dd><dt>Pendapatan kotor</dt><dd>${e(commandMoney(report.sales.gross_revenue))}</dd><dt>Karantina</dt><dd>${n(report.sales.quarantined_orders)}</dd></dl><p class="command-source">${e(commandSource(report.sales.snapshot_at))}</p><button data-action="jubelio-order-summary">Buka penjualan Jubelio</button></article>
+      <article class="command-snapshot" data-command-snapshot="finance"><h3>Keuangan Mekari</h3>${finance?`<dl class="command-values"><dt>Pendapatan bersih</dt><dd>${e(commandMoney(finance.net_revenue))}</dd><dt>Laba bersih</dt><dd>${e(commandMoney(finance.net_profit))}</dd><dt>Saldo kas</dt><dd>${e(commandMoney(finance.cash_balance))}</dd><dt>Utang outstanding</dt><dd>${e(commandMoney(report.finance.payables.outstanding))}</dd><dt>Piutang outstanding</dt><dd>${e(commandMoney(report.finance.receivables.outstanding))}</dd></dl>`:'<p class="state">Snapshot keuangan belum tersedia.</p>'}<p class="command-source">${e(commandSource(report.finance.snapshot_at))}</p><button data-action="mekari-finance-summary">Buka keuangan Mekari</button></article>
+      <article class="command-snapshot" data-command-snapshot="integrations"><h3>Integrasi</h3><dl class="command-values">${report.integrations.systems.map(row=>`<dt>${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></article>`;
+    message('command-center-message','');$('command-center-content').hidden=false;
+    $('command-center-updated').textContent='Diperbarui '+new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(report.generated_at));
+  }catch(error){if(version===epoch&&request===commandCenterRequest){$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');$('command-center-updated').textContent='';fail(error,'command-center-message');}}
+}
+$('command-center').onclick=showCommandCenter;
+$('command-center-back').onclick=showBoard;
+$('command-center-refresh').onclick=showCommandCenter;
 
 async function loadBoard() {
   const version = epoch, request = ++boardRequest;
@@ -160,6 +211,7 @@ async function loadBoard() {
 }
 
 async function openDetail(id) {
+  commandCenterRequest++; $('command-center-view').hidden = true;
   materialsRequest++; $('materials-view').hidden = true;
   activityRequest++; $('activity-view').hidden = true;
   view = 'detail'; boardRequest++; $('board-view').hidden = true; $('detail-view').hidden = false;
@@ -475,6 +527,8 @@ document.addEventListener('click', event => {
     'mekari-payroll-summary':mekariPayrollSummaryDialog,
     'mekari-payroll-snapshots':mekariPayrollSnapshotsDialog,
     'mekari-payroll-snapshot':()=>mekariPayrollSnapshotDialog(id),
+    'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
+    'command-production-issues':()=>showCommandOrders('blocked'),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
@@ -634,6 +688,7 @@ async function productionChangeRequestDialog(requestId) {
 
 const activityLabels = {movement:'Perpindahan barang',reversal:'Koreksi perpindahan',issue_opened:'Kendala dicatat',issue_resolved:'Kendala selesai',order_created:'Order dibuat',order_changed:'Tenggat / PIC diubah'};
 $('activity').onclick = () => {
+  commandCenterRequest++; $('command-center-view').hidden = true;
   materialsRequest++; $('materials-view').hidden = true;
   view = 'activity'; boardRequest++; detailRequest++; selected = null;
   $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = false;
@@ -707,6 +762,7 @@ function saveDownload(blob, filename) {
 }
 
 function showMaterials() {
+  commandCenterRequest++; $('command-center-view').hidden = true;
   view = 'materials'; boardRequest++; detailRequest++; activityRequest++; selected = null;
   $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = true; $('materials-view').hidden = false;
   $('receive-material').hidden = user.role === 'viewer';

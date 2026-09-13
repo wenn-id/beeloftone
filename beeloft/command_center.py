@@ -1,0 +1,151 @@
+from collections import Counter
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
+
+
+JAKARTA = timezone(timedelta(hours=7))
+
+
+def build_command_center(store):
+    generated = datetime.now(timezone.utc)
+    production = store.production_board(limit=1)
+    approvals = store.approvals(limit=500, status="pending")
+    integrations = store.integrations()
+    sales = store.jubelio_order_summary()
+    inventory = store.jubelio_stock_reconciliation()
+    finance = store.mekari_finance_summary()
+    payables = store.mekari_payables_summary()
+    receivables = store.mekari_receivables_summary()
+    replenishment = store.replenishment_recommendations(
+        generated.astimezone(JAKARTA).date(), limit=25
+    )
+
+    production_summary = production["summary"]
+    approval_kinds = Counter(row["kind"] for row in approvals)
+    approval_amount = sum(
+        (Decimal(row["amount"]) for row in approvals if row.get("amount")), Decimal()
+    )
+    integration_attention = sum(row["attention_count"] for row in integrations["systems"])
+    stock_summary = inventory["summary"]
+    payable_summary = payables["summary"]
+    receivable_summary = receivables["summary"]
+    replenishment_summary = replenishment["summary"]
+
+    attention = []
+
+    def add(item_id, priority, kind, title, detail, action, action_label):
+        attention.append({
+            "id": item_id, "priority": priority, "kind": kind, "title": title,
+            "detail": detail, "action": action, "action_label": action_label,
+        })
+
+    if production_summary["overdue"]:
+        add("production-overdue", "critical", "production", "Order melewati target",
+            f'{production_summary["overdue"]} order masih aktif setelah tanggal target.',
+            "production_overdue", "Lihat order overdue")
+    if production["open_issues"]:
+        add("production-issues", "critical", "production", "Kendala produksi terbuka",
+            f'{production["open_issues"]} kendala masih menunggu penyelesaian.',
+            "production_issues", "Lihat order terkendala")
+    if replenishment_summary["out_of_stock"]:
+        add("inventory-out", "critical", "inventory", "SKU kehabisan stok",
+            f'{replenishment_summary["out_of_stock"]} SKU dengan demand aktif tidak punya stok tersedia.',
+            "replenishment", "Buka rekomendasi stok")
+    if payable_summary["overdue_count"]:
+        add("payables-overdue", "critical", "finance", "Utang melewati jatuh tempo",
+            f'{payable_summary["overdue_count"]} invoice senilai Rp{payable_summary["overdue_amount"]} overdue.',
+            "mekari_payables", "Lihat utang Mekari")
+    if approvals:
+        add("approvals-pending", "warning", "approval", "Keputusan menunggu",
+            f"{len(approvals)} pengajuan senilai Rp{format(approval_amount, '.2f')} ada di inbox.",
+            "approvals", "Buka inbox approval")
+    stockout_soon = (replenishment_summary["stockout_before_replenishment"]
+                     + replenishment_summary["below_safety_stock"])
+    if stockout_soon:
+        add("inventory-risk", "warning", "inventory", "Risiko stockout",
+            f"{stockout_soon} SKU berada di bawah batas replenishment atau safety stock.",
+            "replenishment", "Buka rekomendasi stok")
+    if replenishment_summary["materials_to_purchase"]:
+        add("materials-shortage", "warning", "inventory", "Bahan perlu dibeli",
+            f'{replenishment_summary["materials_to_purchase"]} bahan belum tercakup stok, PR, atau PO aktif.',
+            "replenishment", "Lihat kebutuhan bahan")
+    mismatch_count = (stock_summary["mismatched"] + stock_summary["missing_from_snapshot"]
+                      + stock_summary["quarantined"])
+    if mismatch_count:
+        add("inventory-mismatch", "warning", "data_quality", "Stok perlu direkonsiliasi",
+            f"{mismatch_count} mapping atau record stok Jubelio tidak cocok.",
+            "jubelio_stock", "Buka rekonsiliasi stok")
+    if receivable_summary["overdue_count"]:
+        add("receivables-overdue", "warning", "finance", "Piutang melewati jatuh tempo",
+            f'{receivable_summary["overdue_count"]} invoice senilai Rp{receivable_summary["overdue_amount"]} overdue.',
+            "mekari_receivables", "Lihat piutang Mekari")
+    for system in integrations["systems"]:
+        if system["attention_count"]:
+            add(f'integration-{system["system"]}', "warning", "integration",
+                f'{system["label"]} perlu perhatian',
+                f'{system["attention_count"]} scope gagal, stale, atau belum pernah sinkron.',
+                "integrations", "Lihat kesehatan integrasi")
+
+    priority = {"critical": 0, "warning": 1, "info": 2}
+    attention.sort(key=lambda row: (priority[row["priority"]], row["id"]))
+    finance_current = finance["current"]
+    return {
+        "generated_at": generated.isoformat(),
+        "status": {
+            "state": "attention" if attention else "clear",
+            "attention_count": len(attention),
+            "critical_count": sum(row["priority"] == "critical" for row in attention),
+        },
+        "production": {
+            "active_orders": production_summary["active"],
+            "overdue_orders": production_summary["overdue"],
+            "in_progress_quantity": production_summary["in_progress"],
+            "rework_quantity": production_summary["rework"],
+            "open_issues": production["open_issues"],
+        },
+        "approvals": {
+            "pending_count": len(approvals),
+            "pending_amount": format(approval_amount, ".2f"),
+            "by_kind": {kind: approval_kinds.get(kind, 0) for kind in (
+                "purchase_request", "purchase_order", "supplier_payment", "marketing_budget",
+                "production_change", "ai_action")},
+        },
+        "inventory": {
+            "snapshot_at": inventory["snapshot"]["snapshot_at"] if inventory["snapshot"] else None,
+            **stock_summary,
+            "out_of_stock": replenishment_summary["out_of_stock"],
+            "at_risk": stockout_soon,
+            "materials_to_purchase": replenishment_summary["materials_to_purchase"],
+            "recommended_production_quantity": replenishment_summary["recommended_production_quantity"],
+            "coverage_complete": replenishment["coverage_complete"],
+        },
+        "sales": {
+            "snapshot_at": sales["snapshot"]["snapshot_at"] if sales["snapshot"] else None,
+            **sales["summary"],
+        },
+        "finance": {
+            "snapshot_at": finance["snapshot"]["snapshot_at"] if finance["snapshot"] else None,
+            "current": finance_current,
+            "payables": {
+                "snapshot_at": payables["snapshot"]["snapshot_at"] if payables["snapshot"] else None,
+                "outstanding": payable_summary["total_outstanding"],
+                "overdue_count": payable_summary["overdue_count"],
+                "overdue_amount": payable_summary["overdue_amount"],
+                "due_next_7_days_amount": payable_summary["due_next_7_days_amount"],
+            },
+            "receivables": {
+                "snapshot_at": receivables["snapshot"]["snapshot_at"] if receivables["snapshot"] else None,
+                "outstanding": receivable_summary["total_outstanding"],
+                "overdue_count": receivable_summary["overdue_count"],
+                "overdue_amount": receivable_summary["overdue_amount"],
+                "due_next_7_days_amount": receivable_summary["due_next_7_days_amount"],
+            },
+        },
+        "integrations": {
+            "attention_count": integration_attention,
+            "systems": [{"system": row["system"], "label": row["label"],
+                         "health": row["health"], "attention_count": row["attention_count"]}
+                        for row in integrations["systems"]],
+        },
+        "attention": attention,
+    }
