@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.47.0"
+    "version": "0.48.0"
   },
   "paths": {
     "/health": {
@@ -2004,6 +2004,196 @@
         ],
         "summary": "Jubelio Listing Summary",
         "operationId": "jubelio_listing_summary_api_integrations_jubelio_listing_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/mekari/finance-snapshots": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Import Mekari Finance Snapshot",
+        "operationId": "import_mekari_finance_snapshot_api_integrations_mekari_finance_snapshots_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MekariFinanceSnapshotImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Finance Snapshots",
+        "operationId": "mekari_finance_snapshots_api_integrations_mekari_finance_snapshots_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/mekari/finance-snapshots/{batch_id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Finance Snapshot",
+        "operationId": "mekari_finance_snapshot_api_integrations_mekari_finance_snapshots__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/mekari/finance-summary": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Finance Summary",
+        "operationId": "mekari_finance_summary_api_integrations_mekari_finance_summary_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -13015,6 +13205,152 @@
           "action"
         ],
         "title": "MaterialReservation"
+      },
+      "MekariFinanceSnapshotImport": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "snapshot_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Snapshot At"
+          },
+          "external_cursor": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "External Cursor",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/MekariFinanceSnapshotPeriod"
+            },
+            "type": "array",
+            "maxItems": 120,
+            "title": "Periods"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "snapshot_at",
+          "reason",
+          "periods"
+        ],
+        "title": "MekariFinanceSnapshotImport"
+      },
+      "MekariFinanceSnapshotPeriod": {
+        "properties": {
+          "source_report_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Source Report Id"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "currency": {
+            "type": "string",
+            "const": "IDR",
+            "title": "Currency",
+            "default": "IDR"
+          },
+          "gross_revenue": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Gross Revenue"
+          },
+          "sales_returns": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Sales Returns"
+          },
+          "cost_of_goods_sold": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Cost Of Goods Sold"
+          },
+          "operating_expenses": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Operating Expenses"
+          },
+          "other_income": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Other Income"
+          },
+          "other_expenses": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Other Expenses"
+          },
+          "cash_balance": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Cash Balance"
+          },
+          "receivables_balance": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Receivables Balance"
+          },
+          "payables_balance": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Payables Balance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_report_id",
+          "period_start",
+          "period_end",
+          "gross_revenue",
+          "sales_returns",
+          "cost_of_goods_sold",
+          "operating_expenses",
+          "other_income",
+          "other_expenses",
+          "cash_balance",
+          "receivables_balance",
+          "payables_balance"
+        ],
+        "title": "MekariFinanceSnapshotPeriod"
       },
       "MovementCreate": {
         "properties": {
