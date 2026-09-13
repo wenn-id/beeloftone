@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -129,6 +129,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("jubelio_stock_snapshots.sql").read_text(encoding="utf-8"))
             if version < 36:
                 db.executescript(Path(__file__).with_name("jubelio_order_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 37:
+                db.executescript(Path(__file__).with_name("jubelio_return_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -577,6 +579,145 @@ class Store:
             'records_read','records_written','error','created_at')}
         return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
             'orders':snapshot['orders'],'quarantine':snapshot['quarantine']}
+
+    def _jubelio_return_snapshot(self, db, batch_id, include_returns=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM jubelio_return_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot retur Jubelio tidak ditemukan.')
+        record=dict(row)
+        record['accepted_count']=db.execute('SELECT COUNT(*) FROM jubelio_return_snapshot_records WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        record['rejected_count']=db.execute('SELECT COUNT(*) FROM jubelio_return_quarantine_records WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        if not include_returns:
+            return record
+        returns=[]
+        for source in db.execute('''SELECT * FROM jubelio_return_snapshot_records
+            WHERE batch_id=? ORDER BY updated_at DESC,sequence DESC''',(batch_id,)):
+            item=dict(source);lines=[]
+            for row in db.execute('''SELECT l.*,p.sku,p.name AS product_name,p.color,p.size
+                FROM jubelio_return_snapshot_lines l JOIN products p ON p.id=l.product_id
+                WHERE l.return_id=? ORDER BY p.sku,p.id''',(item['id'],)):
+                lines.append(dict(row))
+            item['refund_amount']=format(Decimal(item.pop('refund_amount_minor'))/100,'.2f')
+            item['total_quantity']=sum(line['quantity'] for line in lines);item['lines']=lines
+            returns.append(item)
+        quarantine=[]
+        for source in db.execute('''SELECT * FROM jubelio_return_quarantine_records
+            WHERE batch_id=? ORDER BY updated_at DESC,external_return_reference COLLATE NOCASE''',(batch_id,)):
+            item=dict(source);payload=json.loads(item.pop('payload_json'))
+            item['external_order_id']=payload['external_order_id'];item['lines']=payload['lines']
+            item['refund_amount']=payload['refund_amount']
+            item['total_quantity']=sum(line['quantity'] for line in payload['lines']);quarantine.append(item)
+        record['returns']=returns;record['quarantine']=quarantine
+        return record
+
+    def import_jubelio_return_snapshot(self, payload, actor, key):
+        def perform(db):
+            accepted=[];rejected=[]
+            for record in payload['returns']:
+                mapped=[];issues=[]
+                for line in record['lines']:
+                    matches=db.execute('''SELECT e.product_id,e.external_id,e.external_sku
+                        FROM product_external_mapping_events e WHERE e.system='jubelio' AND e.status='mapped'
+                        AND e.sequence=(SELECT MAX(x.sequence) FROM product_external_mapping_events x
+                            WHERE x.product_id=e.product_id AND x.system=e.system)
+                        AND (e.external_id=? OR e.external_sku=? COLLATE NOCASE)''',
+                        (line['external_id'],line['external_sku'])).fetchall()
+                    exact=[row for row in matches if row['external_id']==line['external_id']
+                           and row['external_sku'].casefold()==line['external_sku'].casefold()]
+                    if len(exact)==1:
+                        mapped.append((line,exact[0]['product_id']))
+                    else:
+                        issues.append('unmapped' if not matches else 'mapping_mismatch')
+                if issues:
+                    issue='mapping_mismatch' if 'mapping_mismatch' in issues else 'unmapped'
+                    rejected.append((record,issue,f'{len(issues)} baris retur tidak memiliki pasangan identifier Jubelio yang aman.'))
+                else:
+                    accepted.append((record,mapped))
+            run_id=str(uuid4());failed=bool(rejected)
+            error=f'{len(rejected)} retur Jubelio dikarantina.' if failed else ''
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'jubelio','returns','failed' if failed else 'succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['returns']),len(accepted),
+                payload['external_cursor'],error,payload['reason'],actor['id'],now()))
+            batch_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO jubelio_return_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for record,lines in accepted:
+                return_id=str(uuid4())
+                db.execute('''INSERT INTO jubelio_return_snapshot_records(id,batch_id,external_return_id,
+                    external_return_reference,external_order_id,external_order_reference,marketplace,status,
+                    updated_at,refund_amount_minor) VALUES(?,?,?,?,?,?,?,?,?,?)''',(return_id,batch_id,
+                    record['external_return_id'],record['external_return_reference'],record['external_order_id'],
+                    record['external_order_reference'],record['marketplace'],record['status'],record['updated_at'],
+                    int(Decimal(record['refund_amount'])*100)))
+                for line,product_id in lines:
+                    db.execute('''INSERT INTO jubelio_return_snapshot_lines(id,return_id,product_id,external_id,
+                        external_sku,quantity) VALUES(?,?,?,?,?,?)''',(str(uuid4()),return_id,product_id,
+                        line['external_id'],line['external_sku'],line['quantity']))
+            for record,issue,detail in rejected:
+                db.execute('''INSERT INTO jubelio_return_quarantine_records(id,batch_id,external_return_id,
+                    external_return_reference,external_order_reference,marketplace,status,updated_at,payload_json,
+                    issue,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,
+                    record['external_return_id'],record['external_return_reference'],record['external_order_reference'],
+                    record['marketplace'],record['status'],record['updated_at'],
+                    json.dumps(record,ensure_ascii=False,separators=(',',':')),issue,detail))
+            return self._jubelio_return_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'jubelio-return-snapshot',payload,perform)
+
+    def jubelio_return_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._jubelio_return_snapshot(db,batch_id)
+
+    def jubelio_return_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM jubelio_return_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._jubelio_return_snapshot(db,row['id'],False) for row in rows]
+
+    def jubelio_return_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM jubelio_return_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'summary':{'accepted_returns':0,'quarantined_returns':0,
+                    'received_units':0,'refunded_amount':'0.00','requested':0,'in_transit':0,'received':0,
+                    'refunded':0,'rejected':0,'cancelled':0},'marketplaces':[],'products':[],
+                    'returns':[],'quarantine':[]}
+            snapshot=self._jubelio_return_snapshot(db,latest['id'])
+        statuses={status:sum(item['status']==status for item in snapshot['returns'])
+                  for status in ('requested','in_transit','received','refunded','rejected','cancelled')}
+        received=[item for item in snapshot['returns'] if item['status'] in ('received','refunded')]
+        refunded=[item for item in snapshot['returns'] if item['status']=='refunded']
+        groups={};products={}
+        for item in snapshot['returns']:
+            group=groups.setdefault(item['marketplace'],{'marketplace':item['marketplace'],'returns':0,
+                'received_units':0,'refunded_amount_minor':0})
+            group['returns']+=1
+            if item['status'] in ('received','refunded'):
+                group['received_units']+=item['total_quantity']
+                for line in item['lines']:
+                    product=products.setdefault(line['product_id'],{key:line[key] for key in
+                        ('product_id','sku','product_name','color','size')}|{'received_units':0})
+                    product['received_units']+=line['quantity']
+            if item['status']=='refunded':
+                group['refunded_amount_minor']+=int(Decimal(item['refund_amount'])*100)
+        marketplaces=[]
+        for group in sorted(groups.values(),key=lambda row:row['marketplace'].casefold()):
+            group['refunded_amount']=format(Decimal(group.pop('refunded_amount_minor'))/100,'.2f');marketplaces.append(group)
+        summary={'accepted_returns':len(snapshot['returns']),'quarantined_returns':len(snapshot['quarantine']),
+            'received_units':sum(item['total_quantity'] for item in received),
+            'refunded_amount':format(sum((Decimal(item['refund_amount']) for item in refunded),Decimal()),'.2f')}|statuses
+        header={key:snapshot[key] for key in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
+            'products':sorted(products.values(),key=lambda row:(row['sku'],row['product_id'])),
+            'returns':snapshot['returns'],'quarantine':snapshot['quarantine']}
 
     def create_material(self, payload, actor, key):
         def perform(db):

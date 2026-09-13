@@ -179,7 +179,7 @@ class PurchaseOrderTest(TestCase):
         self.assertEqual(self.client.get('/api/purchase-orders?before='+str(page[0]['sequence'])).json()[0]['id'],a['id'])
         self.assertEqual(len(self.client.get('/api/purchase-orders?status=issued&request_id='+pr['id']).json()),1)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],37)
             for table in ['suppliers','purchase_orders','purchase_order_cancellations']:
                 for sql in ['DELETE FROM '+table,'UPDATE '+table+' SET reason=reason']:
                     with self.assertRaises(sqlite3.IntegrityError):db.execute(sql)

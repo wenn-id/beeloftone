@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioOrderSnapshotImport, JubelioStockSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -205,6 +205,23 @@ def create_app(database_path):
     @app.get('/api/integrations/jubelio/order-summary', tags=['Integrations'])
     def jubelio_order_summary(user: Actor):
         return store.jubelio_order_summary()
+
+    @app.post('/api/integrations/jubelio/return-snapshots', status_code=201, tags=['Integrations'])
+    def import_jubelio_return_snapshot(body: JubelioReturnSnapshotImport, user: Actor, key: RequestKey):
+        return store.import_jubelio_return_snapshot(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/integrations/jubelio/return-snapshots', tags=['Integrations'])
+    def jubelio_return_snapshots(user: Actor, limit: Limit = 100,
+                                 before: Annotated[int | None, Query(ge=1)] = None):
+        return store.jubelio_return_snapshots(limit,before)
+
+    @app.get('/api/integrations/jubelio/return-snapshots/{batch_id}', tags=['Integrations'])
+    def jubelio_return_snapshot(batch_id: str, user: Actor):
+        return store.jubelio_return_snapshot(batch_id)
+
+    @app.get('/api/integrations/jubelio/return-summary', tags=['Integrations'])
+    def jubelio_return_summary(user: Actor):
+        return store.jubelio_return_summary()
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

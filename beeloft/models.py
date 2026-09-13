@@ -299,6 +299,71 @@ class JubelioOrderSnapshotImport(Input):
         return self
 
 
+class JubelioReturnSnapshotLine(Input):
+    external_id: Text
+    external_sku: Text
+    quantity: Quantity
+
+
+class JubelioReturnSnapshotRecord(Input):
+    external_return_id: Text
+    external_return_reference: Text
+    external_order_id: Text
+    external_order_reference: Text
+    marketplace: Text
+    status: Literal['requested','in_transit','received','refunded','rejected','cancelled']
+    updated_at: datetime
+    refund_amount: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    lines: list[JubelioReturnSnapshotLine] = Field(min_length=1, max_length=100)
+
+    @field_validator('updated_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu pembaruan retur harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_return(self):
+        amount=Decimal(self.refund_amount)
+        if amount>1_000_000_000_000:
+            raise ValueError('Refund maksimal Rp1.000.000.000.000 per retur.')
+        if (self.status=='refunded') != (amount>0):
+            raise ValueError('Hanya retur refunded yang membawa nilai refund positif.')
+        self.refund_amount=format(amount,'.2f')
+        ids=[line.external_id for line in self.lines]
+        skus=[line.external_sku.casefold() for line in self.lines]
+        if len(ids)!=len(set(ids)) or len(skus)!=len(set(skus)):
+            raise ValueError('Satu retur tidak boleh memuat ID atau SKU eksternal ganda.')
+        return self
+
+
+class JubelioReturnSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    returns: list[JubelioReturnSnapshotRecord] = Field(max_length=500)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        ids=[record.external_return_id for record in self.returns]
+        refs=[record.external_return_reference.casefold() for record in self.returns]
+        if len(ids)!=len(set(ids)) or len(refs)!=len(set(refs)):
+            raise ValueError('Snapshot tidak boleh memuat ID atau referensi retur ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 
