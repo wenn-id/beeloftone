@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.49.0"
+    "version": "0.50.0"
   },
   "paths": {
     "/health": {
@@ -2384,6 +2384,196 @@
         ],
         "summary": "Mekari Payables Summary",
         "operationId": "mekari_payables_summary_api_integrations_mekari_payables_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/mekari/receivable-snapshots": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Import Mekari Receivable Snapshot",
+        "operationId": "import_mekari_receivable_snapshot_api_integrations_mekari_receivable_snapshots_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MekariReceivableSnapshotImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Receivable Snapshots",
+        "operationId": "mekari_receivable_snapshots_api_integrations_mekari_receivable_snapshots_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/mekari/receivable-snapshots/{batch_id}": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Receivable Snapshot",
+        "operationId": "mekari_receivable_snapshot_api_integrations_mekari_receivable_snapshots__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/mekari/receivables-summary": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Mekari Receivables Summary",
+        "operationId": "mekari_receivables_summary_api_integrations_mekari_receivables_summary_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -13682,6 +13872,147 @@
           "updated_at"
         ],
         "title": "MekariPayableSnapshotRecord"
+      },
+      "MekariReceivableSnapshotImport": {
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "snapshot_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Snapshot At"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "external_cursor": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "External Cursor",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "receivables": {
+            "items": {
+              "$ref": "#/components/schemas/MekariReceivableSnapshotRecord"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Receivables"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "started_at",
+          "finished_at",
+          "snapshot_at",
+          "as_of",
+          "reason",
+          "receivables"
+        ],
+        "title": "MekariReceivableSnapshotImport"
+      },
+      "MekariReceivableSnapshotRecord": {
+        "properties": {
+          "external_receivable_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Receivable Id"
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reference"
+          },
+          "external_customer_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "External Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Customer Name"
+          },
+          "invoice_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Invoice Date"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Due Date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "partially_paid",
+              "paid",
+              "void"
+            ],
+            "title": "Status"
+          },
+          "currency": {
+            "type": "string",
+            "const": "IDR",
+            "title": "Currency",
+            "default": "IDR"
+          },
+          "original_amount": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Original Amount"
+          },
+          "received_amount": {
+            "type": "string",
+            "maxLength": 18,
+            "pattern": "^[0-9]{1,15}(\\.[0-9]{1,2})?$",
+            "title": "Received Amount"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_receivable_id",
+          "reference",
+          "external_customer_id",
+          "customer_name",
+          "invoice_date",
+          "due_date",
+          "status",
+          "original_amount",
+          "received_amount",
+          "updated_at"
+        ],
+        "title": "MekariReceivableSnapshotRecord"
       },
       "MovementCreate": {
         "properties": {
