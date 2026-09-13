@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -179,6 +179,29 @@ def create_app(database_path):
     @app.get("/api/products", tags=["Products"])
     def products(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.products(limit, offset)
+
+    @app.get('/api/product-external-mappings', tags=['Products','Integrations'])
+    def product_external_mappings(user: Actor, system: Literal['jubelio'],
+                                  status: Literal['all','mapped','unmapped'] = 'all',
+                                  limit: Limit = 100, offset: Offset = 0):
+        return store.product_external_mappings(system,status,limit,offset)
+
+    @app.get('/api/products/{product_id}/external-mappings/{system}', tags=['Products','Integrations'])
+    def product_external_mapping(product_id: str, system: Literal['jubelio'], user: Actor):
+        return store.product_external_mapping(product_id,system)
+
+    @app.post('/api/products/{product_id}/external-mappings/{system}', status_code=201,
+              tags=['Products','Integrations'])
+    def save_product_external_mapping(product_id: str, system: Literal['jubelio'],
+                                      body: ProductExternalMappingSave, user: Actor, key: RequestKey):
+        return store.save_product_external_mapping(product_id,system,body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/products/{product_id}/external-mappings/{system}/history',
+             tags=['Products','Integrations'])
+    def product_external_mapping_history(product_id: str, system: Literal['jubelio'], user: Actor,
+                                         limit: Limit = 100,
+                                         before: Annotated[int | None, Query(ge=1)] = None):
+        return store.product_external_mapping_history(product_id,system,limit,before)
 
     @app.get('/api/products/{product_id}/bom', tags=['BOM'])
     def bom(product_id: str, user: Actor):

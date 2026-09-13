@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -123,6 +123,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("ai_investigations.sql").read_text(encoding="utf-8"))
             if version < 33:
                 db.executescript(Path(__file__).with_name("integration_sync.sql").read_text(encoding="utf-8"))
+            if version < 34:
+                db.executescript(Path(__file__).with_name("product_external_mappings.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -222,8 +224,17 @@ class Store:
                 overall='failed' if 'failed' in healths else ('never_synced' if healths=={'never_synced'}
                     else 'incomplete' if 'never_synced' in healths else 'stale' if 'stale' in healths
                     else 'healthy')
-                systems.append({'system':contract['system'],'label':contract['label'],'health':overall,
-                    'scopes':scopes,'attention_count':sum(item['health']!='healthy' for item in scopes)})
+                system={'system':contract['system'],'label':contract['label'],'health':overall,
+                    'scopes':scopes,'attention_count':sum(item['health']!='healthy' for item in scopes)}
+                if contract['system']=='jubelio':
+                    total=db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
+                    mapped=db.execute('''SELECT COUNT(*) FROM product_external_mapping_events e
+                        WHERE e.system='jubelio' AND e.status='mapped' AND e.sequence=(
+                            SELECT MAX(x.sequence) FROM product_external_mapping_events x
+                            WHERE x.product_id=e.product_id AND x.system=e.system)''').fetchone()[0]
+                    system['product_mapping']={'total_products':total,'mapped_products':mapped,
+                                               'unmapped_products':total-mapped}
+                systems.append(system)
         return {'generated_at':generated.isoformat(),'stale_after_minutes':stale_after_minutes,
                 'systems':systems}
 
@@ -256,6 +267,78 @@ class Store:
     def products(self, limit=100, offset=0):
         with self.transaction() as db:
             return [dict(row) for row in db.execute("SELECT * FROM products ORDER BY sku LIMIT ? OFFSET ?", (limit, offset))]
+
+    def _product_external_mapping(self, db, product_id, system):
+        product=db.execute('SELECT id,sku,name,color,size FROM products WHERE id=?',(product_id,)).fetchone()
+        if not product:
+            raise DomainError(404,'SKU tidak ditemukan.')
+        row=db.execute('''SELECT e.*,u.name AS actor_name FROM product_external_mapping_events e
+            JOIN users u ON u.id=e.actor_id WHERE e.product_id=? AND e.system=?
+            ORDER BY e.sequence DESC LIMIT 1''',(product_id,system)).fetchone()
+        base={'product_id':product['id'],'sku':product['sku'],'product_name':product['name'],
+              'color':product['color'],'size':product['size'],'system':system}
+        if not row:
+            return base|{'id':None,'sequence':None,'revision':0,'status':'unmapped',
+                         'external_id':'','external_sku':'','reason':'','actor_id':None,
+                         'actor_name':None,'created_at':None}
+        return base|dict(row)
+
+    def product_external_mapping(self, product_id, system):
+        with self.transaction() as db:
+            return self._product_external_mapping(db,product_id,system)
+
+    def product_external_mappings(self, system, status='all', limit=100, offset=0):
+        with self.transaction() as db:
+            ids=db.execute('''WITH latest AS (
+                    SELECT product_id,MAX(sequence) AS sequence FROM product_external_mapping_events
+                    WHERE system=? GROUP BY product_id
+                ) SELECT p.id FROM products p LEFT JOIN latest l ON l.product_id=p.id
+                LEFT JOIN product_external_mapping_events e ON e.sequence=l.sequence
+                WHERE (?='all' OR COALESCE(e.status,'unmapped')=?)
+                ORDER BY p.sku,p.id LIMIT ? OFFSET ?''',(system,status,status,limit,offset)).fetchall()
+            return [self._product_external_mapping(db,row['id'],system) for row in ids]
+
+    def save_product_external_mapping(self, product_id, system, payload, actor, key):
+        def perform(db):
+            current=self._product_external_mapping(db,product_id,system)
+            if payload['expected_revision']!=current['revision']:
+                raise DomainError(409,'Mapping SKU sudah berubah. Muat ulang lalu coba lagi.')
+            if payload['action']=='unmapped':
+                if current['status']!='mapped':
+                    raise DomainError(409,'SKU belum memiliki mapping aktif.')
+            else:
+                if (current['status']=='mapped' and current['external_id']==payload['external_id']
+                        and current['external_sku'].casefold()==payload['external_sku'].casefold()):
+                    raise DomainError(409,'Mapping baru sama dengan mapping aktif.')
+                duplicate=db.execute('''SELECT p.sku FROM product_external_mapping_events e
+                    JOIN products p ON p.id=e.product_id WHERE e.system=? AND e.status='mapped'
+                    AND e.product_id!=? AND e.sequence=(SELECT MAX(x.sequence)
+                        FROM product_external_mapping_events x WHERE x.product_id=e.product_id
+                        AND x.system=e.system)
+                    AND (e.external_id=? OR e.external_sku=? COLLATE NOCASE) LIMIT 1''',
+                    (system,product_id,payload['external_id'],payload['external_sku'])).fetchone()
+                if duplicate:
+                    raise DomainError(409,'ID atau SKU eksternal sudah dipakai oleh '+duplicate['sku']+'.')
+            record={'id':str(uuid4()),'product_id':product_id,'system':system,
+                    'revision':current['revision']+1,'status':payload['action'],
+                    'external_id':payload['external_id'],'external_sku':payload['external_sku'],
+                    'reason':payload['reason'],'actor_id':actor['id'],'created_at':now()}
+            db.execute('''INSERT INTO product_external_mapping_events
+                (id,product_id,system,revision,status,external_id,external_sku,reason,actor_id,created_at)
+                VALUES(:id,:product_id,:system,:revision,:status,:external_id,:external_sku,:reason,:actor_id,:created_at)''',record)
+            return self._product_external_mapping(db,product_id,system)
+        operation='product-external-mapping:'+product_id+':'+system
+        return self._write(actor,('admin',),key,operation,payload,perform)
+
+    def product_external_mapping_history(self, product_id, system, limit=100, before=None):
+        with self.transaction() as db:
+            self._product_external_mapping(db,product_id,system)
+            rows=db.execute('''SELECT e.*,u.name AS actor_name,p.sku,p.name AS product_name,
+                p.color,p.size FROM product_external_mapping_events e JOIN users u ON u.id=e.actor_id
+                JOIN products p ON p.id=e.product_id WHERE e.product_id=? AND e.system=?
+                AND (? IS NULL OR e.sequence<?) ORDER BY e.sequence DESC LIMIT ?''',
+                (product_id,system,before,before,limit)).fetchall()
+            return [dict(row) for row in rows]
 
     def create_material(self, payload, actor, key):
         def perform(db):

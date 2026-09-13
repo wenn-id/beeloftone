@@ -179,6 +179,22 @@ class IntegrationSyncRunCreate(Input):
         return self
 
 
+class ProductExternalMappingSave(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    action: Literal['mapped','unmapped']
+    external_id: str = Field(default='', max_length=160)
+    external_sku: str = Field(default='', max_length=160)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def mapping_fields(self):
+        if self.action=='mapped' and (not self.external_id or not self.external_sku):
+            raise ValueError('Mapping aktif memerlukan ID eksternal dan SKU eksternal.')
+        if self.action=='unmapped' and (self.external_id or self.external_sku):
+            raise ValueError('Pelepasan mapping tidak boleh membawa ID atau SKU eksternal.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 
