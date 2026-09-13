@@ -127,6 +127,10 @@ class OidcSsoTest(TestCase):
         self.app.state.store.link_oidc_identity(self.config.issuer,'employee-123',self.admin['id'])
         _,query=self.begin();self.transport.id_token=self.transport.token(query['nonce'][0],audience='other-client')
         self.assertEqual(self.callback(query).status_code,401)
+        past=datetime.now(timezone.utc)-timedelta(minutes=10)
+        _,query=self.begin();self.transport.id_token=self.transport.token(
+            query['nonce'][0],iat=past,exp=past+timedelta(minutes=1))
+        self.assertEqual(self.callback(query).status_code,401)
         self.app.state.store.disable_user(self.admin['id'])
         _,query=self.begin();self.transport.id_token=self.transport.token(query['nonce'][0])
         self.assertEqual(self.callback(query).status_code,401)
