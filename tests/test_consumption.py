@@ -114,7 +114,7 @@ class ConsumptionTest(TestCase):
         page=self.client.get(route+'?limit=1').json()
         self.assertEqual(self.client.get(route+'?before='+str(page[0]['sequence'])).json()[0]['id'],first['id'])
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],35)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],36)
             for query in ['DELETE FROM material_consumption','UPDATE material_consumption SET reason=reason']:
                 with self.assertRaises(sqlite3.IntegrityError):db.execute(query)
         backup=self.path.parent/'usage-backup.sqlite3'

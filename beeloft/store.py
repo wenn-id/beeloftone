@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -127,6 +127,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("product_external_mappings.sql").read_text(encoding="utf-8"))
             if version < 35:
                 db.executescript(Path(__file__).with_name("jubelio_stock_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 36:
+                db.executescript(Path(__file__).with_name("jubelio_order_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -443,6 +445,138 @@ class Store:
             return {'snapshot':{key:snapshot[key] for key in ('id','sequence','snapshot_at','sync_run_id','sync_status',
                 'records_read','records_written','error','created_at')},'summary':summary,
                 'items':items,'quarantine':snapshot['quarantine']}
+
+    def _jubelio_order_snapshot(self, db, batch_id, include_orders=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM jubelio_order_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot order Jubelio tidak ditemukan.')
+        record=dict(row)
+        record['accepted_count']=db.execute('SELECT COUNT(*) FROM jubelio_order_snapshot_orders WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        record['rejected_count']=db.execute('SELECT COUNT(*) FROM jubelio_order_quarantine_records WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        if not include_orders:
+            return record
+        orders=[]
+        for source in db.execute('''SELECT * FROM jubelio_order_snapshot_orders
+            WHERE batch_id=? ORDER BY ordered_at DESC,sequence DESC''',(batch_id,)):
+            order=dict(source)
+            lines=[]
+            for item in db.execute('''SELECT l.*,p.sku,p.name AS product_name,p.color,p.size
+                FROM jubelio_order_snapshot_lines l JOIN products p ON p.id=l.product_id
+                WHERE l.order_id=? ORDER BY p.sku,p.id''',(order['id'],)):
+                line=dict(item);line['gross_revenue']=format(Decimal(line.pop('gross_revenue_minor'))/100,'.2f')
+                lines.append(line)
+            order['gross_revenue']=format(Decimal(order.pop('gross_revenue_minor'))/100,'.2f')
+            order['total_quantity']=sum(line['quantity'] for line in lines);order['lines']=lines
+            orders.append(order)
+        quarantine=[]
+        for source in db.execute('''SELECT * FROM jubelio_order_quarantine_records
+            WHERE batch_id=? ORDER BY ordered_at DESC,external_order_reference COLLATE NOCASE''',(batch_id,)):
+            item=dict(source);payload=json.loads(item.pop('payload_json'))
+            item['lines']=payload['lines'];item['total_quantity']=sum(line['quantity'] for line in payload['lines'])
+            item['gross_revenue']=format(sum((Decimal(line['gross_revenue']) for line in payload['lines']),Decimal()) ,'.2f')
+            quarantine.append(item)
+        record['orders']=orders;record['quarantine']=quarantine
+        return record
+
+    def import_jubelio_order_snapshot(self, payload, actor, key):
+        def perform(db):
+            accepted=[];rejected=[]
+            for order in payload['orders']:
+                mapped=[];issues=[]
+                for line in order['lines']:
+                    matches=db.execute('''SELECT e.product_id,e.external_id,e.external_sku
+                        FROM product_external_mapping_events e WHERE e.system='jubelio' AND e.status='mapped'
+                        AND e.sequence=(SELECT MAX(x.sequence) FROM product_external_mapping_events x
+                            WHERE x.product_id=e.product_id AND x.system=e.system)
+                        AND (e.external_id=? OR e.external_sku=? COLLATE NOCASE)''',
+                        (line['external_id'],line['external_sku'])).fetchall()
+                    exact=[row for row in matches if row['external_id']==line['external_id']
+                           and row['external_sku'].casefold()==line['external_sku'].casefold()]
+                    if len(exact)==1:
+                        mapped.append((line,exact[0]['product_id']))
+                    else:
+                        issues.append('unmapped' if not matches else 'mapping_mismatch')
+                if issues:
+                    issue='mapping_mismatch' if 'mapping_mismatch' in issues else 'unmapped'
+                    detail=(f'{len(issues)} baris order tidak memiliki pasangan identifier Jubelio yang aman.')
+                    rejected.append((order,issue,detail))
+                else:
+                    accepted.append((order,mapped))
+            run_id=str(uuid4());failed=bool(rejected)
+            error=f'{len(rejected)} order Jubelio dikarantina.' if failed else ''
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'jubelio','orders','failed' if failed else 'succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['orders']),len(accepted),
+                payload['external_cursor'],error,payload['reason'],actor['id'],now()))
+            batch_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO jubelio_order_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for order,lines in accepted:
+                order_id=str(uuid4())
+                total=sum(int(Decimal(line['gross_revenue'])*100) for line,_ in lines)
+                db.execute('''INSERT INTO jubelio_order_snapshot_orders(id,batch_id,external_order_id,
+                    external_order_reference,marketplace,status,ordered_at,gross_revenue_minor)
+                    VALUES(?,?,?,?,?,?,?,?)''',(order_id,batch_id,order['external_order_id'],
+                    order['external_order_reference'],order['marketplace'],order['status'],order['ordered_at'],total))
+                for line,product_id in lines:
+                    db.execute('''INSERT INTO jubelio_order_snapshot_lines(id,order_id,product_id,external_id,
+                        external_sku,quantity,gross_revenue_minor) VALUES(?,?,?,?,?,?,?)''',(str(uuid4()),order_id,
+                        product_id,line['external_id'],line['external_sku'],line['quantity'],
+                        int(Decimal(line['gross_revenue'])*100)))
+            for order,issue,detail in rejected:
+                db.execute('''INSERT INTO jubelio_order_quarantine_records(id,batch_id,external_order_id,
+                    external_order_reference,marketplace,status,ordered_at,payload_json,issue,detail)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,order['external_order_id'],
+                    order['external_order_reference'],order['marketplace'],order['status'],order['ordered_at'],
+                    json.dumps(order,ensure_ascii=False,separators=(',',':')),issue,detail))
+            return self._jubelio_order_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'jubelio-order-snapshot',payload,perform)
+
+    def jubelio_order_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._jubelio_order_snapshot(db,batch_id)
+
+    def jubelio_order_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM jubelio_order_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._jubelio_order_snapshot(db,row['id'],False) for row in rows]
+
+    def jubelio_order_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM jubelio_order_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'summary':{'accepted_orders':0,'quarantined_orders':0,'units':0,
+                    'gross_revenue':'0.00','pending':0,'processing':0,'completed':0,'cancelled':0},
+                    'marketplaces':[],'orders':[],'quarantine':[]}
+            snapshot=self._jubelio_order_snapshot(db,latest['id'])
+        statuses={status:sum(order['status']==status for order in snapshot['orders'])
+                  for status in ('pending','processing','completed','cancelled')}
+        completed=[order for order in snapshot['orders'] if order['status']=='completed']
+        groups={}
+        for order in snapshot['orders']:
+            group=groups.setdefault(order['marketplace'],{'marketplace':order['marketplace'],'orders':0,
+                'units':0,'gross_revenue_minor':0})
+            group['orders']+=1
+            if order['status']=='completed':
+                group['units']+=order['total_quantity'];group['gross_revenue_minor']+=int(Decimal(order['gross_revenue'])*100)
+        marketplaces=[]
+        for group in sorted(groups.values(),key=lambda row:row['marketplace'].casefold()):
+            group['gross_revenue']=format(Decimal(group.pop('gross_revenue_minor'))/100,'.2f');marketplaces.append(group)
+        summary={'accepted_orders':len(snapshot['orders']),'quarantined_orders':len(snapshot['quarantine']),
+            'units':sum(order['total_quantity'] for order in completed),
+            'gross_revenue':format(sum((Decimal(order['gross_revenue']) for order in completed),Decimal()),'.2f')}|statuses
+        header={key:snapshot[key] for key in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
+            'orders':snapshot['orders'],'quarantine':snapshot['quarantine']}
 
     def create_material(self, payload, actor, key):
         def perform(db):

@@ -234,6 +234,71 @@ class JubelioStockSnapshotImport(Input):
         return self
 
 
+class JubelioOrderSnapshotLine(Input):
+    external_id: Text
+    external_sku: Text
+    quantity: Quantity
+    gross_revenue: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+
+    @field_validator('gross_revenue')
+    @classmethod
+    def normalize_revenue(cls, value):
+        amount=Decimal(value)
+        if amount>1_000_000_000_000:
+            raise ValueError('Pendapatan kotor maksimal Rp1.000.000.000.000 per baris.')
+        return format(amount,'.2f')
+
+
+class JubelioOrderSnapshotRecord(Input):
+    external_order_id: Text
+    external_order_reference: Text
+    marketplace: Text
+    status: Literal['pending','processing','completed','cancelled']
+    ordered_at: datetime
+    lines: list[JubelioOrderSnapshotLine] = Field(min_length=1, max_length=100)
+
+    @field_validator('ordered_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu order harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def unique_products(self):
+        ids=[line.external_id for line in self.lines]
+        skus=[line.external_sku.casefold() for line in self.lines]
+        if len(ids)!=len(set(ids)) or len(skus)!=len(set(skus)):
+            raise ValueError('Satu order tidak boleh memuat ID atau SKU eksternal ganda.')
+        return self
+
+
+class JubelioOrderSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    orders: list[JubelioOrderSnapshotRecord] = Field(max_length=500)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        ids=[order.external_order_id for order in self.orders]
+        refs=[order.external_order_reference.casefold() for order in self.orders]
+        if len(ids)!=len(set(ids)) or len(refs)!=len(set(refs)):
+            raise ValueError('Snapshot tidak boleh memuat ID atau referensi order ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

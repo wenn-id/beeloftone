@@ -176,5 +176,5 @@ class WarehouseMovementsTest(TestCase):
             db.execute('PRAGMA user_version=18');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],35)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],36)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM warehouse_movements').fetchone()[0],0)
