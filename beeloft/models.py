@@ -364,6 +364,59 @@ class JubelioReturnSnapshotImport(Input):
         return self
 
 
+class JubelioListingSnapshotRecord(Input):
+    external_listing_id: Text
+    listing_reference: Text
+    external_id: Text
+    external_sku: Text
+    marketplace: Text
+    listing_title: Text
+    status: Literal['active','inactive','draft','blocked']
+    listed_price: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    updated_at: datetime
+
+    @field_validator('listed_price')
+    @classmethod
+    def normalize_price(cls, value):
+        amount=Decimal(value)
+        if not 0 < amount <= 1_000_000_000_000:
+            raise ValueError('Harga listing harus positif dan maksimal Rp1.000.000.000.000.')
+        return format(amount,'.2f')
+
+    @field_validator('updated_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu pembaruan listing harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+
+class JubelioListingSnapshotImport(Input):
+    started_at: datetime
+    finished_at: datetime
+    snapshot_at: datetime
+    external_cursor: str = Field(default='', max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    listings: list[JubelioListingSnapshotRecord] = Field(max_length=1000)
+
+    @field_validator('started_at','finished_at','snapshot_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_snapshot(self):
+        if self.finished_at<self.started_at:
+            raise ValueError('Waktu selesai tidak boleh sebelum waktu mulai.')
+        ids=[record.external_listing_id for record in self.listings]
+        references=[(record.marketplace.casefold(),record.listing_reference.casefold()) for record in self.listings]
+        if len(ids)!=len(set(ids)) or len(references)!=len(set(references)):
+            raise ValueError('Snapshot tidak boleh memuat ID atau referensi listing marketplace ganda.')
+        return self
+
+
 MaterialAmount = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,7}(\.[0-9]{1,3})?$", max_length=11)]
 
 

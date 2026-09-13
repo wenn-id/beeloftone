@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -131,6 +131,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("jubelio_order_snapshots.sql").read_text(encoding="utf-8"))
             if version < 37:
                 db.executescript(Path(__file__).with_name("jubelio_return_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 38:
+                db.executescript(Path(__file__).with_name("jubelio_listing_snapshots.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -718,6 +720,122 @@ class Store:
         return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
             'products':sorted(products.values(),key=lambda row:(row['sku'],row['product_id'])),
             'returns':snapshot['returns'],'quarantine':snapshot['quarantine']}
+
+    def _jubelio_listing_snapshot(self, db, batch_id, include_listings=True):
+        row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
+            r.external_cursor,r.error,r.reason,u.name AS actor_name FROM jubelio_listing_snapshot_batches b
+            JOIN integration_sync_runs r ON r.id=b.sync_run_id JOIN users u ON u.id=b.actor_id
+            WHERE b.id=?''',(batch_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Snapshot listing Jubelio tidak ditemukan.')
+        record=dict(row)
+        record['accepted_count']=db.execute('SELECT COUNT(*) FROM jubelio_listing_snapshot_records WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        record['rejected_count']=db.execute('SELECT COUNT(*) FROM jubelio_listing_quarantine_records WHERE batch_id=?',
+                                            (batch_id,)).fetchone()[0]
+        if not include_listings:
+            return record
+        listings=[]
+        for source in db.execute('''SELECT l.*,p.sku,p.name AS product_name,p.color,p.size
+            FROM jubelio_listing_snapshot_records l JOIN products p ON p.id=l.product_id
+            WHERE l.batch_id=? ORDER BY l.marketplace COLLATE NOCASE,l.listing_reference COLLATE NOCASE,l.sequence''',
+            (batch_id,)):
+            item=dict(source);item['listed_price']=format(Decimal(item.pop('listed_price_minor'))/100,'.2f')
+            listings.append(item)
+        quarantine=[]
+        for source in db.execute('''SELECT * FROM jubelio_listing_quarantine_records
+            WHERE batch_id=? ORDER BY marketplace COLLATE NOCASE,listing_reference COLLATE NOCASE''',(batch_id,)):
+            item=dict(source);payload=json.loads(item.pop('payload_json'))
+            for name in ('external_id','external_sku','listing_title','listed_price'):
+                item[name]=payload[name]
+            quarantine.append(item)
+        record['listings']=listings;record['quarantine']=quarantine
+        return record
+
+    def import_jubelio_listing_snapshot(self, payload, actor, key):
+        def perform(db):
+            accepted=[];rejected=[]
+            for record in payload['listings']:
+                matches=db.execute('''SELECT e.product_id,e.external_id,e.external_sku
+                    FROM product_external_mapping_events e WHERE e.system='jubelio' AND e.status='mapped'
+                    AND e.sequence=(SELECT MAX(x.sequence) FROM product_external_mapping_events x
+                        WHERE x.product_id=e.product_id AND x.system=e.system)
+                    AND (e.external_id=? OR e.external_sku=? COLLATE NOCASE)''',
+                    (record['external_id'],record['external_sku'])).fetchall()
+                exact=[row for row in matches if row['external_id']==record['external_id']
+                       and row['external_sku'].casefold()==record['external_sku'].casefold()]
+                if len(exact)==1:
+                    accepted.append((record,exact[0]['product_id']))
+                else:
+                    issue='unmapped' if not matches else 'mapping_mismatch'
+                    rejected.append((record,issue,'Listing tidak memiliki pasangan identifier Jubelio yang aman.'))
+            run_id=str(uuid4());failed=bool(rejected)
+            error=f'{len(rejected)} listing Jubelio dikarantina.' if failed else ''
+            db.execute('''INSERT INTO integration_sync_runs(id,system,scope,status,started_at,finished_at,
+                records_read,records_written,external_cursor,error,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(run_id,'jubelio','listings','failed' if failed else 'succeeded',
+                payload['started_at'],payload['finished_at'],len(payload['listings']),len(accepted),
+                payload['external_cursor'],error,payload['reason'],actor['id'],now()))
+            batch_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO jubelio_listing_snapshot_batches
+                (id,sync_run_id,snapshot_at,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (batch_id,run_id,payload['snapshot_at'],actor['id'],created))
+            for record,product_id in accepted:
+                db.execute('''INSERT INTO jubelio_listing_snapshot_records(id,batch_id,product_id,
+                    external_listing_id,listing_reference,external_id,external_sku,marketplace,listing_title,
+                    status,listed_price_minor,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,
+                    product_id,record['external_listing_id'],record['listing_reference'],record['external_id'],
+                    record['external_sku'],record['marketplace'],record['listing_title'],record['status'],
+                    int(Decimal(record['listed_price'])*100),record['updated_at']))
+            for record,issue,detail in rejected:
+                db.execute('''INSERT INTO jubelio_listing_quarantine_records(id,batch_id,external_listing_id,
+                    listing_reference,marketplace,status,updated_at,payload_json,issue,detail)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,record['external_listing_id'],
+                    record['listing_reference'],record['marketplace'],record['status'],record['updated_at'],
+                    json.dumps(record,ensure_ascii=False,separators=(',',':')),issue,detail))
+            return self._jubelio_listing_snapshot(db,batch_id)
+        return self._write(actor,('admin',),key,'jubelio-listing-snapshot',payload,perform)
+
+    def jubelio_listing_snapshot(self, batch_id):
+        with self.transaction() as db:
+            return self._jubelio_listing_snapshot(db,batch_id)
+
+    def jubelio_listing_snapshots(self, limit=100, before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM jubelio_listing_snapshot_batches
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',(before,before,limit)).fetchall()
+            return [self._jubelio_listing_snapshot(db,row['id'],False) for row in rows]
+
+    def jubelio_listing_summary(self):
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM jubelio_listing_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot':None,'summary':{'accepted_listings':0,'quarantined_listings':0,
+                    'active_products':0,'active':0,'inactive':0,'draft':0,'blocked':0,
+                    'min_active_price':None,'max_active_price':None},'marketplaces':[],
+                    'listings':[],'quarantine':[]}
+            snapshot=self._jubelio_listing_snapshot(db,latest['id'])
+        statuses={status:sum(item['status']==status for item in snapshot['listings'])
+                  for status in ('active','inactive','draft','blocked')}
+        active=[item for item in snapshot['listings'] if item['status']=='active']
+        groups={}
+        for item in snapshot['listings']:
+            group=groups.setdefault(item['marketplace'],{'marketplace':item['marketplace'],'listings':0,
+                'active':0,'inactive':0,'draft':0,'blocked':0,'product_ids':set()})
+            group['listings']+=1;group[item['status']]+=1
+            if item['status']=='active': group['product_ids'].add(item['product_id'])
+        marketplaces=[]
+        for group in sorted(groups.values(),key=lambda row:row['marketplace'].casefold()):
+            group['active_products']=len(group.pop('product_ids'));marketplaces.append(group)
+        prices=[Decimal(item['listed_price']) for item in active]
+        summary={'accepted_listings':len(snapshot['listings']),'quarantined_listings':len(snapshot['quarantine']),
+            'active_products':len({item['product_id'] for item in active}),**statuses,
+            'min_active_price':format(min(prices),'.2f') if prices else None,
+            'max_active_price':format(max(prices),'.2f') if prices else None}
+        header={name:snapshot[name] for name in ('id','sequence','snapshot_at','sync_run_id','sync_status',
+            'records_read','records_written','error','created_at')}
+        return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
+            'listings':snapshot['listings'],'quarantine':snapshot['quarantine']}
 
     def create_material(self, payload, actor, key):
         def perform(db):
