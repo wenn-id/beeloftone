@@ -162,5 +162,5 @@ class MarketplacePickingTest(TestCase):
             db.execute('PRAGMA user_version=20');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],42)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],43)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_picks').fetchone()[0],0)

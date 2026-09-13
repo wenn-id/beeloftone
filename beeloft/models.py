@@ -35,6 +35,10 @@ class UserCreate(Input):
     role: Role
 
 
+class BrowserSessionLogin(Input):
+    api_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+
+
 class OrderLine(Input):
     product_id: Text
     quantity: Quantity

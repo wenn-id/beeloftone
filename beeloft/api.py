@@ -4,12 +4,12 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, Query
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, BrowserSessionLogin, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -35,10 +35,14 @@ def create_app(database_path):
         return FileResponse(static / "index.html", headers={"Cache-Control": "no-store"})
     auth_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-    def actor(api_key=Depends(auth_header)):
-        if not api_key:
-            raise DomainError(401, "Masukkan X-API-Key pengguna.")
-        return store.authenticate(api_key)
+    def actor(request: Request, api_key=Depends(auth_header)):
+        if api_key:
+            return store.authenticate(api_key)
+        session=request.cookies.get('beeloft_session')
+        if not session:
+            raise DomainError(401,"Masukkan X-API-Key atau login melalui browser.")
+        return store.authenticate_browser_session(session,request.headers.get('X-CSRF-Token'),
+                                                  request.method not in ('GET','HEAD','OPTIONS'))
 
     Actor = Annotated[dict, Depends(actor)]
     RequestKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
@@ -65,6 +69,25 @@ def create_app(database_path):
         with store.transaction() as db:
             db.execute("SELECT 1").fetchone()
         return {"status": "ok"}
+
+    @app.post('/api/session', tags=['Access'])
+    def create_session(body: BrowserSessionLogin, request: Request, response: Response):
+        user,token,csrf=store.create_browser_session(body.api_key)
+        secure=request.url.scheme=='https'
+        response.set_cookie('beeloft_session',token,max_age=8*60*60,httponly=True,
+                            secure=secure,samesite='strict',path='/')
+        response.set_cookie('beeloft_csrf',csrf,max_age=8*60*60,httponly=False,
+                            secure=secure,samesite='strict',path='/')
+        response.headers['Cache-Control']='no-store'
+        return user
+
+    @app.post('/api/session/logout', tags=['Access'])
+    def close_session(request: Request, response: Response, user: Actor):
+        store.revoke_browser_session(request.cookies['beeloft_session'])
+        response.delete_cookie('beeloft_session',path='/')
+        response.delete_cookie('beeloft_csrf',path='/')
+        response.headers['Cache-Control']='no-store'
+        return {'status':'signed_out'}
 
     @app.get("/api/me", tags=["Access"])
     def me(user: Actor):

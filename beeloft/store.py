@@ -42,7 +42,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -141,6 +141,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("mekari_receivable_snapshots.sql").read_text(encoding="utf-8"))
             if version < 42:
                 db.executescript(Path(__file__).with_name("mekari_payroll_snapshots.sql").read_text(encoding="utf-8"))
+            if version < 43:
+                db.executescript(Path(__file__).with_name("browser_sessions.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -176,6 +178,39 @@ class Store:
             if not user:
                 raise DomainError(401, "API key tidak valid atau akun nonaktif.")
             return dict(user)
+
+    def create_browser_session(self, key, lifetime_hours=8):
+        token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
+        created=datetime.now(timezone.utc);expires=created+timedelta(hours=lifetime_hours)
+        with self.transaction(write=True) as db:
+            user=db.execute('SELECT id,name,role FROM users WHERE key_hash=? AND active=1',
+                (hashlib.sha256(key.encode()).hexdigest(),)).fetchone()
+            if not user:
+                raise DomainError(401,'API key tidak valid atau akun nonaktif.')
+            db.execute('DELETE FROM browser_sessions WHERE expires_at<=?',(created.isoformat(),))
+            db.execute('''INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,created_at,expires_at)
+                VALUES(?,?,?,?,?)''',(hashlib.sha256(token.encode()).hexdigest(),
+                hashlib.sha256(csrf.encode()).hexdigest(),user['id'],created.isoformat(),expires.isoformat()))
+            return dict(user),token,csrf
+
+    def authenticate_browser_session(self, token, csrf_token=None, require_csrf=False):
+        token_hash=hashlib.sha256(token.encode()).hexdigest()
+        with self.transaction() as db:
+            row=db.execute('''SELECT u.id,u.name,u.role,s.csrf_hash FROM browser_sessions s
+                JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1''',
+                (token_hash,now())).fetchone()
+            if not row:
+                raise DomainError(401,'Sesi browser berakhir atau akun nonaktif.')
+            if require_csrf:
+                supplied=hashlib.sha256((csrf_token or '').encode()).hexdigest()
+                if not secrets.compare_digest(supplied,row['csrf_hash']):
+                    raise DomainError(403,'Token keamanan browser tidak valid.')
+            return {name:row[name] for name in ('id','name','role')}
+
+    def revoke_browser_session(self, token):
+        with self.transaction(write=True) as db:
+            db.execute('DELETE FROM browser_sessions WHERE token_hash=?',
+                       (hashlib.sha256(token.encode()).hexdigest(),))
 
     def disable_user(self, user_id):
         with self.transaction(write=True) as db:
