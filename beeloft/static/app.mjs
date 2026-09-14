@@ -12,6 +12,7 @@ let dialogVersion = 0;
 let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
 let commandCenterRequest = 0;
+let auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
 let exportBusy = false;
 let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
@@ -34,9 +35,11 @@ function message(id, text, error = false) {
 }
 function clearWorkspace() {
   commandCenterRequest++; $('command-center-summary').replaceChildren();
+  auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
   $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   $('backup').hidden = true;
+  $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
@@ -62,7 +65,7 @@ function enterWorkspace(me,workflow) {
   user=me;transitions=workflow.transitions;$('access-key').value='';
   $('account-name').textContent=`${me.name} · ${me.role}`;
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
-  $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';offset=0;showBoard();
+  $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
 }
 $('login-form').onsubmit = async event => {
@@ -263,6 +266,80 @@ function openDialog(title, content) {
   $('dialog-title').textContent = title; $('dialog-content').innerHTML = content;
   modalBusy = false; unresolved = false; if (!$('dialog').open) $('dialog').showModal();
 }
+
+const auditCategories = {master_data:'Master data',production:'Produksi',materials:'Bahan baku',
+  purchasing:'Pembelian',warehouse:'Gudang',marketplace:'Marketplace',approval:'Approval',
+  ai:'AI',integration:'Integrasi'};
+const auditStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',
+  timeZone:'Asia/Jakarta'}).format(new Date(value));
+
+async function auditEventsDialog() {
+  if (guardPending()) return;
+  const version=epoch;
+  openDialog('Global audit trail','<p class="state">Memuat audit trail…</p>');
+  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  let rows=[],before=null;
+  try {
+    const users=await api.get('/api/users');
+    if(!current())return;
+    $('dialog-content').innerHTML=`<p class="form-info">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only dan urut dari yang terbaru.</p>
+      <form id="audit-filter"><div class="form-grid">
+        <label class="full">Cari operasi, referensi, pelaku, atau request key<input name="q" maxlength="160" value="${e(auditFilters.q)}"></label>
+        <div><label for="audit-category">Kategori</label><select id="audit-category" name="category"><option value="all">Semua kategori</option>${Object.entries(auditCategories).map(([key,label])=>option(key,label)).join('')}</select></div>
+        <div><label for="audit-actor">Pelaku</label><select id="audit-actor" name="actor_id"><option value="">Semua pelaku</option>${users.map(item=>option(item.id,`${item.name} · ${item.role}`)).join('')}</select></div>
+        ${field('start_date','Tanggal awal','date')}${field('end_date','Tanggal akhir','date')}
+      </div><div class="form-actions"><button type="button" id="audit-reset">Reset</button><button class="primary" type="submit">Terapkan filter</button></div></form>
+      <p id="audit-summary" class="hint" role="status"></p><p id="audit-error" class="error" role="alert" hidden></p>
+      <div id="audit-list"></div><button id="audit-more" type="button">Muat catatan sebelumnya</button>`;
+    $('audit-category').value=auditFilters.category;$('audit-actor').value=auditFilters.actor_id;
+    $('audit-filter').elements.start_date.value=auditFilters.start_date;
+    $('audit-filter').elements.end_date.value=auditFilters.end_date;
+    const render=total=>{
+      $('audit-summary').textContent=`${n(total)} catatan sesuai filter.`;
+      $('audit-list').innerHTML=rows.length?rows.map(item=>`<article class="audit-event">
+        <p class="status-label">${e(auditCategories[item.category])}</p>
+        <h4>${e(item.subject_reference||item.operation)}</h4>
+        <p>${e(item.operation)} · ${e(item.subject_type)}</p>
+        <p class="hint">${e(item.actor_name)} · ${e(item.actor_role)} · ${auditStamp(item.created_at)}</p>
+        <button type="button" data-action="audit-event" data-id="${e(item.id)}" aria-label="Rincian audit ${e(item.subject_reference||item.operation)}">Lihat rincian</button>
+      </article>`).join(''):'<p class="state">Tidak ada catatan audit yang sesuai filter.</p>';
+    };
+    const load=async reset=>{
+      if(reset){rows=[];before=null;}
+      const button=$('audit-more');button.disabled=true;message('audit-error','');
+      try{
+        const params=new URLSearchParams({limit:'25',...auditFilters,...(before?{before:String(before)}:{})});
+        for(const [key,value] of [...params])if(!value)params.delete(key);
+        const page=await api.get('/api/audit-events?'+params);
+        if(!current())return;
+        rows.push(...page.items);before=page.next_before;render(page.total);
+        button.hidden=!before;button.textContent='Muat catatan sebelumnya';
+      }catch(error){if(current()){message('audit-error',error.message,true);button.textContent='Coba lagi';}}
+      finally{if(current())button.disabled=false;}
+    };
+    $('audit-filter').onsubmit=event=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));auditFilters={...data};load(true);};
+    $('audit-reset').onclick=()=>{auditFilters={q:'',category:'all',actor_id:'',start_date:'',end_date:''};auditEventsDialog();};
+    $('audit-more').onclick=()=>load(false);
+    await load(true);
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-events">Coba lagi</button>`;}
+}
+
+async function auditEventDialog(eventId) {
+  if(guardPending())return;
+  const version=epoch;
+  openDialog('Rincian audit','<p class="state">Memuat rincian audit…</p>');
+  const modal=dialogVersion;
+  try{
+    const item=await api.get('/api/audit-events/'+encodeURIComponent(eventId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-title').textContent=`Audit · ${item.subject_reference||item.operation}`;
+    $('dialog-content').innerHTML=`<article class="audit-event"><p class="status-label">${e(auditCategories[item.category])}</p>
+      <dl class="requirement-values"><div><dt>Operasi</dt><dd>${e(item.operation)}</dd></div><div><dt>Pelaku</dt><dd>${e(item.actor_name)} · ${e(item.actor_role)}</dd></div><div><dt>Waktu Jakarta</dt><dd>${auditStamp(item.created_at)}</dd></div><div><dt>Objek</dt><dd>${e(item.subject_type)} · ${e(item.subject_id||'-')}</dd></div><div><dt>Referensi</dt><dd>${e(item.subject_reference||'-')}</dd></div><div><dt>Request key</dt><dd>${e(item.request_key)}</dd></div></dl>
+      <h3>Input perubahan</h3><pre class="audit-json">${e(JSON.stringify(item.changes,null,2))}</pre>
+      <h3>Hasil tersimpan</h3><pre class="audit-json">${e(JSON.stringify(item.outcome,null,2))}</pre>
+      <button type="button" data-action="audit-events">Kembali ke audit trail</button></article>`;
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-event" data-id="${e(eventId)}">Coba lagi</button>`;}
+}
 function closeDialog() {
   if (modalBusy || unresolved) { notify('Konfirmasi penyimpanan lewat tombol coba ulang sebelum menutup.'); return; }
   dialogVersion++; $('dialog').close();
@@ -459,6 +536,7 @@ async function orderForm() {
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-order">Coba lagi</button>`; }
 }
 $('products').onclick = productsDialog; $('new-order').onclick = orderForm;
+$('audit-trail').onclick = auditEventsDialog;
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;
@@ -529,6 +607,7 @@ document.addEventListener('click', event => {
     'mekari-payroll-snapshot':()=>mekariPayrollSnapshotDialog(id),
     'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
+    'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });

@@ -119,4 +119,4 @@ class AiInvestigationTest(TestCase):
         payload=body | {'as_of':'2026-11-15'}
         self.assertEqual(investigate(Store(backup),payload),expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],44)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],45)

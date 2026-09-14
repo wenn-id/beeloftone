@@ -155,5 +155,5 @@ class UnifiedApprovalsTest(TestCase):
             db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],44)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],45)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM production_change_requests').fetchone()[0],0)

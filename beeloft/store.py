@@ -25,6 +25,54 @@ INTEGRATION_CONTRACTS = (
         {'scope':'payroll','domain':'Payroll records','source_of_truth':'Mekari HR / Payroll'})},
 )
 
+AUDIT_BULK_FIELDS = {'items','orders','returns','listings','periods','payables','receivables'}
+AUDIT_SECRET_FIELDS = {'api_key','client_secret','code','code_verifier','csrf','password','token'}
+AUDIT_APPROVAL_OPERATIONS = {
+    'purchase-request-decision','purchase-order-decision','supplier-payment-decision',
+    'marketing-budget-decision','production-change-request-decision','ai-action-proposal-decision'
+}
+
+
+def audit_category(operation):
+    root=operation.split(':',1)[0]
+    if root in AUDIT_APPROVAL_OPERATIONS:
+        return 'approval'
+    if root.startswith(('integration-', 'jubelio-', 'mekari-')):
+        return 'integration'
+    if root.startswith('ai-'):
+        return 'ai'
+    if root.startswith('marketplace-'):
+        return 'marketplace'
+    if root.startswith(('finished-goods', 'warehouse-')):
+        return 'warehouse'
+    if root.startswith(('purchase-', 'supplier-', 'qc-')):
+        return 'purchasing'
+    if root.startswith(('material-', 'consumption-', 'bom')):
+        return 'materials'
+    if root == 'supplier' or root.startswith('product'):
+        return 'master_data'
+    return 'production'
+
+
+def audit_value(value, field=''):
+    lowered=field.casefold()
+    if lowered in AUDIT_SECRET_FIELDS or lowered.endswith(('_token','_secret','_password','_api_key')):
+        return '[REDACTED]'
+    if field in AUDIT_BULK_FIELDS and isinstance(value,list):
+        return {'record_count':len(value)}
+    if isinstance(value,dict):
+        return {str(key):audit_value(item,str(key)) for key,item in value.items()}
+    if isinstance(value,list):
+        return [audit_value(item) for item in value]
+    return value
+
+
+def audit_outcome(result):
+    if not isinstance(result,dict):
+        return {'result_type':type(result).__name__}
+    return {key:audit_value(value,key) for key,value in result.items()
+            if not isinstance(value,(dict,list))}
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -43,7 +91,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -146,6 +194,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("browser_sessions.sql").read_text(encoding="utf-8"))
             if version < 44:
                 db.executescript(Path(__file__).with_name("oidc_sso.sql").read_text(encoding="utf-8"))
+            if version < 45:
+                db.executescript(Path(__file__).with_name("audit_trail.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -368,7 +418,7 @@ class Store:
     def _write(self, actor, roles, key, operation, payload, perform):
         fingerprint = hashlib.sha256(json.dumps([operation, payload], sort_keys=True).encode()).hexdigest()
         with self.transaction(write=True) as db:
-            current = db.execute("SELECT role FROM users WHERE id=? AND active=1", (actor["id"],)).fetchone()
+            current = db.execute("SELECT name,role FROM users WHERE id=? AND active=1", (actor["id"],)).fetchone()
             if not current:
                 raise DomainError(401, "Akun nonaktif.")
             if current["role"] not in roles:
@@ -380,9 +430,75 @@ class Store:
                     raise DomainError(409, "Idempotency-Key sudah digunakan untuk request berbeda.")
                 return json.loads(receipt["response"])
             result = perform(db)
+            self._record_audit(db,dict(current)|{'id':actor['id']},key,operation,payload,result)
             db.execute("INSERT INTO requests VALUES(?,?,?,?,?)",
                        (actor["id"], key, fingerprint, json.dumps(result), now()))
             return result
+
+    def _record_audit(self, db, actor, key, operation, payload, result):
+        root=operation.split(':',1)[0]
+        subject_type=root.replace('-reverse','').replace('-decision','').replace('-','_')
+        subject_id=''
+        subject_reference=''
+        if isinstance(result,dict):
+            subject_id=str(result.get('id') or '')
+            subject_reference=str(result.get('reference') or result.get('sku') or result.get('code') or '')
+        if not subject_id and ':' in operation:
+            subject_id=operation.split(':',1)[1]
+        changes=json.dumps(audit_value(payload),ensure_ascii=False,separators=(',',':'),default=str)
+        outcome=json.dumps(audit_outcome(result),ensure_ascii=False,separators=(',',':'),default=str)
+        db.execute('''INSERT INTO audit_events(id,category,operation,actor_id,actor_name,actor_role,
+            subject_type,subject_id,subject_reference,request_key,changes_json,outcome_json,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),audit_category(operation),operation,
+            actor['id'],actor['name'],actor['role'],subject_type,subject_id,subject_reference,key,
+            changes,outcome,now()))
+
+    @staticmethod
+    def _audit_event(row):
+        event=dict(row)
+        event['changes']=json.loads(event.pop('changes_json'))
+        event['outcome']=json.loads(event.pop('outcome_json'))
+        return event
+
+    def audit_event(self, event_id):
+        with self.transaction() as db:
+            row=db.execute('SELECT * FROM audit_events WHERE id=?',(event_id,)).fetchone()
+            if not row:
+                raise DomainError(404,'Audit event tidak ditemukan.')
+            return self._audit_event(row)
+
+    def audit_events(self, limit=50, before=None, category='all', actor_id='', query='',
+                     start_date=None, end_date=None):
+        if bool(start_date)!=bool(end_date):
+            raise DomainError(422,'Tanggal awal dan akhir audit harus diisi bersama.')
+        if start_date:
+            if not 0 <= (end_date-start_date).days < 366:
+                raise DomainError(422,'Rentang audit harus berurutan dan maksimal 366 hari.')
+            jakarta=timezone(timedelta(hours=7))
+            try:
+                start=datetime.combine(start_date,time(),jakarta).astimezone(timezone.utc).isoformat()
+                end=(datetime.combine(end_date,time(),jakarta)+timedelta(days=1)).astimezone(timezone.utc).isoformat()
+            except (OverflowError,ValueError):
+                raise DomainError(422,'Tanggal audit di luar jangkauan.')
+        else:
+            start=end=None
+        params={'limit':limit+1,'before':before,'category':category,'actor_id':actor_id,
+                'query':query.strip().casefold(),'start':start,'end':end}
+        filters=''' WHERE (:before IS NULL OR sequence<:before)
+            AND (:category='all' OR category=:category)
+            AND (:actor_id='' OR actor_id=:actor_id)
+            AND (:start IS NULL OR created_at>=:start) AND (:end IS NULL OR created_at<:end)
+            AND (:query='' OR instr(lower(operation),:query)>0
+                OR instr(lower(subject_reference),:query)>0 OR instr(lower(actor_name),:query)>0
+                OR instr(lower(request_key),:query)>0 OR instr(lower(changes_json),:query)>0)'''
+        count_filters=filters.replace('(:before IS NULL OR sequence<:before)','1=1',1)
+        with self.transaction() as db:
+            total=db.execute('SELECT COUNT(*) FROM audit_events'+count_filters,params).fetchone()[0]
+            rows=[self._audit_event(row) for row in db.execute(
+                'SELECT * FROM audit_events'+filters+' ORDER BY sequence DESC LIMIT :limit',params)]
+            more=len(rows)>limit;rows=rows[:limit]
+            return {'total':total,'items':rows,
+                    'next_before':rows[-1]['sequence'] if more else None}
 
     def create_product(self, payload, actor, key):
         def perform(db):

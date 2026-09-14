@@ -26,7 +26,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.54.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.55.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -151,6 +151,24 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/command-center', tags=['Management'])
     def command_center(user: Actor):
         return build_command_center(store)
+
+    @app.get('/api/audit-events', tags=['Audit'])
+    def audit_events(user: Actor, limit: Limit = 50,
+                     before: Annotated[int | None, Query(ge=1)] = None,
+                     category: Literal['all','master_data','production','materials','purchasing',
+                                       'warehouse','marketplace','approval','ai','integration'] = 'all',
+                     actor_id: Annotated[str, Query(max_length=500)] = '',
+                     q: Annotated[str, Query(max_length=160)] = '',
+                     start_date: date | None = None, end_date: date | None = None):
+        if user['role']!='admin':
+            raise DomainError(403,'Hanya admin yang dapat membaca global audit trail.')
+        return store.audit_events(limit,before,category,actor_id,q,start_date,end_date)
+
+    @app.get('/api/audit-events/{event_id}', tags=['Audit'])
+    def audit_event(event_id: str, user: Actor):
+        if user['role']!='admin':
+            raise DomainError(403,'Hanya admin yang dapat membaca global audit trail.')
+        return store.audit_event(event_id)
 
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
