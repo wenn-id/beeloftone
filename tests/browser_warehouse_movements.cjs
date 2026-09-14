@@ -15,6 +15,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
     await page.getByRole('button',{name:'Rincian FG-WH-SOURCE',exact:true}).click();
   }
   async function fillMovement(reference,target,quantity,date='2026-09-19'){
+    await page.getByLabel('SKU / QR lot',{exact:true}).fill(receipt.scan_code.toUpperCase());
     await page.getByLabel('Referensi pergerakan',{exact:true}).fill(reference);
     await page.getByLabel('Lokasi tujuan',{exact:true}).fill(target);
     await page.getByLabel('Jumlah',{exact:true}).fill(String(quantity));
@@ -35,8 +36,13 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   await page.unroute('**/api/orders/*/warehouse-movements?*');await page.keyboard.press('Escape');
 
   await openReceipt();await page.getByRole('button',{name:'Transfer lokasi',exact:true}).click();
+  await page.waitForFunction(()=>document.activeElement?.id==='warehouse-scan-code');
   assert.match(await page.getByLabel('Stok asal',{exact:true}).inputValue(),/^0$/);
   await fillMovement('WH-UI-001','Rak Jual <B>',5);
+  await page.getByLabel('SKU / QR lot',{exact:true}).fill('SKU-LAIN');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('SKU atau QR lot hasil scan tidak cocok dengan penerimaan barang jadi.',{exact:true}).waitFor();
+  await page.getByLabel('SKU / QR lot',{exact:true}).fill(receipt.scan_code.toUpperCase());
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
@@ -51,6 +57,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).waitFor();
   await page.reload();await login(operator);await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
   await page.getByRole('heading',{name:'Rincian pergerakan gudang',exact:true}).waitFor();
+  await page.getByText('Validasi scan: '+receipt.scan_code.toUpperCase(),{exact:true}).waitFor();
   await page.unroute('**/api/finished-goods-receipts/*/warehouse-movements');
   const transfer=(await apiGet('/api/orders/'+order.id+'/warehouse-movements'))[0];
   assert.equal(transfer.reference,'WH-UI-001');
@@ -91,5 +98,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   await post('/api/warehouse-movements/'+transfer.id+'/reverse',{reason:'CONTOH koreksi transfer'},'wh-reverse-transfer');
   inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.hold_quantity,inventory.damaged_quantity],[12,8,0]);
-  console.log('Warehouse browser QA PASS: location transfer, hold release/damage, per-location inventory, retry, roles, correction, dependency, mobile/200%.');
+  console.log('Warehouse browser QA PASS: SKU/lot scan, location transfer, hold release/damage, per-location inventory, retry, roles, correction, dependency, mobile/200%.');
 };

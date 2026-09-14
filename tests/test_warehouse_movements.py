@@ -39,8 +39,10 @@ class WarehouseMovementsTest(TestCase):
     def move(self, receipt, reference='WH-001', kind='transfer', from_location='Rak Barang Jadi A',
              to_location='Rak Barang Jadi B', quantity=5, stock_status='sellable', **options):
         moved_date=options.pop('moved_date','2026-09-19')
-        body=dict(reference=reference,kind=kind,from_location=from_location,to_location=to_location,
-                  quantity=quantity,moved_date=moved_date,reason='Stok gudang dihitung dan dipindahkan')
+        scanned_code=options.pop('scanned_code',receipt['sku'])
+        body=dict(reference=reference,scanned_code=scanned_code,kind=kind,from_location=from_location,
+                  to_location=to_location,quantity=quantity,moved_date=moved_date,
+                  reason='Stok gudang dihitung dan dipindahkan')
         if stock_status is not None:
             body['stock_status']=stock_status
         return self.post('/api/finished-goods-receipts/'+receipt['id']+'/warehouse-movements',body,**options)
@@ -53,6 +55,9 @@ class WarehouseMovementsTest(TestCase):
         self.assertEqual(movement['receipt_reference'],receipt['reference'])
         self.assertEqual(movement['final_qc_reference'],qc['reference'])
         self.assertEqual(movement['order_id'],order['id'])
+        self.assertEqual(movement['scanned_code'],receipt['sku'])
+        event=self.client.get('/api/audit-events?category=warehouse&q=WH-001').json()['items'][0]
+        self.assertEqual(event['changes']['scanned_code'],receipt['sku'])
         detail=self.client.get('/api/finished-goods-receipts/'+receipt['id']).json()
         balances={(row['location'],row['stock_status']):row['quantity'] for row in detail['inventory']}
         self.assertEqual(balances,{('Rak Barang Jadi A','hold'):8,
@@ -85,6 +90,14 @@ class WarehouseMovementsTest(TestCase):
     def test_validation_roles_dependencies_and_reverse_order(self):
         _,_,receipt=self.setup_receipt()
         self.move(receipt,api_key=self.viewer['api_key'],status=403)
+        self.post('/api/finished-goods-receipts/'+receipt['id']+'/warehouse-movements',dict(
+            reference='WH-NO-SCAN',kind='transfer',from_location=receipt['location'],to_location='Rak B',
+            stock_status='sellable',quantity=1,moved_date='2026-09-19',reason='Scan tidak dikirim'),status=422)
+        self.move(receipt,scanned_code='SKU-LAIN',status=422)
+        scanned=self.move(receipt,reference='WH-QR',quantity=1,
+                          scanned_code=receipt['scan_code'].upper())
+        self.assertEqual(scanned['scanned_code'],receipt['scan_code'].upper())
+        self.post('/api/warehouse-movements/'+scanned['id']+'/reverse',dict(reason='Uji QR selesai'))
         self.move(receipt,quantity=True,status=422)
         self.move(receipt,to_location='rak barang jadi a',status=422)
         self.move(receipt,kind='hold_release',stock_status='hold',status=422)
@@ -115,7 +128,7 @@ class WarehouseMovementsTest(TestCase):
             with TestClient(create_app(self.path)) as client:
                 barrier.wait(timeout=10)
                 return client.post('/api/finished-goods-receipts/'+receipt['id']+'/warehouse-movements',json=dict(
-                    reference='WH-RACE-'+str(index),kind='transfer',stock_status='sellable',
+                    reference='WH-RACE-'+str(index),scanned_code=receipt['sku'],kind='transfer',stock_status='sellable',
                     from_location='Rak Barang Jadi A',to_location='Rak '+str(index),quantity=7,
                     moved_date='2026-09-19',reason='Uji transfer bersamaan'),headers={
                     'X-API-Key':self.operator['api_key'],'Idempotency-Key':'wh-race-'+str(index)}).status_code
@@ -140,14 +153,31 @@ class WarehouseMovementsTest(TestCase):
         backup=self.path.with_name('warehouse-movements-backup.sqlite3')
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).warehouse_movement(first['id']),first)
+        with closing(sqlite3.connect(backup)) as db:
+            db.execute('DROP TRIGGER warehouse_movement_scan_valid')
+            db.execute('ALTER TABLE warehouse_movements DROP COLUMN scanned_code')
+            db.execute('PRAGMA user_version=47');db.commit()
+        migrated=Store(backup).warehouse_movement(first['id'])
+        self.assertEqual(migrated['id'],first['id'])
+        self.assertIsNone(migrated['scanned_code'])
+        partial=self.path.with_name('warehouse-movements-partial.sqlite3')
+        self.app.state.store.backup(partial)
+        with closing(sqlite3.connect(partial)) as db:
+            db.execute('DROP TRIGGER warehouse_movement_scan_valid')
+            db.execute('PRAGMA user_version=47');db.commit()
+        Store(partial)
+        with closing(sqlite3.connect(partial)) as db:
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],48)
+            self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' "
+                                            "AND name='warehouse_movement_scan_valid'").fetchone())
         with self.app.state.store.transaction(write=True) as db:
             for sql in ('UPDATE warehouse_movements SET reason=reason','DELETE FROM warehouse_movements'):
                 with self.assertRaises(sqlite3.IntegrityError): db.execute(sql)
             with self.assertRaises(sqlite3.IntegrityError):
-                db.execute('''INSERT INTO warehouse_movements(id,reference,receipt_id,kind,from_location,to_location,
-                    from_status,to_status,quantity,moved_date,reason,actor_id,created_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',('bad','WH-DIRECT',receipt['id'],'transfer',
-                    receipt['location'],'Bypass','sellable','sellable',99,'2026-09-19','Bypass',self.admin['id'],
+                db.execute('''INSERT INTO warehouse_movements(id,reference,receipt_id,scanned_code,kind,from_location,
+                    to_location,from_status,to_status,quantity,moved_date,reason,actor_id,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',('bad','WH-DIRECT',receipt['id'],'SKU-LAIN','transfer',
+                    receipt['location'],'Bypass','sellable','sellable',1,'2026-09-19','Bypass',self.admin['id'],
                     '2026-09-19T00:00:00+00:00'))
 
         fresh_path=self.path.with_name('schema18.sqlite3')
@@ -176,5 +206,6 @@ class WarehouseMovementsTest(TestCase):
             db.execute('PRAGMA user_version=18');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],47)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],48)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM warehouse_movements').fetchone()[0],0)
+            self.assertIn('scanned_code',{row[1] for row in db.execute('PRAGMA table_info(warehouse_movements)')})

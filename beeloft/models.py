@@ -888,6 +888,7 @@ class FinishedGoodsReceiptCreate(ReversalCreate):
 
 class WarehouseMovementCreate(ReversalCreate):
     reference: Text
+    scanned_code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     kind: Literal['transfer', 'hold_release', 'hold_damage']
     from_location: Text
     to_location: Text

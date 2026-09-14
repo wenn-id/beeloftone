@@ -56,7 +56,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   let inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.reserved_quantity,inventory.available_quantity],[12,5,7]);
   await post('/api/finished-goods-receipts/'+receipt.id+'/warehouse-movements',{reference:'WH-RESERVED-BLOCK',
-    kind:'transfer',from_location:'Rak Barang Jadi A',to_location:'Rak Jual',stock_status:'sellable',quantity:8,
+    scanned_code:receipt.sku,kind:'transfer',from_location:'Rak Barang Jadi A',to_location:'Rak Jual',stock_status:'sellable',quantity:8,
     moved_date:'2026-09-21',reason:'Melebihi available'},'market-block-transfer',409);
   await post('/api/finished-goods-receipts/'+receipt.id+'/reverse',{reason:'Masih reserved'},'market-block-receipt',409);
   assert.equal((await apiGet('/api/orders/'+order.id)).totals.warehouse,20);

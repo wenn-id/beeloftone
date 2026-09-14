@@ -92,7 +92,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -203,6 +203,11 @@ class Store:
                 pick_columns={row['name'] for row in db.execute('PRAGMA table_info(marketplace_picks)')}
                 migration=('marketplace_pick_scanning_existing.sql' if 'scanned_code' in pick_columns
                            else 'marketplace_pick_scanning.sql')
+                db.executescript(Path(__file__).with_name(migration).read_text(encoding="utf-8"))
+            if version < 48:
+                movement_columns={row['name'] for row in db.execute('PRAGMA table_info(warehouse_movements)')}
+                migration=('warehouse_movement_scanning_existing.sql' if 'scanned_code' in movement_columns
+                           else 'warehouse_movement_scanning.sql')
                 db.executescript(Path(__file__).with_name(migration).read_text(encoding="utf-8"))
 
     def connect(self):
@@ -2652,12 +2657,15 @@ class Store:
                           and row['stock_status']==from_status),0)
             if payload['quantity']>balance:
                 raise DomainError(409,'Jumlah melebihi stok pada lokasi dan status asal. Muat ulang inventori.')
+            if payload['scanned_code'].casefold() not in (receipt['sku'].casefold(),
+                                                          receipt['scan_code'].casefold()):
+                raise DomainError(422,'SKU atau QR lot hasil scan tidak cocok dengan penerimaan barang jadi.')
             movement_id=str(uuid4())
-            db.execute('''INSERT INTO warehouse_movements(id,reference,receipt_id,kind,from_location,to_location,
-                from_status,to_status,quantity,moved_date,reason,actor_id,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(movement_id,payload['reference'],receipt_id,payload['kind'],
-                payload['from_location'],payload['to_location'],from_status,to_status,payload['quantity'],
-                payload['moved_date'],payload['reason'],actor['id'],now()))
+            db.execute('''INSERT INTO warehouse_movements(id,reference,receipt_id,scanned_code,kind,from_location,
+                to_location,from_status,to_status,quantity,moved_date,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(movement_id,payload['reference'],receipt_id,
+                payload['scanned_code'],payload['kind'],payload['from_location'],payload['to_location'],from_status,
+                to_status,payload['quantity'],payload['moved_date'],payload['reason'],actor['id'],now()))
             return self._warehouse_movement(db,movement_id)
         return self._write(actor,('admin','operator'),key,'warehouse-movement:'+receipt_id,payload,perform)
 
