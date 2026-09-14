@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.70.0"
+    "version": "0.71.0"
   },
   "paths": {
     "/health": {
@@ -10617,6 +10617,154 @@
               ],
               "type": "string",
               "default": "open",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wip-ageing-insights": {
+      "get": {
+        "tags": [
+          "Production"
+        ],
+        "summary": "Wip Ageing Insights",
+        "operationId": "wip_ageing_insights_api_wip_ageing_insights_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "idle_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 7,
+              "title": "Idle Days"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 160,
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 160,
+              "default": "",
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "planned",
+                "cutting",
+                "sewing",
+                "finishing",
+                "qc",
+                "rework"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Stage"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "attention",
+                "stalled",
+                "overdue",
+                "blocked",
+                "rework",
+                "moving"
+              ],
+              "type": "string",
+              "default": "attention",
               "title": "Status"
             }
           },

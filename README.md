@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.70.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.71.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2298,3 +2298,23 @@ tersedia.
 
 Rencana: [Purchase commitment insights plan](docs/purchase-commitment-insights-plan.md).
 Bukti: [Purchase commitment insights verification](docs/purchase-commitment-insights-verification.md).
+
+## WIP ageing dan sinyal hambatan (v0.71)
+
+Pilih **WIP ageing** untuk melihat seluruh kuantitas produksi aktif menurut tahap, lama sejak aktivitas produksi
+terakhir, order yang melewati tenggat, kendala terbuka, dan rework. Umur dihitung dari movement produksi terbaru
+per order; order yang belum pernah bergerak memakai tanggal pembuatannya.
+
+Filter tersedia untuk tanggal posisi, batas tidak bergerak 1–365 hari, status perhatian, tahap aktif, PIC, order,
+SKU, produk, dan isi kendala. Ringkasan tahap menunjukkan kuantitas aktif serta kuantitas pada order yang tidak
+bergerak. Tahap dengan kuantitas stalled terbesar disebut sinyal hambatan agar tim tahu area yang perlu diperiksa.
+
+Laporan memakai saldo ledger saat request dimuat. `as_of` menentukan umur dan status tenggat serta mengecualikan
+order yang dibuat sesudah tanggal tersebut; laporan tidak merekonstruksi posisi historis. Sinyal hambatan bukan
+ukuran kapasitas karena master line/stasiun, jam kerja, dan kalender kapasitas belum tersedia.
+
+API: `GET /api/wip-ageing-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only dan schema tetap
+48. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [WIP ageing insights plan](docs/wip-ageing-insights-plan.md).
+Bukti: [WIP ageing insights verification](docs/wip-ageing-insights-verification.md).

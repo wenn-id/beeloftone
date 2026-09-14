@@ -2917,7 +2917,7 @@ function purchaseCommitmentInsightsDialog() {
   openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form">
     <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
     <div class="form-grid">
-      ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
+      ${field('as_of','Hitung umur per tanggal','date',`required value="${today}"`)}
       ${field('due_soon_days','Batas segera jatuh tempo (hari)','number','required min="1" max="90" step="1" value="7"')}
       <label>Status jadwal<select name="status"><option value="open">Semua komitmen terbuka</option><option value="overdue">Terlambat</option><option value="due_soon">Segera jatuh tempo</option><option value="scheduled">Terjadwal</option><option value="fulfilled">Diterima lengkap, belum ditutup</option><option value="all">Semua PO aktif</option></select></label>
       <label class="full">Cari PO, PR, supplier, atau bahan<input name="query" type="search" maxlength="160" placeholder="Referensi, kode, atau nama"></label>
@@ -2958,6 +2958,69 @@ function purchaseCommitmentInsightsDialog() {
   $('purchase-commitment-more').onclick=()=>load();
 }
 $('purchase-commitment-insights').onclick=purchaseCommitmentInsightsDialog;
+
+function wipAgeingInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const ownerOptions=(boardData?.owners||[]).map(owner=>option(owner.id,
+    owner.name+(owner.active?'':' (akun nonaktif)'))).join('');
+  openDialog('WIP ageing & sinyal hambatan',`<form id="wip-ageing-form">
+    <p class="hint">Umur dihitung sejak movement produksi terakhir per order, atau sejak order dibuat bila belum pernah bergerak. Posisi tahap memakai saldo ledger saat ini.</p>
+    <div class="form-grid">
+      ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
+      ${field('idle_days','Batas tidak bergerak (hari)','number','required min="1" max="365" step="1" value="7"')}
+      <label>Status perhatian<select name="status"><option value="attention">Perlu perhatian</option><option value="stalled">Tidak bergerak</option><option value="overdue">Lewat tenggat</option><option value="blocked">Ada kendala</option><option value="rework">Ada rework</option><option value="moving">Bergerak tanpa sinyal</option><option value="all">Semua order aktif</option></select></label>
+      <label>Posisi tahap<select name="stage"><option value="all">Semua tahap aktif</option>${['planned','cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
+      <label>PIC order<select name="owner_id"><option value="">Semua PIC</option>${ownerOptions}</select></label>
+      <label class="full">Cari order, PIC, SKU, produk, atau kendala<input name="query" type="search" maxlength="160" placeholder="Referensi, nama, atau isi kendala"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="wip-ageing-submit" type="submit">Tampilkan WIP</button></div>
+  </form><p id="wip-ageing-message" class="state" role="status" hidden></p><div id="wip-ageing-summary"></div><div id="wip-ageing-stages"></div><div id="wip-ageing-results"></div><button id="wip-ageing-more" type="button" hidden>Muat order berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('wip-ageing-form'),submit=$('wip-ageing-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('wip-ageing-summary').replaceChildren();$('wip-ageing-stages').replaceChildren();$('wip-ageing-results').replaceChildren();}
+    const gen=generation,more=$('wip-ageing-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('wip-ageing-message',offset?'Memuat order berikutnya…':'Membaca posisi dan aktivitas WIP…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/wip-ageing-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('wip-ageing-message','');
+      if(!offset){
+        const signal=report.summary.bottleneck_signal_stage?labels[report.summary.bottleneck_signal_stage]:'Belum ada';
+        $('wip-ageing-summary').innerHTML=`<p class="form-info">Umur dihitung hingga ${date(report.as_of)} · batas ${n(report.idle_days)} hari<br>${n(report.summary.active_orders)} order aktif · ${n(report.summary.attention_orders)} perlu perhatian · ${n(report.summary.stalled_quantity)} pcs tidak bergerak<br>Sinyal hambatan terbesar: <strong>${e(signal)}</strong></p><p class="hint">Sinyal memakai saldo pada order yang melewati batas tidak bergerak. Kapasitas target belum dihitung karena master line, jam kerja, dan kalender kapasitas belum tersedia.</p>`;
+        $('wip-ageing-stages').innerHTML=`<h3>Posisi per tahap</h3><dl class="requirement-values">${report.stages.filter(row=>row.quantity).map(row=>`<div><dt>${e(labels[row.stage])}</dt><dd>${n(row.quantity)} pcs</dd><small>${n(row.orders)} order · ${n(row.stalled_quantity)} pcs tidak bergerak</small></div>`).join('')}</dl>`;
+      }
+      const flagLabels={overdue:'Lewat tenggat',blocked:'Ada kendala',stalled:'Tidak bergerak',rework:'Ada rework'};
+      const html=report.items.map(row=>{
+        const flags=row.flags.length?row.flags.map(flag=>`<span class="status-label late">${e(flagLabels[flag])}</span>`).join(' '):'<span class="status-label done">Bergerak</span>';
+        const positions=row.positions.map(position=>`${e(labels[position.stage])} ${n(position.quantity)} pcs`).join(' · ');
+        const products=row.products.map(product=>`<p>${e(product.sku)} · ${e(product.name)}${product.size?` · ${e(product.size)}`:''}${product.color?` · ${e(product.color)}`:''} · ${n(product.quantity)} pcs</p>`).join('');
+        const blockers=row.open_issues.length?`<h4>Kendala terbuka</h4>${row.open_issues.map(issue=>`<p class="reason">${e(labels[issue.stage])} · ${e(issue.description)} · PIC ${e(issue.owner_name)}</p>`).join('')}`:'';
+        const after=row.activity_after_as_of?' · ada movement setelah tanggal posisi':'';
+        const late=row.overdue_days?` · ${n(row.overdue_days)} hari lewat tenggat`:'';
+        return `<article class="material-event" data-wip-ageing="${e(row.order_id)}"><div class="issue-heading"><h3>${e(row.reference)} · ${e(row.title)}</h3><div>${flags}</div></div><p>${e(row.owner_name)} · tenggat ${date(row.due_date)}</p><dl class="requirement-values"><div><dt>Aktif</dt><dd>${n(row.active_quantity)} pcs</dd></div><div><dt>Belum cutting</dt><dd>${n(row.planned_quantity)} pcs</dd></div><div><dt>Dalam proses</dt><dd>${n(row.in_process_quantity)} pcs</dd></div><div><dt>Tanpa movement</dt><dd><strong>${n(row.inactive_days)} hari</strong></dd></div><div><dt>Kendala terbuka</dt><dd>${n(row.open_issue_count)}</dd></div><div><dt>Rework</dt><dd>${n(row.rework_quantity)} pcs</dd></div></dl><p><strong>Posisi:</strong> ${positions}</p><p class="hint">Aktivitas produksi terakhir ${date(row.latest_activity_date)} · ${e(row.activity_basis==='order_created'?'belum ada movement':'movement terakhir')}${after}${late}</p><h4>SKU</h4>${products}${blockers}<button data-action="detail" data-id="${e(row.order_id)}">Buka order</button></article>`;
+      }).join('');
+      $('wip-ageing-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('wip-ageing-results').innerHTML='<p class="state">Tidak ada order aktif yang cocok dengan status dan filter ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat order berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('wip-ageing-message',error.message,true);
+        $('wip-ageing-message').insertAdjacentHTML('beforeend','<br><button id="wip-ageing-retry" type="button">Coba lagi</button>');
+        $('wip-ageing-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('wip-ageing-more').onclick=()=>load();
+}
+$('wip-ageing-insights').onclick=wipAgeingInsightsDialog;
 
 function replenishmentDialog() {
   if(guardPending())return;

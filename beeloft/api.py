@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.70.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.71.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -955,6 +955,18 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                      limit: Limit = 100, offset: Offset = 0):
         return store.purchase_commitment_insights(as_of or date.today(),due_soon_days,query,status,
                                                   limit,offset)
+
+    @app.get('/api/wip-ageing-insights', tags=['Production'])
+    def wip_ageing_insights(user: Actor, as_of: date | None = None,
+                            idle_days: Annotated[int, Query(ge=1, le=365)] = 7,
+                            query: Annotated[str, Query(max_length=160)] = '',
+                            owner_id: Annotated[str, Query(max_length=160)] = '',
+                            stage: Literal['all','planned','cutting','sewing','finishing','qc','rework'] = 'all',
+                            status: Literal['all','attention','stalled','overdue','blocked','rework','moving'] =
+                                'attention',
+                            limit: Limit = 100, offset: Offset = 0):
+        return store.wip_ageing_insights(as_of or date.today(),idle_days,query,owner_id,stage,
+                                         status,limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

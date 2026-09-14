@@ -4086,6 +4086,117 @@ class Store:
             'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
             'items':scoped[offset:offset+limit]}
 
+    def wip_ageing_insights(self, as_of, idle_days=7, query='', owner_id='', stage='all',
+                            status='attention', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        production_stages=tuple(value for value in STAGES if value not in ('warehouse','reject'))
+        local_zone=timezone(timedelta(hours=7))
+        term=query.strip().casefold();items=[]
+        with self.transaction() as db:
+            order_ids=[row[0] for row in db.execute('SELECT id FROM orders ORDER BY created_at,id')]
+            owners=[dict(row) for row in db.execute('''SELECT u.id,u.name,u.active FROM users u
+                WHERE EXISTS(SELECT 1 FROM orders o WHERE o.owner_id=u.id) ORDER BY u.name,u.id''')]
+            for order_id in order_ids:
+                order=self._order(db,order_id)
+                created_date=datetime.fromisoformat(order['created_at']).astimezone(local_zone).date()
+                active_quantity=sum(order['totals'][value] for value in production_stages)
+                if not active_quantity or created_date>as_of_date:
+                    continue
+                if owner_id and order['owner_id']!=owner_id:
+                    continue
+                positions=[{'stage':value,'quantity':order['totals'][value]}
+                           for value in production_stages if order['totals'][value]>0]
+                if stage!='all' and not any(row['stage']==stage for row in positions):
+                    continue
+                movement=db.execute('''SELECT m.created_at FROM movements m
+                    JOIN order_lines l ON l.id=m.line_id WHERE l.order_id=?
+                    ORDER BY m.sequence DESC LIMIT 1''',(order_id,)).fetchone()
+                latest_activity_at=movement['created_at'] if movement else order['created_at']
+                latest_activity_date=datetime.fromisoformat(latest_activity_at).astimezone(local_zone).date()
+                inactive_days=max((as_of_date-latest_activity_date).days,0)
+                overdue_days=max((as_of_date-date.fromisoformat(order['due_date'])).days,0)
+                issues=[dict(row) for row in db.execute('''SELECT i.id,i.stage,i.description,i.owner_id,
+                    u.name AS owner_name FROM issues i JOIN order_lines l ON l.id=i.line_id
+                    JOIN users u ON u.id=i.owner_id WHERE l.order_id=? AND i.resolved_at IS NULL
+                    ORDER BY i.sequence DESC''',(order_id,))]
+                flags=[]
+                if overdue_days: flags.append('overdue')
+                if issues: flags.append('blocked')
+                if inactive_days>=idle_days: flags.append('stalled')
+                if order['totals']['rework']>0: flags.append('rework')
+                products=[{key:line[key] for key in ('product_id','sku','name','color','size','quantity')}
+                          for line in order['lines']]
+                searchable=[order['reference'],order['title'],order['owner_name']]
+                searchable.extend(value for product in products
+                                  for value in (product['sku'],product['name'],product['color'],product['size']))
+                searchable.extend(value for issue in issues
+                                  for value in (issue['description'],issue['owner_name']))
+                if term and not any(term in value.casefold() for value in searchable if value):
+                    continue
+                primary=max(positions,key=lambda row:(row['quantity'],-production_stages.index(row['stage'])))
+                items.append({'order_id':order['id'],'reference':order['reference'],'title':order['title'],
+                    'owner_id':order['owner_id'],'owner_name':order['owner_name'],
+                    'created_at':order['created_at'],'created_date':created_date.isoformat(),
+                    'due_date':order['due_date'],'overdue_days':overdue_days,
+                    'latest_activity_at':latest_activity_at,
+                    'latest_activity_date':latest_activity_date.isoformat(),
+                    'activity_basis':'latest_production_movement' if movement else 'order_created',
+                    'activity_after_as_of':latest_activity_date>as_of_date,'inactive_days':inactive_days,
+                    'target_quantity':order['target_quantity'],'active_quantity':active_quantity,
+                    'planned_quantity':order['totals']['planned'],
+                    'in_process_quantity':sum(order['totals'][value] for value in production_stages
+                                              if value!='planned'),
+                    'warehouse_quantity':order['totals']['warehouse'],
+                    'reject_quantity':order['totals']['reject'],
+                    'rework_quantity':order['totals']['rework'],'primary_stage':primary['stage'],
+                    'flags':flags,'attention':bool(flags),'positions':positions,'products':products,
+                    'open_issue_count':len(issues),'open_issues':issues})
+        items.sort(key=lambda row:(not bool(row['overdue_days']),not bool(row['open_issue_count']),
+            'stalled' not in row['flags'],not bool(row['rework_quantity']),-row['inactive_days'],
+            row['due_date'],row['reference'].casefold(),row['order_id']))
+        stages=[]
+        for value in production_stages:
+            rows=[(item,next((position['quantity'] for position in item['positions']
+                              if position['stage']==value),0)) for item in items]
+            rows=[(item,quantity) for item,quantity in rows if quantity]
+            stages.append({'stage':value,'quantity':sum(quantity for _,quantity in rows),
+                'orders':len(rows),'stalled_quantity':sum(quantity for item,quantity in rows
+                                                          if 'stalled' in item['flags']),
+                'stalled_orders':sum('stalled' in item['flags'] for item,_ in rows),
+                'blocked_quantity':sum(quantity for item,quantity in rows
+                                       if 'blocked' in item['flags'])})
+        nonempty=[row for row in stages if row['quantity']]
+        stalled=[row for row in stages if row['stalled_quantity']]
+        largest=max(nonempty,key=lambda row:(row['quantity'],-production_stages.index(row['stage']))) \
+            if nonempty else None
+        bottleneck=max(stalled,key=lambda row:(row['stalled_quantity'],
+            -production_stages.index(row['stage']))) if stalled else None
+        summary={'active_orders':len(items),'attention_orders':sum(item['attention'] for item in items),
+            'stalled_orders':sum('stalled' in item['flags'] for item in items),
+            'overdue_orders':sum('overdue' in item['flags'] for item in items),
+            'blocked_orders':sum('blocked' in item['flags'] for item in items),
+            'rework_orders':sum('rework' in item['flags'] for item in items),
+            'active_quantity':sum(item['active_quantity'] for item in items),
+            'planned_quantity':sum(item['planned_quantity'] for item in items),
+            'in_process_quantity':sum(item['in_process_quantity'] for item in items),
+            'stalled_quantity':sum(item['active_quantity'] for item in items
+                                   if 'stalled' in item['flags']),
+            'open_issues':sum(item['open_issue_count'] for item in items),
+            'largest_active_stage':largest['stage'] if largest else None,
+            'bottleneck_signal_stage':bottleneck['stage'] if bottleneck else None}
+        if status=='attention': scoped=[item for item in items if item['attention']]
+        elif status=='moving': scoped=[item for item in items if not item['attention']]
+        elif status=='all': scoped=items
+        else: scoped=[item for item in items if status in item['flags']]
+        return {'as_of':as_of_date.isoformat(),'idle_days':idle_days,'query':query.strip(),
+            'owner_id':owner_id,'stage':stage,'status':status,'timezone':'Asia/Jakarta',
+            'position_basis':'current_production_ledger',
+            'age_basis':'latest_production_movement_or_order_created',
+            'capacity_basis':'not_configured',
+            'bottleneck_signal_basis':'largest_current_quantity_on_stalled_orders',
+            'total':len(scoped),'limit':limit,'offset':offset,'owners':owners,
+            'summary':summary,'stages':stages,'items':scoped[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):
