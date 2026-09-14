@@ -124,6 +124,6 @@ class InventoryReconciliationTest(TestCase):
             db.execute('PRAGMA user_version=24');db.commit()
         Store(fresh)
         with closing(sqlite3.connect(fresh)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],45)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],46)
             self.assertIn('stock_count_id',{row[1] for row in db.execute('PRAGMA table_info(finished_goods_adjustments)')})
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_stock_counts').fetchone()[0],0)

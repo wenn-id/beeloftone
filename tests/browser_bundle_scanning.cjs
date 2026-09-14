@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,viewer,apiPost,work,run})=>{
+module.exports=async({page,login,admin,operator,viewer,apiPost,work,run})=>{
   const bundle=await apiPost('/api/cutting-runs/'+run.id+'/bundles',{reference:'BDL-SCAN-UI',
     output_movement_id:run.outputs[0].id,quantity:5,reason:'CONTOH label QR untuk handoff'},'bundle-scan-ui');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
@@ -24,6 +24,7 @@ module.exports=async({page,login,admin,viewer,apiPost,work,run})=>{
   await page.locator('.bundle-label').getByText('BDL-SCAN-UI',{exact:true}).waitFor();
   await page.waitForFunction(()=>document.querySelector('.bundle-label img')?.naturalWidth>0);
   assert.equal(await page.locator('.bundle-label').getByText('5 pcs',{exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Serahkan bundle',exact:true}).count(),0);
 
   const label=await fetch(process.env.BEELOFT_QA_BASE+'/api/bundles/'+bundle.id+'/label.svg',
     {headers:{'X-API-Key':viewer}});
@@ -45,5 +46,39 @@ module.exports=async({page,login,admin,viewer,apiPost,work,run})=>{
     'beeloft-bundle-scan-label-mobile.png')});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.setViewportSize({width:1440,height:1000});
-  console.log('Bundle scan browser QA PASS: keyboard scan, retry, viewer lookup, QR load, print, mobile/200%.');
+
+  await role(admin);
+  await page.getByRole('button',{name:'Scan bundle',exact:true}).click();
+  await page.getByLabel('Kode bundle',{exact:true}).fill('bdl-scan-ui');
+  await page.getByLabel('Kode bundle',{exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Serahkan bundle',exact:true}).click();
+  await page.getByLabel('Tujuan / stasiun penerima',{exact:true}).fill('Sewing Line A <aman>');
+  await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH diserahkan setelah hitung fisik');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('menunggu penerima',{exact:false}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Konfirmasi terima',exact:true}).count(),0);
+
+  await role(operator);
+  await page.getByRole('button',{name:'Scan bundle',exact:true}).click();
+  await page.getByLabel('Kode bundle',{exact:true}).fill(bundle.scan_code);
+  await page.getByLabel('Kode bundle',{exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Konfirmasi terima',exact:true}).click();
+  await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH jumlah dan kondisi fisik sesuai');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('Lokasi custody sekarang:',{exact:false}).waitFor();
+  await page.getByText('Sewing Line A <aman>',{exact:true}).waitFor();
+
+  let failHistory=true;
+  await page.route('**/api/bundles/*/handoffs?*',async route=>{
+    if(failHistory){failHistory=false;await route.fulfill({status:503,contentType:'application/json',
+      body:JSON.stringify({detail:'Riwayat handoff sedang sibuk'})});}
+    else await route.continue();
+  });
+  await page.getByRole('button',{name:'Riwayat serah-terima',exact:true}).click();
+  await page.getByText('Riwayat handoff sedang sibuk',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await page.getByText('Sudah diterima',{exact:true}).waitFor();
+  await page.getByText('Sewing Line A <aman>',{exact:false}).waitFor();
+  await page.unroute('**/api/bundles/*/handoffs?*');
+  console.log('Bundle scan/handoff browser QA PASS: keyboard scan, QR, print, two-party custody, history retry, roles, mobile/200%.');
 };

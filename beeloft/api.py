@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, BrowserSessionLogin, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, BrowserSessionLogin, BundleHandoffCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.56.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.57.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -626,6 +626,23 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return Response(bundle_label_svg(bundle),media_type='image/svg+xml',headers={
             'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff',
             'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"})
+
+    @app.get('/api/bundles/{bundle_id}/handoffs', tags=['Bundling'])
+    def bundle_handoffs(bundle_id: str, user: Actor, limit: Limit = 100,
+                        before: Annotated[int | None, Query(ge=1)] = None):
+        return store.bundle_handoffs(bundle_id,limit,before)
+
+    @app.post('/api/bundles/{bundle_id}/handoffs', status_code=201, tags=['Bundling'])
+    def create_bundle_handoff(bundle_id: str, body: BundleHandoffCreate, user: Actor, key: RequestKey):
+        return store.create_bundle_handoff(bundle_id,body.model_dump(mode='json'),user,key)
+
+    @app.post('/api/bundle-handoffs/{handoff_id}/accept', status_code=201, tags=['Bundling'])
+    def accept_bundle_handoff(handoff_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.accept_bundle_handoff(handoff_id,body.model_dump(mode='json'),user,key)
+
+    @app.post('/api/bundle-handoffs/{handoff_id}/cancel', status_code=201, tags=['Bundling'])
+    def cancel_bundle_handoff(handoff_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.cancel_bundle_handoff(handoff_id,body.model_dump(mode='json'),user,key)
 
     @app.post('/api/bundles/{bundle_id}/reverse', status_code=201, tags=['Bundling'])
     def reverse_bundle(bundle_id: str, body: ReversalCreate, user: Actor, key: RequestKey):

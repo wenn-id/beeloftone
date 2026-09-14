@@ -92,7 +92,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -197,6 +197,8 @@ class Store:
                 db.executescript(Path(__file__).with_name("oidc_sso.sql").read_text(encoding="utf-8"))
             if version < 45:
                 db.executescript(Path(__file__).with_name("audit_trail.sql").read_text(encoding="utf-8"))
+            if version < 46:
+                db.executescript(Path(__file__).with_name("bundle_handoffs.sql").read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -443,7 +445,8 @@ class Store:
         subject_reference=''
         if isinstance(result,dict):
             subject_id=str(result.get('id') or '')
-            subject_reference=str(result.get('reference') or result.get('sku') or result.get('code') or '')
+            subject_reference=str(result.get('reference') or result.get('bundle_reference')
+                                  or result.get('sku') or result.get('code') or '')
         if not subject_id and ':' in operation:
             subject_id=operation.split(':',1)[1]
         changes=json.dumps(audit_value(payload),ensure_ascii=False,separators=(',',':'),default=str)
@@ -1765,6 +1768,17 @@ class Store:
         record['sewing_allocated_quantity']=allocated
         record['sewing_unassigned_quantity']=0 if reversal else record['quantity']-allocated
         record['scan_code']=bundle_scan_code(record['id'])
+        custody=db.execute('''SELECT h.to_location FROM bundle_handoffs h
+            JOIN bundle_handoff_acceptances a ON a.handoff_id=h.id WHERE h.bundle_id=?
+            ORDER BY h.sequence DESC LIMIT 1''',(bundle_id,)).fetchone()
+        record['custody_location']=custody['to_location'] if custody else 'Cutting'
+        pending=db.execute('''SELECT h.id FROM bundle_handoffs h WHERE h.bundle_id=?
+            AND NOT EXISTS(SELECT 1 FROM bundle_handoff_acceptances a WHERE a.handoff_id=h.id)
+            AND NOT EXISTS(SELECT 1 FROM bundle_handoff_cancellations c WHERE c.handoff_id=h.id)
+            ORDER BY h.sequence DESC LIMIT 1''',(bundle_id,)).fetchone()
+        record['pending_handoff']=self._bundle_handoff(db,pending['id']) if pending else None
+        record['handoff_count']=db.execute('SELECT COUNT(*) FROM bundle_handoffs WHERE bundle_id=?',
+                                            (bundle_id,)).fetchone()[0]
         return record
 
     def bundle(self, bundle_id):
@@ -1783,6 +1797,77 @@ class Store:
             if not row:
                 raise DomainError(404,'Bundle dari hasil scan tidak ditemukan.')
             return self._bundle(db,row['id'])
+
+    @staticmethod
+    def _bundle_handoff(db, handoff_id):
+        row=db.execute('''SELECT h.*,b.reference AS bundle_reference,b.quantity,p.sku,p.size,
+            o.id AS order_id,o.reference AS order_reference,s.name AS sender_name,s.role AS sender_role,
+            a.receiver_id,a.reason AS acceptance_reason,a.created_at AS accepted_at,
+            receiver.name AS receiver_name,receiver.role AS receiver_role,
+            c.actor_id AS cancellation_actor_id,c.reason AS cancellation_reason,
+            c.created_at AS cancelled_at,canceller.name AS cancellation_actor_name
+            FROM bundle_handoffs h JOIN bundles b ON b.id=h.bundle_id
+            JOIN cutting_runs r ON r.id=b.cutting_run_id JOIN orders o ON o.id=r.order_id
+            JOIN movements m ON m.id=b.output_movement_id JOIN order_lines l ON l.id=m.line_id
+            JOIN products p ON p.id=l.product_id JOIN users s ON s.id=h.sender_id
+            LEFT JOIN bundle_handoff_acceptances a ON a.handoff_id=h.id
+            LEFT JOIN users receiver ON receiver.id=a.receiver_id
+            LEFT JOIN bundle_handoff_cancellations c ON c.handoff_id=h.id
+            LEFT JOIN users canceller ON canceller.id=c.actor_id WHERE h.id=?''',(handoff_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Serah-terima bundle tidak ditemukan.')
+        record=dict(row)
+        record['status']='received' if record['accepted_at'] else 'cancelled' if record['cancelled_at'] else 'pending'
+        return record
+
+    def bundle_handoffs(self, bundle_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM bundles WHERE id=?',(bundle_id,)).fetchone():
+                raise DomainError(404,'Bundle tidak ditemukan.')
+            ids=db.execute('''SELECT id FROM bundle_handoffs WHERE bundle_id=?
+                AND (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT ?''',
+                (bundle_id,before,before,limit)).fetchall()
+            return [self._bundle_handoff(db,row['id']) for row in ids]
+
+    def create_bundle_handoff(self, bundle_id, payload, actor, key):
+        def perform(db):
+            bundle=self._bundle(db,bundle_id)
+            if bundle['status']!='active':
+                raise DomainError(409,'Bundle sudah dikoreksi.')
+            if bundle['pending_handoff']:
+                raise DomainError(409,'Bundle masih menunggu penerimaan handoff sebelumnya.')
+            if bundle['custody_location'].casefold()==payload['to_location'].casefold():
+                raise DomainError(422,'Tujuan handoff harus berbeda dari lokasi bundle sekarang.')
+            handoff_id=str(uuid4())
+            db.execute('''INSERT INTO bundle_handoffs(id,bundle_id,from_location,to_location,reason,
+                sender_id,created_at) VALUES(?,?,?,?,?,?,?)''',(handoff_id,bundle_id,
+                bundle['custody_location'],payload['to_location'],payload['reason'],actor['id'],now()))
+            return self._bundle_handoff(db,handoff_id)
+        return self._write(actor,('admin','operator'),key,'bundle-handoff:'+bundle_id,payload,perform)
+
+    def accept_bundle_handoff(self, handoff_id, payload, actor, key):
+        def perform(db):
+            handoff=self._bundle_handoff(db,handoff_id)
+            if handoff['status']!='pending':
+                raise DomainError(409,'Serah-terima bundle sudah diputuskan.')
+            if handoff['sender_id']==actor['id']:
+                raise DomainError(409,'Penerima harus memakai akun yang berbeda dari pengirim.')
+            db.execute('''INSERT INTO bundle_handoff_acceptances(handoff_id,receiver_id,reason,created_at)
+                VALUES(?,?,?,?)''',(handoff_id,actor['id'],payload['reason'],now()))
+            return self._bundle_handoff(db,handoff_id)
+        return self._write(actor,('admin','operator'),key,'bundle-handoff-acceptance:'+handoff_id,
+                           payload,perform)
+
+    def cancel_bundle_handoff(self, handoff_id, payload, actor, key):
+        def perform(db):
+            handoff=self._bundle_handoff(db,handoff_id)
+            if handoff['status']!='pending':
+                raise DomainError(409,'Hanya serah-terima pending yang dapat dibatalkan.')
+            db.execute('''INSERT INTO bundle_handoff_cancellations(handoff_id,actor_id,reason,created_at)
+                VALUES(?,?,?,?)''',(handoff_id,actor['id'],payload['reason'],now()))
+            return self._bundle_handoff(db,handoff_id)
+        return self._write(actor,('admin',),key,'bundle-handoff-cancellation:'+handoff_id,
+                           payload,perform)
 
     def bundles(self, order_id, limit=100, before=None):
         with self.transaction() as db:
@@ -1819,6 +1904,8 @@ class Store:
                 raise DomainError(409,'Bundle sudah dikoreksi.')
             if bundle['sewing_allocated_quantity']:
                 raise DomainError(409,'Koreksi semua job sewing aktif sebelum mengoreksi bundle.')
+            if bundle['pending_handoff']:
+                raise DomainError(409,'Batalkan atau terima handoff pending sebelum mengoreksi bundle.')
             db.execute('INSERT INTO bundle_reversals(bundle_id,reason,actor_id,created_at) VALUES(?,?,?,?)',
                        (bundle_id,payload['reason'],actor['id'],now()))
             return self._bundle(db,bundle_id)

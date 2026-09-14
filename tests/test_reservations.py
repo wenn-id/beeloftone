@@ -123,7 +123,7 @@ class ReservationTest(TestCase):
         self.assertEqual(self.batch(batch['id'])['balance'],'10.000')
         self.reserve(batch,a,'1.125')
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],45)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],46)
             for query in ['DELETE FROM material_reservation_events','UPDATE material_reservation_events SET reason=reason']:
                 with self.assertRaises(sqlite3.IntegrityError):db.execute(query)
         backup=self.path.parent/'restore.sqlite3'

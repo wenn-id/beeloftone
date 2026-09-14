@@ -806,6 +806,10 @@ class BundleCreate(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class BundleHandoffCreate(ReversalCreate):
+    to_location: Text
+
+
 class SewingJobCreate(ReversalCreate):
     reference: Text
     assignment_type: Literal['internal','makloon']
