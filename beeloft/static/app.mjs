@@ -2655,6 +2655,58 @@ function returnInsightsDialog() {
 }
 $('return-insights').onclick=returnInsightsDialog;
 
+function sizeDemandInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Analisis demand per ukuran',`<form id="size-demand-form">
+    <p class="hint">Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.</p>
+    <div class="form-grid">
+      ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang tiap periode (hari)','number','required min="7" max="90" step="1" value="28"')}
+      ${field('lookahead_days','Horizon risiko (hari)','number','required min="1" max="180" step="1" value="30"')}
+      ${field('marketplace','Marketplace demand','text','maxlength="160" placeholder="Semua marketplace"')}
+      <label class="full">Cari keluarga produk atau SKU<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="size-demand-submit" type="submit">Tampilkan analisis</button></div>
+  </form><p id="size-demand-message" class="state" role="status" hidden></p><div id="size-demand-summary"></div><div id="size-demand-results"></div><button id="size-demand-more" type="button" hidden>Muat keluarga berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('size-demand-form'),submit=$('size-demand-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('size-demand-summary').replaceChildren();$('size-demand-results').replaceChildren();}
+    const gen=generation,more=$('size-demand-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('size-demand-message',offset?'Memuat keluarga berikutnya…':'Menghitung demand dan days of cover per ukuran…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/size-demand-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('size-demand-message','');
+      if(!offset)$('size-demand-summary').innerHTML=`<p class="form-info">Riwayat ${date(report.history_start)}–${date(report.as_of)}<br>${n(report.summary.families)} keluarga · ${n(report.summary.size_variants)} ukuran · ${n(report.summary.families_out_of_stock+report.summary.families_within_lookahead)} keluarga perlu perhatian dalam ${n(report.lookahead_days)} hari</p><p class="hint">Filter marketplace hanya membatasi demand. Stok memakai seluruh inventori internal saat laporan dimuat. “Pemimpin konsisten” berarti demand neto ukuran tersebut berada di peringkat pertama pada kedua periode, bukan bukti stockout historis.</p>`;
+      const statuses={out_of_stock:'Stok tersedia sudah habis',within_lookahead:'Berisiko dalam horizon',later:'Risiko di luar horizon',no_observed_demand:'Belum ada demand teramati'};
+      const html=report.items.map(family=>{
+        const first=family.first_stockout_sizes.join(', '),consistent=family.consistent_leader_sizes.join(', ');
+        const sizes=family.sizes.map(row=>`<div data-size-demand-sku="${e(row.sku)}"><dt>${e(row.size)} · ${e(row.sku)}</dt><dd>Stok tersedia ${n(row.available_quantity)} pcs · demand lama ${n(row.previous_net_demand)} pcs · demand terbaru ${n(row.recent_net_demand)} pcs${row.days_of_cover===null?' · days of cover belum tersedia':' · '+n(Number(row.days_of_cover))+' hari'+(row.projected_stockout_date?' · estimasi '+date(row.projected_stockout_date):'')}${row.consistent_demand_leader?' · pemimpin demand konsisten':''}</dd></div>`).join('');
+        return `<article class="material-event" data-size-demand-family="${e(family.name)}"><h3>${e(family.name)}${family.color?' · '+e(family.color):''}</h3><p class="status-label ${family.risk_status==='out_of_stock'||family.risk_status==='within_lookahead'?'late':'done'}">${e(statuses[family.risk_status])}</p>${first?`<p><strong>Risiko habis lebih dulu: ${e(first)}</strong>${family.first_stockout_date?' · '+date(family.first_stockout_date):''}</p>`:''}${consistent?`<p>Pemimpin demand konsisten: ${e(consistent)}</p>`:''}<dl class="requirement-values">${sizes}</dl></article>`;
+      }).join('');
+      $('size-demand-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('size-demand-results').innerHTML='<p class="state">Belum ada keluarga produk dengan minimal dua ukuran yang cocok dengan filter.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat keluarga berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('size-demand-message',error.message,true);
+        $('size-demand-message').insertAdjacentHTML('beforeend','<br><button id="size-demand-retry" type="button">Coba lagi</button>');
+        $('size-demand-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('size-demand-more').onclick=()=>load();
+}
+$('size-demand-insights').onclick=sizeDemandInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);

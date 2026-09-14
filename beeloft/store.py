@@ -3522,6 +3522,105 @@ class Store:
                 'product_page':['wrong_item','color_mismatch'],'quality':['defect'],'other':['other']},
             'items':rows[offset:offset+limit]}
 
+    def size_demand_insights(self, as_of, window_days=28, lookahead_days=30, query='', marketplace='',
+                             limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        forecast=self.demand_forecast(as_of_date,window_days,lookahead_days,'',marketplace,
+                                      1_000_000_000,0)
+        inventory={row['product_id']:row for row in self.finished_goods_inventory(1_000_000_000,0)}
+        grouped={}
+        for row in forecast['items']:
+            key=(row['name'].casefold(),row['color'].casefold())
+            grouped.setdefault(key,[]).append(row)
+        term=query.strip().casefold()
+        families=[]
+        for grouped_rows in grouped.values():
+            rows=[row for row in grouped_rows if row['size'].strip()]
+            rows.sort(key=lambda row:(row['size'].casefold(),row['sku'].casefold(),row['id']))
+            if (len({row['size'].casefold() for row in rows})<2
+                    or term and not any(term in str(row[field]).casefold()
+                        for row in grouped_rows for field in ('sku','name','color','size'))):
+                continue
+            previous_values=sorted({row['previous_net_demand'] for row in rows
+                                    if row['previous_net_demand']>0},reverse=True)
+            recent_values=sorted({row['recent_net_demand'] for row in rows
+                                  if row['recent_net_demand']>0},reverse=True)
+            previous_ranks={value:index+1 for index,value in enumerate(previous_values)}
+            recent_ranks={value:index+1 for index,value in enumerate(recent_values)}
+            recent_total=sum(row['recent_net_demand'] for row in rows)
+            size_rows=[]
+            covers=[]
+            for row in rows:
+                stock=inventory.get(row['id'],{})
+                available=stock.get('available_quantity',0)
+                rate=Decimal(row['forecast_daily_rate'])
+                cover=Decimal(available)/rate if rate else None
+                if cover is not None:
+                    covers.append(cover)
+                    projected=(as_of_date+timedelta(days=int(cover.to_integral_value(
+                        rounding=ROUND_CEILING)))).isoformat()
+                else:
+                    projected=None
+                previous_rank=previous_ranks.get(row['previous_net_demand'])
+                recent_rank=recent_ranks.get(row['recent_net_demand'])
+                size_rows.append({'product_id':row['id'],'sku':row['sku'],'size':row['size'],
+                    'available_quantity':available,'sellable_quantity':stock.get('sellable_quantity',0),
+                    'reserved_quantity':stock.get('reserved_quantity',0),
+                    'previous_net_demand':row['previous_net_demand'],
+                    'recent_net_demand':row['recent_net_demand'],
+                    'forecast_daily_rate':row['forecast_daily_rate'],
+                    'recent_demand_share':format((Decimal(row['recent_net_demand'])/recent_total*100).quantize(
+                        Decimal('.01'),rounding=ROUND_HALF_UP),'.2f') if recent_total else '0.00',
+                    'previous_demand_rank':previous_rank,'recent_demand_rank':recent_rank,
+                    'consistent_demand_leader':previous_rank==1 and recent_rank==1,
+                    'days_of_cover':format(cover.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+                        if cover is not None else None,
+                    'projected_stockout_date':projected,'risk_rank':None,'risk_status':'no_observed_demand'})
+            cover_ranks={value:index+1 for index,value in enumerate(sorted(set(covers)))}
+            for item,row in zip(size_rows,rows):
+                rate=Decimal(row['forecast_daily_rate'])
+                if not rate:
+                    continue
+                cover=Decimal(item['available_quantity'])/rate
+                item['risk_rank']=cover_ranks[cover]
+                item['risk_status']='out_of_stock' if item['available_quantity']<=0 else (
+                    'within_lookahead' if cover<=lookahead_days else 'later')
+            first=[row for row in size_rows if row['risk_rank']==1]
+            if not first:
+                status='no_observed_demand'
+            elif any(row['risk_status']=='out_of_stock' for row in first):
+                status='out_of_stock'
+            elif any(row['risk_status']=='within_lookahead' for row in first):
+                status='within_lookahead'
+            else:
+                status='later'
+            size_rows.sort(key=lambda row:(row['risk_rank'] is None,row['risk_rank'] or 0,
+                                           row['size'].casefold(),row['sku'].casefold()))
+            families.append({'name':rows[0]['name'],'color':rows[0]['color'],'size_count':len(size_rows),
+                'risk_status':status,'first_stockout_sizes':[row['size'] for row in first],
+                'first_stockout_date':min((row['projected_stockout_date'] for row in first
+                                           if row['projected_stockout_date']),default=None),
+                'consistent_leader_sizes':[row['size'] for row in size_rows
+                                           if row['consistent_demand_leader']],
+                'sizes':size_rows})
+        severity={'out_of_stock':0,'within_lookahead':1,'later':2,'no_observed_demand':3}
+        families.sort(key=lambda row:(severity[row['risk_status']],row['first_stockout_date'] or '9999-12-31',
+                                      row['name'].casefold(),row['color'].casefold()))
+        size_rows=[size for family in families for size in family['sizes']]
+        first_dates=[family['first_stockout_date'] for family in families if family['first_stockout_date']]
+        summary={'families':len(families),'size_variants':len(size_rows),
+            'families_out_of_stock':sum(row['risk_status']=='out_of_stock' for row in families),
+            'families_within_lookahead':sum(row['risk_status']=='within_lookahead' for row in families),
+            'sizes_out_of_stock':sum(row['risk_status']=='out_of_stock' for row in size_rows),
+            'consistent_demand_leaders':sum(row['consistent_demand_leader'] for row in size_rows),
+            'earliest_projected_stockout_date':min(first_dates,default=None)}
+        return {'as_of':as_of_date.isoformat(),'window_days':window_days,'lookahead_days':lookahead_days,
+            'history_start':forecast['history_start'],'previous_period_end':forecast['previous_period_end'],
+            'recent_period_start':forecast['recent_period_start'],'query':query.strip(),
+            'marketplace':marketplace.strip() or None,'method':'weighted_two_window_demand_and_current_stock',
+            'stock_scope':'all_marketplaces_current_internal_inventory','total':len(families),
+            'limit':limit,'offset':offset,'summary':summary,'items':families[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):

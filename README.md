@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.64.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.65.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2163,3 +2163,28 @@ mengubah ukuran atau listing. Runtime connector Jubelio/Mekari tetap ditunda sam
 
 Rencana: [Return insights plan](docs/return-insights-plan.md).
 Bukti: [Return insights verification](docs/return-insights-verification.md).
+
+## Analisis demand dan risiko stockout per ukuran (v0.65)
+
+Pilih **Analisis ukuran** untuk membandingkan SKU dengan nama produk dan warna yang sama. Laporan memakai
+dua periode demand neto, formula forecast 70% periode terbaru dan 30% periode sebelumnya, serta stok tersedia
+saat ini. Days of cover menentukan ukuran yang diproyeksikan habis lebih dulu dan apakah tanggalnya berada
+dalam horizon risiko yang dipilih.
+
+Label **Pemimpin demand konsisten** hanya muncul ketika satu ukuran berada di peringkat demand pertama pada
+kedua periode dan mempunyai demand positif. Pencarian satu SKU tetap menampilkan seluruh keluarga ukurannya.
+Filter marketplace membatasi sumber demand, sedangkan stok selalu memakai seluruh inventori internal saat
+laporan dimuat. Keluarga dengan kurang dari dua ukuran terisi dan berbeda tidak ditampilkan karena tidak
+mempunyai pembanding.
+
+API: `GET /api/size-demand-insights`. Parameter `as_of`, `window_days`, `lookahead_days`, `query`,
+`marketplace`, `limit`, dan `offset` tersedia. Default memakai dua window 28 hari dan horizon risiko 30 hari.
+Semua akun aktif dapat membaca. Endpoint tidak mengubah stok, audit, atau schema database; schema tetap 48.
+
+Produk dikelompokkan memakai nama dan warna karena master keluarga produk terpisah belum tersedia. Proyeksi
+memakai posisi stok sekarang, bukan rekonstruksi snapshot historis. Karena itu laporan menunjukkan risiko
+habis lebih dulu dan pola demand berulang, bukan bukti bahwa stockout benar-benar terjadi pada masa lalu.
+Promosi, musiman, lead time per SKU, transfer channel, dan runtime connector Jubelio/Mekari belum masuk.
+
+Rencana: [Size demand insights plan](docs/size-demand-insights-plan.md).
+Bukti: [Size demand insights verification](docs/size-demand-insights-verification.md).
