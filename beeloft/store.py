@@ -3729,6 +3729,102 @@ class Store:
             'total':len(filtered),'limit':limit,'offset':offset,'summary':summary,
             'items':filtered[offset:offset+limit]}
 
+    def stock_adjustment_insights(self, as_of, window_days=30, quantity_threshold=5,
+                                  percentage_threshold=20, repeat_threshold=3, query='', location='',
+                                  stock_status='all', source='all', record_status='all',
+                                  classification='flagged', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        period_start=as_of_date-timedelta(days=window_days-1)
+        with self.transaction() as db:
+            records=[dict(row) for row in db.execute('''SELECT a.id,a.sequence,a.reference,a.receipt_id,
+                a.location,a.stock_status,a.quantity_delta,a.adjusted_date,a.reason,a.stock_count_id,
+                a.created_at,u.name AS actor_name,x.reference AS receipt_reference,x.received_date,
+                x.sellable_quantity+x.hold_quantity AS received_quantity,p.id AS product_id,p.sku,
+                p.name AS product_name,p.color,p.size,o.id AS order_id,o.reference AS order_reference,
+                c.reference AS stock_count_reference,r.reason AS reversal_reason,
+                r.created_at AS reversed_at,ru.name AS reversal_actor_name
+            FROM finished_goods_adjustments a JOIN users u ON u.id=a.actor_id
+            JOIN finished_goods_receipts x ON x.id=a.receipt_id
+            JOIN final_qc_records q ON q.id=x.final_qc_record_id
+            JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+            JOIN bundles b ON b.id=j.bundle_id JOIN cutting_runs run ON run.id=b.cutting_run_id
+            JOIN orders o ON o.id=run.order_id JOIN movements movement ON movement.id=b.output_movement_id
+            JOIN order_lines l ON l.id=movement.line_id JOIN products p ON p.id=l.product_id
+            LEFT JOIN finished_goods_stock_counts c ON c.id=a.stock_count_id
+            LEFT JOIN finished_goods_adjustment_reversals r ON r.adjustment_id=a.id
+            LEFT JOIN users ru ON ru.id=r.actor_id
+            WHERE a.adjusted_date BETWEEN ? AND ? ORDER BY a.adjusted_date DESC,a.sequence DESC''',
+                (period_start.isoformat(),as_of_date.isoformat()))]
+        buckets={}
+        for row in records:
+            key=(row['product_id'],row['location'].casefold(),row['stock_status'])
+            buckets.setdefault(key,[]).append(row)
+        items=[]
+        for row in records:
+            key=(row['product_id'],row['location'].casefold(),row['stock_status'])
+            peers=buckets[key]
+            absolute=abs(row['quantity_delta'])
+            share=(Decimal(absolute)*100/row['received_quantity']).quantize(
+                Decimal('.01'),rounding=ROUND_HALF_UP) if row['received_quantity'] else Decimal('0')
+            flags=[]
+            if absolute>=quantity_threshold: flags.append('large_quantity')
+            if share>=percentage_threshold: flags.append('large_receipt_share')
+            if len(peers)>=repeat_threshold: flags.append('repeated_bucket')
+            if row['reversal_reason'] is not None: flags.append('corrected_record')
+            classification_value='high' if any(flag in flags for flag in
+                ('large_quantity','large_receipt_share')) else 'review' if flags else 'normal'
+            item={key:row[key] for key in ('id','sequence','reference','receipt_id','receipt_reference',
+                'received_date','product_id','sku','product_name','color','size','order_id','order_reference',
+                'location','stock_status','quantity_delta','adjusted_date','reason','actor_name','created_at',
+                'stock_count_id','stock_count_reference')} | {
+                'record_status':'corrected' if row['reversal_reason'] is not None else 'active',
+                'source':'stock_count' if row['stock_count_id'] else 'manual',
+                'direction':'increase' if row['quantity_delta']>0 else 'decrease',
+                'absolute_quantity':absolute,'received_quantity':row['received_quantity'],
+                'receipt_share_percent':format(share,'.2f'),'bucket_adjustment_count':len(peers),
+                'bucket_absolute_quantity':sum(abs(peer['quantity_delta']) for peer in peers),
+                'classification':classification_value,'flags':flags,
+                'reversal':{'reason':row['reversal_reason'],'actor_name':row['reversal_actor_name'],
+                    'created_at':row['reversed_at']} if row['reversal_reason'] is not None else None}
+            items.append(item)
+        term=query.strip().casefold();place=location.strip().casefold()
+        scoped=[row for row in items if
+            (not term or any(term in str(row[field]).casefold() for field in
+                ('reference','sku','product_name','color','size','receipt_reference','order_reference','reason')))
+            and (not place or place in row['location'].casefold())
+            and (stock_status=='all' or row['stock_status']==stock_status)
+            and (source=='all' or row['source']==source)
+            and (record_status=='all' or row['record_status']==record_status)]
+        priority={'high':0,'review':1,'normal':2}
+        scoped.sort(key=lambda row:(priority[row['classification']],
+                    -date.fromisoformat(row['adjusted_date']).toordinal(),-row['sequence']))
+        flagged=[row for row in scoped if row['classification']!='normal']
+        repeated={ (row['product_id'],row['location'].casefold(),row['stock_status']) for row in scoped
+                   if 'repeated_bucket' in row['flags'] }
+        summary={'adjustment_count':len(scoped),'flagged_adjustments':len(flagged),
+            'high_risk_adjustments':sum(row['classification']=='high' for row in scoped),
+            'review_adjustments':sum(row['classification']=='review' for row in scoped),
+            'normal_adjustments':sum(row['classification']=='normal' for row in scoped),
+            'active_adjustments':sum(row['record_status']=='active' for row in scoped),
+            'corrected_adjustments':sum(row['record_status']=='corrected' for row in scoped),
+            'manual_adjustments':sum(row['source']=='manual' for row in scoped),
+            'stock_count_adjustments':sum(row['source']=='stock_count' for row in scoped),
+            'absolute_quantity':sum(row['absolute_quantity'] for row in scoped),
+            'flagged_absolute_quantity':sum(row['absolute_quantity'] for row in flagged),
+            'repeated_buckets':len(repeated)}
+        if classification=='flagged': filtered=flagged
+        elif classification=='all': filtered=scoped
+        else: filtered=[row for row in scoped if row['classification']==classification]
+        return {'as_of':as_of_date.isoformat(),'period_start':period_start.isoformat(),
+            'window_days':window_days,'quantity_threshold':quantity_threshold,
+            'percentage_threshold':percentage_threshold,'repeat_threshold':repeat_threshold,
+            'query':query.strip(),'location':location.strip() or None,'stock_status':stock_status,
+            'source':source,'record_status':record_status,'classification':classification,
+            'definition':'large_repeated_or_corrected_finished_goods_adjustment',
+            'status_scope':'current_correction_status_for_adjustments_in_business_date_period',
+            'total':len(filtered),'limit':limit,'offset':offset,'summary':summary,
+            'items':filtered[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):

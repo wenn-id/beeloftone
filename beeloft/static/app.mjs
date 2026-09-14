@@ -2755,6 +2755,62 @@ function deadStockInsightsDialog() {
 }
 $('dead-stock-insights').onclick=deadStockInsightsDialog;
 
+function stockAdjustmentInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Audit adjustment stok',`<form id="stock-adjustment-insights-form">
+    <p class="hint">Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="30"')}
+      ${field('quantity_threshold','Ambang jumlah (pcs)','number','required min="1" max="1000000000" step="1" value="5"')}
+      ${field('percentage_threshold','Ambang porsi penerimaan (%)','number','required min="1" max="100" step="1" value="20"')}
+      ${field('repeat_threshold','Ambang pengulangan','number','required min="2" max="100" step="1" value="3"')}
+      <label>Klasifikasi<select name="classification"><option value="flagged">Perlu diperiksa</option><option value="high">Risiko tinggi</option><option value="review">Perlu tinjauan</option><option value="normal">Normal</option><option value="all">Semua adjustment</option></select></label>
+      <label>Sumber<select name="source"><option value="all">Semua sumber</option><option value="manual">Manual</option><option value="stock_count">Stock opname</option></select></label>
+      <label>Status catatan<select name="record_status"><option value="all">Aktif dan dikoreksi</option><option value="active">Aktif</option><option value="corrected">Sudah dikoreksi</option></select></label>
+      <label>Status stok<select name="stock_status"><option value="all">Semua status stok</option><option value="sellable">Sellable</option><option value="hold">Hold</option><option value="damaged">Damaged</option></select></label>
+      ${field('location','Lokasi stok','text','maxlength="160" placeholder="Semua lokasi"')}
+      <label class="full">Cari adjustment atau SKU<input name="query" type="search" maxlength="160" placeholder="Referensi, SKU, produk, order, atau alasan"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="stock-adjustment-insights-submit" type="submit">Tampilkan audit</button></div>
+  </form><p id="stock-adjustment-insights-message" class="state" role="status" hidden></p><div id="stock-adjustment-insights-summary"></div><div id="stock-adjustment-insights-results"></div><button id="stock-adjustment-insights-more" type="button" hidden>Muat adjustment berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('stock-adjustment-insights-form'),submit=$('stock-adjustment-insights-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('stock-adjustment-insights-summary').replaceChildren();$('stock-adjustment-insights-results').replaceChildren();}
+    const gen=generation,more=$('stock-adjustment-insights-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('stock-adjustment-insights-message',offset?'Memuat adjustment berikutnya…':'Memeriksa pola adjustment…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/stock-adjustment-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('stock-adjustment-insights-message','');
+      if(!offset)$('stock-adjustment-insights-summary').innerHTML=`<p class="form-info">Periode ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.flagged_adjustments)} perlu diperiksa · ${n(report.summary.high_risk_adjustments)} risiko tinggi · ${n(report.summary.flagged_absolute_quantity)} pcs volume absolut ditandai</p><p class="hint">Sinyal adalah alat audit, bukan bukti kehilangan stok. Status koreksi memakai posisi catatan saat laporan dimuat.</p>`;
+      const classes={high:'Risiko tinggi',review:'Perlu tinjauan',normal:'Normal'};
+      const sources={manual:'Manual',stock_count:'Stock opname'};
+      const flags={large_quantity:'Jumlah melewati ambang',large_receipt_share:'Porsi penerimaan melewati ambang',repeated_bucket:'Berulang pada SKU dan bucket yang sama',corrected_record:'Catatan sudah dikoreksi'};
+      const html=report.items.map(row=>`<article class="material-event" data-stock-adjustment-insight="${e(row.id)}"><p class="status-label ${row.classification==='high'?'late':row.classification==='normal'?'done':''}">${e(classes[row.classification])}</p><h3>${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3><p>${e(row.sku)} · ${e(row.product_name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Porsi penerimaan</dt><dd>${e(row.receipt_share_percent)}%</dd></div><div><dt>Pengulangan bucket</dt><dd>${n(row.bucket_adjustment_count)} catatan</dd></div><div><dt>Volume bucket</dt><dd>${n(row.bucket_absolute_quantity)} pcs</dd></div><div><dt>Sumber</dt><dd>${e(sources[row.source])}</dd></div><div><dt>Status catatan</dt><dd>${row.record_status==='active'?'Aktif':'Sudah dikoreksi'}</dd></div><div><dt>Tanggal</dt><dd>${date(row.adjusted_date)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flags[flag]).join(' · ')):'Tidak melewati ambang audit.'}</p><p class="hint">${e(row.location)} · ${e(warehouseStatus[row.stock_status])}<br>Penerimaan ${e(row.receipt_reference)} · order ${e(row.order_reference)} · dicatat ${e(row.actor_name)}</p><button data-action="finished-goods-adjustment" data-id="${e(row.id)}">Buka adjustment</button></article>`).join('');
+      $('stock-adjustment-insights-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('stock-adjustment-insights-results').innerHTML='<p class="state">Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat adjustment berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('stock-adjustment-insights-message',error.message,true);
+        $('stock-adjustment-insights-message').insertAdjacentHTML('beforeend','<br><button id="stock-adjustment-insights-retry" type="button">Coba lagi</button>');
+        $('stock-adjustment-insights-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('stock-adjustment-insights-more').onclick=()=>load();
+}
+$('stock-adjustment-insights').onclick=stockAdjustmentInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);

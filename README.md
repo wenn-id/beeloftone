@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.66.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.67.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2213,3 +2213,25 @@ Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
 
 Rencana: [Dead stock insights plan](docs/dead-stock-insights-plan.md).
 Bukti: [Dead stock insights verification](docs/dead-stock-insights-verification.md).
+
+## Audit adjustment stok (v0.67)
+
+Pilih **Audit adjustment** untuk memeriksa adjustment barang jadi dalam periode tertentu. Laporan menandai
+catatan bila jumlah absolut melewati ambang, porsinya terhadap jumlah penerimaan melewati ambang, adjustment
+berulang pada SKU, lokasi, dan status stok yang sama, atau catatannya sudah dikoreksi.
+
+Klasifikasi **Risiko tinggi** berarti jumlah atau porsi penerimaan melewati ambang. **Perlu tinjauan** berarti
+ada pengulangan atau koreksi tanpa sinyal kuantitas besar. **Normal** berarti tidak ada sinyal yang melewati
+ambang. Pengguna dapat mengatur ambang jumlah, persentase, dan pengulangan; lalu memfilter referensi/SKU,
+lokasi, status stok, sumber manual atau stock opname, status aktif atau dikoreksi, dan klasifikasi.
+
+Setiap hasil menunjukkan kuantitas bertanda, porsi penerimaan, jumlah dan volume absolut pada bucket yang sama,
+sumber, status koreksi, tanggal, pencatat, alasan flag, serta tautan ke adjustment asal. Ringkasan tidak menebak
+nilai rupiah dan tidak mengubah stok. Koreksi memakai status ledger saat laporan dimuat, sedangkan periode memakai
+tanggal bisnis adjustment.
+
+API: `GET /api/stock-adjustment-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only dan
+schema tetap 48. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Stock adjustment insights plan](docs/stock-adjustment-insights-plan.md).
+Bukti: [Stock adjustment insights verification](docs/stock-adjustment-insights-verification.md).

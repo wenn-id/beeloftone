@@ -361,6 +361,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_size_demand_insights.cjs')({page,login,admin,viewer,apiGet,work});
   await require('./browser_returns_adjustments.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...shipping});
   await require('./browser_dead_stock_insights.cjs')({page,login,viewer,apiGet,work});
+  await require('./browser_stock_adjustment_insights.cjs')({page,login,viewer,apiGet,work});
   await require('./browser_inventory_reconciliation.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   await require('./browser_finished_goods_traceability.cjs')({page,login,viewer,apiGet,apiPost,work,...finishedGoods});
   await require('./browser_material_batch_traceability.cjs')({page,login,viewer,apiGet,work,...finishedGoods});

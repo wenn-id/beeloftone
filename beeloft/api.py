@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.66.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.67.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -909,6 +909,23 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                             limit: Limit = 100, offset: Offset = 0):
         return store.dead_stock_insights(as_of or date.today(), inactivity_days, query,
                                          marketplace, status, limit, offset)
+
+    @app.get('/api/stock-adjustment-insights', tags=['Economics'])
+    def stock_adjustment_insights(user: Actor, as_of: date | None = None,
+                                  window_days: Annotated[int, Query(ge=7, le=365)] = 30,
+                                  quantity_threshold: Annotated[int, Query(ge=1, le=1_000_000_000)] = 5,
+                                  percentage_threshold: Annotated[int, Query(ge=1, le=100)] = 20,
+                                  repeat_threshold: Annotated[int, Query(ge=2, le=100)] = 3,
+                                  query: Annotated[str, Query(max_length=160)] = '',
+                                  location: Annotated[str, Query(max_length=160)] = '',
+                                  stock_status: Literal['all','sellable','hold','damaged'] = 'all',
+                                  source: Literal['all','manual','stock_count'] = 'all',
+                                  record_status: Literal['all','active','corrected'] = 'all',
+                                  classification: Literal['flagged','high','review','normal','all'] = 'flagged',
+                                  limit: Limit = 100, offset: Offset = 0):
+        return store.stock_adjustment_insights(as_of or date.today(),window_days,quantity_threshold,
+            percentage_threshold,repeat_threshold,query,location,stock_status,source,record_status,
+            classification,limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,
