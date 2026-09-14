@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.65.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.66.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -898,6 +898,17 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                              limit: Limit = 100, offset: Offset = 0):
         return store.size_demand_insights(as_of or date.today(), window_days, lookahead_days,
                                           query, marketplace, limit, offset)
+
+    @app.get('/api/dead-stock-insights', tags=['Economics'])
+    def dead_stock_insights(user: Actor, as_of: date | None = None,
+                            inactivity_days: Annotated[int, Query(ge=7, le=730)] = 90,
+                            query: Annotated[str, Query(max_length=160)] = '',
+                            marketplace: Annotated[str, Query(max_length=160)] = '',
+                            status: Literal['all','dead_stock_candidate','aging_no_sales','moving'] =
+                                'dead_stock_candidate',
+                            limit: Limit = 100, offset: Offset = 0):
+        return store.dead_stock_insights(as_of or date.today(), inactivity_days, query,
+                                         marketplace, status, limit, offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

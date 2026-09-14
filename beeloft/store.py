@@ -3621,6 +3621,114 @@ class Store:
             'stock_scope':'all_marketplaces_current_internal_inventory','total':len(families),
             'limit':limit,'offset':offset,'summary':summary,'items':families[offset:offset+limit]}
 
+    def dead_stock_insights(self, as_of, inactivity_days=90, query='', marketplace='',
+                            status='dead_stock_candidate', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        period_start=as_of_date-timedelta(days=inactivity_days-1)
+        with self.transaction() as db:
+            lots=[dict(row) for row in db.execute('''WITH sellable AS (
+                SELECT receipt_id,SUM(quantity) AS quantity FROM finished_goods_stock_ledger
+                WHERE stock_status='sellable' GROUP BY receipt_id
+            ), reserved AS (
+                SELECT receipt_id,SUM(quantity) AS quantity FROM finished_goods_reserved_stock
+                GROUP BY receipt_id
+            )
+            SELECT l.product_id,x.id AS receipt_id,x.reference AS receipt_reference,x.received_date,
+                s.quantity-COALESCE(r.quantity,0) AS available_quantity
+            FROM finished_goods_receipts x JOIN final_qc_records q ON q.id=x.final_qc_record_id
+            JOIN finishing_records f ON f.id=q.finishing_record_id JOIN sewing_jobs j ON j.id=f.job_id
+            JOIN bundles b ON b.id=j.bundle_id JOIN movements source ON source.id=b.output_movement_id
+            JOIN order_lines l ON l.id=source.line_id JOIN sellable s ON s.receipt_id=x.id
+            LEFT JOIN reserved r ON r.receipt_id=x.id
+            WHERE s.quantity-COALESCE(r.quantity,0)>0''')]
+            sales=[dict(row) for row in db.execute('''WITH active_returns AS (
+                SELECT t.shipment_id,SUM(t.quantity) AS quantity FROM marketplace_returns t
+                WHERE t.returned_date<=? AND NOT EXISTS(
+                    SELECT 1 FROM marketplace_return_reversals r WHERE r.return_id=t.id)
+                GROUP BY t.shipment_id
+            )
+            SELECT l.product_id,s.shipped_date,s.quantity,m.marketplace,
+                COALESCE(t.quantity,0) AS returned_quantity
+            FROM marketplace_shipments s JOIN marketplace_packs k ON k.id=s.pack_id
+            JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+            JOIN finished_goods_receipts x ON x.id=m.receipt_id
+            JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+            JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+            JOIN movements source ON source.id=b.output_movement_id JOIN order_lines l ON l.id=source.line_id
+            LEFT JOIN active_returns t ON t.shipment_id=s.id
+            WHERE s.shipped_date<=? AND (?='' OR m.marketplace=? COLLATE NOCASE)
+              AND NOT EXISTS(SELECT 1 FROM marketplace_shipment_reversals r WHERE r.shipment_id=s.id)
+            ORDER BY s.shipped_date,s.sequence''',(as_of_date.isoformat(),as_of_date.isoformat(),
+                marketplace.strip(),marketplace.strip()))]
+        lots_by_product={}
+        for lot in lots:
+            lots_by_product.setdefault(lot['product_id'],[]).append(lot)
+        sales_by_product={}
+        for sale in sales:
+            sales_by_product.setdefault(sale['product_id'],[]).append(sale)
+        term=query.strip().casefold()
+        inventory=[row for row in self.finished_goods_inventory(1_000_000_000,0)
+                   if row['available_quantity']>0 and (not term or any(term in str(row[field]).casefold()
+                       for field in ('sku','name','color','size')))]
+        items=[]
+        for stock in inventory:
+            product_lots=lots_by_product.get(stock['product_id'],[])
+            receipt_dates=sorted(lot['received_date'] for lot in product_lots)
+            oldest=receipt_dates[0] if receipt_dates else None
+            newest=receipt_dates[-1] if receipt_dates else None
+            age=max((as_of_date-date.fromisoformat(oldest)).days,0) if oldest else 0
+            product_sales=sales_by_product.get(stock['product_id'],[])
+            recent=[row for row in product_sales if row['shipped_date']>=period_start.isoformat()]
+            recent_shipped=sum(row['quantity'] for row in recent)
+            recent_returned=sum(row['returned_quantity'] for row in recent)
+            recent_net=recent_shipped-recent_returned
+            net_sales=[row for row in product_sales if row['quantity']-row['returned_quantity']>0]
+            last_shipped=max((row['shipped_date'] for row in product_sales),default=None)
+            last_net=max((row['shipped_date'] for row in net_sales),default=None)
+            if recent_net>0:
+                item_status='moving'
+            elif age>=inactivity_days:
+                item_status='dead_stock_candidate'
+            else:
+                item_status='aging_no_sales'
+            rate=(Decimal(recent_net)/inactivity_days).quantize(Decimal('.0001'),rounding=ROUND_HALF_UP)
+            cover=(Decimal(stock['available_quantity'])/rate if rate else None)
+            items.append({key:stock[key] for key in ('product_id','sku','name','color','size')} | {
+                'status':item_status,'available_quantity':stock['available_quantity'],
+                'sellable_quantity':stock['sellable_quantity'],'reserved_quantity':stock['reserved_quantity'],
+                'active_lot_count':len(product_lots),'oldest_available_receipt_date':oldest,
+                'newest_available_receipt_date':newest,'oldest_stock_age_days':age,
+                'recent_shipped_quantity':recent_shipped,'recent_returned_quantity':recent_returned,
+                'recent_net_demand':recent_net,'recent_daily_rate':format(rate,'.4f'),
+                'days_of_cover':format(cover.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+                    if cover is not None else None,
+                'last_shipped_date':last_shipped,'last_net_sale_date':last_net,
+                'days_since_last_net_sale':max((as_of_date-date.fromisoformat(last_net)).days,0)
+                    if last_net else None})
+        severity={'dead_stock_candidate':0,'aging_no_sales':1,'moving':2}
+        items.sort(key=lambda row:(severity[row['status']],-row['oldest_stock_age_days'],
+                                   -row['available_quantity'],row['sku'].casefold(),row['product_id']))
+        candidates=[row for row in items if row['status']=='dead_stock_candidate']
+        aging=[row for row in items if row['status']=='aging_no_sales']
+        moving=[row for row in items if row['status']=='moving']
+        summary={'products_with_available_stock':len(items),
+            'available_quantity':sum(row['available_quantity'] for row in items),
+            'dead_stock_candidates':len(candidates),
+            'dead_stock_quantity':sum(row['available_quantity'] for row in candidates),
+            'aging_no_sales_products':len(aging),
+            'aging_no_sales_quantity':sum(row['available_quantity'] for row in aging),
+            'moving_products':len(moving),'moving_quantity':sum(row['available_quantity'] for row in moving),
+            'oldest_candidate_receipt_date':min((row['oldest_available_receipt_date'] for row in candidates
+                                                 if row['oldest_available_receipt_date']),default=None)}
+        filtered=items if status=='all' else [row for row in items if row['status']==status]
+        return {'as_of':as_of_date.isoformat(),'inactivity_days':inactivity_days,
+            'period_start':period_start.isoformat(),'query':query.strip(),
+            'marketplace':marketplace.strip() or None,'status':status,
+            'definition':'available_stock_aged_without_recent_net_demand',
+            'stock_scope':'current_internal_sellable_available_inventory',
+            'total':len(filtered),'limit':limit,'offset':offset,'summary':summary,
+            'items':filtered[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):

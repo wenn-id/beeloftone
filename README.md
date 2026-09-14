@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.65.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.66.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2188,3 +2188,28 @@ Promosi, musiman, lead time per SKU, transfer channel, dan runtime connector Jub
 
 Rencana: [Size demand insights plan](docs/size-demand-insights-plan.md).
 Bukti: [Size demand insights verification](docs/size-demand-insights-verification.md).
+
+## Analisis dead stock (v0.66)
+
+Pilih **Dead stock** untuk mencari stok sellable yang masih tersedia tetapi tidak bergerak. Satu SKU menjadi
+kandidat ketika umur lot tersedia tertuanya sudah mencapai ambang hari yang dipilih dan demand netonya nol
+dalam periode yang sama. Retur aktif mengurangi demand shipment asal; shipment dan retur yang sudah dikoreksi
+tidak dihitung.
+
+Laporan juga membedakan **Stok baru tanpa penjualan** yang belum mencapai ambang umur dan **Masih bergerak**
+yang mempunyai demand neto positif. Setiap SKU menampilkan jumlah tersedia, jumlah lot aktif, umur lot tertua,
+shipment, retur, demand neto, rate, days of cover, dan tanggal penjualan neto terakhir. Reserved stock tidak
+masuk jumlah tersedia.
+
+API: `GET /api/dead-stock-insights`. Parameter `as_of`, `inactivity_days`, `query`, `marketplace`, `status`,
+`limit`, dan `offset` tersedia. Default ambang 90 hari dan status kandidat dead stock. Filter marketplace hanya
+membatasi histori demand; posisi stok tetap berasal dari seluruh inventori internal saat laporan dimuat.
+Semua akun aktif dapat membaca. Endpoint tidak mengubah stok, audit, atau schema; schema tetap 48.
+
+Stok memakai posisi saat ini dan tidak direkonstruksi pada tanggal historis `as_of`. Nilai rupiah belum
+ditampilkan karena valuasi stok per lot belum tersedia. Umur stok memakai receipt aktif tertua yang masih
+mempunyai saldo available; keputusan diskon, bundling, transfer, atau write-off tetap diperiksa manusia.
+Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Dead stock insights plan](docs/dead-stock-insights-plan.md).
+Bukti: [Dead stock insights verification](docs/dead-stock-insights-verification.md).

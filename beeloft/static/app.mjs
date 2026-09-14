@@ -2707,6 +2707,54 @@ function sizeDemandInsightsDialog() {
 }
 $('size-demand-insights').onclick=sizeDemandInsightsDialog;
 
+function deadStockInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Analisis dead stock',`<form id="dead-stock-form">
+    <p class="hint">Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.</p>
+    <div class="form-grid">
+      ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
+      ${field('inactivity_days','Ambang tanpa demand (hari)','number','required min="7" max="730" step="1" value="90"')}
+      ${field('marketplace','Marketplace demand','text','maxlength="160" placeholder="Semua marketplace"')}
+      <label>Status<select name="status"><option value="dead_stock_candidate">Kandidat dead stock</option><option value="aging_no_sales">Stok baru tanpa penjualan</option><option value="moving">Masih bergerak</option><option value="all">Semua stok tersedia</option></select></label>
+      <label class="full">Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="dead-stock-submit" type="submit">Tampilkan analisis</button></div>
+  </form><p id="dead-stock-message" class="state" role="status" hidden></p><div id="dead-stock-summary"></div><div id="dead-stock-results"></div><button id="dead-stock-more" type="button" hidden>Muat SKU berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('dead-stock-form'),submit=$('dead-stock-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('dead-stock-summary').replaceChildren();$('dead-stock-results').replaceChildren();}
+    const gen=generation,more=$('dead-stock-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('dead-stock-message',offset?'Memuat SKU berikutnya…':'Memeriksa umur stok dan demand neto…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/dead-stock-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('dead-stock-message','');
+      if(!offset)$('dead-stock-summary').innerHTML=`<p class="form-info">Periode demand ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.dead_stock_candidates)} kandidat · ${n(report.summary.dead_stock_quantity)} pcs tersedia · ${n(report.summary.aging_no_sales_products)} SKU masih terlalu baru untuk disebut dead stock</p><p class="hint">Filter marketplace hanya membatasi demand. Stok dan umur lot memakai posisi inventori internal saat laporan dimuat. Nilai rupiah belum dihitung karena valuasi stok per lot belum tersedia.</p>`;
+      const statuses={dead_stock_candidate:'Kandidat dead stock',aging_no_sales:'Stok baru tanpa penjualan',moving:'Masih bergerak'};
+      const html=report.items.map(row=>`<article class="material-event" data-dead-stock-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${n(row.available_quantity)} pcs tersedia</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><p class="status-label ${row.status==='dead_stock_candidate'?'late':'done'}">${e(statuses[row.status])}</p><dl class="requirement-values"><div><dt>Umur lot tertua</dt><dd>${n(row.oldest_stock_age_days)} hari</dd></div><div><dt>Demand neto periode</dt><dd>${n(row.recent_net_demand)} pcs</dd></div><div><dt>Shipment / retur</dt><dd>${n(row.recent_shipped_quantity)} / ${n(row.recent_returned_quantity)} pcs</dd></div><div><dt>Rate demand</dt><dd>${n(Number(row.recent_daily_rate))} pcs/hari</dd></div><div><dt>Days of cover</dt><dd>${row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'}</dd></div><div><dt>Lot aktif</dt><dd>${n(row.active_lot_count)}</dd></div></dl><p class="hint">${row.oldest_available_receipt_date?'Lot tersedia sejak '+date(row.oldest_available_receipt_date):'Tanggal lot belum tersedia'}${row.newest_available_receipt_date&&row.newest_available_receipt_date!==row.oldest_available_receipt_date?' · lot terbaru '+date(row.newest_available_receipt_date):''}<br>${row.last_net_sale_date?'Penjualan neto terakhir '+date(row.last_net_sale_date)+' · '+n(row.days_since_last_net_sale)+' hari lalu':'Belum ada penjualan neto aktif sampai tanggal laporan.'}</p></article>`).join('');
+      $('dead-stock-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('dead-stock-results').innerHTML='<p class="state">Tidak ada SKU yang cocok dengan status dan filter ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('dead-stock-message',error.message,true);
+        $('dead-stock-message').insertAdjacentHTML('beforeend','<br><button id="dead-stock-retry" type="button">Coba lagi</button>');
+        $('dead-stock-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('dead-stock-more').onclick=()=>load();
+}
+$('dead-stock-insights').onclick=deadStockInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
