@@ -3825,6 +3825,115 @@ class Store:
             'total':len(filtered),'limit':limit,'offset':offset,'summary':summary,
             'items':filtered[offset:offset+limit]}
 
+    def supplier_performance_insights(self, as_of, window_days=90, query='', status='attention',
+                                      limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        period_start=as_of_date-timedelta(days=window_days-1)
+        with self.transaction() as db:
+            purchase_orders=[]
+            for order_id, in db.execute('SELECT id FROM purchase_orders ORDER BY sequence'):
+                order=self._purchase_order(db,order_id)
+                if (order['approval_status']!='approved' or order['status']=='cancelled'
+                        or not period_start.isoformat()<=order['expected_date']<=as_of_date.isoformat()):
+                    continue
+                purchase_orders.append(order)
+        suppliers={}
+        for order in purchase_orders:
+            supplier=order['supplier']
+            item=suppliers.setdefault(order['supplier_id'],{'supplier_id':order['supplier_id'],
+                'supplier_code':supplier['code'],'supplier_name':supplier['name'],
+                'purchase_orders':[],'ordered':{},'received':{},'quality':{}})
+            active_intakes=[row for row in order['qc_intakes'] if not row['cancellation']]
+            arrival_dates=[row['received_date'] for row in active_intakes]
+            arrival_dates.extend(row['received_date'] for row in order['receipts'] if not row['reversed_by'])
+            first_arrival=min(arrival_dates,default=None)
+            delay=(date.fromisoformat(first_arrival)-date.fromisoformat(order['expected_date'])).days \
+                if first_arrival else None
+            po_item={'id':order['id'],'reference':order['reference'],'expected_date':order['expected_date'],
+                'first_arrival_date':first_arrival,'first_arrival_delay_days':delay,'status':order['status'],
+                'fulfillment':order['fulfillment']}
+            item['purchase_orders'].append(po_item)
+            for line in order['lines']:
+                unit=line['unit']
+                item['ordered'][unit]=item['ordered'].get(unit,Decimal('0'))+Decimal(line['quantity'])
+                item['received'][unit]=item['received'].get(unit,Decimal('0'))+Decimal(line['received'])
+            for intake in active_intakes:
+                quality=item['quality'].setdefault(intake['unit'],{'intake_count':0,'arrived':Decimal('0'),
+                    'accepted':Decimal('0'),'rejected':Decimal('0'),'held':Decimal('0')})
+                quality['intake_count']+=1
+                for field in ('quantity','accepted','rejected','held'):
+                    quality['arrived' if field=='quantity' else field]+=Decimal(intake[field])
+        term=query.strip().casefold();items=[]
+        for item in suppliers.values():
+            orders=item['purchase_orders']
+            arrived=[row for row in orders if row['first_arrival_date']]
+            on_time=[row for row in arrived if row['first_arrival_delay_days']<=0]
+            late=[row for row in arrived if row['first_arrival_delay_days']>0]
+            overdue_no_arrival=[row for row in orders if not row['first_arrival_date']
+                                and row['expected_date']<as_of_date.isoformat()]
+            incomplete_due=[row for row in orders if row['fulfillment']!='received'
+                            and row['expected_date']<as_of_date.isoformat()]
+            closed_shortfall=[row for row in orders if row['status']=='closed'
+                              and row['fulfillment']!='received']
+            quality=[]
+            for unit,values in sorted(item['quality'].items()):
+                arrived_quantity=values['arrived']
+                usable=(values['accepted']*100/arrived_quantity).quantize(
+                    Decimal('.01'),rounding=ROUND_HALF_UP) if arrived_quantity else Decimal('0')
+                rejected=(values['rejected']*100/arrived_quantity).quantize(
+                    Decimal('.01'),rounding=ROUND_HALF_UP) if arrived_quantity else Decimal('0')
+                quality.append({'unit':unit,'intake_count':values['intake_count'],
+                    'arrived':format(arrived_quantity,'.3f'),'accepted':format(values['accepted'],'.3f'),
+                    'rejected':format(values['rejected'],'.3f'),'held':format(values['held'],'.3f'),
+                    'usable_rate':format(usable,'.2f'),'reject_rate':format(rejected,'.2f')})
+            flags=[]
+            if overdue_no_arrival: flags.append('overdue_no_arrival')
+            if late: flags.append('late_first_arrival')
+            if incomplete_due: flags.append('overdue_incomplete')
+            if closed_shortfall: flags.append('closed_shortfall')
+            if any(Decimal(row['rejected'])>0 for row in quality): flags.append('quality_reject')
+            if any(Decimal(row['held'])>0 for row in quality): flags.append('quality_hold')
+            classification='attention' if flags else 'healthy'
+            delays=[row['first_arrival_delay_days'] for row in arrived]
+            result={key:item[key] for key in ('supplier_id','supplier_code','supplier_name')} | {
+                'status':classification,'flags':flags,'purchase_order_count':len(orders),
+                'arrived_purchase_orders':len(arrived),'on_time_first_arrivals':len(on_time),
+                'late_first_arrivals':len(late),'overdue_no_arrival':len(overdue_no_arrival),
+                'overdue_incomplete_purchase_orders':len(incomplete_due),
+                'closed_shortfall_purchase_orders':len(closed_shortfall),
+                'average_first_arrival_delay_days':format(Decimal(sum(delays))/len(delays),'.2f')
+                    if delays else None,'maximum_first_arrival_delay_days':max(delays,default=None),
+                'ordered_by_unit':[{'unit':unit,'quantity':format(quantity,'.3f')}
+                                   for unit,quantity in sorted(item['ordered'].items())],
+                'received_by_unit':[{'unit':unit,'quantity':format(quantity,'.3f')}
+                                    for unit,quantity in sorted(item['received'].items())],
+                'quality_by_unit':quality,'purchase_orders':sorted(orders,
+                    key=lambda row:(row['expected_date'],row['reference'].casefold()),reverse=True)}
+            searchable=[result['supplier_code'],result['supplier_name']]
+            searchable.extend(row['reference'] for row in orders)
+            if not term or any(term in value.casefold() for value in searchable): items.append(result)
+        items.sort(key=lambda row:(0 if row['status']=='attention' else 1,
+            -row['overdue_no_arrival'],-row['late_first_arrivals'],row['supplier_name'].casefold(),
+            row['supplier_id']))
+        scoped=items if status=='all' else [row for row in items if row['status']==status]
+        summary={'suppliers':len(items),'attention_suppliers':sum(row['status']=='attention' for row in items),
+            'healthy_suppliers':sum(row['status']=='healthy' for row in items),
+            'purchase_orders':sum(row['purchase_order_count'] for row in items),
+            'arrived_purchase_orders':sum(row['arrived_purchase_orders'] for row in items),
+            'on_time_first_arrivals':sum(row['on_time_first_arrivals'] for row in items),
+            'late_first_arrivals':sum(row['late_first_arrivals'] for row in items),
+            'overdue_no_arrival':sum(row['overdue_no_arrival'] for row in items),
+            'overdue_incomplete_purchase_orders':sum(row['overdue_incomplete_purchase_orders'] for row in items),
+            'closed_shortfall_purchase_orders':sum(row['closed_shortfall_purchase_orders'] for row in items),
+            'qc_intakes':sum(sum(unit['intake_count'] for unit in row['quality_by_unit']) for row in items),
+            'quality_units_with_reject':sum(sum(Decimal(unit['rejected'])>0
+                for unit in row['quality_by_unit']) for row in items)}
+        return {'as_of':as_of_date.isoformat(),'period_start':period_start.isoformat(),
+            'window_days':window_days,'query':query.strip(),'status':status,
+            'date_basis':'purchase_order_expected_date','delivery_metric':'first_active_arrival',
+            'quality_metric':'active_qc_intakes_grouped_by_unit','total':len(scoped),
+            'limit':limit,'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):

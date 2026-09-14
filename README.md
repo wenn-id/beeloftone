@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.67.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.68.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2235,3 +2235,25 @@ schema tetap 48. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API
 
 Rencana: [Stock adjustment insights plan](docs/stock-adjustment-insights-plan.md).
 Bukti: [Stock adjustment insights verification](docs/stock-adjustment-insights-verification.md).
+
+## Kinerja supplier (v0.68)
+
+Pilih **Kinerja supplier** untuk melihat PO yang tanggal perkiraan datangnya berada dalam periode laporan.
+Supplier ditandai perlu perhatian bila ada PO terlambat tanpa kedatangan aktif, kedatangan pertama terlambat,
+PO lewat jadwal yang belum lengkap, PO ditutup dengan kekurangan, bahan reject, atau bahan yang masih hold.
+
+Ketepatan datang memakai tanggal kedatangan aktif pertama dibandingkan `expected_date` PO. Receipt yang sudah
+dikoreksi dan kedatangan QC yang dibatalkan tidak dihitung. Status pemenuhan PO serta hasil QC memakai posisi
+ledger saat laporan dimuat. Kuantitas pesanan, penerimaan layak pakai, dan QC selalu dipisahkan per satuan bahan;
+meter, kilogram, dan pcs tidak dijumlahkan menjadi satu angka.
+
+Setiap supplier menampilkan jumlah PO, kedatangan tepat waktu/terlambat, PO terlambat tanpa kedatangan,
+kekurangan, volume per satuan, usable/reject/hold per satuan, alasan sinyal, dan daftar PO untuk drill-down.
+Filter tersedia untuk tanggal akhir, periode 7–730 hari, status supplier, kode/nama supplier, dan referensi PO.
+
+API: `GET /api/supplier-performance-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only,
+schema tetap 48, dan tidak menulis penilaian permanen terhadap supplier. Runtime connector Jubelio/Mekari tetap
+ditunda sampai akses API resmi tersedia.
+
+Rencana: [Supplier performance insights plan](docs/supplier-performance-insights-plan.md).
+Bukti: [Supplier performance insights verification](docs/supplier-performance-insights-verification.md).

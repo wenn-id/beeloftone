@@ -327,6 +327,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_po_receipts.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_incoming_qc.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_supplier_returns.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  await require('./browser_supplier_performance_insights.cjs')({page,login,viewer,apiGet,work});
   await require('./browser_supplier_payments.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_marketing_budgets.cjs')({page,login,admin,operator,viewer,apiGet,work});
   const productionCost=await require('./browser_production_cost.cjs')({page,login,admin,viewer,apiGet,work});

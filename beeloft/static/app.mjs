@@ -2811,6 +2811,56 @@ function stockAdjustmentInsightsDialog() {
 }
 $('stock-adjustment-insights').onclick=stockAdjustmentInsightsDialog;
 
+function supplierPerformanceInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Kinerja supplier',`<form id="supplier-performance-form">
+    <p class="hint">PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Periode jatuh tempo PO (hari)','number','required min="7" max="730" step="1" value="90"')}
+      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua supplier</option></select></label>
+      <label class="full">Cari supplier atau PO<input name="query" type="search" maxlength="160" placeholder="Kode, nama supplier, atau referensi PO"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="supplier-performance-submit" type="submit">Tampilkan kinerja</button></div>
+  </form><p id="supplier-performance-message" class="state" role="status" hidden></p><div id="supplier-performance-summary"></div><div id="supplier-performance-results"></div><button id="supplier-performance-more" type="button" hidden>Muat supplier berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('supplier-performance-form'),submit=$('supplier-performance-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('supplier-performance-summary').replaceChildren();$('supplier-performance-results').replaceChildren();}
+    const gen=generation,more=$('supplier-performance-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('supplier-performance-message',offset?'Memuat supplier berikutnya…':'Menghitung ketepatan kedatangan dan hasil QC…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/supplier-performance-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('supplier-performance-message','');
+      if(!offset)$('supplier-performance-summary').innerHTML=`<p class="form-info">PO jatuh tempo ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.attention_suppliers)} supplier perlu perhatian · ${n(report.summary.overdue_no_arrival)} PO terlambat tanpa kedatangan · ${n(report.summary.late_first_arrivals)} kedatangan awal terlambat</p><p class="hint">Kuantitas bahan tidak dijumlahkan lintas satuan. Keputusan kualitas hanya memakai kedatangan QC aktif.</p>`;
+      const flagLabels={overdue_no_arrival:'PO terlambat tanpa kedatangan',late_first_arrival:'Kedatangan awal terlambat',overdue_incomplete:'PO lewat jadwal belum lengkap',closed_shortfall:'PO ditutup dengan kekurangan',quality_reject:'Ada bahan reject',quality_hold:'Ada bahan masih hold'};
+      const fulfillment={received:'Diterima lengkap',partial:'Diterima sebagian',pending:'Belum diterima'};
+      const quantityList=rows=>rows.map(unit=>`${n(Number(unit.quantity))} ${e(unit.unit)}`).join(' · ')||'Belum ada';
+      const delay=row=>row.first_arrival_delay_days===null?'Belum ada kedatangan aktif':row.first_arrival_delay_days>0?`${n(row.first_arrival_delay_days)} hari terlambat`:row.first_arrival_delay_days<0?`${n(Math.abs(row.first_arrival_delay_days))} hari lebih awal`:'Tepat pada tanggal perkiraan';
+      const html=report.items.map(row=>`<article class="material-event" data-supplier-performance="${e(row.supplier_id)}"><p class="status-label ${row.status==='attention'?'late':'done'}">${row.status==='attention'?'Perlu perhatian':'Sehat'}</p><h3>${e(row.supplier_code)} · ${e(row.supplier_name)}</h3><dl class="requirement-values"><div><dt>PO periode</dt><dd>${n(row.purchase_order_count)}</dd></div><div><dt>Tepat waktu</dt><dd>${n(row.on_time_first_arrivals)}</dd></div><div><dt>Terlambat datang</dt><dd>${n(row.late_first_arrivals)}</dd></div><div><dt>Terlambat tanpa kedatangan</dt><dd>${n(row.overdue_no_arrival)}</dd></div><div><dt>Belum lengkap lewat jadwal</dt><dd>${n(row.overdue_incomplete_purchase_orders)}</dd></div><div><dt>Kekurangan saat ditutup</dt><dd>${n(row.closed_shortfall_purchase_orders)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flagLabels[flag]).join(' · ')):'Tidak ada sinyal yang memerlukan perhatian.'}</p><p class="hint">Dipesan ${quantityList(row.ordered_by_unit)}<br>Diterima layak pakai ${quantityList(row.received_by_unit)}</p>${row.quality_by_unit.map(unit=>`<article class="material-event"><strong>QC ${e(unit.unit)} · ${n(unit.intake_count)} kedatangan</strong><p>Datang ${n(Number(unit.arrived))} · layak ${n(Number(unit.accepted))} · reject ${n(Number(unit.rejected))} · hold ${n(Number(unit.held))}</p><p class="hint">Usable ${e(unit.usable_rate)}% · reject ${e(unit.reject_rate)}%</p></article>`).join('')||'<p class="hint">Belum ada kedatangan melalui QC pada PO periode ini.</p>'}<h4>PO dalam periode</h4>${row.purchase_orders.map(po=>`<article class="material-event"><strong>${e(po.reference)} · ${e(fulfillment[po.fulfillment])}</strong><p>Perkiraan ${date(po.expected_date)} · ${e(delay(po))}</p><button data-action="purchase-order" data-id="${e(po.id)}">Buka PO</button></article>`).join('')}</article>`).join('');
+      $('supplier-performance-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('supplier-performance-results').innerHTML='<p class="state">Tidak ada supplier yang cocok dengan status dan filter periode ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat supplier berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('supplier-performance-message',error.message,true);
+        $('supplier-performance-message').insertAdjacentHTML('beforeend','<br><button id="supplier-performance-retry" type="button">Coba lagi</button>');
+        $('supplier-performance-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('supplier-performance-more').onclick=()=>load();
+}
+$('supplier-performance-insights').onclick=supplierPerformanceInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);

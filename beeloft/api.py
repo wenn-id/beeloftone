@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.67.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.68.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -926,6 +926,15 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return store.stock_adjustment_insights(as_of or date.today(),window_days,quantity_threshold,
             percentage_threshold,repeat_threshold,query,location,stock_status,source,record_status,
             classification,limit,offset)
+
+    @app.get('/api/supplier-performance-insights', tags=['Economics'])
+    def supplier_performance_insights(user: Actor, as_of: date | None = None,
+                                      window_days: Annotated[int, Query(ge=7, le=730)] = 90,
+                                      query: Annotated[str, Query(max_length=160)] = '',
+                                      status: Literal['all','attention','healthy'] = 'attention',
+                                      limit: Limit = 100, offset: Offset = 0):
+        return store.supplier_performance_insights(as_of or date.today(),window_days,query,status,
+                                                   limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,
