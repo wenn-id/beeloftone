@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, BrowserSessionLogin, BundleHandoffCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, STAGES, TRANSITIONS
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.71.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.72.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -412,6 +412,48 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get("/api/products", tags=["Products"])
     def products(user: Actor, limit: Limit = 100, offset: Offset = 0):
         return store.products(limit, offset)
+
+    @app.get('/api/work-centers', tags=['Production Capacity'])
+    def work_centers(user: Actor, status: Literal['all','active','inactive'] = 'all'):
+        return store.work_centers(status)
+
+    @app.post('/api/work-centers', status_code=201, tags=['Production Capacity'])
+    def create_work_center(body: WorkCenterCreate, user: Actor, key: RequestKey):
+        return store.create_work_center(body.model_dump(mode='json'),user,key)
+
+    @app.post('/api/work-centers/{work_center_id}/changes', status_code=201,
+              tags=['Production Capacity'])
+    def change_work_center(work_center_id: str, body: WorkCenterChange, user: Actor, key: RequestKey):
+        return store.change_work_center(work_center_id,body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/routing-standards', tags=['Production Capacity'])
+    def routing_standards(user: Actor, product_id: Annotated[str, Query(max_length=160)] = '',
+                          stage: Literal['all','cutting','sewing','finishing','qc','rework'] = 'all',
+                          limit: Limit = 100, offset: Offset = 0):
+        return store.routing_standards(product_id,stage,limit,offset)
+
+    @app.get('/api/products/{product_id}/routing-standards/{stage}', tags=['Production Capacity'])
+    def routing_standard(product_id: str,
+                         stage: Literal['cutting','sewing','finishing','qc','rework'], user: Actor):
+        return store.routing_standard(product_id,stage)
+
+    @app.post('/api/products/{product_id}/routing-standards/{stage}', status_code=201,
+              tags=['Production Capacity'])
+    def save_routing_standard(product_id: str,
+                              stage: Literal['cutting','sewing','finishing','qc','rework'],
+                              body: RoutingStandardSave, user: Actor, key: RequestKey):
+        return store.save_routing_standard(product_id,stage,body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/work-centers/{work_center_id}/calendar', tags=['Production Capacity'])
+    def capacity_calendar(work_center_id: str, user: Actor, start_date: date | None = None,
+                          end_date: date | None = None):
+        start=start_date or date.today();return store.capacity_calendar(work_center_id,start,end_date or start)
+
+    @app.post('/api/work-centers/{work_center_id}/calendar', status_code=201,
+              tags=['Production Capacity'])
+    def save_capacity_calendar(work_center_id: str, body: CapacityCalendarSave,
+                               user: Actor, key: RequestKey):
+        return store.save_capacity_calendar(work_center_id,body.model_dump(mode='json'),user,key)
 
     @app.get('/api/product-external-mappings', tags=['Products','Integrations'])
     def product_external_mappings(user: Actor, system: Literal['jubelio'],
@@ -967,6 +1009,18 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                             limit: Limit = 100, offset: Offset = 0):
         return store.wip_ageing_insights(as_of or date.today(),idle_days,query,owner_id,stage,
                                          status,limit,offset)
+
+    @app.get('/api/capacity-plan', tags=['Production Capacity'])
+    def capacity_plan(user: Actor, as_of: date | None = None,
+                      horizon_days: Annotated[int, Query(ge=1, le=90)] = 14,
+                      warning_percent: Annotated[int, Query(ge=1, le=100)] = 80,
+                      work_center_id: Annotated[str, Query(max_length=160)] = '',
+                      stage: Literal['all','cutting','sewing','finishing','qc','rework'] = 'all',
+                      status: Literal['all','attention','overloaded','deadline_risk','near_capacity',
+                                      'available','idle'] = 'attention',
+                      limit: Limit = 100, offset: Offset = 0):
+        return store.capacity_plan(as_of or date.today(),horizon_days,warning_percent,
+                                   work_center_id,stage,status,limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

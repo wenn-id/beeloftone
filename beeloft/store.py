@@ -92,7 +92,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -209,6 +209,8 @@ class Store:
                 migration=('warehouse_movement_scanning_existing.sql' if 'scanned_code' in movement_columns
                            else 'warehouse_movement_scanning.sql')
                 db.executescript(Path(__file__).with_name(migration).read_text(encoding="utf-8"))
+            if version < 49:
+                db.executescript(Path(__file__).with_name('production_capacity.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -4196,6 +4198,297 @@ class Store:
             'bottleneck_signal_basis':'largest_current_quantity_on_stalled_orders',
             'total':len(scoped),'limit':limit,'offset':offset,'owners':owners,
             'summary':summary,'stages':stages,'items':scoped[offset:offset+limit]}
+
+    @staticmethod
+    def _capacity_minutes(value):
+        return format(Decimal(value)/1000,'.3f')
+
+    def _work_center(self,db,work_center_id):
+        row=db.execute('''SELECT c.id,c.code,c.stage,c.created_by,c.created_at,
+            e.sequence,e.id AS event_id,e.revision,e.name,e.daily_minutes,e.active,e.reason,
+            e.actor_id,e.created_at AS updated_at,u.name AS actor_name
+            FROM production_work_centers c JOIN production_work_center_events e
+                ON e.work_center_id=c.id AND e.sequence=(SELECT MAX(x.sequence)
+                    FROM production_work_center_events x WHERE x.work_center_id=c.id)
+            JOIN users u ON u.id=e.actor_id WHERE c.id=?''',(work_center_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Work center produksi tidak ditemukan.')
+        record=dict(row);record['active']=bool(record['active']);return record
+
+    def work_centers(self,status='all'):
+        with self.transaction() as db:
+            ids=[row['id'] for row in db.execute('SELECT id FROM production_work_centers ORDER BY code,id')]
+            rows=[self._work_center(db,value) for value in ids]
+            return rows if status=='all' else [row for row in rows if bool(row['active'])==(status=='active')]
+
+    def create_work_center(self,payload,actor,key):
+        def perform(db):
+            work_center_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO production_work_centers(id,code,stage,created_by,created_at)
+                VALUES(?,?,?,?,?)''',(work_center_id,payload['code'],payload['stage'],actor['id'],created))
+            db.execute('''INSERT INTO production_work_center_events(id,work_center_id,revision,name,
+                daily_minutes,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()),work_center_id,1,payload['name'],payload['daily_minutes'],1,
+                 payload['reason'],actor['id'],created))
+            return self._work_center(db,work_center_id)
+        return self._write(actor,('admin',),key,'work-center',payload,perform)
+
+    def change_work_center(self,work_center_id,payload,actor,key):
+        def perform(db):
+            current=self._work_center(db,work_center_id)
+            if current['revision']!=payload['expected_revision']:
+                raise DomainError(409,'Work center sudah berubah. Muat ulang lalu coba lagi.')
+            if (current['name']==payload['name'] and current['daily_minutes']==payload['daily_minutes']
+                    and bool(current['active'])==payload['active']):
+                raise DomainError(422,'Belum ada perubahan pada work center.')
+            db.execute('''INSERT INTO production_work_center_events(id,work_center_id,revision,name,
+                daily_minutes,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()),work_center_id,current['revision']+1,payload['name'],
+                 payload['daily_minutes'],int(payload['active']),payload['reason'],actor['id'],now()))
+            return self._work_center(db,work_center_id)
+        return self._write(actor,('admin',),key,'work-center:'+work_center_id,payload,perform)
+
+    def _routing_standard(self,db,product_id,stage):
+        product=db.execute('SELECT id,sku,name,color,size FROM products WHERE id=?',(product_id,)).fetchone()
+        if not product:
+            raise DomainError(404,'SKU tidak ditemukan.')
+        row=db.execute('''SELECT s.*,c.code AS work_center_code,c.stage AS work_center_stage,
+            w.name AS work_center_name,w.active AS work_center_active,u.name AS actor_name
+            FROM production_routing_standard_events s
+            JOIN production_work_centers c ON c.id=s.work_center_id
+            JOIN production_work_center_events w ON w.work_center_id=c.id
+                AND w.sequence=(SELECT MAX(x.sequence) FROM production_work_center_events x
+                    WHERE x.work_center_id=c.id)
+            JOIN users u ON u.id=s.actor_id WHERE s.product_id=? AND s.stage=?
+            ORDER BY s.sequence DESC LIMIT 1''',(product_id,stage)).fetchone()
+        base=dict(product)|{'stage':stage}
+        if not row:
+            return base|{'id':None,'sequence':None,'revision':0,'work_center_id':None,
+                'work_center_code':None,'work_center_name':None,'work_center_active':None,
+                'minutes_per_unit':None,'reason':'','actor_id':None,'actor_name':None,'created_at':None}
+        record=dict(row);record['minutes_per_unit']=self._capacity_minutes(
+            record.pop('minutes_per_unit_milli'))
+        record['work_center_active']=bool(record['work_center_active'])
+        return base|record
+
+    def routing_standard(self,product_id,stage):
+        with self.transaction() as db:
+            return self._routing_standard(db,product_id,stage)
+
+    def routing_standards(self,product_id='',stage='all',limit=100,offset=0):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT s.product_id,s.stage FROM production_routing_standard_events s
+                JOIN products p ON p.id=s.product_id
+                WHERE (?='' OR s.product_id=?) AND (?='all' OR s.stage=?)
+                AND s.sequence=(SELECT MAX(x.sequence) FROM production_routing_standard_events x
+                    WHERE x.product_id=s.product_id AND x.stage=s.stage)
+                ORDER BY p.sku,s.stage LIMIT ? OFFSET ?''',
+                (product_id,product_id,stage,stage,limit,offset)).fetchall()
+            return [self._routing_standard(db,row['product_id'],row['stage']) for row in rows]
+
+    def save_routing_standard(self,product_id,stage,payload,actor,key):
+        def perform(db):
+            current=self._routing_standard(db,product_id,stage)
+            if current['revision']!=payload['expected_revision']:
+                raise DomainError(409,'Standar proses SKU sudah berubah. Muat ulang lalu coba lagi.')
+            center=self._work_center(db,payload['work_center_id'])
+            if center['stage']!=stage:
+                raise DomainError(422,'Tahap work center tidak cocok dengan tahap standar.')
+            if not center['active']:
+                raise DomainError(422,'Work center nonaktif tidak dapat menerima standar baru.')
+            minutes=int(Decimal(payload['minutes_per_unit'])*1000)
+            if (current['revision'] and current['work_center_id']==center['id']
+                    and current['minutes_per_unit']==self._capacity_minutes(minutes)):
+                raise DomainError(422,'Standar proses baru sama dengan revisi aktif.')
+            db.execute('''INSERT INTO production_routing_standard_events(id,product_id,stage,revision,
+                work_center_id,minutes_per_unit_milli,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?)''',(str(uuid4()),product_id,stage,current['revision']+1,
+                center['id'],minutes,payload['reason'],actor['id'],now()))
+            return self._routing_standard(db,product_id,stage)
+        return self._write(actor,('admin',),key,'routing-standard:'+product_id+':'+stage,payload,perform)
+
+    def capacity_calendar(self,work_center_id,start_date,end_date):
+        start=start_date if isinstance(start_date,date) else date.fromisoformat(start_date)
+        end=end_date if isinstance(end_date,date) else date.fromisoformat(end_date)
+        if end<start:
+            raise DomainError(422,'Tanggal akhir kalender harus sama atau setelah tanggal awal.')
+        with self.transaction() as db:
+            center=self._work_center(db,work_center_id)
+            rows=db.execute('''SELECT e.*,u.name AS actor_name FROM production_capacity_calendar_events e
+                JOIN users u ON u.id=e.actor_id WHERE e.work_center_id=? AND e.work_date BETWEEN ? AND ?
+                AND e.sequence=(SELECT MAX(x.sequence) FROM production_capacity_calendar_events x
+                    WHERE x.work_center_id=e.work_center_id AND x.work_date=e.work_date)
+                ORDER BY e.work_date''',(work_center_id,start.isoformat(),end.isoformat())).fetchall()
+            return {'work_center':center,'start_date':start.isoformat(),'end_date':end.isoformat(),
+                    'items':[dict(row) for row in rows]}
+
+    def save_capacity_calendar(self,work_center_id,payload,actor,key):
+        def perform(db):
+            center=self._work_center(db,work_center_id);work_date=payload['work_date']
+            current=db.execute('''SELECT * FROM production_capacity_calendar_events
+                WHERE work_center_id=? AND work_date=? ORDER BY sequence DESC LIMIT 1''',
+                (work_center_id,work_date)).fetchone()
+            revision=current['revision'] if current else 0
+            if revision!=payload['expected_revision']:
+                raise DomainError(409,'Kalender kapasitas sudah berubah. Muat ulang lalu coba lagi.')
+            if current and current['available_minutes']==payload['available_minutes']:
+                raise DomainError(422,'Kapasitas tanggal tersebut belum berubah.')
+            record={'id':str(uuid4()),'work_center_id':center['id'],'work_date':work_date,
+                'revision':revision+1,'available_minutes':payload['available_minutes'],
+                'reason':payload['reason'],'actor_id':actor['id'],'created_at':now()}
+            db.execute('''INSERT INTO production_capacity_calendar_events(id,work_center_id,work_date,
+                revision,available_minutes,reason,actor_id,created_at)
+                VALUES(:id,:work_center_id,:work_date,:revision,:available_minutes,:reason,:actor_id,:created_at)''',record)
+            return record|{'work_center_code':center['code'],'work_center_name':center['name']}
+        return self._write(actor,('admin',),key,'capacity-calendar:'+work_center_id,payload,perform)
+
+    def capacity_plan(self,as_of,horizon_days=14,warning_percent=80,work_center_id='',stage='all',
+                      status='attention',limit=100,offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        horizon_end=as_of_date+timedelta(days=horizon_days-1)
+        main_route=('cutting','sewing','finishing','qc')
+        remaining={'planned':main_route,'cutting':main_route,'sewing':main_route[1:],
+            'finishing':main_route[2:],'qc':main_route[3:],'rework':('rework','qc')}
+        with self.transaction() as db:
+            center_ids=[row['id'] for row in db.execute('SELECT id FROM production_work_centers ORDER BY code,id')]
+            all_centers=[self._work_center(db,value) for value in center_ids]
+            active_centers={row['id']:row for row in all_centers if row['active']}
+            if work_center_id and work_center_id not in {row['id'] for row in all_centers}:
+                raise DomainError(404,'Work center produksi tidak ditemukan.')
+            centers=[row for row in active_centers.values()
+                     if (not work_center_id or row['id']==work_center_id)
+                     and (stage=='all' or row['stage']==stage)]
+            standard_rows=db.execute('''SELECT product_id,stage FROM production_routing_standard_events s
+                WHERE s.sequence=(SELECT MAX(x.sequence) FROM production_routing_standard_events x
+                    WHERE x.product_id=s.product_id AND x.stage=s.stage)''').fetchall()
+            standards={(row['product_id'],row['stage']):self._routing_standard(
+                db,row['product_id'],row['stage']) for row in standard_rows}
+            calendar_rows=db.execute('''SELECT e.* FROM production_capacity_calendar_events e
+                WHERE e.work_date BETWEEN ? AND ? AND e.sequence=(SELECT MAX(x.sequence)
+                    FROM production_capacity_calendar_events x
+                    WHERE x.work_center_id=e.work_center_id AND x.work_date=e.work_date)''',
+                    (as_of_date.isoformat(),horizon_end.isoformat())).fetchall()
+            overrides={(row['work_center_id'],row['work_date']):dict(row) for row in calendar_rows}
+            workload={row['id']:{} for row in centers};gaps=[];orders_in_scope=set()
+            for order_id, in db.execute('SELECT id FROM orders ORDER BY due_date,created_at,id'):
+                order=self._order(db,order_id)
+                created=datetime.fromisoformat(order['created_at']).astimezone(
+                    timezone(timedelta(hours=7))).date()
+                if (order['status']!='active' or created>as_of_date
+                        or date.fromisoformat(order['due_date'])>horizon_end):
+                    continue
+                for line in order['lines']:
+                    requirements={}
+                    for position,quantity in line['balances'].items():
+                        if quantity>0 and position in remaining:
+                            for required_stage in remaining[position]:
+                                if stage=='all' or required_stage==stage:
+                                    requirements[required_stage]=requirements.get(required_stage,0)+quantity
+                    for required_stage,quantity in requirements.items():
+                        standard=standards.get((line['product_id'],required_stage))
+                        if not standard:
+                            if not work_center_id:
+                                orders_in_scope.add(order_id)
+                                gaps.append({'kind':'missing_standard','order_id':order['id'],
+                                    'order_reference':order['reference'],'product_id':line['product_id'],
+                                    'sku':line['sku'],'product_name':line['name'],'stage':required_stage,
+                                    'quantity':quantity})
+                            continue
+                        center=active_centers.get(standard['work_center_id'])
+                        if not center:
+                            if not work_center_id or work_center_id==standard['work_center_id']:
+                                orders_in_scope.add(order_id)
+                                gaps.append({'kind':'inactive_work_center','order_id':order['id'],
+                                    'order_reference':order['reference'],'product_id':line['product_id'],
+                                    'sku':line['sku'],'product_name':line['name'],'stage':required_stage,
+                                    'quantity':quantity,'work_center_id':standard['work_center_id'],
+                                    'work_center_code':standard['work_center_code']})
+                            continue
+                        if center['id'] not in workload:
+                            continue
+                        orders_in_scope.add(order_id)
+                        required_milli=quantity*int(Decimal(standard['minutes_per_unit'])*1000)
+                        order_load=workload[center['id']].setdefault(order['id'],{
+                            'order_id':order['id'],'order_reference':order['reference'],
+                            'order_title':order['title'],'due_date':order['due_date'],
+                            'overdue':date.fromisoformat(order['due_date'])<as_of_date,
+                            'required_milli':0,'products':{}})
+                        order_load['required_milli']+=required_milli
+                        product=order_load['products'].setdefault((line['product_id'],required_stage),{
+                            'product_id':line['product_id'],'sku':line['sku'],'product_name':line['name'],
+                            'stage':required_stage,'quantity':0,'minutes_per_unit':standard['minutes_per_unit'],
+                            'required_milli':0})
+                        product['quantity']+=quantity;product['required_milli']+=required_milli
+            items=[]
+            for center in centers:
+                days=[];cursor=as_of_date
+                while cursor<=horizon_end:
+                    override=overrides.get((center['id'],cursor.isoformat()))
+                    available=override['available_minutes'] if override else (
+                        center['daily_minutes'] if cursor.weekday()<5 else 0)
+                    days.append({'date':cursor.isoformat(),'available_minutes':available,
+                        'source':'override' if override else ('weekday_default' if cursor.weekday()<5 else 'weekend'),
+                        'revision':override['revision'] if override else 0,
+                        'reason':override['reason'] if override else ''})
+                    cursor+=timedelta(days=1)
+                available_minutes=sum(row['available_minutes'] for row in days)
+                order_rows=sorted(workload[center['id']].values(),
+                                  key=lambda row:(row['due_date'],row['order_reference'],row['order_id']))
+                cumulative=0
+                for row in order_rows:
+                    required=row.pop('required_milli');cumulative+=required
+                    due=date.fromisoformat(row['due_date'])
+                    available_by_due=sum(day['available_minutes'] for day in days
+                                         if date.fromisoformat(day['date'])<=due) if due>=as_of_date else 0
+                    row['required_minutes']=self._capacity_minutes(required)
+                    row['cumulative_required_minutes']=self._capacity_minutes(cumulative)
+                    row['available_minutes_by_due']=available_by_due
+                    row['capacity_shortfall_minutes']=self._capacity_minutes(
+                        max(cumulative-available_by_due*1000,0))
+                    row['at_risk']=cumulative>available_by_due*1000
+                    row['products']=[item|{'required_minutes':self._capacity_minutes(
+                        item.pop('required_milli'))} for item in row['products'].values()]
+                required_milli=cumulative
+                available_milli=available_minutes*1000
+                utilization=(format((Decimal(required_milli)*100/available_milli).quantize(
+                    Decimal('.01'),rounding=ROUND_HALF_UP),'.2f') if available_milli else None)
+                if required_milli>available_milli: classification='overloaded'
+                elif any(row['at_risk'] for row in order_rows): classification='deadline_risk'
+                elif required_milli and Decimal(utilization)>=warning_percent: classification='near_capacity'
+                elif required_milli: classification='available'
+                else: classification='idle'
+                items.append(center|{'status':classification,
+                    'required_minutes':self._capacity_minutes(required_milli),
+                    'available_minutes':available_minutes,'remaining_minutes':self._capacity_minutes(
+                        max(available_milli-required_milli,0)),
+                    'overload_minutes':self._capacity_minutes(max(required_milli-available_milli,0)),
+                    'utilization_percent':utilization,'order_count':len(order_rows),
+                    'at_risk_order_count':sum(row['at_risk'] for row in order_rows),
+                    'days':days,'orders':order_rows})
+        priority={'overloaded':0,'deadline_risk':1,'near_capacity':2,'available':3,'idle':4}
+        stage_order={value:index for index,value in enumerate((*main_route,'rework'))}
+        items.sort(key=lambda row:(priority[row['status']],stage_order[row['stage']],row['code'],row['id']))
+        if status=='attention': scoped=[row for row in items if row['status'] in
+                                       ('overloaded','deadline_risk','near_capacity')]
+        elif status=='all': scoped=items
+        else: scoped=[row for row in items if row['status']==status]
+        summary={'work_centers':len(items),'attention_work_centers':sum(priority[row['status']]<3 for row in items),
+            'overloaded_work_centers':sum(row['status']=='overloaded' for row in items),
+            'deadline_risk_work_centers':sum(row['status']=='deadline_risk' for row in items),
+            'near_capacity_work_centers':sum(row['status']=='near_capacity' for row in items),
+            'orders_in_scope':len(orders_in_scope),'at_risk_orders':len({order['order_id'] for row in items
+                for order in row['orders'] if order['at_risk']}),'coverage_gaps':len(gaps),
+            'missing_standard_quantity':sum(row['quantity'] for row in gaps),
+            'required_minutes':self._capacity_minutes(sum(int(Decimal(row['required_minutes'])*1000)
+                                                          for row in items)),
+            'available_minutes':sum(row['available_minutes'] for row in items)}
+        return {'as_of':as_of_date.isoformat(),'horizon_days':horizon_days,
+            'horizon_end':horizon_end.isoformat(),'warning_percent':warning_percent,
+            'work_center_id':work_center_id,'stage':stage,'status':status,'timezone':'Asia/Jakarta',
+            'ledger_basis':'current_production_balances','route_basis':'remaining_standard_route',
+            'calendar_basis':'weekday_default_with_latest_date_override',
+            'capacity_complete':not gaps,'total':len(scoped),'limit':limit,'offset':offset,
+            'summary':summary,'coverage_gaps':gaps,'items':scoped[offset:offset+limit]}
 
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,

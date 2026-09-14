@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.71.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.72.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2310,11 +2310,35 @@ SKU, produk, dan isi kendala. Ringkasan tahap menunjukkan kuantitas aktif serta 
 bergerak. Tahap dengan kuantitas stalled terbesar disebut sinyal hambatan agar tim tahu area yang perlu diperiksa.
 
 Laporan memakai saldo ledger saat request dimuat. `as_of` menentukan umur dan status tenggat serta mengecualikan
-order yang dibuat sesudah tanggal tersebut; laporan tidak merekonstruksi posisi historis. Sinyal hambatan bukan
-ukuran kapasitas karena master line/stasiun, jam kerja, dan kalender kapasitas belum tersedia.
+order yang dibuat sesudah tanggal tersebut; laporan tidak merekonstruksi posisi historis. Sinyal hambatan tetap
+bukan ukuran kapasitas; perhitungan kapasitas berbasis master waktu tersedia pada laporan berikutnya.
 
 API: `GET /api/wip-ageing-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only dan schema tetap
 48. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
 
 Rencana: [WIP ageing insights plan](docs/wip-ageing-insights-plan.md).
 Bukti: [WIP ageing insights verification](docs/wip-ageing-insights-verification.md).
+
+## Perencanaan kapasitas produksi (v0.72)
+
+Pilih **Kapasitas produksi** untuk membandingkan kebutuhan menit dari WIP aktif dengan kapasitas work center.
+Admin lebih dulu membuat work center per tahap, mengisi standar menit per pcs untuk tiap SKU dan tahap, lalu
+mencatat override kalender untuk libur atau lembur. Senin sampai Jumat memakai kapasitas harian work center;
+Sabtu dan Minggu bernilai nol sampai diberi override.
+
+Rute tersisa dihitung dari posisi pcs saat ini sampai QC. Work center diklasifikasikan sebagai overload, risiko
+deadline, mendekati kapasitas, masih tersedia, atau tanpa beban. Risiko deadline membandingkan kebutuhan order
+secara kumulatif dengan kapasitas yang tersedia sampai target masing-masing. Gap standar atau work center nonaktif
+ditampilkan agar planner tidak menganggap laporan yang belum lengkap sebagai kapasitas yang aman.
+
+Filter tersedia untuk tanggal awal, horizon 1–90 hari, batas peringatan utilisasi, status, tahap, dan work center.
+Semua akun aktif dapat membaca laporan; perubahan master hanya untuk admin. Laporan memakai saldo ledger saat
+request dan tidak merekonstruksi WIP historis atau membuat jadwal kerja per jam.
+
+API: `GET /api/capacity-plan`, `GET/POST /api/work-centers`, `POST /api/work-centers/{id}/changes`,
+`GET /api/routing-standards`, `GET/POST /api/products/{product_id}/routing-standards/{stage}`, dan
+`GET/POST /api/work-centers/{id}/calendar`. Schema database 49. Runtime connector Jubelio/Mekari tetap ditunda
+sampai akses API resmi tersedia.
+
+Rencana: [Production capacity plan](docs/production-capacity-plan.md).
+Bukti: [Production capacity verification](docs/production-capacity-verification.md).

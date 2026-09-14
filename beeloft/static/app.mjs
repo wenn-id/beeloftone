@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 const api = new Api();
 const nf = new Intl.NumberFormat('id-ID');
 const n = value => nf.format(value);
+const minuteQty = value => materialQty(value,'menit');
 const labels = {planned:'Belum cutting', cutting:'Cutting', sewing:'Sewing', finishing:'Finishing', qc:'QC', warehouse:'Gudang', rework:'Rework', reject:'Reject'};
 const stages = ['planned','cutting','sewing','finishing','qc','warehouse'];
 let user = null, transitions = [], boardData = null, selected = null, history = [], historyOffset = 0;
@@ -614,7 +615,10 @@ document.addEventListener('click', event => {
     'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
     'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
-    'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,'new-product':productForm,'new-order':orderForm,'cancel-form':closeDialog};
+    'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,
+    'capacity-plan':capacityPlanDialog,'new-work-center':()=>capacityWorkCenterForm(),
+    'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
+    'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
 
@@ -3021,6 +3025,149 @@ function wipAgeingInsightsDialog() {
   $('wip-ageing-more').onclick=()=>load();
 }
 $('wip-ageing-insights').onclick=wipAgeingInsightsDialog;
+
+async function capacityWorkCenterForm(workCenterId=null) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+  let current=null;
+  if(workCenterId){
+    const centers=await allRows('/api/work-centers');
+    if(version!==epoch)return;
+    current=centers.find(row=>row.id===workCenterId);
+    if(!current)return notify('Work center tidak ditemukan.');
+  }
+  const stageOptions=['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('');
+  if(current){
+    formDialog('Ubah work center',field('name','Nama work center','text','required maxlength="160"')+
+      field('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1"')+
+      '<label>Status<select name="active"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></label>'+
+      '<label class="full">Alasan perubahan<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+        const data=new FormData(form);return {expected_revision:current.revision,name:data.get('name').trim(),
+          daily_minutes:Number(data.get('daily_minutes')),active:data.get('active')==='true',reason:data.get('reason').trim()};
+      },`/api/work-centers/${encodeURIComponent(current.id)}/changes`,`${current.code} · ${labels[current.stage]} · revisi ${current.revision}`);
+    const form=$('action-form');form.elements.name.value=current.name;form.elements.daily_minutes.value=current.daily_minutes;
+    form.elements.active.value=String(Boolean(current.active));
+  }else{
+    formDialog('Tambah work center',field('code','Kode work center','text','required maxlength="40"')+
+      field('name','Nama work center','text','required maxlength="160"')+
+      `<label>Tahap<select name="stage">${stageOptions}</select></label>`+
+      field('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1" value="480"')+
+      '<label class="full">Dasar kapasitas<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+        const data=new FormData(form);return {code:data.get('code').trim(),name:data.get('name').trim(),stage:data.get('stage'),
+          daily_minutes:Number(data.get('daily_minutes')),reason:data.get('reason').trim()};
+      },'/api/work-centers','Kapasitas harian berlaku untuk Senin sampai Jumat. Sabtu dan Minggu nol kecuali diberi override kalender.');
+  }
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function capacityRoutingStandardForm(productId,stage) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+  const [standard,centers]=await Promise.all([
+    api.get(`/api/products/${encodeURIComponent(productId)}/routing-standards/${stage}`),
+    allRows('/api/work-centers',{status:'active'})
+  ]);
+  if(version!==epoch)return;
+  const available=centers.filter(row=>row.stage===stage);
+  if(!available.length)return notify(`Tambahkan work center ${labels[stage]} yang aktif terlebih dahulu.`);
+  formDialog('Standar waktu SKU',`<p class="full"><strong>${e(standard.sku)} · ${e(standard.name)}</strong></p>
+    <label>Work center<select name="work_center_id">${available.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>`+
+    field('minutes_per_unit','Menit per pcs','number','required min="0.001" max="100000" step="0.001"')+
+    '<label class="full">Dasar standar waktu<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+      const data=new FormData(form);return {expected_revision:standard.revision,work_center_id:data.get('work_center_id'),
+        minutes_per_unit:data.get('minutes_per_unit'),reason:data.get('reason').trim()};
+    },`/api/products/${encodeURIComponent(productId)}/routing-standards/${stage}`,
+    `${labels[stage]} · revisi ${standard.revision}. Beban dihitung dari saldo tahap aktif dan sisa rute produksi.`);
+  const form=$('action-form');
+  if(standard.work_center_id)form.elements.work_center_id.value=standard.work_center_id;
+  if(standard.minutes_per_unit)form.elements.minutes_per_unit.value=standard.minutes_per_unit;
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function capacityCalendarForm(workCenterId,workDate) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+  const calendar=await api.get(`/api/work-centers/${encodeURIComponent(workCenterId)}/calendar?`+
+    new URLSearchParams({start_date:workDate,end_date:workDate}));
+  if(version!==epoch)return;
+  const current=calendar.items[0];
+  formDialog('Override kalender kapasitas',field('work_date','Tanggal kerja','date',`required readonly value="${e(workDate)}"`)+
+    field('available_minutes','Kapasitas tersedia (menit)','number',`required min="0" max="100000" step="1" value="${e(current?.available_minutes??calendar.work_center.daily_minutes)}"`)+
+    '<label class="full">Alasan override<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+      const data=new FormData(form);return {work_date:data.get('work_date'),expected_revision:current?.revision||0,
+        available_minutes:Number(data.get('available_minutes')),reason:data.get('reason').trim()};
+    },`/api/work-centers/${encodeURIComponent(workCenterId)}/calendar`,
+    `${calendar.work_center.code} · ${calendar.work_center.name}. Isi 0 untuk libur atau isi menit tambahan untuk lembur.`);
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function capacityPlanDialog() {
+  if(guardPending())return;
+  const version=epoch;
+  openDialog('Kapasitas produksi','<p class="state">Memuat master kapasitas...</p>');
+  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const [centers,products]=await Promise.all([allRows('/api/work-centers'),allRows('/api/products')]);
+    if(!current())return;
+    const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const activeCenters=centers.filter(row=>row.active);
+    const admin=user.role==='admin'?`<section><h3>Master kapasitas</h3><p class="hint">Admin mengelola kapasitas dalam menit. Semua perubahan disimpan sebagai revisi.</p>
+      <div class="product-list">${centers.map(row=>`<div class="product-item"><div><strong>${e(row.code)} · ${e(row.name)}</strong><span>${e(labels[row.stage])} · ${n(row.daily_minutes)} menit/hari · ${row.active?'aktif':'nonaktif'} · revisi ${n(row.revision)}</span></div><button data-action="edit-work-center" data-id="${e(row.id)}">Ubah</button></div>`).join('')||'<p>Belum ada work center.</p>'}</div>
+      <div class="actions"><button data-action="new-work-center">Tambah work center</button></div>
+      <div class="form-grid"><label>SKU untuk standar<select id="capacity-standard-product">${products.map(row=>option(row.id,`${row.sku} · ${row.name}`)).join('')}</select></label>
+      <label>Tahap standar<select id="capacity-standard-stage">${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
+      <div class="form-actions"><button id="capacity-standard-open" type="button" ${products.length?'':'disabled'}>Atur standar waktu</button></div>
+      <label>Work center kalender<select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
+      ${field('capacity_calendar_date','Tanggal override','date',`id="capacity-calendar-date" value="${today}"`)}
+      <div class="form-actions"><button id="capacity-calendar-open" type="button" ${activeCenters.length?'':'disabled'}>Atur kapasitas tanggal</button></div></div></section>`:'';
+    $('dialog-content').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
+      ${field('as_of','Mulai per tanggal','date',`required value="${today}"`)}
+      ${field('horizon_days','Horizon kalender (hari)','number','required min="1" max="90" step="1" value="14"')}
+      ${field('warning_percent','Peringatan utilisasi (%)','number','required min="1" max="100" step="1" value="80"')}
+      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="overloaded">Overload</option><option value="deadline_risk">Risiko deadline</option><option value="near_capacity">Mendekati kapasitas</option><option value="available">Masih tersedia</option><option value="idle">Tanpa beban</option><option value="all">Semua</option></select></label>
+      <label>Tahap<select name="stage"><option value="all">Semua tahap</option>${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
+      <label>Work center<select name="work_center_id"><option value="">Semua work center aktif</option>${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
+      </div><div class="form-actions"><button class="primary" id="capacity-plan-submit" type="submit">Hitung kapasitas</button></div></form>
+      <p id="capacity-plan-message" class="state" role="status" hidden></p><div id="capacity-plan-summary"></div><div id="capacity-plan-gaps"></div><div id="capacity-plan-results"></div><button id="capacity-plan-more" type="button" hidden>Muat work center berikutnya</button></section>`;
+    if(user.role==='admin'){
+      $('capacity-standard-open').onclick=()=>capacityRoutingStandardForm($('capacity-standard-product').value,$('capacity-standard-stage').value);
+      $('capacity-calendar-open').onclick=()=>capacityCalendarForm($('capacity-calendar-center').value,$('capacity-calendar-date').value);
+    }
+    const form=$('capacity-plan-form'),submit=$('capacity-plan-submit');let offset=0,generation=0;
+    const statusLabels={overloaded:'Overload',deadline_risk:'Risiko deadline',near_capacity:'Mendekati kapasitas',available:'Masih tersedia',idle:'Tanpa beban'};
+    const load=async(reset=false)=>{
+      if(!current())return;
+      if(reset){generation++;offset=0;$('capacity-plan-summary').replaceChildren();$('capacity-plan-gaps').replaceChildren();$('capacity-plan-results').replaceChildren();}
+      const gen=generation,more=$('capacity-plan-more');submit.disabled=true;more.disabled=true;more.hidden=true;
+      message('capacity-plan-message',offset?'Memuat work center berikutnya...':'Menghitung beban dan kalender kapasitas...');
+      try{
+        const params=new URLSearchParams(Object.fromEntries(new FormData(form)));params.set('limit','25');params.set('offset',String(offset));
+        const report=await api.get('/api/capacity-plan?'+params);if(!current()||gen!==generation)return;
+        message('capacity-plan-message','');
+        if(!offset){
+          $('capacity-plan-summary').innerHTML=`<p class="form-info">${date(report.as_of)} sampai ${date(report.horizon_end)}<br>${n(report.summary.work_centers)} work center aktif · ${n(report.summary.attention_work_centers)} perlu perhatian · ${n(report.summary.at_risk_orders)} order berisiko<br>Beban ${e(minuteQty(report.summary.required_minutes))} · tersedia ${e(minuteQty(report.summary.available_minutes))}</p><p class="hint">Hari kerja default Senin sampai Jumat. Override kalender terbaru berlaku per tanggal. Angka ini adalah estimasi standar, bukan janji jadwal produksi.</p>`;
+          $('capacity-plan-gaps').innerHTML=report.coverage_gaps.length?`<h3>Data kapasitas belum lengkap</h3><p class="hint">${n(report.summary.coverage_gaps)} kebutuhan tahap belum punya standar aktif, mencakup ${n(report.summary.missing_standard_quantity)} pcs.</p>${report.coverage_gaps.slice(0,25).map(gap=>`<article class="material-event"><strong>${e(gap.order_reference)} · ${e(gap.sku)}</strong><p>${e(labels[gap.stage])} · ${n(gap.quantity)} pcs · ${gap.kind==='inactive_work_center'?'work center nonaktif':'standar waktu belum diisi'}</p></article>`).join('')}`:'';
+        }
+        const html=report.items.map(row=>{
+          const attention=['overloaded','deadline_risk','near_capacity'].includes(row.status);
+          const utilization=row.utilization_percent===null?'Belum terukur':`${e(row.utilization_percent)}%`;
+          const orders=row.orders.map(order=>`<article class="material-event"><h4>${e(order.order_reference)} · ${e(order.order_title)}</h4><p>Target ${date(order.due_date)} · beban ${e(minuteQty(order.required_minutes))} · kapasitas sampai target ${e(minuteQty(order.available_minutes_by_due))}</p>${order.at_risk?`<p class="reason">Kurang ${e(minuteQty(order.capacity_shortfall_minutes))} sebelum target.</p>`:''}${order.products.map(product=>`<p class="hint">${e(product.sku)} · ${n(product.quantity)} pcs × ${e(minuteQty(product.minutes_per_unit))}/pcs = ${e(minuteQty(product.required_minutes))}</p>`).join('')}<button data-action="detail" data-id="${e(order.order_id)}">Buka order</button></article>`).join('');
+          const calendar=row.days.map(day=>`${date(day.date)} ${n(day.available_minutes)} menit${day.source==='override'?' (override)':''}`).join(' · ');
+          return `<article class="material-event" data-capacity-center="${e(row.id)}"><div class="issue-heading"><h3>${e(row.code)} · ${e(row.name)}</h3><span class="status-label ${attention?'late':'done'}">${e(statusLabels[row.status])}</span></div><p>${e(labels[row.stage])} · utilisasi ${utilization}</p><dl class="requirement-values"><div><dt>Beban</dt><dd>${e(minuteQty(row.required_minutes))}</dd></div><div><dt>Tersedia</dt><dd>${e(minuteQty(row.available_minutes))}</dd></div><div><dt>Sisa</dt><dd>${e(minuteQty(row.remaining_minutes))}</dd></div><div><dt>Overload</dt><dd>${e(minuteQty(row.overload_minutes))}</dd></div><div><dt>Order</dt><dd>${n(row.order_count)}</dd></div><div><dt>Berisiko</dt><dd>${n(row.at_risk_order_count)}</dd></div></dl><p class="hint">Kalender: ${calendar}</p>${orders||'<p class="state">Tidak ada beban order pada horizon ini.</p>'}</article>`;
+        }).join('');
+        $('capacity-plan-results').insertAdjacentHTML('beforeend',html);
+        if(!offset&&!report.items.length)$('capacity-plan-results').innerHTML='<p class="state">Tidak ada work center yang cocok dengan status dan filter ini.</p>';
+        offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat work center berikutnya';
+      }catch(error){if(current()&&gen===generation){message('capacity-plan-message',error.message,true);$('capacity-plan-message').insertAdjacentHTML('beforeend','<br><button id="capacity-plan-retry" type="button">Coba lagi</button>');$('capacity-plan-retry').onclick=()=>load();}}
+      finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+    };
+    form.onsubmit=event=>{event.preventDefault();load(true);};$('capacity-plan-more').onclick=()=>load();await load(true);
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="capacity-plan">Coba lagi</button>`;}
+}
+$('capacity-plan').onclick=capacityPlanDialog;
 
 function replenishmentDialog() {
   if(guardPending())return;

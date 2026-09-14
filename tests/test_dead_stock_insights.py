@@ -101,4 +101,4 @@ class DeadStockInsightsTest(TestCase):
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).dead_stock_insights(date(2027,2,15),90,'luna-blue-m'),expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],48)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],49)

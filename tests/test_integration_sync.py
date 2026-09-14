@@ -95,5 +95,5 @@ class IntegrationSyncTest(TestCase):
             db.execute('PRAGMA user_version=32');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],48)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],49)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM integration_sync_runs').fetchone()[0],0)

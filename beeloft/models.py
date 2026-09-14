@@ -8,6 +8,7 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 Quantity = Annotated[int, Field(strict=True, gt=0, le=1_000_000_000)]
 Stage = Literal["planned", "cutting", "sewing", "finishing", "qc", "rework", "reject", "warehouse"]
 Role = Literal["admin", "operator", "viewer"]
+CapacityStage = Literal["cutting", "sewing", "finishing", "qc", "rework"]
 STAGES = ("planned", "cutting", "sewing", "finishing", "qc", "rework", "reject", "warehouse")
 TRANSITIONS = {("planned", "cutting"), ("cutting", "sewing"), ("sewing", "finishing"),
                ("finishing", "qc"), ("qc", "warehouse"), ("qc", "rework"),
@@ -80,6 +81,50 @@ class IssueCreate(Input):
 
 class IssueResolve(Input):
     resolution: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class WorkCenterCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    stage: CapacityStage
+    daily_minutes: Annotated[int, Field(strict=True, ge=1, le=100_000)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls,value):
+        return value.upper()
+
+
+class WorkCenterChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    daily_minutes: Annotated[int, Field(strict=True, ge=1, le=100_000)]
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class RoutingStandardSave(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    work_center_id: Text
+    minutes_per_unit: Annotated[str, StringConstraints(
+        pattern=r"^[0-9]{1,5}(\.[0-9]{1,3})?$", max_length=9)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('minutes_per_unit')
+    @classmethod
+    def normalize_minutes(cls,value):
+        amount=Decimal(value)
+        if not 0 < amount <= 100_000:
+            raise ValueError('Menit standar harus lebih dari nol dan maksimal 100.000.')
+        return format(amount,'.3f')
+
+
+class CapacityCalendarSave(Input):
+    work_date: date
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    available_minutes: Annotated[int, Field(strict=True, ge=0, le=100_000)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class OrderChange(Input):
