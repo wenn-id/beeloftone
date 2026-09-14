@@ -3942,7 +3942,8 @@ class Store:
         with self.transaction() as db:
             for order_id, in db.execute('SELECT id FROM purchase_orders ORDER BY sequence'):
                 order=self._purchase_order(db,order_id)
-                recorded_date=order['created_at'][:10]
+                recorded_date=datetime.fromisoformat(order['created_at']).astimezone(
+                    timezone(timedelta(hours=7))).date().isoformat()
                 if (order['approval_status']!='approved' or order['status']=='cancelled'
                         or not period_start.isoformat()<=recorded_date<=as_of_date.isoformat()):
                     continue
@@ -4006,6 +4007,82 @@ class Store:
         return {'as_of':as_of_date.isoformat(),'period_start':period_start.isoformat(),
             'window_days':window_days,'query':query.strip(),'status':status,
             'date_basis':'purchase_order_created_date','currency':'IDR','grouping':'material_and_supplier',
+            'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
+            'items':scoped[offset:offset+limit]}
+
+    def purchase_commitment_insights(self, as_of, due_soon_days=7, query='', status='open',
+                                     limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        due_soon_end=as_of_date+timedelta(days=due_soon_days)
+        items=[]
+        with self.transaction() as db:
+            order_ids=[row[0] for row in db.execute('SELECT id FROM purchase_orders ORDER BY sequence')]
+            for order_id in order_ids:
+                order=self._purchase_order(db,order_id)
+                created_date=datetime.fromisoformat(order['created_at']).astimezone(
+                    timezone(timedelta(hours=7))).date().isoformat()
+                if (order['approval_status']!='approved' or order['status']!='issued'
+                        or created_date>as_of_date.isoformat()):
+                    continue
+                order_value=Decimal(order['total'])
+                received_value=Decimal(order['payment_received_value'])
+                open_value=order_value-received_value
+                expected=date.fromisoformat(order['expected_date'])
+                if open_value<=0: classification='fulfilled'
+                elif expected<as_of_date: classification='overdue'
+                elif expected<=due_soon_end: classification='due_soon'
+                else: classification='scheduled'
+                lines=[]
+                for line in order['lines']:
+                    line_received=(Decimal(line['received'])*Decimal(line['unit_price'])).quantize(
+                        Decimal('.01'),rounding=ROUND_HALF_UP)
+                    lines.append({'material_id':line['material_id'],'code':line['code'],
+                        'name':line['name'],'unit':line['unit'],'ordered_quantity':line['quantity'],
+                        'usable_received_quantity':line['received'],'open_quantity':line['remaining'],
+                        'unit_price':line['unit_price'],'ordered_value':line['line_total'],
+                        'usable_received_value':format(line_received,'.2f'),
+                        'open_commitment_value':format(Decimal(line['line_total'])-line_received,'.2f')})
+                item={'purchase_order_id':order['id'],'purchase_order_reference':order['reference'],
+                    'purchase_request_id':order['request_id'],
+                    'purchase_request_reference':order['request_reference'],
+                    'production_order_id':order['production_order_id'],
+                    'supplier_id':order['supplier_id'],'supplier_code':order['supplier']['code'],
+                    'supplier_name':order['supplier']['name'],'created_at':order['created_at'],
+                    'created_date':created_date,'expected_date':order['expected_date'],
+                    'status':classification,'overdue_days':max((as_of_date-expected).days,0)
+                        if open_value>0 else 0,'fulfillment':order['fulfillment'],
+                    'purchase_order_value':format(order_value,'.2f'),
+                    'usable_received_value':format(received_value,'.2f'),
+                    'open_commitment_value':format(open_value,'.2f'),
+                    'payment_pending':order['payment_pending'],
+                    'payment_approved':order['payment_approved'],
+                    'payment_unrequested':order['payment_remaining'],'lines':lines}
+                searchable=[item['purchase_order_reference'],item['purchase_request_reference'],
+                    item['supplier_code'],item['supplier_name']]
+                searchable.extend(value for line in lines for value in (line['code'],line['name']))
+                if not query.strip() or any(query.strip().casefold() in value.casefold()
+                                            for value in searchable):
+                    items.append(item)
+        priority={'overdue':0,'due_soon':1,'scheduled':2,'fulfilled':3}
+        items.sort(key=lambda row:(priority[row['status']],-Decimal(row['open_commitment_value']),
+            row['expected_date'],row['purchase_order_reference'].casefold(),row['purchase_order_id']))
+        scoped=items if status=='all' else ([row for row in items if row['status']!='fulfilled']
+            if status=='open' else [row for row in items if row['status']==status])
+        money=lambda key:format(sum((Decimal(row[key]) for row in items),Decimal('0')),'.2f')
+        summary={'purchase_orders':len(items),
+            'open_purchase_orders':sum(row['status']!='fulfilled' for row in items),
+            'fulfilled_purchase_orders':sum(row['status']=='fulfilled' for row in items),
+            'overdue_purchase_orders':sum(row['status']=='overdue' for row in items),
+            'due_soon_purchase_orders':sum(row['status']=='due_soon' for row in items),
+            'scheduled_purchase_orders':sum(row['status']=='scheduled' for row in items),
+            'purchase_order_value':money('purchase_order_value'),
+            'usable_received_value':money('usable_received_value'),
+            'open_commitment_value':money('open_commitment_value'),
+            'payment_pending':money('payment_pending'),'payment_approved':money('payment_approved'),
+            'payment_unrequested':money('payment_unrequested')}
+        return {'as_of':as_of_date.isoformat(),'due_soon_days':due_soon_days,
+            'due_soon_end':due_soon_end.isoformat(),'query':query.strip(),'status':status,'currency':'IDR',
+            'ledger_basis':'current_active_purchase_orders','received_basis':'usable_material_receipts',
             'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
             'items':scoped[offset:offset+limit]}
 

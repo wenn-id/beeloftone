@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.69.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.70.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -945,6 +945,16 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                 limit: Limit = 100, offset: Offset = 0):
         return store.material_price_insights(as_of or date.today(),window_days,query,status,
                                              limit,offset)
+
+    @app.get('/api/purchase-commitment-insights', tags=['Economics'])
+    def purchase_commitment_insights(user: Actor, as_of: date | None = None,
+                                     due_soon_days: Annotated[int, Query(ge=1, le=90)] = 7,
+                                     query: Annotated[str, Query(max_length=160)] = '',
+                                     status: Literal['all','open','overdue','due_soon','scheduled',
+                                                     'fulfilled'] = 'open',
+                                     limit: Limit = 100, offset: Offset = 0):
+        return store.purchase_commitment_insights(as_of or date.today(),due_soon_days,query,status,
+                                                  limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

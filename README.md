@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.69.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.70.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2277,3 +2277,24 @@ ditunda sampai akses API resmi tersedia.
 
 Rencana: [Material price insights plan](docs/material-price-insights-plan.md).
 Bukti: [Material price insights verification](docs/material-price-insights-verification.md).
+
+## Komitmen pembelian terbuka (v0.70)
+
+Pilih **Komitmen PO** untuk melihat nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai.
+Setiap PO diklasifikasikan sebagai terlambat, segera jatuh tempo, terjadwal, atau sudah diterima lengkap tetapi
+belum ditutup. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.
+
+Nilai PO, penerimaan layak pakai, dan komitmen terbuka ditampilkan bersama posisi pengajuan pembayaran supplier.
+Payment menunggu approval, payment approved, dan nilai penerimaan yang belum diajukan dipisahkan karena approval
+belum membuktikan transfer bank. Rincian bahan mempertahankan satuan masing-masing dan menyediakan tautan ke PO.
+
+Filter tersedia untuk tanggal posisi, batas segera jatuh tempo 1–90 hari, status jadwal, PO, PR, supplier, dan
+material. Perhitungan memakai posisi ledger saat laporan dimuat; `as_of` membatasi tanggal pembuatan PO di Jakarta dan
+menentukan status jadwal, bukan merekonstruksi status historis.
+
+API: `GET /api/purchase-commitment-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only,
+mata uang IDR, dan schema tetap 48. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi
+tersedia.
+
+Rencana: [Purchase commitment insights plan](docs/purchase-commitment-insights-plan.md).
+Bukti: [Purchase commitment insights verification](docs/purchase-commitment-insights-verification.md).

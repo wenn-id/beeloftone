@@ -2911,6 +2911,54 @@ function materialPriceInsightsDialog() {
 }
 $('material-price-insights').onclick=materialPriceInsightsDialog;
 
+function purchaseCommitmentInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form">
+    <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
+    <div class="form-grid">
+      ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
+      ${field('due_soon_days','Batas segera jatuh tempo (hari)','number','required min="1" max="90" step="1" value="7"')}
+      <label>Status jadwal<select name="status"><option value="open">Semua komitmen terbuka</option><option value="overdue">Terlambat</option><option value="due_soon">Segera jatuh tempo</option><option value="scheduled">Terjadwal</option><option value="fulfilled">Diterima lengkap, belum ditutup</option><option value="all">Semua PO aktif</option></select></label>
+      <label class="full">Cari PO, PR, supplier, atau bahan<input name="query" type="search" maxlength="160" placeholder="Referensi, kode, atau nama"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="purchase-commitment-submit" type="submit">Tampilkan komitmen</button></div>
+  </form><p id="purchase-commitment-message" class="state" role="status" hidden></p><div id="purchase-commitment-summary"></div><div id="purchase-commitment-results"></div><button id="purchase-commitment-more" type="button" hidden>Muat PO berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('purchase-commitment-form'),submit=$('purchase-commitment-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('purchase-commitment-summary').replaceChildren();$('purchase-commitment-results').replaceChildren();}
+    const gen=generation,more=$('purchase-commitment-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('purchase-commitment-message',offset?'Memuat PO berikutnya…':'Menghitung komitmen PO aktif…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/purchase-commitment-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('purchase-commitment-message','');
+      if(!offset)$('purchase-commitment-summary').innerHTML=`<p class="form-info">Posisi ${date(report.as_of)} · jatuh tempo dekat sampai ${date(report.due_soon_end)}<br>${n(report.summary.open_purchase_orders)} PO terbuka · ${n(report.summary.overdue_purchase_orders)} terlambat · komitmen ${e(rupiah(report.summary.open_commitment_value))}</p><p class="hint">Nilai penerimaan hanya memakai bahan layak pakai. Payment approved berarti siap dibayar dan belum membuktikan transfer bank.</p>`;
+      const labels={overdue:'Terlambat',due_soon:'Segera jatuh tempo',scheduled:'Terjadwal',fulfilled:'Diterima lengkap, belum ditutup'};
+      const schedule=row=>row.status==='overdue'?`${n(row.overdue_days)} hari terlambat`:row.status==='fulfilled'?'Komitmen penerimaan selesai':`Perkiraan datang ${date(row.expected_date)}`;
+      const html=report.items.map(row=>`<article class="material-event" data-purchase-commitment="${e(row.purchase_order_id)}"><p class="status-label ${row.status==='overdue'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.purchase_order_reference)} · ${e(row.supplier_code)}</h3><p>${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Nilai PO</dt><dd>${e(rupiah(row.purchase_order_value))}</dd></div><div><dt>Diterima layak pakai</dt><dd>${e(rupiah(row.usable_received_value))}</dd></div><div><dt>Komitmen terbuka</dt><dd><strong>${e(rupiah(row.open_commitment_value))}</strong></dd></div><div><dt>Payment menunggu approval</dt><dd>${e(rupiah(row.payment_pending))}</dd></div><div><dt>Payment approved</dt><dd>${e(rupiah(row.payment_approved))}</dd></div><div><dt>Belum diajukan payment</dt><dd>${e(rupiah(row.payment_unrequested))}</dd></div></dl><p>${e(schedule(row))}</p><p class="hint">PO dicatat ${date(row.created_date)} · PR ${e(row.purchase_request_reference)}</p><h4>Rincian bahan</h4>${row.lines.map(line=>`<article class="material-event"><strong>${e(line.code)} · ${e(line.name)}</strong><p>Dipesan ${e(materialQty(line.ordered_quantity,line.unit))} · diterima layak ${e(materialQty(line.usable_received_quantity,line.unit))} · terbuka ${e(materialQty(line.open_quantity,line.unit))}</p><p class="hint">${e(rupiah(line.unit_price))}/${e(line.unit)} · komitmen ${e(rupiah(line.open_commitment_value))}</p></article>`).join('')}<button data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button></article>`).join('');
+      $('purchase-commitment-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('purchase-commitment-results').innerHTML='<p class="state">Tidak ada komitmen PO yang cocok dengan status dan filter ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat PO berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('purchase-commitment-message',error.message,true);
+        $('purchase-commitment-message').insertAdjacentHTML('beforeend','<br><button id="purchase-commitment-retry" type="button">Coba lagi</button>');
+        $('purchase-commitment-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('purchase-commitment-more').onclick=()=>load();
+}
+$('purchase-commitment-insights').onclick=purchaseCommitmentInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
