@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
-from beeloft.labels import bundle_scan_code, material_batch_scan_code
+from beeloft.labels import bundle_scan_code, finished_goods_scan_code, material_batch_scan_code
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
 INTEGRATION_CONTRACTS = (
@@ -2323,6 +2323,7 @@ class Store:
             JOIN users u ON u.id=r.actor_id WHERE r.receipt_id=?''',(receipt_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'active'
+        record['scan_code']=finished_goods_scan_code(record['id'])
         record['inventory']=self._warehouse_balances(db,receipt_id)
         record['active_movement_count']=db.execute('''SELECT COUNT(*) FROM warehouse_movements w
             WHERE w.receipt_id=? AND NOT EXISTS(
@@ -2341,6 +2342,21 @@ class Store:
     def finished_goods_receipt(self, receipt_id):
         with self.transaction() as db:
             return self._finished_goods_receipt(db,receipt_id)
+
+    def scan_finished_goods_receipt(self, code):
+        value=code.strip()
+        prefix='BEELOFT:FINISHED-GOODS:'
+        with self.transaction() as db:
+            if value.upper().startswith(prefix):
+                receipt_id=value[len(prefix):]
+                row=db.execute('SELECT id FROM finished_goods_receipts WHERE id=? COLLATE NOCASE',
+                               (receipt_id,)).fetchone()
+            else:
+                row=db.execute('SELECT id FROM finished_goods_receipts WHERE reference=? COLLATE NOCASE',
+                               (value,)).fetchone()
+            if not row:
+                raise DomainError(404,'Penerimaan barang jadi dari hasil scan tidak ditemukan.')
+            return self._finished_goods_receipt(db,row['id'])
 
     def finished_goods_receipts(self, order_id, limit=100, before=None):
         with self.transaction() as db:

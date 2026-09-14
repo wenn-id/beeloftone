@@ -352,6 +352,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_finishing.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_final_qc.cjs')({page,login,admin,operator,viewer,apiGet,work});
   const finishedGoods=await require('./browser_finished_goods.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  await require('./browser_finished_goods_scanning.cjs')({page,login,viewer,work,...finishedGoods});
   await require('./browser_warehouse_movements.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   const marketplace=await require('./browser_marketplace_reservations.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   const picking=await require('./browser_marketplace_picking.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...marketplace});

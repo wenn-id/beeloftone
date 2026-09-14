@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.58.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR dan scan, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.59.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR dan scan, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi gudang, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2033,3 +2033,26 @@ tetap ditunda sampai akses API resmi tersedia.
 
 Rencana: [Material batch scanning plan](docs/material-batch-scanning-plan.md).
 Bukti pengujian: [Material batch scanning verification](docs/material-batch-scanning-verification.md).
+
+## Label QR dan scan barang jadi (v0.59)
+
+Setiap penerimaan barang jadi memiliki kode stabil `BEELOFT:FINISHED-GOODS:{id}`. Tombol **Scan barang
+jadi** tersedia dari navigasi operasional untuk seluruh role. Operator dapat memindai label memakai scanner
+USB/Bluetooth atau mengetik referensi penerimaan, lalu langsung melihat lokasi dan status stok lot tersebut.
+
+Rincian penerimaan aktif menampilkan label QR 80 mm dengan referensi penerimaan, SKU, ukuran, jumlah awal,
+lokasi, tanggal terima, dan order produksi. Dari rincian yang sama admin/operator dapat melanjutkan ke
+transfer lokasi, reservasi marketplace, adjustment, atau stock opname sesuai stok dan role. Penerimaan yang
+sudah dikoreksi tetap dapat ditemukan untuk audit, tetapi labelnya tidak dapat dicetak ulang.
+
+API terkait:
+
+- `GET /api/finished-goods-receipts/scan?code=...`.
+- `GET /api/finished-goods-receipts/{receipt_id}/label.svg`.
+
+Rilis ini tidak mengubah schema database; schema tetap 46. Scan hanya mencari identitas dan tidak membuat
+pergerakan stok. Kamera, pencetakan banyak label, template printer khusus, dan connector runtime
+Jubelio/Mekari belum dicakup.
+
+Rencana: [Finished-goods scanning plan](docs/finished-goods-scanning-plan.md).
+Bukti pengujian: [Finished-goods scanning verification](docs/finished-goods-scanning-verification.md).

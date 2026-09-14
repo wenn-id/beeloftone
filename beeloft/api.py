@@ -18,7 +18,7 @@ from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, Purchas
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
-from beeloft.labels import bundle_label_svg, material_batch_label_svg
+from beeloft.labels import bundle_label_svg, finished_goods_label_svg, material_batch_label_svg
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
 from beeloft.reports import activity_csv
 
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.58.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.59.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -725,9 +725,24 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                 before: Annotated[int | None, Query(ge=1)] = None):
         return store.finished_goods_receipts(order_id, limit, before)
 
+    @app.get('/api/finished-goods-receipts/scan', tags=['Finished Goods'])
+    def scan_finished_goods_receipt(user: Actor,
+                                    code: Annotated[str, Query(min_length=1,max_length=200)]):
+        return store.scan_finished_goods_receipt(code)
+
     @app.get('/api/finished-goods-receipts/{receipt_id}', tags=['Finished Goods'])
     def finished_goods_receipt(receipt_id: str, user: Actor):
         return store.finished_goods_receipt(receipt_id)
+
+    @app.get('/api/finished-goods-receipts/{receipt_id}/label.svg', tags=['Finished Goods'],
+             response_class=Response)
+    def finished_goods_receipt_label(receipt_id: str, user: Actor):
+        receipt=store.finished_goods_receipt(receipt_id)
+        if receipt['status']!='active':
+            raise DomainError(409,'Label penerimaan barang jadi yang sudah dikoreksi tidak dapat dicetak.')
+        return Response(finished_goods_label_svg(receipt),media_type='image/svg+xml',headers={
+            'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff',
+            'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"})
 
     @app.post('/api/finished-goods-receipts/{receipt_id}/reverse', status_code=201, tags=['Finished Goods'])
     def reverse_finished_goods_receipt(receipt_id: str, body: ReversalCreate, user: Actor, key: RequestKey):

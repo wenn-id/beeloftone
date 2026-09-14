@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from threading import Barrier
 from unittest import TestCase
+from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 from beeloft.api import create_app
@@ -93,6 +94,54 @@ class FinishedGoodsTest(TestCase):
                       api_key=role['api_key'],status=403)
         self.assertEqual(self.client.get('/api/orders/missing/finished-goods-receipts').status_code,404)
         self.assertEqual(self.client.get('/api/finished-goods-receipts/missing').status_code,404)
+
+    def test_scan_lookup_accepts_qr_or_reference_for_every_role(self):
+        _,_,qc=self.setup_qc()
+        receipt=self.receive(qc,reference='FG-Scan-001')
+        self.assertEqual(receipt['scan_code'],'BEELOFT:FINISHED-GOODS:'+receipt['id'])
+        for code in (receipt['scan_code'],receipt['scan_code'].upper(),' fg-scan-001 '):
+            found=self.client.get('/api/finished-goods-receipts/scan',params={'code':code}).json()
+            self.assertEqual(found['id'],receipt['id'])
+        for account in (self.operator,self.viewer):
+            response=self.client.get('/api/finished-goods-receipts/scan',params={
+                'code':receipt['scan_code']},headers={'X-API-Key':account['api_key']})
+            self.assertEqual(response.status_code,200)
+        self.post('/api/finished-goods-receipts/'+receipt['id']+'/reverse',
+                  {'reason':'Penerimaan barang jadi dibatalkan'})
+        corrected=self.client.get('/api/finished-goods-receipts/scan',params={
+            'code':receipt['scan_code']}).json()
+        self.assertEqual(corrected['status'],'corrected')
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/'+receipt['id']+
+                                         '/label.svg').status_code,409)
+
+    def test_finished_goods_scan_rejects_unknown_invalid_and_unauthenticated_codes(self):
+        for code in ('missing','BEELOFT:FINISHED-GOODS:missing','   '):
+            response=self.client.get('/api/finished-goods-receipts/scan',params={'code':code})
+            self.assertEqual(response.status_code,404)
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/scan').status_code,422)
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/scan',params={
+            'code':'x'*201}).status_code,422)
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/scan',params={'code':'missing'},
+            headers={'X-API-Key':'invalid'}).status_code,401)
+
+    def test_finished_goods_label_is_safe_accessible_qr_svg(self):
+        _,_,qc=self.setup_qc()
+        receipt=self.receive(qc,reference='FG-<SCAN>')
+        for account in (self.admin,self.operator,self.viewer):
+            response=self.client.get('/api/finished-goods-receipts/'+receipt['id']+'/label.svg',
+                headers={'X-API-Key':account['api_key']})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.headers['content-type'],'image/svg+xml')
+            self.assertEqual(response.headers['x-content-type-options'],'nosniff')
+        svg=response.text
+        root=ElementTree.fromstring(svg)
+        namespace={'svg':'http://www.w3.org/2000/svg'}
+        self.assertEqual(root.attrib['role'],'img')
+        self.assertEqual(root.find('svg:title',namespace).text,'QR barang jadi FG-<SCAN>')
+        self.assertEqual(root.find('svg:desc',namespace).text,receipt['scan_code'])
+        self.assertIsNotNone(root.find('svg:path',namespace))
+        self.assertNotIn('<script',svg.casefold())
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/missing/label.svg').status_code,404)
 
     def test_race_cannot_overreceive_one_qc_result(self):
         _,_,qc=self.setup_qc()

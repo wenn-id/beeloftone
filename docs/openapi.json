@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.58.0"
+    "version": "0.59.0"
   },
   "paths": {
     "/health": {
@@ -7656,6 +7656,53 @@
         }
       }
     },
+    "/api/finished-goods-receipts/scan": {
+      "get": {
+        "tags": [
+          "Finished Goods"
+        ],
+        "summary": "Scan Finished Goods Receipt",
+        "operationId": "scan_finished_goods_receipt_api_finished_goods_receipts_scan_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/finished-goods-receipts/{receipt_id}": {
       "get": {
         "tags": [
@@ -7687,6 +7734,46 @@
                 "schema": {}
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finished-goods-receipts/{receipt_id}/label.svg": {
+      "get": {
+        "tags": [
+          "Finished Goods"
+        ],
+        "summary": "Finished Goods Receipt Label",
+        "operationId": "finished_goods_receipt_label_api_finished_goods_receipts__receipt_id__label_svg_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
