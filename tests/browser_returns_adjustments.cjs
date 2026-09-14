@@ -87,7 +87,38 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   },'adjustment-reservation');
   await post('/api/finished-goods-adjustments/'+adjustment.id+'/reverse',{reason:'Stok masih reserved'},'adjustment-blocked',409);
 
-  await role(viewer);await openOrder();
+  const returnReport=await apiGet('/api/return-insights?as_of=2026-10-01&window_days=30&marketplace=Shopee&query=FG-M');
+  assert.deepEqual([returnReport.total,returnReport.summary.shipped_quantity,
+    returnReport.summary.returned_quantity,returnReport.summary.return_rate],[1,2,1,'50.00']);
+
+  await role(viewer);
+  await page.getByRole('button',{name:'Analisis retur',exact:true}).click();
+  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-01');
+  await page.getByLabel('Panjang periode (hari)',{exact:true}).fill('30');
+  await page.getByLabel('Marketplace',{exact:true}).fill('Shopee');
+  await page.getByLabel('Cari SKU atau produk',{exact:true}).fill('FG-M');
+  let failInsights=true;
+  await page.route('**/api/return-insights?*',async route=>{
+    if(failInsights){failInsights=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Analisis retur sedang sibuk'})});}
+    else await route.continue();
+  });
+  await page.getByRole('button',{name:'Tampilkan analisis',exact:true}).click();
+  await page.locator('#return-insights-message').filter({hasText:'Analisis retur sedang sibuk'}).waitFor();
+  await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  const insight=page.locator('[data-return-insight-sku="FG-M"]');
+  await insight.getByRole('heading',{name:'FG-M · Shopee',exact:true}).waitFor();
+  await insight.getByText('Warna tidak sesuai1 pcs',{exact:true}).waitFor();
+  await insight.getByText('50.00%',{exact:true}).waitFor();
+  await page.unroute('**/api/return-insights?*');
+  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-return-insights-mobile.png')});
+  await page.evaluate(()=>document.documentElement.style.fontSize='');
+  await page.getByLabel('Cari SKU atau produk',{exact:true}).fill('SKU-TIDAK-ADA');
+  await page.getByRole('button',{name:'Tampilkan analisis',exact:true}).click();
+  await page.getByText('Tidak ada shipment yang cocok dengan filter pada periode ini.',{exact:true}).waitFor();
+  await page.keyboard.press('Escape');await openOrder();
   await page.locator('.order-settings').getByRole('button',{name:'Retur',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RET-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi retur',exact:true}).count(),0);
@@ -117,5 +148,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.hold_quantity,inventory.packed_quantity,
     inventory.shipped_quantity,inventory.returned_quantity,inventory.total_quantity],[8,8,3,0,0,20]);
-  console.log('Returns and adjustments browser QA PASS: inspected return stock, signed adjustment, retry, roles, reservation guards, correction, shipment guard, mobile/200%.');
+  console.log('Returns and adjustments browser QA PASS: inspected return stock, return insights, signed adjustment, retry, roles, reservation guards, correction, shipment guard, mobile/200%.');
 };

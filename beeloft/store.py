@@ -3453,6 +3453,75 @@ class Store:
             'total_forecast_quantity':format(total_forecast.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f'),
             'items':page}
 
+    def return_insights(self, as_of, window_days=90, query='', marketplace='', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        start_date=as_of_date-timedelta(days=window_days-1)
+        params={'as_of':as_of_date.isoformat(),'start':start_date.isoformat(),
+                'query':query.strip().casefold(),'marketplace':marketplace.strip()}
+        with self.transaction() as db:
+            rows=[dict(row) for row in db.execute('''WITH active_returns AS (
+                SELECT t.shipment_id,SUM(t.quantity) AS returned_quantity,
+                    SUM(CASE WHEN t.return_reason='too_small' THEN t.quantity ELSE 0 END) AS too_small_quantity,
+                    SUM(CASE WHEN t.return_reason='too_big' THEN t.quantity ELSE 0 END) AS too_big_quantity,
+                    SUM(CASE WHEN t.return_reason='wrong_item' THEN t.quantity ELSE 0 END) AS wrong_item_quantity,
+                    SUM(CASE WHEN t.return_reason='defect' THEN t.quantity ELSE 0 END) AS defect_quantity,
+                    SUM(CASE WHEN t.return_reason='color_mismatch' THEN t.quantity ELSE 0 END) AS color_mismatch_quantity,
+                    SUM(CASE WHEN t.return_reason='other' THEN t.quantity ELSE 0 END) AS other_quantity,
+                    MAX(t.returned_date) AS latest_returned_date
+                FROM marketplace_returns t WHERE t.returned_date<=:as_of
+                  AND NOT EXISTS(SELECT 1 FROM marketplace_return_reversals r WHERE r.return_id=t.id)
+                GROUP BY t.shipment_id
+            )
+            SELECT product.id AS product_id,product.sku,product.name,product.color,product.size,
+                m.marketplace,COUNT(*) AS shipment_count,SUM(s.quantity) AS shipped_quantity,
+                SUM(COALESCE(t.returned_quantity,0)) AS returned_quantity,
+                SUM(COALESCE(t.too_small_quantity,0)) AS too_small_quantity,
+                SUM(COALESCE(t.too_big_quantity,0)) AS too_big_quantity,
+                SUM(COALESCE(t.wrong_item_quantity,0)) AS wrong_item_quantity,
+                SUM(COALESCE(t.defect_quantity,0)) AS defect_quantity,
+                SUM(COALESCE(t.color_mismatch_quantity,0)) AS color_mismatch_quantity,
+                SUM(COALESCE(t.other_quantity,0)) AS other_quantity,
+                MAX(t.latest_returned_date) AS latest_returned_date
+            FROM marketplace_shipments s JOIN marketplace_packs k ON k.id=s.pack_id
+            JOIN marketplace_picks p ON p.id=k.pick_id JOIN marketplace_reservations m ON m.id=p.reservation_id
+            JOIN finished_goods_receipts x ON x.id=m.receipt_id
+            JOIN final_qc_records q ON q.id=x.final_qc_record_id JOIN finishing_records f ON f.id=q.finishing_record_id
+            JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+            JOIN movements source ON source.id=b.output_movement_id JOIN order_lines l ON l.id=source.line_id
+            JOIN products product ON product.id=l.product_id LEFT JOIN active_returns t ON t.shipment_id=s.id
+            WHERE s.shipped_date BETWEEN :start AND :as_of
+              AND (:marketplace='' OR m.marketplace=:marketplace COLLATE NOCASE)
+              AND (:query='' OR instr(lower(product.sku),:query)>0 OR instr(lower(product.name),:query)>0
+                OR instr(lower(product.color),:query)>0 OR instr(lower(product.size),:query)>0)
+              AND NOT EXISTS(SELECT 1 FROM marketplace_shipment_reversals r WHERE r.shipment_id=s.id)
+            GROUP BY product.id,product.sku,product.name,product.color,product.size,m.marketplace''',params)]
+        for row in rows:
+            row['return_rate']=format((Decimal(row['returned_quantity'])/row['shipped_quantity']*100).quantize(
+                Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+            row['sizing_quantity']=row['too_small_quantity']+row['too_big_quantity']
+            row['product_page_quantity']=row['wrong_item_quantity']+row['color_mismatch_quantity']
+            row['reason_quantities']={reason:row.pop(reason+'_quantity') for reason in
+                ('too_small','too_big','wrong_item','defect','color_mismatch','other')}
+        rows.sort(key=lambda row:(-row['returned_quantity'],-Decimal(row['return_rate']),
+                                  row['sku'].casefold(),row['marketplace'].casefold(),row['product_id']))
+        shipped=sum(row['shipped_quantity'] for row in rows)
+        returned=sum(row['returned_quantity'] for row in rows)
+        summary={'groups':len(rows),'skus':len({row['product_id'] for row in rows}),
+            'marketplaces':len({row['marketplace'].casefold() for row in rows}),
+            'shipment_count':sum(row['shipment_count'] for row in rows),'shipped_quantity':shipped,
+            'returned_quantity':returned,'return_rate':format((Decimal(returned)/shipped*100).quantize(
+                Decimal('.01'),rounding=ROUND_HALF_UP),'.2f') if shipped else '0.00',
+            'sizing_quantity':sum(row['sizing_quantity'] for row in rows),
+            'product_page_quantity':sum(row['product_page_quantity'] for row in rows),
+            'defect_quantity':sum(row['reason_quantities']['defect'] for row in rows),
+            'other_quantity':sum(row['reason_quantities']['other'] for row in rows)}
+        return {'as_of':as_of_date.isoformat(),'window_days':window_days,'period_start':start_date.isoformat(),
+            'query':query.strip(),'marketplace':marketplace.strip() or None,'total':len(rows),
+            'limit':limit,'offset':offset,'summary':summary,
+            'reason_groups':{'sizing':['too_small','too_big'],
+                'product_page':['wrong_item','color_mismatch'],'quality':['defect'],'other':['other']},
+            'items':rows[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):

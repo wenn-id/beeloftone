@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.63.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.64.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -880,6 +880,14 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                         limit: Limit = 100, offset: Offset = 0):
         return store.demand_forecast(as_of or date.today(), window_days, horizon_days,
                                      query, marketplace, limit, offset)
+
+    @app.get('/api/return-insights', tags=['Economics'])
+    def return_insights(user: Actor, as_of: date | None = None,
+                        window_days: Annotated[int, Query(ge=7, le=365)] = 90,
+                        query: Annotated[str, Query(max_length=160)] = '',
+                        marketplace: Annotated[str, Query(max_length=160)] = '',
+                        limit: Limit = 100, offset: Offset = 0):
+        return store.return_insights(as_of or date.today(), window_days, query, marketplace, limit, offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

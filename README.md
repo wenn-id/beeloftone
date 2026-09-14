@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.63.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.64.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2139,3 +2139,27 @@ saat ini. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi 
 
 Rencana: [Material batch traceability plan](docs/material-batch-traceability-plan.md).
 Bukti: [Material batch traceability verification](docs/material-batch-traceability-verification.md).
+
+## Analisis retur per SKU, ukuran, dan marketplace (v0.64)
+
+Pilih **Analisis retur** dari navigasi utama. Tentukan akhir dan panjang periode, lalu saring berdasarkan
+marketplace atau identitas produk. Laporan membentuk kohort dari shipment aktif dalam periode tersebut
+dan menghitung retur aktif yang sudah diterima sampai tanggal laporan. Setiap baris mewakili satu kombinasi
+SKU dan marketplace agar perbedaan channel tetap terlihat.
+
+Alasan terstruktur tetap ditampilkan satu per satu. Ringkasan mengelompokkan terlalu kecil/besar sebagai
+sinyal sizing, barang/warna tidak sesuai sebagai sinyal halaman produk, defect sebagai kualitas, dan other
+sebagai alasan lain. Rate retur adalah jumlah pcs yang kembali dibagi jumlah pcs yang dikirim dalam kohort.
+Shipment tanpa retur tetap muncul sebagai pembanding; catatan shipment atau retur yang sudah dikoreksi tidak
+dihitung.
+
+API: `GET /api/return-insights`. Parameter `as_of`, `window_days`, `query`, `marketplace`, `limit`, dan
+`offset` tersedia. Default memakai periode 90 hari dan maksimum 365 hari. Semua akun aktif dapat membaca.
+Endpoint tidak mengubah stok, audit, atau schema database; schema tetap versi 48.
+
+Hasil hanya memakai alasan yang dipilih saat retur dicatat. Sistem belum membaca teks catatan bebas, ulasan
+pelanggan, foto, isi halaman produk, atau pola fit per model. Korelasi tetap harus diperiksa tim sebelum
+mengubah ukuran atau listing. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Return insights plan](docs/return-insights-plan.md).
+Bukti: [Return insights verification](docs/return-insights-verification.md).

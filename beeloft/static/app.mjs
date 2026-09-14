@@ -2609,6 +2609,52 @@ function demandForecastDialog() {
 }
 $('demand-forecast').onclick=demandForecastDialog;
 
+function returnInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Analisis retur per SKU',`<form id="return-insights-form">
+    <p class="hint">Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="90"')}
+      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
+      <label>Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="return-insights-submit" type="submit">Tampilkan analisis</button></div>
+  </form><p id="return-insights-message" class="state" role="status" hidden></p><div id="return-insights-summary"></div><div id="return-insights-results"></div><button id="return-insights-more" type="button" hidden>Muat SKU berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('return-insights-form'),submit=$('return-insights-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('return-insights-summary').replaceChildren();$('return-insights-results').replaceChildren();}
+    const gen=generation,more=$('return-insights-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('return-insights-message',offset?'Memuat SKU berikutnya…':'Menghitung retur dari shipment dalam periode…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/return-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('return-insights-message','');
+      if(!offset)$('return-insights-summary').innerHTML=`<p class="form-info">Periode ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.shipped_quantity)} pcs dikirim · ${n(report.summary.returned_quantity)} pcs kembali · rate retur ${e(report.summary.return_rate)}%</p><dl class="requirement-values"><div><dt>Sizing</dt><dd>${n(report.summary.sizing_quantity)} pcs</dd></div><div><dt>Halaman produk</dt><dd>${n(report.summary.product_page_quantity)} pcs</dd></div><div><dt>Defect</dt><dd>${n(report.summary.defect_quantity)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(report.summary.other_quantity)} pcs</dd></div></dl><p class="hint">Sizing = terlalu kecil atau besar. Halaman produk = barang atau warna tidak sesuai. Rate memakai jumlah retur dibagi jumlah yang dikirim dalam kohort.</p>`;
+      const html=report.items.map(row=>`<article class="material-event" data-return-insight-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${e(row.marketplace)}</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Dikirim</dt><dd>${n(row.shipped_quantity)} pcs</dd></div><div><dt>Diretur</dt><dd>${n(row.returned_quantity)} pcs</dd></div><div><dt>Rate retur</dt><dd><strong>${e(row.return_rate)}%</strong></dd></div><div><dt>Terlalu kecil</dt><dd>${n(row.reason_quantities.too_small)} pcs</dd></div><div><dt>Terlalu besar</dt><dd>${n(row.reason_quantities.too_big)} pcs</dd></div><div><dt>Barang tidak sesuai</dt><dd>${n(row.reason_quantities.wrong_item)} pcs</dd></div><div><dt>Warna tidak sesuai</dt><dd>${n(row.reason_quantities.color_mismatch)} pcs</dd></div><div><dt>Defect</dt><dd>${n(row.reason_quantities.defect)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(row.reason_quantities.other)} pcs</dd></div></dl><p class="hint">${n(row.shipment_count)} shipment${row.latest_returned_date?' · retur terakhir '+date(row.latest_returned_date):' · belum ada retur pada kohort'}</p></article>`).join('');
+      $('return-insights-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('return-insights-results').innerHTML='<p class="state">Tidak ada shipment yang cocok dengan filter pada periode ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('return-insights-message',error.message,true);
+        $('return-insights-message').insertAdjacentHTML('beforeend','<br><button id="return-insights-retry" type="button">Coba lagi</button>');
+        $('return-insights-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('return-insights-more').onclick=()=>load();
+}
+$('return-insights').onclick=returnInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);

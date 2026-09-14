@@ -88,6 +88,56 @@ class ReturnsAdjustmentsTest(TestCase):
         self.assertEqual([row['id'] for row in listed],[second['id'],first['id']])
         self.assertEqual(self.client.get('/api/orders/'+order['id']).json()['totals'],before)
 
+    def test_return_insights_group_structured_reasons_by_sku_size_and_marketplace(self):
+        _,_,shipment=self.flow(shipment_quantity=3)
+        small=self.customer_return(shipment,reference='RET-SMALL',return_reason='too_small')
+        wrong=self.customer_return(shipment,reference='RET-WRONG',return_reason='wrong_item')
+        self.customer_return(shipment,reference='RET-DEFECT',return_reason='defect')
+        route='/api/return-insights?as_of=2026-09-30&window_days=7'
+        report=self.client.get(route).json()
+        self.assertEqual(report['summary'],{'groups':1,'skus':1,'marketplaces':1,
+            'shipment_count':1,'shipped_quantity':3,'returned_quantity':3,'return_rate':'100.00',
+            'sizing_quantity':1,'product_page_quantity':1,'defect_quantity':1,'other_quantity':0})
+        self.assertEqual((report['period_start'],report['as_of']),('2026-09-24','2026-09-30'))
+        self.assertEqual(report['reason_groups'],{'sizing':['too_small','too_big'],
+            'product_page':['wrong_item','color_mismatch'],'quality':['defect'],'other':['other']})
+        row=report['items'][0]
+        self.assertEqual((row['sku'],row['size'],row['marketplace']),
+                         (small['sku'],small['size'],'Tokopedia'))
+        self.assertEqual(row['reason_quantities'],{'too_small':1,'too_big':0,'wrong_item':1,
+            'defect':1,'color_mismatch':0,'other':0})
+        self.assertEqual((row['sizing_quantity'],row['product_page_quantity'],row['return_rate']),
+                         (1,1,'100.00'))
+        self.post('/api/marketplace-returns/'+wrong['id']+'/reverse',
+                  dict(reason='Barang ternyata sesuai pesanan'))
+        corrected=self.client.get(route).json()
+        self.assertEqual((corrected['summary']['returned_quantity'],corrected['summary']['return_rate']),
+                         (2,'66.67'))
+        self.assertEqual(corrected['items'][0]['reason_quantities']['wrong_item'],0)
+
+    def test_return_insights_filters_validates_and_does_not_write(self):
+        _,_,shipment=self.flow(shipment_quantity=2)
+        self.customer_return(shipment,returned_date='2026-10-05')
+        route='/api/return-insights?as_of=2026-09-30&window_days=30'
+        with self.app.state.store.transaction() as db:
+            before='\n'.join(db.iterdump())
+        report=self.client.get(route).json()
+        self.assertEqual((report['summary']['shipped_quantity'],report['summary']['returned_quantity']),
+                         (2,0))
+        sku=report['items'][0]['sku']
+        self.assertEqual(self.client.get(route+'&query='+sku.lower()).json()['total'],1)
+        self.assertEqual(self.client.get(route+'&marketplace=tokopedia').json()['total'],1)
+        self.assertEqual(self.client.get(route+'&marketplace=Shopee').json()['total'],0)
+        self.assertEqual(self.client.get(route+'&offset=1').json()['items'],[])
+        self.assertEqual(self.client.get('/api/return-insights?as_of=2026-09-24&window_days=30').json()['total'],0)
+        for role in (self.operator,self.viewer):
+            self.assertEqual(self.client.get(route,headers={'X-API-Key':role['api_key']}).json(),report)
+        for invalid in ('window_days=6','window_days=366','limit=0','offset=-1','query='+'x'*161):
+            self.assertEqual(self.client.get('/api/return-insights?'+invalid).status_code,422)
+        self.assertEqual(self.client.get('/api/return-insights',headers={'X-API-Key':'bad'}).status_code,401)
+        with self.app.state.store.transaction() as db:
+            self.assertEqual('\n'.join(db.iterdump()),before)
+
     def test_receipt_traceability_includes_fulfillment_and_corrections_without_writes(self):
         order,receipt,shipment=self.flow()
         returned=self.customer_return(shipment)
