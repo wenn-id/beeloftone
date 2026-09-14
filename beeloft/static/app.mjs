@@ -2861,6 +2861,56 @@ function supplierPerformanceInsightsDialog() {
 }
 $('supplier-performance-insights').onclick=supplierPerformanceInsightsDialog;
 
+function materialPriceInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Pergerakan harga bahan',`<form id="material-price-form">
+    <p class="hint">Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Periode pencatatan PO (hari)','number','required min="7" max="730" step="1" value="90"')}
+      <label>Status perubahan<select name="status"><option value="changed">Harga berubah</option><option value="increased">Naik</option><option value="decreased">Turun</option><option value="stable">Tetap</option><option value="single_observation">Baru satu harga</option><option value="all">Semua status</option></select></label>
+      <label class="full">Cari bahan, supplier, atau PO<input name="query" type="search" maxlength="160" placeholder="Kode, nama, atau referensi PO"></label>
+    </div>
+    <div class="form-actions"><button class="primary" id="material-price-submit" type="submit">Tampilkan harga</button></div>
+  </form><p id="material-price-message" class="state" role="status" hidden></p><div id="material-price-summary"></div><div id="material-price-results"></div><button id="material-price-more" type="button" hidden>Muat harga berikutnya</button>`);
+  const modal=dialogVersion,version=epoch,form=$('material-price-form'),submit=$('material-price-submit');
+  let offset=0,generation=0;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('material-price-summary').replaceChildren();$('material-price-results').replaceChildren();}
+    const gen=generation,more=$('material-price-more');
+    submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('material-price-message',offset?'Memuat pergerakan harga berikutnya…':'Membandingkan harga dari PO approved…');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
+      params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/material-price-insights?'+params);
+      if(!current()||gen!==generation)return;
+      message('material-price-message','');
+      if(!offset)$('material-price-summary').innerHTML=`<p class="form-info">PO tercatat ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.changed_series)} dari ${n(report.summary.series)} pasangan bahan dan supplier berubah · ${n(report.summary.increased_series)} naik · ${n(report.summary.decreased_series)} turun</p><p class="hint">Ringkasan mencakup hasil pencarian sebelum filter status. Harga supplier berbeda tidak dicampur menjadi satu tren.</p>`;
+      const labels={increased:'Harga naik',decreased:'Harga turun',stable:'Harga tetap',single_observation:'Baru satu harga'};
+      const price=value=>rupiah(value);
+      const signedPrice=value=>`${Number(value)>0?'+':Number(value)<0?'-':''}${price(value.replace('-',''))}`;
+      const movement=row=>row.status==='single_observation'?'Belum dapat dibandingkan':`${signedPrice(row.price_change)} · ${Number(row.price_change_percent)>0?'+':''}${e(row.price_change_percent)}%`;
+      const html=report.items.map(row=>`<article class="material-event" data-material-price="${e(row.material_id)}:${e(row.supplier_id)}"><p class="status-label ${row.status==='increased'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.material_code)} · ${e(row.material_name)}</h3><p>${e(row.supplier_code)} · ${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Harga awal</dt><dd>${e(price(row.earliest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Harga terbaru</dt><dd>${e(price(row.latest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Perubahan</dt><dd>${movement(row)}</dd></div><div><dt>Harga minimum</dt><dd>${e(price(row.minimum_unit_price))}</dd></div><div><dt>Harga maksimum</dt><dd>${e(price(row.maximum_unit_price))}</dd></div><div><dt>Harga rata-rata</dt><dd>${e(price(row.average_unit_price))}</dd></div></dl><p class="hint">${n(row.observation_count)} harga PO · awal ${date(row.earliest_recorded_date)} · terbaru ${date(row.latest_recorded_date)}</p><h4>Riwayat harga PO</h4>${row.history.map(po=>`<article class="material-event"><strong>${e(po.purchase_order_reference)} · ${e(price(po.unit_price))} / ${e(row.unit)}</strong><p>Dicatat ${date(po.recorded_date)} · perkiraan datang ${date(po.expected_date)}</p><button data-action="purchase-order" data-id="${e(po.purchase_order_id)}">Buka PO</button></article>`).join('')}</article>`).join('');
+      $('material-price-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('material-price-results').innerHTML='<p class="state">Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat harga berikutnya';
+    }catch(error){
+      if(current()&&gen===generation){
+        message('material-price-message',error.message,true);
+        $('material-price-message').insertAdjacentHTML('beforeend','<br><button id="material-price-retry" type="button">Coba lagi</button>');
+        $('material-price-retry').onclick=()=>load();
+      }
+    }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};
+  $('material-price-more').onclick=()=>load();
+}
+$('material-price-insights').onclick=materialPriceInsightsDialog;
+
 function replenishmentDialog() {
   if(guardPending())return;
   const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);

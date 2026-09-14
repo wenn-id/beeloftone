@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.68.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.69.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2257,3 +2257,23 @@ ditunda sampai akses API resmi tersedia.
 
 Rencana: [Supplier performance insights plan](docs/supplier-performance-insights-plan.md).
 Bukti: [Supplier performance insights verification](docs/supplier-performance-insights-verification.md).
+
+## Pergerakan harga bahan (v0.69)
+
+Pilih **Harga bahan** untuk membandingkan harga unit pada PO approved selama periode 7–730 hari. Setiap tren
+dibentuk dari pasangan material dan supplier yang sama sehingga pergantian supplier tidak keliru dibaca sebagai
+kenaikan atau penurunan harga. PO pending, ditolak, dan dibatalkan tidak masuk perhitungan.
+
+Harga awal dan terbaru mengikuti tanggal PO dicatat, bukan `expected_date`. Setiap hasil menunjukkan perubahan
+nominal dan persentase, harga minimum, maksimum, rata-rata, serta riwayat PO terbaru lebih dulu. Pasangan yang
+baru mempunyai satu harga diberi status terpisah karena belum memiliki pembanding.
+
+Filter tersedia untuk tanggal akhir, periode pencatatan, status naik/turun/tetap/satu harga, material, supplier,
+dan referensi PO. Setiap observasi menyediakan tautan ke rincian PO asal.
+
+API: `GET /api/material-price-insights`. Semua akun aktif dapat membaca. Endpoint bersifat read-only, mata uang
+IDR, schema tetap 48, dan tidak mengubah harga PO atau master bahan. Runtime connector Jubelio/Mekari tetap
+ditunda sampai akses API resmi tersedia.
+
+Rencana: [Material price insights plan](docs/material-price-insights-plan.md).
+Bukti: [Material price insights verification](docs/material-price-insights-verification.md).

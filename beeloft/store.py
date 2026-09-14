@@ -3934,6 +3934,81 @@ class Store:
             'quality_metric':'active_qc_intakes_grouped_by_unit','total':len(scoped),
             'limit':limit,'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
 
+    def material_price_insights(self, as_of, window_days=90, query='', status='changed',
+                                limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        period_start=as_of_date-timedelta(days=window_days-1)
+        observations=[]
+        with self.transaction() as db:
+            for order_id, in db.execute('SELECT id FROM purchase_orders ORDER BY sequence'):
+                order=self._purchase_order(db,order_id)
+                recorded_date=order['created_at'][:10]
+                if (order['approval_status']!='approved' or order['status']=='cancelled'
+                        or not period_start.isoformat()<=recorded_date<=as_of_date.isoformat()):
+                    continue
+                for line in order['lines']:
+                    observations.append({'material_id':line['material_id'],'material_code':line['code'],
+                        'material_name':line['name'],'unit':line['unit'],
+                        'supplier_id':order['supplier_id'],'supplier_code':order['supplier']['code'],
+                        'supplier_name':order['supplier']['name'],'purchase_order_id':order['id'],
+                        'purchase_order_reference':order['reference'],'recorded_at':order['created_at'],
+                        'recorded_date':recorded_date,'expected_date':order['expected_date'],
+                        'unit_price':line['unit_price'],'sequence':order['sequence']})
+        grouped={}
+        for row in observations:
+            grouped.setdefault((row['material_id'],row['supplier_id']),[]).append(row)
+        term=query.strip().casefold();items=[]
+        for rows in grouped.values():
+            rows.sort(key=lambda row:(row['recorded_at'],row['sequence']))
+            first,last=rows[0],rows[-1]
+            first_price,last_price=Decimal(first['unit_price']),Decimal(last['unit_price'])
+            change=last_price-first_price
+            if len(rows)==1: classification='single_observation'
+            elif change>0: classification='increased'
+            elif change<0: classification='decreased'
+            else: classification='stable'
+            percent=(change*100/first_price).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
+            prices=[Decimal(row['unit_price']) for row in rows]
+            result={'material_id':first['material_id'],'material_code':first['material_code'],
+                'material_name':first['material_name'],'unit':first['unit'],
+                'supplier_id':first['supplier_id'],'supplier_code':first['supplier_code'],
+                'supplier_name':first['supplier_name'],'status':classification,
+                'observation_count':len(rows),'earliest_purchase_order_id':first['purchase_order_id'],
+                'earliest_purchase_order_reference':first['purchase_order_reference'],
+                'earliest_recorded_date':first['recorded_date'],'earliest_unit_price':format(first_price,'.2f'),
+                'latest_purchase_order_id':last['purchase_order_id'],
+                'latest_purchase_order_reference':last['purchase_order_reference'],
+                'latest_recorded_date':last['recorded_date'],'latest_unit_price':format(last_price,'.2f'),
+                'price_change':format(change,'.2f'),'price_change_percent':format(percent,'.2f'),
+                'minimum_unit_price':format(min(prices),'.2f'),'maximum_unit_price':format(max(prices),'.2f'),
+                'average_unit_price':format((sum(prices)/len(prices)).quantize(
+                    Decimal('.01'),rounding=ROUND_HALF_UP),'.2f'),
+                'history':[{key:row[key] for key in ('purchase_order_id','purchase_order_reference',
+                    'recorded_at','recorded_date','expected_date','unit_price')} for row in reversed(rows)]}
+            searchable=[result['material_code'],result['material_name'],result['supplier_code'],
+                        result['supplier_name']]
+            searchable.extend(row['purchase_order_reference'] for row in rows)
+            if not term or any(term in value.casefold() for value in searchable): items.append(result)
+        priority={'increased':0,'decreased':1,'stable':2,'single_observation':3}
+        items.sort(key=lambda row:(priority[row['status']],-abs(Decimal(row['price_change_percent'])),
+            row['material_code'].casefold(),row['supplier_name'].casefold(),row['material_id'],
+            row['supplier_id']))
+        scoped=items if status=='all' else ([row for row in items if row['status'] in ('increased','decreased')]
+            if status=='changed' else [row for row in items if row['status']==status])
+        summary={'series':len(items),'materials':len({row['material_id'] for row in items}),
+            'suppliers':len({row['supplier_id'] for row in items}),
+            'observations':sum(row['observation_count'] for row in items),
+            'changed_series':sum(row['status'] in ('increased','decreased') for row in items),
+            'increased_series':sum(row['status']=='increased' for row in items),
+            'decreased_series':sum(row['status']=='decreased' for row in items),
+            'stable_series':sum(row['status']=='stable' for row in items),
+            'single_observation_series':sum(row['status']=='single_observation' for row in items)}
+        return {'as_of':as_of_date.isoformat(),'period_start':period_start.isoformat(),
+            'window_days':window_days,'query':query.strip(),'status':status,
+            'date_basis':'purchase_order_created_date','currency':'IDR','grouping':'material_and_supplier',
+            'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
+            'items':scoped[offset:offset+limit]}
+
     def replenishment_recommendations(self, as_of, window_days=28, lead_time_days=14,
                                       review_period_days=30, safety_stock_days=7, batch_multiple=1,
                                       query='', marketplace='', limit=100, offset=0):
