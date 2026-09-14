@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
+from beeloft.labels import bundle_scan_code
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
 INTEGRATION_CONTRACTS = (
@@ -1763,11 +1764,25 @@ class Store:
                 SELECT 1 FROM sewing_job_reversals x WHERE x.job_id=j.id)''',(bundle_id,)).fetchone()[0]
         record['sewing_allocated_quantity']=allocated
         record['sewing_unassigned_quantity']=0 if reversal else record['quantity']-allocated
+        record['scan_code']=bundle_scan_code(record['id'])
         return record
 
     def bundle(self, bundle_id):
         with self.transaction() as db:
             return self._bundle(db,bundle_id)
+
+    def scan_bundle(self, code):
+        value=code.strip()
+        prefix='BEELOFT:BUNDLE:'
+        with self.transaction() as db:
+            if value.upper().startswith(prefix):
+                bundle_id=value[len(prefix):]
+                row=db.execute('SELECT id FROM bundles WHERE id=? COLLATE NOCASE',(bundle_id,)).fetchone()
+            else:
+                row=db.execute('SELECT id FROM bundles WHERE reference=? COLLATE NOCASE',(value,)).fetchone()
+            if not row:
+                raise DomainError(404,'Bundle dari hasil scan tidak ditemukan.')
+            return self._bundle(db,row['id'])
 
     def bundles(self, order_id, limit=100, before=None):
         with self.transaction() as db:

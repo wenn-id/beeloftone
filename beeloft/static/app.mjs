@@ -537,6 +537,7 @@ async function orderForm() {
 }
 $('products').onclick = productsDialog; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = auditEventsDialog;
+$('scan-bundle').onclick = bundleScanDialog;
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;
@@ -559,7 +560,7 @@ document.addEventListener('click', event => {
     'product-mapping':()=>productMappingDialog(id),'edit-product-mapping':()=>productMappingForm(id),
     'unmap-product':()=>unmapProductForm(id),'product-mapping-history':()=>productMappingHistoryDialog(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
-    bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),
+    bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':bundleScanDialog,
     'sewing-jobs':()=>sewingJobsDialog(id || selected?.id),'new-sewing-job':()=>sewingJobForm(id),'sewing-job':()=>sewingJobDialog(id),
     'finishing-records':()=>finishingRecordsDialog(id || selected?.id),'new-finishing-record':()=>finishingForm(id),'finishing-record':()=>finishingRecordDialog(id),
     'final-qc-records':()=>finalQcRecordsDialog(id || selected?.id),'new-final-qc-record':()=>finalQcForm(id),'final-qc-record':()=>finalQcRecordDialog(id),
@@ -1063,6 +1064,23 @@ async function bundlesDialog(orderId) {
   $('bundle-more').onclick=load;await load();
 }
 
+function bundleScanDialog() {
+  if(guardPending())return;
+  openDialog('Scan bundle',`<form id="bundle-scan-form"><p class="form-info">Pindai QR pada label bundle atau masukkan Bundle ID. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
+    <label for="bundle-scan-code">Kode bundle<input id="bundle-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus></label>
+    <p id="bundle-scan-error" class="error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button class="primary" type="submit">Buka bundle</button></div></form>`);
+  const modal=dialogVersion,version=epoch,form=$('bundle-scan-form'),input=$('bundle-scan-code');
+  input.focus();
+  form.onsubmit=async event=>{
+    event.preventDefault();const button=form.querySelector('[type="submit"]');button.disabled=true;message('bundle-scan-error','');
+    try{
+      const bundle=await api.get('/api/bundles/scan?'+new URLSearchParams({code:input.value.trim()}));
+      if(version===epoch&&modal===dialogVersion&&$('dialog').open)bundleDialog(bundle.id);
+    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open){message('bundle-scan-error',error.message,true);input.select();}}
+    finally{if(version===epoch&&modal===dialogVersion&&$('dialog').open)button.disabled=false;}
+  };
+}
+
 async function bundleForm(runId,outputId) {
   if(guardPending())return;
   const version=epoch;openDialog('Buat bundle','<p class="state">Memuat sisa hasil cutting...</p>');const modal=dialogVersion;
@@ -1086,8 +1104,9 @@ async function bundleDialog(bundleId) {
   try{
     const bundle=await api.get('/api/bundles/'+encodeURIComponent(bundleId));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    $('dialog-content').innerHTML=`<p class="form-info">${e(bundle.reference)} · ${bundle.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(bundle.quantity)} pcs · ${e(bundle.sku)} · ${e(bundle.size)}</h3><p>${e(bundle.product_name)} · ${e(bundle.color)}</p><p>Dialokasikan ke sewing ${n(bundle.sewing_allocated_quantity)} pcs · belum dialokasikan ${n(bundle.sewing_unassigned_quantity)} pcs</p><p>Hasil cutting ${e(bundle.cutting_reference)} · batch ${e(bundle.batch_reference)} · ${e(bundle.material_code)}</p><p class="reason">${e(bundle.reason)}</p><p class="hint">${e(bundle.actor_name)} · ${purchaseStamp(bundle.created_at)}</p>${bundle.reversal?`<article class="material-event"><h3>Sudah dikoreksi</h3><p class="reason">${e(bundle.reversal.reason)}</p><p class="hint">${e(bundle.reversal.actor_name)} · ${purchaseStamp(bundle.reversal.created_at)}</p></article>`:''}<div class="actions"><button id="bundle-order">Buka order produksi</button><button data-action="cutting-run" data-id="${e(bundle.cutting_run_id)}">Hasil cutting asal</button><button data-action="material-batch" data-id="${e(bundle.batch_id)}">Batch bahan asal</button><button data-action="bundles" data-id="${e(bundle.order_id)}">Semua bundle</button><button data-action="sewing-jobs" data-id="${e(bundle.order_id)}">Sewing / makloon order</button>${user.role!=='viewer' && bundle.status==='active' && bundle.sewing_unassigned_quantity>0?`<button data-action="new-sewing-job" data-id="${e(bundle.id)}">Kirim ke sewing</button>`:''}${user.role==='admin' && bundle.status==='active'?'<button id="reverse-bundle">Koreksi bundle</button>':''}</div>`;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(bundle.reference)} · ${bundle.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(bundle.quantity)} pcs · ${e(bundle.sku)} · ${e(bundle.size)}</h3><p>${e(bundle.product_name)} · ${e(bundle.color)}</p><p>Dialokasikan ke sewing ${n(bundle.sewing_allocated_quantity)} pcs · belum dialokasikan ${n(bundle.sewing_unassigned_quantity)} pcs</p><p>Hasil cutting ${e(bundle.cutting_reference)} · batch ${e(bundle.batch_reference)} · ${e(bundle.material_code)}</p><p class="reason">${e(bundle.reason)}</p><p class="hint">${e(bundle.actor_name)} · ${purchaseStamp(bundle.created_at)}</p>${bundle.reversal?`<article class="material-event"><h3>Sudah dikoreksi</h3><p class="reason">${e(bundle.reversal.reason)}</p><p class="hint">${e(bundle.reversal.actor_name)} · ${purchaseStamp(bundle.reversal.created_at)}</p></article>`:''}${bundle.status==='active'?`<section class="bundle-label" aria-label="Label bundle ${e(bundle.reference)}"><img src="/api/bundles/${e(encodeURIComponent(bundle.id))}/label.svg" alt="Kode QR bundle ${e(bundle.reference)}"><div><strong>${e(bundle.reference)}</strong><span>${e(bundle.sku)} · ukuran ${e(bundle.size)}</span><span class="bundle-label-qty">${n(bundle.quantity)} pcs</span><span>Order ${e(bundle.order_reference)}</span></div></section>`:''}<div class="actions"><button id="bundle-order">Buka order produksi</button><button data-action="cutting-run" data-id="${e(bundle.cutting_run_id)}">Hasil cutting asal</button><button data-action="material-batch" data-id="${e(bundle.batch_id)}">Batch bahan asal</button><button data-action="bundles" data-id="${e(bundle.order_id)}">Semua bundle</button><button data-action="sewing-jobs" data-id="${e(bundle.order_id)}">Sewing / makloon order</button>${bundle.status==='active'?'<button id="print-bundle">Cetak label</button>':''}${user.role!=='viewer' && bundle.status==='active' && bundle.sewing_unassigned_quantity>0?`<button data-action="new-sewing-job" data-id="${e(bundle.id)}">Kirim ke sewing</button>`:''}${user.role==='admin' && bundle.status==='active'?'<button id="reverse-bundle">Koreksi bundle</button>':''}</div>`;
     $('bundle-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(bundle.order_id);};
+    if($('print-bundle'))$('print-bundle').onclick=()=>window.print();
     if($('reverse-bundle'))$('reverse-bundle').onclick=()=>{
       if(guardPending())return;
       formDialog('Koreksi bundle',materialReason,form=>Object.fromEntries(new FormData(form)),

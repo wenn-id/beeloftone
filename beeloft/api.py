@@ -18,6 +18,7 @@ from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, Purchas
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
+from beeloft.labels import bundle_label_svg
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
 from beeloft.reports import activity_csv
 
@@ -26,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.55.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.56.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -609,9 +610,22 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                 before: Annotated[int | None, Query(ge=1)] = None):
         return store.bundles(order_id, limit, before)
 
+    @app.get('/api/bundles/scan', tags=['Bundling'])
+    def scan_bundle(user: Actor, code: Annotated[str, Query(min_length=1,max_length=200)]):
+        return store.scan_bundle(code)
+
     @app.get('/api/bundles/{bundle_id}', tags=['Bundling'])
     def bundle(bundle_id: str, user: Actor):
         return store.bundle(bundle_id)
+
+    @app.get('/api/bundles/{bundle_id}/label.svg', tags=['Bundling'], response_class=Response)
+    def bundle_label(bundle_id: str, user: Actor):
+        bundle=store.bundle(bundle_id)
+        if bundle['status']!='active':
+            raise DomainError(409,'Label bundle yang sudah dikoreksi tidak dapat dicetak.')
+        return Response(bundle_label_svg(bundle),media_type='image/svg+xml',headers={
+            'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff',
+            'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"})
 
     @app.post('/api/bundles/{bundle_id}/reverse', status_code=201, tags=['Bundling'])
     def reverse_bundle(bundle_id: str, body: ReversalCreate, user: Actor, key: RequestKey):

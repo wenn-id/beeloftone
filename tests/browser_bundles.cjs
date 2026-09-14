@@ -98,4 +98,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   assert.equal((await apiGet('/api/bundles/'+bundles[0].id)).status,'corrected');
   assert.equal((await apiGet('/api/orders/'+order.id)).totals.sewing,20);
   console.log('Bundling browser QA PASS: linked source, exact retry, roles, correction, unchanged WIP, mobile/200%.');
+  return {order,run};
 };

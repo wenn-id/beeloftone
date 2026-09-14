@@ -346,7 +346,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_management_command_center.cjs')({page,login,viewer,apiGet,work});
   await require('./browser_ai_investigation.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_cutting.cjs')({page,login,admin,operator,viewer,apiGet,work});
-  await require('./browser_bundles.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  const bundling=await require('./browser_bundles.cjs')({page,login,admin,operator,viewer,apiGet,work});
+  await require('./browser_bundle_scanning.cjs')({page,login,admin,viewer,apiPost,work,...bundling});
   await require('./browser_sewing.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_finishing.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_final_qc.cjs')({page,login,admin,operator,viewer,apiGet,work});
