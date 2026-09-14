@@ -38,7 +38,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,costOrder,cos
     reference:'MARGIN-RES-UI',marketplace:'Tokopedia <Official>',external_order_reference:'TKP-MARGIN-UI',
     location:'Rak Margin UI',quantity:5,reserved_date:'2026-12-08',reason:'CONTOH reservasi margin'},'margin-reservation');
   const pick=await post('/api/marketplace-reservations/'+reservation.id+'/picks',{reference:'MARGIN-PICK-UI',
-    quantity:5,staging_location:'Meja Margin UI',picked_date:'2026-12-09',reason:'CONTOH pick margin'},'margin-pick');
+    scanned_code:receipt.scan_code,quantity:5,staging_location:'Meja Margin UI',picked_date:'2026-12-09',
+    reason:'CONTOH pick margin'},'margin-pick');
   const pack=await post('/api/marketplace-picks/'+pick.id+'/packs',{reference:'MARGIN-PACK-UI',quantity:5,
     packed_date:'2026-12-10',reason:'CONTOH pack margin'},'margin-pack');
   const shipment=await post('/api/marketplace-packs/'+pack.id+'/shipments',{reference:'MARGIN-SHIP-UI',

@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.59.0"
+    "version": "0.60.0"
   },
   "paths": {
     "/health": {
@@ -14241,6 +14241,12 @@
             "minLength": 1,
             "title": "Reference"
           },
+          "scanned_code": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Scanned Code"
+          },
           "quantity": {
             "type": "integer",
             "maximum": 1000000000.0,
@@ -14264,6 +14270,7 @@
         "required": [
           "reason",
           "reference",
+          "scanned_code",
           "quantity",
           "staging_location",
           "picked_date"

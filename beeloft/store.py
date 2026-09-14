@@ -92,7 +92,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -199,6 +199,11 @@ class Store:
                 db.executescript(Path(__file__).with_name("audit_trail.sql").read_text(encoding="utf-8"))
             if version < 46:
                 db.executescript(Path(__file__).with_name("bundle_handoffs.sql").read_text(encoding="utf-8"))
+            if version < 47:
+                pick_columns={row['name'] for row in db.execute('PRAGMA table_info(marketplace_picks)')}
+                migration=('marketplace_pick_scanning_existing.sql' if 'scanned_code' in pick_columns
+                           else 'marketplace_pick_scanning.sql')
+                db.executescript(Path(__file__).with_name(migration).read_text(encoding="utf-8"))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2682,6 +2687,7 @@ class Store:
         for field in ('reference','order_id','order_reference','product_id','sku','product_name','color','size',
                       'final_qc_record_id','final_qc_reference','batch_id','batch_reference'):
             record['receipt_reference' if field=='reference' else field]=source[field]
+        record['receipt_scan_code']=source['scan_code']
         release=db.execute('''SELECT r.*,u.name AS actor_name FROM marketplace_reservation_releases r
             JOIN users u ON u.id=r.actor_id WHERE r.reservation_id=?''',(reservation_id,)).fetchone()
         record['release']=dict(release) if release else None
@@ -2792,11 +2798,14 @@ class Store:
                 raise DomainError(422,'Tanggal pick tidak boleh sebelum tanggal reservasi.')
             if payload['quantity']>reservation['remaining_quantity']:
                 raise DomainError(409,'Jumlah pick melebihi reservasi yang belum dipick. Muat ulang reservasi.')
+            if payload['scanned_code'].casefold() not in (reservation['sku'].casefold(),
+                                                          reservation['receipt_scan_code'].casefold()):
+                raise DomainError(422,'SKU atau QR lot hasil scan tidak cocok dengan reservasi marketplace.')
             pick_id=str(uuid4())
-            db.execute('''INSERT INTO marketplace_picks(id,reference,reservation_id,quantity,staging_location,
-                picked_date,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',(pick_id,payload['reference'],
-                reservation_id,payload['quantity'],payload['staging_location'],payload['picked_date'],
-                payload['reason'],actor['id'],now()))
+            db.execute('''INSERT INTO marketplace_picks(id,reference,reservation_id,scanned_code,quantity,
+                staging_location,picked_date,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                (pick_id,payload['reference'],reservation_id,payload['scanned_code'],payload['quantity'],
+                 payload['staging_location'],payload['picked_date'],payload['reason'],actor['id'],now()))
             return self._marketplace_pick(db,pick_id)
         return self._write(actor,('admin','operator'),key,'marketplace-pick:'+reservation_id,payload,perform)
 

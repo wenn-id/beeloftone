@@ -26,11 +26,18 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
   await page.locator('.order-settings').getByRole('button',{name:'Reservasi jual',exact:true}).click();
   await page.getByRole('button',{name:'Rincian MKT-PICK-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat pick',exact:true}).click();
+  const scan=page.getByLabel('SKU / QR lot',{exact:true});
+  await page.waitForFunction(()=>document.activeElement?.id==='pick-scan-code');
+  assert.equal(await scan.evaluate(element=>element===document.activeElement),true);
   await page.getByLabel('Referensi pick',{exact:true}).fill('PICK-UI-001');
+  await scan.fill('SKU-SALAH');
   await page.getByLabel('Jumlah pick',{exact:true}).fill('4');
   await page.getByLabel('Lokasi staging',{exact:true}).fill('Meja Packing <A>');
   await page.getByLabel('Tanggal pick',{exact:true}).fill('2026-09-23');
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH barang diambil untuk packing');
+  await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await page.getByText('SKU atau QR lot hasil scan tidak cocok dengan reservasi marketplace.',{exact:true}).waitFor();
+  await scan.fill(reservation.receipt_scan_code);
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
@@ -50,6 +57,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
   const picks=await apiGet('/api/orders/'+order.id+'/marketplace-picks');
   assert.equal(picks.length,1);const pick=picks[0];
   assert.equal(pick.reference,'PICK-UI-001');assert.equal(pick.reservation_id,reservation.id);
+  assert.equal(pick.scanned_code,reservation.receipt_scan_code);
   let inventory=(await apiGet('/api/finished-goods-inventory')).find(row=>row.sku==='FG-M');
   assert.deepEqual([inventory.sellable_quantity,inventory.picked_quantity,inventory.reserved_quantity,
     inventory.available_quantity,inventory.hold_quantity,inventory.total_quantity],[8,4,2,6,8,20]);
@@ -75,8 +83,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
   assert.deepEqual([inventory.sellable_quantity,inventory.picked_quantity,inventory.reserved_quantity,
     inventory.available_quantity],[12,0,6,6]);
   const packSource=await post('/api/marketplace-reservations/'+reservation.id+'/picks',{
-    reference:'PICK-PACK-SOURCE',quantity:4,staging_location:'Meja Packing B',picked_date:'2026-09-25',
+    reference:'PICK-PACK-SOURCE',scanned_code:reservation.sku,quantity:4,staging_location:'Meja Packing B',picked_date:'2026-09-25',
     reason:'CONTOH sumber pack berikutnya'},'pick-pack-source');
-  console.log('Marketplace picking browser QA PASS: staging inventory, partial pick, retry, roles, release guard, correction, mobile/200%.');
+  console.log('Marketplace picking browser QA PASS: SKU/lot scan, staging inventory, partial pick, retry, roles, release guard, correction, mobile/200%.');
   return {pick:packSource};
 };

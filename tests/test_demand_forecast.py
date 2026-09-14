@@ -34,7 +34,8 @@ class DemandForecastTest(TestCase):
             external_order_reference='FORECAST-ORDER-2', location='Rak margin', quantity=quantity,
             reserved_date='2026-11-02', reason='Permintaan periode terbaru'))
         pick = self.post('/api/marketplace-reservations/'+reservation['id']+'/picks', dict(
-            reference='FORECAST-PICK-2', quantity=quantity, staging_location='Meja forecast',
+            reference='FORECAST-PICK-2', scanned_code=reservation['sku'], quantity=quantity,
+            staging_location='Meja forecast',
             picked_date='2026-11-03', reason='Pesanan forecast dipilih'))
         pack = self.post('/api/marketplace-picks/'+pick['id']+'/packs', dict(
             reference='FORECAST-PACK-2', quantity=quantity, packed_date='2026-11-04',
@@ -125,5 +126,5 @@ class DemandForecastTest(TestCase):
         self.assertEqual(Store(backup).demand_forecast(date(2026, 11, 15), 14, 30,
                                                        self.product['sku']), expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],46)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],47)
         self.assertEqual(shipment['quantity'], 10)

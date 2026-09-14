@@ -47,7 +47,8 @@ class ContributionMarginTest(TestCase):
             location='Rak margin', quantity=quantity, reserved_date='2026-10-21',
             reason='Stok penjualan dialokasikan'))
         pick = self.post('/api/marketplace-reservations/'+reservation['id']+'/picks', dict(
-            reference='MARGIN-PICK', quantity=quantity, staging_location='Meja margin',
+            reference='MARGIN-PICK', scanned_code=receipt['scan_code'], quantity=quantity,
+            staging_location='Meja margin',
             picked_date='2026-10-22', reason='Pesanan dipilih'))
         pack = self.post('/api/marketplace-picks/'+pick['id']+'/packs', dict(reference='MARGIN-PACK',
             quantity=quantity, packed_date='2026-10-23', reason='Pesanan dikemas'))
@@ -177,5 +178,5 @@ class ContributionMarginTest(TestCase):
             db.commit()
         Store(fresh)
         with closing(sqlite3.connect(fresh)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],46)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],47)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_sale_settlements').fetchone()[0],0)

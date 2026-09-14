@@ -37,9 +37,10 @@ class MarketplacePickingTest(TestCase):
 
     def pick(self, reservation, reference='PICK-001', quantity=4, staging_location='Meja Packing A', **options):
         picked_date=options.pop('picked_date','2026-09-23')
+        scanned_code=options.pop('scanned_code',reservation['sku'])
         return self.post('/api/marketplace-reservations/'+reservation['id']+'/picks',dict(
-            reference=reference,quantity=quantity,staging_location=staging_location,picked_date=picked_date,
-            reason='Barang diambil untuk pesanan marketplace'),**options)
+            reference=reference,scanned_code=scanned_code,quantity=quantity,staging_location=staging_location,
+            picked_date=picked_date,reason='Barang diambil untuk pesanan marketplace'),**options)
 
     def test_partial_picks_move_reserved_stock_to_staging_with_lineage(self):
         order,qc,receipt=self.setup_receipt()
@@ -50,6 +51,9 @@ class MarketplacePickingTest(TestCase):
         second=self.pick(reservation,reference='PICK-002',quantity=2,staging_location='Meja Packing B')
         self.assertEqual((first['reservation_reference'],first['receipt_reference'],first['final_qc_reference']),
                          (reservation['reference'],receipt['reference'],qc['reference']))
+        self.assertEqual(first['scanned_code'],receipt['sku'])
+        event=self.client.get('/api/audit-events?category=marketplace&q=PICK-001').json()['items'][0]
+        self.assertEqual(event['changes']['scanned_code'],receipt['sku'])
         current=self.client.get('/api/marketplace-reservations/'+reservation['id']).json()
         self.assertEqual((current['picked_quantity'],current['remaining_quantity']),(6,0))
         detail=self.client.get('/api/finished-goods-receipts/'+receipt['id']).json()
@@ -91,15 +95,20 @@ class MarketplacePickingTest(TestCase):
         _,_,receipt=self.setup_receipt()
         reservation=self.reserve(receipt,quantity=6)
         self.pick(reservation,api_key=self.viewer['api_key'],status=403)
+        self.pick(reservation,scanned_code='SKU-LAIN',status=422)
+        scanned=self.pick(reservation,reference='PICK-QR',quantity=1,
+                          scanned_code=receipt['scan_code'].upper())
+        self.assertEqual(scanned['scanned_code'],receipt['scan_code'].upper())
         self.pick(reservation,quantity=True,status=422)
         self.pick(reservation,picked_date='2026-09-19',status=422)
         self.pick(reservation,quantity=7,status=409)
         self.pick(reservation,quantity=4)
-        self.pick(reservation,reference='PICK-OVER',quantity=3,status=409)
+        self.pick(reservation,reference='PICK-OVER',quantity=2,status=409)
         self.assertEqual(self.client.get('/api/marketplace-picks/missing').status_code,404)
         self.assertEqual(self.client.get('/api/orders/missing/marketplace-picks').status_code,404)
         self.post('/api/marketplace-reservations/missing/picks',dict(reference='PICK-MISSING',quantity=1,
-                  staging_location='Meja Packing',picked_date='2026-09-23',reason='Tidak ada'),status=404)
+                  scanned_code='SKU-MISSING',staging_location='Meja Packing',picked_date='2026-09-23',
+                  reason='Tidak ada'),status=404)
 
     def test_race_cannot_pick_more_than_reservation(self):
         _,_,receipt=self.setup_receipt(sellable=10,hold=0)
@@ -109,7 +118,8 @@ class MarketplacePickingTest(TestCase):
             with TestClient(create_app(self.path)) as client:
                 barrier.wait(timeout=10)
                 return client.post('/api/marketplace-reservations/'+reservation['id']+'/picks',json=dict(
-                    reference='PICK-RACE-'+str(index),quantity=7,staging_location='Meja '+str(index),
+                    reference='PICK-RACE-'+str(index),scanned_code=reservation['sku'],quantity=7,
+                    staging_location='Meja '+str(index),
                     picked_date='2026-09-23',reason='Uji pick bersamaan'),headers={
                     'X-API-Key':self.operator['api_key'],'Idempotency-Key':'pick-race-'+str(index)}).status_code
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -132,14 +142,21 @@ class MarketplacePickingTest(TestCase):
         backup=self.path.with_name('marketplace-picking-backup.sqlite3')
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).marketplace_pick(first['id']),first)
+        with closing(sqlite3.connect(backup)) as db:
+            db.execute('DROP TRIGGER marketplace_pick_scan_valid')
+            db.execute('ALTER TABLE marketplace_picks DROP COLUMN scanned_code')
+            db.execute('PRAGMA user_version=46');db.commit()
+        migrated=Store(backup).marketplace_pick(first['id'])
+        self.assertEqual(migrated['id'],first['id'])
+        self.assertIsNone(migrated['scanned_code'])
         with self.app.state.store.transaction(write=True) as db:
             for sql in ('UPDATE marketplace_picks SET reason=reason','DELETE FROM marketplace_picks'):
                 with self.assertRaises(sqlite3.IntegrityError): db.execute(sql)
             with self.assertRaises(sqlite3.IntegrityError):
-                db.execute('''INSERT INTO marketplace_picks(id,reference,reservation_id,quantity,staging_location,
-                    picked_date,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',('bad','PICK-DIRECT',
-                    reservation['id'],99,'Meja Bypass','2026-09-23','Bypass',self.admin['id'],
-                    '2026-09-23T00:00:00+00:00'))
+                db.execute('''INSERT INTO marketplace_picks(id,reference,reservation_id,scanned_code,quantity,
+                    staging_location,picked_date,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                    ('bad','PICK-DIRECT',reservation['id'],'SKU-LAIN',99,'Meja Bypass','2026-09-23',
+                     'Bypass',self.admin['id'],'2026-09-23T00:00:00+00:00'))
 
         fresh_path=self.path.with_name('schema20.sqlite3')
         Store(fresh_path)
@@ -162,5 +179,6 @@ class MarketplacePickingTest(TestCase):
             db.execute('PRAGMA user_version=20');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],46)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],47)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_picks').fetchone()[0],0)
+            self.assertIn('scanned_code',{row[1] for row in db.execute('PRAGMA table_info(marketplace_picks)')})
