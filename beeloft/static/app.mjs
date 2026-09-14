@@ -580,7 +580,7 @@ document.addEventListener('click', event => {
     'finished-goods-adjustments':()=>finishedGoodsAdjustmentsDialog(id || selected?.id),'new-finished-goods-adjustment':()=>finishedGoodsAdjustmentForm(id),'finished-goods-adjustment':()=>finishedGoodsAdjustmentDialog(id),
     'finished-goods-stock-counts':()=>finishedGoodsStockCountsDialog(id || selected?.id),'new-finished-goods-stock-count':()=>finishedGoodsStockCountForm(id),'finished-goods-stock-count':()=>finishedGoodsStockCountDialog(id),
     consumption:consumptionDialog,'production-cost':productionCostDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
-    'material-batch':() => materialHistoryDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
+    'material-batch':() => materialHistoryDialog(id),'material-batch-traceability':()=>materialBatchTraceabilityDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
     products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
@@ -3192,6 +3192,7 @@ async function materialHistoryDialog(batchId, order=null) {
     const batch = order ? null : await api.get('/api/material-batches/'+encodeURIComponent(batchId));
     if (!current()) return;
     $('dialog-content').innerHTML = `${batch?.qc_intake_id?`<p><button data-action="qc-intake" data-id="${e(batch.qc_intake_id)}">QC asal batch</button></p>`:''}${batch?.purchase_order_id ? `<p><button data-action="purchase-order" data-id="${e(batch.purchase_order_id)}">PO ${e(batch.purchase_order_reference)}</button></p>` : ''}<p class="form-info">${e(order ? order.reference : `${batch.reference} · ${batch.code}${batch.status==='corrected'?' · penerimaan dikoreksi':''}\n${batch.location} · saldo ${materialQty(batch.balance,batch.unit)}`)}</p>${batch?.status==='active'?`<section class="bundle-label material-batch-label" aria-label="Label batch bahan ${e(batch.reference)}"><img src="/api/material-batches/${e(encodeURIComponent(batch.id))}/label.svg" alt="Kode QR batch bahan ${e(batch.reference)}"><div><strong>${e(batch.reference)}</strong><span>${e(batch.code)} · ${e(batch.name)}</span><span class="bundle-label-qty">${e(materialQty(batch.received_quantity,batch.unit))}</span><span>${e(batch.location)} · diterima ${date(batch.received_date)}</span></div></section><div class="actions"><button id="print-material-batch" type="button">Cetak label batch</button></div>`:''}<p class="hint">Urutan terbaru · waktu Jakarta. Jumlah positif menambah stok rak; negatif menguranginya. Koreksi membalik seluruh jumlah catatan.</p><div id="material-history"></div><p id="material-history-error" class="error" role="alert" hidden></p><button id="material-history-more" type="button">Muat riwayat bahan</button>`;
+    if(batch)$('material-history').insertAdjacentHTML('beforebegin',`<div class="actions"><button data-action="material-batch-traceability" data-id="${e(batch.id)}">Jejak produksi lengkap</button></div>`);
     if($('print-material-batch'))$('print-material-batch').onclick=()=>window.print();
     const load = async () => {
       const button = $('material-history-more'); button.disabled = true; message('material-history-error','');
@@ -3214,6 +3215,60 @@ async function materialHistoryDialog(batchId, order=null) {
     await load();
   } catch (error) { if (current()) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="${order ? 'order-materials' : 'material-batch'}" data-id="${e(batchId || '')}">Coba lagi</button>`; }
 }
+
+const materialTraceLabels={
+  material_receipt:'Penerimaan batch',material_issue:'Pengeluaran bahan',material_movement:'Stok bahan',
+  material_reservation:'Reservasi bahan',material_reservation_release:'Pelepasan reservasi',
+  material_reservation_consumption:'Pemakaian reservasi',material_consumption:'Pemakaian dan waste',
+  cutting_run:'Hasil cutting',bundle:'Bundle',bundle_handoff:'Serah terima bundle',
+  bundle_handoff_acceptance:'Penerimaan bundle',bundle_handoff_cancellation:'Pembatalan handoff',
+  sewing_job:'Job sewing',sewing_result:'Hasil sewing',finishing:'Finishing',final_qc:'Final QC',
+  finished_goods_receipt:'Penerimaan barang jadi'
+};
+const materialTraceStatuses={active:'Aktif',corrected:'Sudah dikoreksi',correction:'Koreksi',released:'Dilepaskan',
+  consumed:'Terpakai',pending:'Menunggu penerima',received:'Sudah diterima',cancelled:'Dibatalkan',
+  open:'Terbuka',completed:'Selesai'};
+
+async function materialBatchTraceabilityDialog(batchId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Jejak produksi batch bahan','<p class="state">Memuat jejak produksi...</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const endpoint='/api/material-batches/'+encodeURIComponent(batchId)+'/traceability';
+  try{
+    const report=await api.get(endpoint+'?limit=50');if(!current())return;
+    const batch=report.batch;
+    $('dialog-content').innerHTML=`<p class="form-info">${e(batch.reference)} · ${e(batch.code)} · ${e(batch.name)}</p>
+      <h3>${e(materialQty(batch.received_quantity,batch.unit))} diterima · ${n(report.total)} catatan terlacak</h3>
+      <article class="material-event"><h3>Posisi bahan sekarang</h3><p>Saldo ${e(materialQty(batch.balance,batch.unit))}</p><p>Available ${e(materialQty(batch.available,batch.unit))} · reserved ${e(materialQty(batch.reserved,batch.unit))}</p><p>${e(batch.location)} · ${e(batch.supplier)}</p></article>
+      <div class="actions">${batch.qc_intake_id?`<button data-action="qc-intake" data-id="${e(batch.qc_intake_id)}">QC penerimaan</button>`:''}${batch.purchase_order_id?`<button data-action="purchase-order" data-id="${e(batch.purchase_order_id)}">PO ${e(batch.purchase_order_reference)}</button>`:''}</div>
+      <h3>Jejak bahan sampai barang jadi</h3><p class="hint">Terbaru menurut waktu pencatatan. Nilai bahan dan pcs memakai satuan berbeda dan tidak dijumlahkan antarcatatan.</p>
+      <div id="material-trace-events"></div><p id="material-trace-error" class="error" role="alert" hidden></p>
+      <button id="material-trace-more" type="button">Muat catatan sebelumnya</button>
+      <div class="actions"><button data-action="material-batch" data-id="${e(batch.id)}">Riwayat stok bahan</button><button data-action="material-batch-traceability" data-id="${e(batch.id)}">Muat ulang jejak</button></div>`;
+    let cursor=report.next_before;
+    const append=rows=>{
+      $('material-trace-events').insertAdjacentHTML('beforeend',rows.map(row=>{
+        const corrected=row.event_type.endsWith('_correction');
+        const base=row.event_type.replace(/_correction$/,'');
+        const label=(corrected?'Koreksi · ':'')+(materialTraceLabels[base]||materialTraceLabels[row.event_type]);
+        return `<article class="material-event" data-material-trace-event="${e(row.event_type)}"><h3>${e(label)} · ${e(row.reference)}</h3>
+          <p>${e(materialQty(row.quantity,row.unit))} · ${e(materialTraceStatuses[row.status]||row.status)}</p><p>${e(row.description)}</p>
+          ${row.business_date?`<p>Tanggal transaksi ${date(row.business_date)}</p>`:''}<p class="reason">${e(row.reason)}</p>
+          <p class="hint">${e(row.actor_name)} · dicatat ${purchaseStamp(row.created_at)}</p>
+          ${row.detail_action?`<button data-action="${e(row.detail_action)}" data-id="${e(row.detail_id)}" aria-label="Rincian ${e(label)} ${e(row.reference)}">Buka rincian</button>`:''}</article>`;
+      }).join(''));
+      $('material-trace-more').hidden=!cursor;
+    };
+    $('material-trace-more').onclick=async()=>{
+      const button=$('material-trace-more');button.disabled=true;message('material-trace-error','');
+      try{const page=await api.get(endpoint+'?'+new URLSearchParams({limit:50,...cursor}));if(!current())return;cursor=page.next_before;append(page.events);}
+      catch(error){if(current())message('material-trace-error',error.message,true);}
+      finally{if(current())button.disabled=false;}
+    };
+    append(report.events);
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="material-batch-traceability" data-id="${e(batchId)}">Coba lagi</button>`;}
+}
+
 $('backup').onclick = () => {
   if (guardPending()) return;
   const version = epoch;

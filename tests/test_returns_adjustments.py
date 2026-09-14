@@ -156,6 +156,75 @@ class ReturnsAdjustmentsTest(TestCase):
         self.assertEqual(self.client.get(route,headers={'X-API-Key':'invalid'}).status_code,401)
         self.assertEqual(self.client.get('/api/finished-goods-receipts/missing/traceability').status_code,404)
 
+    def test_material_batch_traceability_connects_receipt_to_finished_goods_and_corrections(self):
+        order,_,receipt=self.setup_receipt()
+        batch_id=receipt['batch_id']
+        self.post('/api/material-reservations',dict(batch_id=batch_id,order_id=order['id'],quantity='1',
+                  action='reserve',reason='Cadangan produksi'))
+        self.post('/api/material-reservations',dict(batch_id=batch_id,order_id=order['id'],quantity='1',
+                  action='release',reason='Cadangan tidak diperlukan'))
+        bundle=self.client.get('/api/bundles/'+receipt['bundle_id']).json()
+        handoff=self.post('/api/bundles/'+bundle['id']+'/handoffs',dict(
+            to_location='Sewing internal',reason='Serahkan bundle ke sewing'))
+        self.post('/api/bundle-handoffs/'+handoff['id']+'/accept',dict(reason='Bundle diterima'),
+                  api_key=self.operator['api_key'])
+        run=self.client.get('/api/cutting-runs/'+bundle['cutting_run_id']).json()
+        self.post('/api/finished-goods-receipts/'+receipt['id']+'/reverse',dict(reason='Koreksi penerimaan'))
+        self.post('/api/final-qc-records/'+receipt['final_qc_record_id']+'/reverse',dict(reason='Koreksi QC'))
+        self.post('/api/finishing-records/'+receipt['finishing_record_id']+'/reverse',dict(reason='Koreksi finishing'))
+        self.post('/api/sewing-jobs/'+receipt['job_id']+'/reverse',dict(reason='Koreksi sewing'))
+        self.post('/api/bundles/'+receipt['bundle_id']+'/reverse',dict(reason='Koreksi bundle'))
+        self.post('/api/cutting-runs/'+run['id']+'/reverse',dict(reason='Koreksi cutting'))
+        self.post('/api/material-movements/'+run['issue_id']+'/reverse',dict(reason='Koreksi pengeluaran'))
+        batch=self.client.get('/api/material-batches/'+batch_id).json()
+        self.post('/api/material-movements/'+batch['receipt_id']+'/reverse',dict(reason='Koreksi penerimaan bahan'))
+        with self.app.state.store.transaction() as db:
+            before='\n'.join(db.iterdump())
+        route='/api/material-batches/'+batch_id+'/traceability'
+        report=self.client.get(route).json()
+        self.assertEqual(report['total'],23)
+        self.assertEqual((report['batch']['status'],report['batch']['balance']),('corrected','0.000'))
+        self.assertEqual(report['batch']['reference'],batch['reference'])
+        types={event['event_type'] for event in report['events']}
+        for kind in ('material_receipt','material_issue','material_movement_correction','material_reservation',
+                     'material_reservation_release','material_consumption','material_consumption_correction',
+                     'cutting_run','cutting_run_correction','bundle','bundle_correction','bundle_handoff',
+                     'bundle_handoff_acceptance','sewing_job','sewing_result',
+                     'sewing_job_correction','finishing','finishing_correction','final_qc','final_qc_correction',
+                     'finished_goods_receipt','finished_goods_receipt_correction'):
+            self.assertIn(kind,types)
+        finished=next(event for event in report['events'] if event['event_type']=='finished_goods_receipt')
+        self.assertEqual((finished['reference'],finished['detail_id']),(receipt['reference'],receipt['id']))
+        self.assertIn(receipt['sku'],finished['description'])
+        for role in (self.operator,self.viewer):
+            self.assertEqual(self.client.get(route,headers={'X-API-Key':role['api_key']}).json(),report)
+        with self.app.state.store.transaction() as db:
+            self.assertEqual('\n'.join(db.iterdump()),before)
+
+    def test_material_batch_traceability_cursor_is_stable(self):
+        from unittest.mock import patch
+        batch,order,_=self.setup_stock()
+        route='/api/material-batches/'+batch['id']+'/traceability'
+        with patch('beeloft.store.now',return_value='2026-10-02T10:00:00+00:00'):
+            for index in range(3):
+                self.post('/api/material-reservations',dict(batch_id=batch['id'],order_id=order['id'],
+                          quantity='0.001',action='reserve',reason='Cursor '+str(index)))
+                self.post('/api/material-reservations',dict(batch_id=batch['id'],order_id=order['id'],
+                          quantity='0.001',action='release',reason='Cursor '+str(index)))
+        expected=self.client.get(route).json()
+        page=self.client.get(route,params={'limit':2}).json();collected=page['events'][:]
+        with patch('beeloft.store.now',return_value='2026-10-03T10:00:00+00:00'):
+            self.post('/api/material-reservations',dict(batch_id=batch['id'],order_id=order['id'],
+                      quantity='0.001',action='reserve',reason='Catatan baru'))
+        while page['next_before']:
+            page=self.client.get(route,params={'limit':2,**page['next_before']}).json()
+            collected.extend(page['events'])
+        self.assertEqual(collected,expected['events'])
+        self.assertEqual(len({row['event_id'] for row in collected}),7)
+        self.assertEqual(self.client.get(route+'?before_time=2026').status_code,422)
+        self.assertEqual(self.client.get(route+'?limit=0').status_code,422)
+        self.assertEqual(self.client.get('/api/material-batches/missing/traceability').status_code,404)
+
     def test_return_correction_respects_reserved_stock_and_unblocks_shipment(self):
         _,receipt,shipment=self.flow()
         returned=self.customer_return(shipment,return_location='Rak Retur Sellable',stock_status='sellable')

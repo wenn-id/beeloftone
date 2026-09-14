@@ -1503,6 +1503,153 @@ class Store:
         with self.transaction() as db:
             return self._material_batch(db, batch_id)
 
+    def material_batch_traceability(self, batch_id, limit=100, before_time=None, before_event=None):
+        if bool(before_time)!=bool(before_event):
+            raise DomainError(422,'Cursor waktu dan event harus diisi bersama.')
+        with self.transaction() as db:
+            batch=self._material_batch(db,batch_id)
+            # ponytail: assemble one batch in memory; move to a SQL event union when batches reach thousands of events.
+            events=[]
+
+            def add(event_type, record, quantity, unit, business_date, description, detail_action,
+                    status='active', event_id=None, actor=None, reason=None, detail_id=None):
+                actor=actor or record
+                events.append({'event_type':event_type,'event_id':event_id or record['id'],
+                    'object_id':record['id'],'detail_id':detail_id or record['id'],
+                    'reference':record['reference'],'quantity':quantity,'unit':unit,
+                    'business_date':business_date,'created_at':actor['created_at'],
+                    'actor_name':actor['actor_name'],'reason':reason if reason is not None else record['reason'],
+                    'description':description,'status':status,'detail_action':detail_action})
+
+            def correction(event_type, record, reversal, quantity, unit, detail_action, detail_id=None):
+                if reversal:
+                    add(event_type,record,quantity,unit,None,'Membalik catatan '+record['reference'],
+                        detail_action,'correction',record['id']+':correction',reversal,reversal['reason'],detail_id)
+
+            movements=db.execute('''SELECT x.*,u.name AS actor_name,o.reference AS order_reference,
+                original.kind AS original_kind,(SELECT id FROM material_movements WHERE reversal_of=x.id) AS reversed_by
+                FROM material_movements x JOIN users u ON u.id=x.actor_id
+                LEFT JOIN orders o ON o.id=x.order_id LEFT JOIN material_movements original ON original.id=x.reversal_of
+                WHERE x.batch_id=?''',(batch_id,)).fetchall()
+            for source in movements:
+                row=dict(source);quantity=self._material_decimal(abs(row.pop('quantity_milli')))
+                if row['kind']=='receipt':
+                    event_type='material_receipt';reference=batch['reference'];business_date=batch['received_date']
+                    description=f"Masuk {batch['location']} dari {batch['supplier']}"
+                elif row['kind']=='issue':
+                    event_type='material_issue';reference=row['order_reference'];business_date=None
+                    description='Dikeluarkan ke order '+row['order_reference']
+                else:
+                    event_type='material_movement_correction';reference=row['order_reference'] or batch['reference'];business_date=None
+                    description='Membalik '+('penerimaan batch' if row['original_kind']=='receipt' else 'pengeluaran bahan')
+                row['reference']=reference
+                status='correction' if row['kind']=='reversal' else 'corrected' if row['reversed_by'] else 'active'
+                add(event_type,row,quantity,batch['unit'],business_date,description,'material-batch',status,
+                    detail_id=batch_id)
+
+            for source in db.execute('''SELECT e.*,o.reference AS order_reference,u.name AS actor_name
+                FROM material_reservation_events e JOIN orders o ON o.id=e.order_id
+                JOIN users u ON u.id=e.actor_id WHERE e.batch_id=?''',(batch_id,)):
+                row=dict(source);quantity=self._material_decimal(abs(row.pop('quantity_milli')))
+                labels={'reserve':('material_reservation','Direservasi untuk order ','active'),
+                        'release':('material_reservation_release','Reservasi dilepas dari order ','released'),
+                        'consume':('material_reservation_consumption','Reservasi dipakai oleh order ','consumed')}
+                event_type,label,status=labels[row['kind']];row['reference']=row['order_reference']
+                add(event_type,row,quantity,batch['unit'],None,label+row['order_reference'],
+                    'material-batch',status,detail_id=batch_id)
+
+            for source in db.execute('''SELECT c.*,o.reference AS order_reference,u.name AS actor_name,
+                r.id AS cutting_run_id,r.reference AS cutting_reference,
+                (SELECT id FROM material_consumption WHERE reversal_of=c.id) AS reversed_by
+                FROM material_consumption c JOIN material_movements i ON i.id=c.issue_id
+                JOIN orders o ON o.id=i.order_id JOIN users u ON u.id=c.actor_id
+                LEFT JOIN material_consumption original ON original.id=c.reversal_of
+                LEFT JOIN cutting_runs r ON r.consumption_id=COALESCE(original.id,c.id)
+                WHERE i.batch_id=?''',(batch_id,)):
+                row=dict(source);used=row.pop('used_milli');waste=row.pop('waste_milli')
+                row['reference']=row['cutting_reference'] or row['order_reference']
+                event_type='material_consumption_correction' if row['reversal_of'] else 'material_consumption'
+                status='correction' if row['reversal_of'] else 'corrected' if row['reversed_by'] else 'active'
+                description=('Membalik pemakaian' if row['reversal_of'] else
+                    f"Terpakai {self._material_decimal(used)} + waste {self._material_decimal(waste)} {batch['unit']}")
+                action='cutting-run' if row['cutting_run_id'] else 'material-batch'
+                add(event_type,row,self._material_decimal(abs(used+waste)),batch['unit'],None,description,
+                    action,status,detail_id=row['cutting_run_id'] or batch_id)
+
+            run_ids=db.execute('''SELECT r.id FROM cutting_runs r JOIN material_consumption c ON c.id=r.consumption_id
+                JOIN material_movements i ON i.id=c.issue_id WHERE i.batch_id=?''',(batch_id,)).fetchall()
+            for run_row in run_ids:
+                run=self._cutting_run(db,run_row['id'],False)
+                add('cutting_run',run,run['total_output'],'pcs',None,
+                    f"Bahan {run['used']} {batch['unit']} + waste {run['waste']} {batch['unit']} menjadi {run['total_output']} pcs",
+                    'cutting-run','corrected' if run['reversal'] else 'active')
+                correction('cutting_run_correction',run,run['reversal'],run['total_output'],'pcs','cutting-run')
+                for bundle_row in db.execute('SELECT id FROM bundles WHERE cutting_run_id=?',(run['id'],)):
+                    bundle=self._bundle(db,bundle_row['id'])
+                    add('bundle',bundle,bundle['quantity'],'pcs',None,
+                        f"{bundle['sku']} ukuran {bundle['size']} dari {run['reference']}",'bundle',bundle['status'])
+                    correction('bundle_correction',bundle,bundle['reversal'],bundle['quantity'],'pcs','bundle')
+                    for handoff_row in db.execute('SELECT id FROM bundle_handoffs WHERE bundle_id=?',(bundle['id'],)):
+                        handoff=self._bundle_handoff(db,handoff_row['id'])
+                        handoff_record=dict(handoff,reference=bundle['reference'],reason=handoff['reason'],
+                                            actor_name=handoff['sender_name'])
+                        add('bundle_handoff',handoff_record,bundle['quantity'],'pcs',None,
+                            f"{handoff['from_location']} menuju {handoff['to_location']}",'bundle-handoffs',
+                            handoff['status'],detail_id=bundle['id'])
+                        if handoff['accepted_at']:
+                            actor={'created_at':handoff['accepted_at'],'actor_name':handoff['receiver_name']}
+                            add('bundle_handoff_acceptance',handoff_record,bundle['quantity'],'pcs',None,
+                                'Diterima di '+handoff['to_location'],'bundle-handoffs','received',
+                                handoff['id']+':acceptance',actor,handoff['acceptance_reason'],bundle['id'])
+                        if handoff['cancelled_at']:
+                            actor={'created_at':handoff['cancelled_at'],'actor_name':handoff['cancellation_actor_name']}
+                            add('bundle_handoff_cancellation',handoff_record,bundle['quantity'],'pcs',None,
+                                'Handoff dibatalkan','bundle-handoffs','cancelled',handoff['id']+':cancellation',
+                                actor,handoff['cancellation_reason'],bundle['id'])
+                    for job_row in db.execute('SELECT id FROM sewing_jobs WHERE bundle_id=?',(bundle['id'],)):
+                        job=self._sewing_job(db,job_row['id'])
+                        add('sewing_job',job,job['quantity_out'],'pcs',job['sent_date'],
+                            f"{job['assignment_type']} ke {job['assignee']}",'sewing-job',job['status'])
+                        if job['result']:
+                            result=job['result']
+                            add('sewing_result',job,job['quantity_out'],'pcs',result['returned_date'],
+                                f"Selesai {result['completed_quantity']}, defect {result['defect_quantity']}, missing {result['missing_quantity']}",
+                                'sewing-job','corrected' if job['reversal'] else 'completed',job['id']+':result',
+                                result,result['reason'])
+                        correction('sewing_job_correction',job,job['reversal'],job['quantity_out'],'pcs','sewing-job')
+                        for finishing_row in db.execute('SELECT id FROM finishing_records WHERE job_id=?',(job['id'],)):
+                            finishing=self._finishing_record(db,finishing_row['id'])
+                            add('finishing',finishing,finishing['quantity'],'pcs',finishing['completed_date'],
+                                'Checklist finishing lengkap','finishing-record',finishing['status'])
+                            correction('finishing_correction',finishing,finishing['reversal'],
+                                       finishing['quantity'],'pcs','finishing-record')
+                            for qc_row in db.execute('SELECT id FROM final_qc_records WHERE finishing_record_id=?',(finishing['id'],)):
+                                qc=self._final_qc_record(db,qc_row['id'])
+                                add('final_qc',qc,qc['inspected_quantity'],'pcs',qc['inspection_date'],
+                                    f"Pass {qc['accepted_quantity']}, rework {qc['rework_quantity']}, reject {qc['reject_quantity']}",
+                                    'final-qc-record',qc['status'])
+                                correction('final_qc_correction',qc,qc['reversal'],qc['inspected_quantity'],
+                                           'pcs','final-qc-record')
+                                for receipt_row in db.execute('SELECT id FROM finished_goods_receipts WHERE final_qc_record_id=?',(qc['id'],)):
+                                    receipt=self._finished_goods_receipt(db,receipt_row['id'])
+                                    add('finished_goods_receipt',receipt,receipt['received_quantity'],'pcs',receipt['received_date'],
+                                        f"{receipt['sku']}: {receipt['sellable_quantity']} sellable + {receipt['hold_quantity']} hold di {receipt['location']}",
+                                        'finished-goods-receipt',receipt['status'])
+                                    correction('finished_goods_receipt_correction',receipt,receipt['reversal'],
+                                               receipt['received_quantity'],'pcs','finished-goods-receipt')
+
+            events.sort(key=lambda row:(row['created_at'],row['event_id']),reverse=True)
+            total=len(events)
+            if before_time:
+                events=[row for row in events if (row['created_at'],row['event_id'])<(before_time,before_event)]
+            more=len(events)>limit;events=events[:limit]
+            summary={key:batch[key] for key in ('id','reference','status','code','name','unit','supplier','location',
+                'received_date','received_quantity','balance','reserved','available','scan_code','purchase_order_id',
+                'purchase_order_reference','qc_intake_id')}
+            return {'batch':summary,'total':total,'limit':limit,'events':events,
+                    'next_before':{'before_time':events[-1]['created_at'],'before_event':events[-1]['event_id']}
+                    if more else None}
+
     def scan_material_batch(self, code):
         value=code.strip()
         prefix='BEELOFT:MATERIAL-BATCH:'

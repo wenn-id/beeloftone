@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.62.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.63.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -977,6 +977,12 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/material-batches/{batch_id}', tags=['Materials'])
     def material_batch(batch_id: str, user: Actor):
         return store.material_batch(batch_id)
+
+    @app.get('/api/material-batches/{batch_id}/traceability', tags=['Materials'])
+    def material_batch_traceability(batch_id: str, user: Actor, limit: Limit = 100,
+            before_time: Annotated[str | None, Query(min_length=1,max_length=50)] = None,
+            before_event: Annotated[str | None, Query(min_length=1,max_length=100)] = None):
+        return store.material_batch_traceability(batch_id, limit, before_time, before_event)
 
     @app.post('/api/material-issues', status_code=201, tags=['Materials'])
     def issue_material(body: MaterialIssue, user: Actor, key: RequestKey):
