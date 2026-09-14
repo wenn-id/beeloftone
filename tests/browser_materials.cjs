@@ -83,5 +83,26 @@ module.exports = async ({page,login,admin,operator,viewer,apiGet,work}) => {
     assert.equal(await page.getByRole('button',{name:'Koreksi catatan bahan',exact:true}).count(),0);
     await page.keyboard.press('Escape');
   }
-  console.log('Materials browser QA PASS: receive, exact decimal issue, lost-response retry, order audit, reversal, roles, mobile, escaped text.');
+  let failScan=true;
+  await page.route('**/api/material-batches/scan?*',async route=>{
+    if(failScan){failScan=false;await route.fulfill({status:503,contentType:'application/json',
+      body:JSON.stringify({detail:'Pemindai batch sedang sibuk'})});}
+    else await route.continue();
+  });
+  await page.getByRole('button',{name:'Scan batch bahan',exact:true}).click();
+  const scan=page.getByLabel('Kode batch bahan',{exact:true});
+  assert.equal(await scan.evaluate(element=>element===document.activeElement),true);
+  await scan.fill(batch.scan_code);await scan.press('Enter');
+  await page.getByText('Pemindai batch sedang sibuk',{exact:true}).waitFor();
+  await scan.press('Enter');
+  await page.getByRole('heading',{name:'Riwayat batch bahan',exact:true}).waitFor();
+  await page.unroute('**/api/material-batches/scan?*');
+  await page.waitForFunction(()=>document.querySelector('.material-batch-label img')?.naturalWidth>0);
+  await page.locator('.material-batch-label').getByText('Katun <biru> & putih',{exact:false}).waitFor();
+  await page.evaluate(()=>{window.__materialBatchPrinted=false;window.print=()=>{window.__materialBatchPrinted=true;};});
+  await page.getByRole('button',{name:'Cetak label batch',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.__materialBatchPrinted),true);
+  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  await page.keyboard.press('Escape');
+  console.log('Materials browser QA PASS: receive, exact decimal issue, retry, QR batch scan/print, roles, mobile, escaped text.');
 };

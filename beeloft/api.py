@@ -18,7 +18,7 @@ from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, Purchas
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
-from beeloft.labels import bundle_label_svg
+from beeloft.labels import bundle_label_svg, material_batch_label_svg
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
 from beeloft.reports import activity_csv
 
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.57.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.58.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -579,6 +579,19 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                          material_id: Annotated[str, Query(max_length=160)] = '',
                          order_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
         return store.material_batches(limit, offset, material_id, order_id)
+
+    @app.get('/api/material-batches/scan', tags=['Materials'])
+    def scan_material_batch(user: Actor, code: Annotated[str, Query(min_length=1,max_length=200)]):
+        return store.scan_material_batch(code)
+
+    @app.get('/api/material-batches/{batch_id}/label.svg', tags=['Materials'], response_class=Response)
+    def material_batch_label(batch_id: str, user: Actor):
+        batch=store.material_batch(batch_id)
+        if batch['status']!='active':
+            raise DomainError(409,'Label batch yang penerimaannya sudah dikoreksi tidak dapat dicetak.')
+        return Response(material_batch_label_svg(batch),media_type='image/svg+xml',headers={
+            'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff',
+            'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"})
 
     @app.post('/api/material-reservations', status_code=201, tags=['Materials'])
     def reserve_material(body: MaterialReservation, user: Actor, key: RequestKey):

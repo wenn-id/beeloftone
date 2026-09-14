@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
-from beeloft.labels import bundle_scan_code
+from beeloft.labels import bundle_scan_code, material_batch_scan_code
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
 INTEGRATION_CONTRACTS = (
@@ -1462,7 +1462,8 @@ class Store:
     def _material_batch(self, db, batch_id, order_id=None):
         row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
             (SELECT COALESCE(SUM(quantity_milli),0) FROM material_movements WHERE batch_id=b.id) AS balance_milli,
-            (SELECT id FROM material_movements WHERE batch_id=b.id AND kind='receipt') AS receipt_id
+            (SELECT id FROM material_movements WHERE batch_id=b.id AND kind='receipt') AS receipt_id,
+            (SELECT quantity_milli FROM material_movements WHERE batch_id=b.id AND kind='receipt') AS received_milli
             FROM material_batches b JOIN materials m ON m.id=b.material_id WHERE b.id=?''', (batch_id,)).fetchone()
         if not row:
             raise DomainError(404, 'Batch bahan tidak ditemukan.')
@@ -1474,10 +1475,16 @@ class Store:
         record['purchase_order_reference'] = source['reference'] if source else None
         record['po_closed'] = bool(source and source['closed'])
         balance = record.pop('balance_milli')
+        received = record.pop('received_milli')
         reserved = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=?', (batch_id,)).fetchone()[0]
         own = db.execute('SELECT COALESCE(SUM(quantity_milli),0) FROM material_reservation_events WHERE batch_id=? AND order_id=?', (batch_id,order_id)).fetchone()[0]
         record.update({key:self._material_decimal(value) for key,value in dict(balance=balance,reserved=reserved,
                       available=balance-reserved,reserved_for_order=own,available_to_order=balance-reserved+own).items()})
+        record['received_quantity'] = self._material_decimal(received)
+        record['scan_code'] = material_batch_scan_code(record['id'])
+        corrected = db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?',
+                               (record['receipt_id'],)).fetchone()
+        record['status'] = 'corrected' if corrected else 'active'
         qc = db.execute('SELECT intake_id FROM qc_decisions WHERE batch_id=?', (batch_id,)).fetchone()
         record['qc_intake_id'] = qc['intake_id'] if qc else None
         return record
@@ -1485,6 +1492,19 @@ class Store:
     def material_batch(self, batch_id):
         with self.transaction() as db:
             return self._material_batch(db, batch_id)
+
+    def scan_material_batch(self, code):
+        value=code.strip()
+        prefix='BEELOFT:MATERIAL-BATCH:'
+        with self.transaction() as db:
+            if value.upper().startswith(prefix):
+                batch_id=value[len(prefix):]
+                row=db.execute('SELECT id FROM material_batches WHERE id=? COLLATE NOCASE',(batch_id,)).fetchone()
+            else:
+                row=db.execute('SELECT id FROM material_batches WHERE reference=? COLLATE NOCASE',(value,)).fetchone()
+            if not row:
+                raise DomainError(404,'Batch bahan dari hasil scan tidak ditemukan.')
+            return self._material_batch(db,row['id'])
 
     def material_batches(self, limit=100, offset=0, material_id='', order_id=None):
         with self.transaction() as db:

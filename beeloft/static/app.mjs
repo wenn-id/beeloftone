@@ -578,7 +578,7 @@ document.addEventListener('click', event => {
     'finished-goods-adjustments':()=>finishedGoodsAdjustmentsDialog(id || selected?.id),'new-finished-goods-adjustment':()=>finishedGoodsAdjustmentForm(id),'finished-goods-adjustment':()=>finishedGoodsAdjustmentDialog(id),
     'finished-goods-stock-counts':()=>finishedGoodsStockCountsDialog(id || selected?.id),'new-finished-goods-stock-count':()=>finishedGoodsStockCountForm(id),'finished-goods-stock-count':()=>finishedGoodsStockCountDialog(id),
     consumption:consumptionDialog,'production-cost':productionCostDialog,'record-consumption':()=>consumptionForm(id),reservations:reservationsDialog,'reserve-material':()=>reservationForm('reserve'),'release-material':()=>reservationForm('release'),
-    'material-batch':() => materialHistoryDialog(id),'issue-material':materialIssueForm,
+    'material-batch':() => materialHistoryDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
     products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
@@ -2598,6 +2598,7 @@ function replenishmentDialog() {
 }
 $('replenishment').onclick=replenishmentDialog;
 $('materials').onclick = showMaterials;
+$('scan-material-batch').onclick = materialBatchScanDialog;
 $('materials-back').onclick = showBoard;
 $('materials-refresh').onclick = () => loadMaterials();
 $('material-filter').onchange = () => { materialsOffset = 0; loadMaterials(); };
@@ -3030,6 +3031,21 @@ async function supplierPaymentRequestDialog(requestId) {
 
 const materialReason = '<label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>';
 
+function materialBatchScanDialog() {
+  if(guardPending())return;
+  openDialog('Scan batch bahan',`<form id="material-batch-scan-form"><p class="form-info">Pindai QR pada label bahan atau masukkan referensi batch. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p><label for="material-batch-scan-code">Kode batch bahan</label><input id="material-batch-scan-code" name="code" required maxlength="200" autocomplete="off" spellcheck="false" autofocus><p id="material-batch-scan-error" class="error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button class="primary" type="submit">Buka batch</button></div></form>`);
+  const modal=dialogVersion,input=$('material-batch-scan-code');input.focus();
+  $('material-batch-scan-form').onsubmit=async event=>{
+    event.preventDefault();if(modalBusy)return;
+    const button=event.currentTarget.querySelector('[type="submit"]');modalBusy=true;button.disabled=true;message('material-batch-scan-error','');
+    try{
+      const batch=await api.get('/api/material-batches/scan?'+new URLSearchParams({code:input.value}));
+      if(modal!==dialogVersion||!$('dialog').open)return;
+      modalBusy=false;$('dialog').close();materialHistoryDialog(batch.id);
+    }catch(error){if(modal===dialogVersion&&$('dialog').open){modalBusy=false;button.disabled=false;message('material-batch-scan-error',error.message,true);input.focus();}}
+  };
+}
+
 async function loadMaterials() {
   const version = epoch, request = ++materialsRequest, materialId = $('material-filter').value;
   message('materials-message','Memuat stok bahan…'); $('batch-list').replaceChildren(); $('materials-page').textContent = '';
@@ -3101,7 +3117,8 @@ async function materialHistoryDialog(batchId, order=null) {
   try {
     const batch = order ? null : await api.get('/api/material-batches/'+encodeURIComponent(batchId));
     if (!current()) return;
-    $('dialog-content').innerHTML = `${batch?.qc_intake_id?`<p><button data-action="qc-intake" data-id="${e(batch.qc_intake_id)}">QC asal batch</button></p>`:''}${batch?.purchase_order_id ? `<p><button data-action="purchase-order" data-id="${e(batch.purchase_order_id)}">PO ${e(batch.purchase_order_reference)}</button></p>` : ''}<p class="form-info">${e(order ? order.reference : `${batch.reference} · ${batch.code}\n${batch.location} · saldo ${materialQty(batch.balance,batch.unit)}`)}</p><p class="hint">Urutan terbaru · waktu Jakarta. Jumlah positif menambah stok rak; negatif menguranginya. Koreksi membalik seluruh jumlah catatan.</p><div id="material-history"></div><p id="material-history-error" class="error" role="alert" hidden></p><button id="material-history-more" type="button">Muat riwayat bahan</button>`;
+    $('dialog-content').innerHTML = `${batch?.qc_intake_id?`<p><button data-action="qc-intake" data-id="${e(batch.qc_intake_id)}">QC asal batch</button></p>`:''}${batch?.purchase_order_id ? `<p><button data-action="purchase-order" data-id="${e(batch.purchase_order_id)}">PO ${e(batch.purchase_order_reference)}</button></p>` : ''}<p class="form-info">${e(order ? order.reference : `${batch.reference} · ${batch.code}${batch.status==='corrected'?' · penerimaan dikoreksi':''}\n${batch.location} · saldo ${materialQty(batch.balance,batch.unit)}`)}</p>${batch?.status==='active'?`<section class="bundle-label material-batch-label" aria-label="Label batch bahan ${e(batch.reference)}"><img src="/api/material-batches/${e(encodeURIComponent(batch.id))}/label.svg" alt="Kode QR batch bahan ${e(batch.reference)}"><div><strong>${e(batch.reference)}</strong><span>${e(batch.code)} · ${e(batch.name)}</span><span class="bundle-label-qty">${e(materialQty(batch.received_quantity,batch.unit))}</span><span>${e(batch.location)} · diterima ${date(batch.received_date)}</span></div></section><div class="actions"><button id="print-material-batch" type="button">Cetak label batch</button></div>`:''}<p class="hint">Urutan terbaru · waktu Jakarta. Jumlah positif menambah stok rak; negatif menguranginya. Koreksi membalik seluruh jumlah catatan.</p><div id="material-history"></div><p id="material-history-error" class="error" role="alert" hidden></p><button id="material-history-more" type="button">Muat riwayat bahan</button>`;
+    if($('print-material-batch'))$('print-material-batch').onclick=()=>window.print();
     const load = async () => {
       const button = $('material-history-more'); button.disabled = true; message('material-history-error','');
       try {

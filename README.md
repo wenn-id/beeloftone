@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.57.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.58.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR dan scan, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan barang jadi, pergerakan gudang, reservasi marketplace, picking, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2008,3 +2008,28 @@ handoff diterima atau dibatalkan. Schema 45 → 46 menambahkan ledger dan guard 
 
 Rencana: [Bundle handoff plan](docs/bundle-handoffs-plan.md).
 Bukti pengujian: [Bundle handoff verification](docs/bundle-handoffs-verification.md).
+
+
+## Label QR dan scan batch bahan (v0.58)
+
+Setiap batch bahan memiliki kode stabil `BEELOFT:MATERIAL-BATCH:{id}`. Dari layar **Bahan baku**, seluruh
+role aktif dapat memilih **Scan batch bahan**, memindai QR memakai scanner USB/Bluetooth seperti keyboard,
+atau mengetik referensi batch. Hasilnya membuka rincian batch, saldo, reservasi, riwayat penerimaan dan
+pengeluaran, lokasi rak, serta hubungan PO/QC jika tersedia.
+
+Rincian batch aktif menampilkan label QR 80 mm yang memuat referensi batch, kode dan nama bahan, jumlah
+awal diterima, satuan, lokasi, dan tanggal penerimaan. Label dibuat lokal tanpa layanan QR eksternal.
+Batch yang penerimaannya sudah dikoreksi tetap dapat ditemukan melalui scan untuk menjaga histori, tetapi
+labelnya tidak dapat dicetak ulang.
+
+API terkait:
+
+- `GET /api/material-batches/scan?code=...`.
+- `GET /api/material-batches/{batch_id}/label.svg`.
+
+Rilis ini tidak mengubah schema database; schema tetap 46. Scanner kamera, pencetakan banyak label,
+template printer khusus, dan perpindahan lokasi batch belum dicakup. Connector runtime Jubelio/Mekari
+tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Material batch scanning plan](docs/material-batch-scanning-plan.md).
+Bukti pengujian: [Material batch scanning verification](docs/material-batch-scanning-verification.md).
