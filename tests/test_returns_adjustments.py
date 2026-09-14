@@ -88,6 +88,74 @@ class ReturnsAdjustmentsTest(TestCase):
         self.assertEqual([row['id'] for row in listed],[second['id'],first['id']])
         self.assertEqual(self.client.get('/api/orders/'+order['id']).json()['totals'],before)
 
+    def test_receipt_traceability_includes_fulfillment_and_corrections_without_writes(self):
+        order,receipt,shipment=self.flow()
+        returned=self.customer_return(shipment)
+        movement=self.move(receipt,quantity=1)
+        adjustment=self.adjust(receipt,quantity_delta=2)
+        counted=self.post('/api/finished-goods-receipts/'+receipt['id']+'/stock-counts',dict(
+            reference='TRACE-COUNT',scanned_sku=receipt['sku'],location='Rak Barang Jadi A',
+            stock_status='sellable',counted_quantity=8,counted_date='2026-09-28',reason='Hitung ulang'))
+        for path in ('/api/finished-goods-stock-counts/'+counted['id'],
+                     '/api/finished-goods-adjustments/'+adjustment['id'],
+                     '/api/warehouse-movements/'+movement['id'],
+                     '/api/marketplace-returns/'+returned['id'],
+                     '/api/marketplace-shipments/'+shipment['id'],
+                     '/api/marketplace-packs/'+shipment['pack_id'],
+                     '/api/marketplace-picks/'+shipment['pick_id']):
+            self.post(path+'/reverse',dict(reason='Koreksi <contoh> & cek'))
+        reservation=self.client.get('/api/marketplace-reservations/'+shipment['reservation_id']).json()
+        self.release(reservation)
+        self.post('/api/finished-goods-receipts/'+receipt['id']+'/reverse',dict(reason='Salah penerimaan'))
+        with self.app.state.store.transaction() as db:
+            before='\n'.join(db.iterdump())
+        route='/api/finished-goods-receipts/'+receipt['id']+'/traceability'
+        report=self.client.get(route).json()
+        self.assertEqual(report['total'],20)
+        self.assertEqual(report['receipt']['inventory'],[])
+        self.assertEqual(report['receipt']['status'],'corrected')
+        self.assertEqual(report['receipt']['order_id'],order['id'])
+        self.assertEqual(report['receipt']['batch_id'],receipt['batch_id'])
+        types={event['event_type']:event for event in report['events']}
+        for kind in ('finished_goods_receipt','warehouse_movement','marketplace_pick','marketplace_pack',
+                     'marketplace_shipment','marketplace_return','finished_goods_adjustment','finished_goods_stock_count'):
+            self.assertIn(kind,types)
+            self.assertIn(kind+'_correction',types)
+            self.assertEqual(types[kind]['status'],'corrected')
+        self.assertIn('marketplace_reservation_release',types)
+        self.assertEqual(types['warehouse_movement']['scanned_code'],receipt['sku'])
+        self.assertIn(shipment['tracking_number'],types['marketplace_shipment']['description'])
+        for role in (self.operator,self.viewer):
+            self.assertEqual(self.client.get(route,headers={'X-API-Key':role['api_key']}).json(),report)
+        with self.app.state.store.transaction() as db:
+            self.assertEqual('\n'.join(db.iterdump()),before)
+
+    def test_traceability_isolates_receipts_and_keeps_cursor_stable(self):
+        from unittest.mock import patch
+        _,_,qc=self.setup_qc()
+        first=self.receive(qc)
+        second=self.receive(qc,reference='FG-OTHER')
+        with patch('beeloft.store.now',return_value='2026-09-29T10:00:00+00:00'):
+            for index in range(4):
+                self.adjust(first,reference='TRACE-'+str(index))
+            self.adjust(second,reference='OTHER-ONLY')
+        route='/api/finished-goods-receipts/'+first['id']+'/traceability'
+        expected=self.client.get(route).json()
+        page=self.client.get(route,params={'limit':2}).json()
+        collected=page['events'][:]
+        with patch('beeloft.store.now',return_value='2026-09-30T10:00:00+00:00'):
+            self.adjust(first,reference='TRACE-NEW')
+        while page['next_before']:
+            page=self.client.get(route,params={'limit':2,**page['next_before']}).json()
+            collected.extend(page['events'])
+        self.assertEqual(collected,expected['events'])
+        self.assertEqual(len({row['event_id'] for row in collected}),5)
+        self.assertFalse(any(row['reference']=='OTHER-ONLY' for row in collected))
+        self.assertEqual(self.client.get(route+'?limit=0').status_code,422)
+        self.assertEqual(self.client.get(route+'?before_time=2026').status_code,422)
+        self.assertEqual(self.client.get(route,headers={'X-API-Key':'invalid'}).status_code,401)
+        self.assertEqual(self.client.get('/api/finished-goods-receipts/missing/traceability').status_code,404)
+
     def test_return_correction_respects_reserved_stock_and_unblocks_shipment(self):
         _,receipt,shipment=self.flow()
         returned=self.customer_return(shipment,return_location='Rak Retur Sellable',stock_status='sellable')

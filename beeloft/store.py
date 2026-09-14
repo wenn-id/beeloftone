@@ -2353,6 +2353,114 @@ class Store:
         with self.transaction() as db:
             return self._finished_goods_receipt(db,receipt_id)
 
+    def finished_goods_traceability(self, receipt_id, limit=100, before_time=None, before_event=None):
+        if bool(before_time)!=bool(before_event):
+            raise DomainError(422,'Cursor waktu dan event harus diisi bersama.')
+        with self.transaction() as db:
+            receipt=self._finished_goods_receipt(db,receipt_id)
+            # ponytail: one lot is assembled in memory; use a SQL event union if lot histories outgrow this view.
+            events=[]
+
+            def add(event_type, record, quantity, business_date, description, detail_action,
+                    status='active', event_id=None, actor=None, reason=None):
+                actor=actor or record
+                events.append({'event_type':event_type,
+                    'event_id':event_id or record['id'],'object_id':record['id'],
+                    'reference':record['reference'],'quantity':quantity,
+                    'business_date':business_date,'created_at':actor['created_at'],
+                    'actor_name':actor['actor_name'],'reason':reason if reason is not None else record['reason'],
+                    'description':description,'status':status,'detail_action':detail_action,
+                    'scanned_code':record.get('scanned_code') or record.get('scanned_sku')})
+
+            def correction(event_type, record, reversal, quantity, detail_action):
+                if reversal:
+                    add(event_type,record,quantity,None,
+                        'Membalik catatan '+record['reference'],detail_action,'correction',
+                        record['id']+':correction',reversal,reversal['reason'])
+
+            add('finished_goods_receipt',receipt,receipt['received_quantity'],receipt['received_date'],
+                f"{receipt['sellable_quantity']} sellable + {receipt['hold_quantity']} hold masuk {receipt['location']}",
+                'finished-goods-receipt',receipt['status'])
+            correction('finished_goods_receipt_correction',receipt,receipt['reversal'],
+                       receipt['received_quantity'],'finished-goods-receipt')
+
+            for row in db.execute('SELECT id FROM warehouse_movements WHERE receipt_id=?',(receipt_id,)):
+                movement=self._warehouse_movement(db,row['id'])
+                add('warehouse_movement',movement,movement['quantity'],movement['moved_date'],
+                    f"{movement['from_location']} ({movement['from_status']}) → {movement['to_location']} ({movement['to_status']})",
+                    'warehouse-movement',movement['status'])
+                correction('warehouse_movement_correction',movement,movement['reversal'],
+                           movement['quantity'],'warehouse-movement')
+
+            for row in db.execute('SELECT id FROM marketplace_reservations WHERE receipt_id=?',(receipt_id,)):
+                reservation=self._marketplace_reservation(db,row['id'])
+                add('marketplace_reservation',reservation,reservation['quantity'],reservation['reserved_date'],
+                    f"{reservation['marketplace']} · order {reservation['external_order_reference']} · {reservation['location']}",
+                    'marketplace-reservation',reservation['status'])
+                if reservation['release']:
+                    release=reservation['release']
+                    add('marketplace_reservation_release',reservation,reservation['quantity'],release['released_date'],
+                        'Melepaskan reservasi '+reservation['reference'],'marketplace-reservation','released',
+                        reservation['id']+':release',release,release['reason'])
+                for pick_row in db.execute('SELECT id FROM marketplace_picks WHERE reservation_id=?',(reservation['id'],)):
+                    pick=self._marketplace_pick(db,pick_row['id'])
+                    add('marketplace_pick',pick,pick['quantity'],pick['picked_date'],
+                        f"{reservation['reference']} · {pick['location']} → {pick['staging_location']}",
+                        'marketplace-pick',pick['status'])
+                    correction('marketplace_pick_correction',pick,pick['reversal'],pick['quantity'],'marketplace-pick')
+                    for pack_row in db.execute('SELECT id FROM marketplace_packs WHERE pick_id=?',(pick['id'],)):
+                        pack=self._marketplace_pack(db,pack_row['id'])
+                        add('marketplace_pack',pack,pack['quantity'],pack['packed_date'],
+                            f"{pick['reference']} · {pack['staging_location']} · picked menjadi packed",
+                            'marketplace-pack',pack['status'])
+                        correction('marketplace_pack_correction',pack,pack['reversal'],pack['quantity'],'marketplace-pack')
+                        for shipment_row in db.execute('SELECT id FROM marketplace_shipments WHERE pack_id=?',(pack['id'],)):
+                            shipment=self._marketplace_shipment(db,shipment_row['id'])
+                            add('marketplace_shipment',shipment,shipment['quantity'],shipment['shipped_date'],
+                                f"{pack['reference']} · {shipment['staging_location']} → {shipment['carrier']} · resi {shipment['tracking_number']}",
+                                'marketplace-shipment',shipment['status'])
+                            correction('marketplace_shipment_correction',shipment,shipment['reversal'],
+                                       shipment['quantity'],'marketplace-shipment')
+                            for return_row in db.execute('SELECT id FROM marketplace_returns WHERE shipment_id=?',(shipment['id'],)):
+                                returned=self._marketplace_return(db,return_row['id'])
+                                add('marketplace_return',returned,returned['quantity'],returned['returned_date'],
+                                    f"{shipment['reference']} · {returned['return_location']} · {returned['stock_status']} · {returned['return_reason']}",
+                                    'marketplace-return',returned['status'])
+                                correction('marketplace_return_correction',returned,returned['reversal'],
+                                           returned['quantity'],'marketplace-return')
+
+            for row in db.execute('SELECT id FROM finished_goods_adjustments WHERE receipt_id=?',(receipt_id,)):
+                adjustment=self._finished_goods_adjustment(db,row['id'])
+                delta=adjustment['quantity_delta']
+                add('finished_goods_adjustment',adjustment,delta,adjustment['adjusted_date'],
+                    f"{adjustment['location']} · {adjustment['stock_status']} · selisih {'+' if delta>0 else ''}{delta}",
+                    'finished-goods-adjustment',adjustment['status'])
+                correction('finished_goods_adjustment_correction',adjustment,adjustment['reversal'],
+                           delta,'finished-goods-adjustment')
+
+            for row in db.execute('SELECT id FROM finished_goods_stock_counts WHERE receipt_id=?',(receipt_id,)):
+                count=self._finished_goods_stock_count(db,row['id'])
+                add('finished_goods_stock_count',count,count['counted_quantity'],count['counted_date'],
+                    f"{count['location']} · {count['stock_status']} · sistem {count['expected_quantity']} → fisik {count['counted_quantity']}",
+                    'finished-goods-stock-count',count['status'])
+                correction('finished_goods_stock_count_correction',count,count['reversal'],
+                           count['counted_quantity'],'finished-goods-stock-count')
+
+            events.sort(key=lambda row:(row['created_at'],row['event_id']),reverse=True)
+            total=len(events)
+            if before_time:
+                events=[row for row in events if (row['created_at'],row['event_id'])<(before_time,before_event)]
+            more=len(events)>limit
+            events=events[:limit]
+            summary={key:receipt[key] for key in ('id','reference','status','sku','product_name','color','size',
+                'order_id','order_reference','received_quantity','location','received_date','scan_code',
+                'final_qc_record_id','final_qc_reference','finishing_record_id','finishing_reference',
+                'job_id','sewing_reference','bundle_id','bundle_reference','batch_id','batch_reference')}
+            summary['inventory']=receipt['inventory']
+            return {'receipt':summary,'total':total,'limit':limit,'events':events,
+                    'next_before':{'before_time':events[-1]['created_at'],'before_event':events[-1]['event_id']}
+                    if more else None}
+
     def scan_finished_goods_receipt(self, code):
         value=code.strip()
         prefix='BEELOFT:FINISHED-GOODS:'

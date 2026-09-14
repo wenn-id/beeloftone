@@ -360,6 +360,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   const shipping=await require('./browser_marketplace_shipping.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...marketplace,...picking,...packing});
   await require('./browser_returns_adjustments.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods,...shipping});
   await require('./browser_inventory_reconciliation.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
+  await require('./browser_finished_goods_traceability.cjs')({page,login,viewer,apiGet,apiPost,work,...finishedGoods});
   await require('./browser_unified_approvals.cjs')({page,login,admin,operator,viewer,apiGet,work,...finishedGoods});
   await require('./browser_audit_trail.cjs')({page,login,admin,viewer,apiGet,work});
   assert.deepEqual(errors,[]);

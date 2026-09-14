@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.61.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR dan scan, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.62.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, batch bahan dengan label QR dan scan, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, adjustment, stock opname, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2094,3 +2094,26 @@ ditunda sampai akses API resmi tersedia.
 
 Rencana: [Warehouse movement scanning plan](docs/warehouse-movement-scanning-plan.md).
 Bukti pengujian: [Warehouse movement scanning verification](docs/warehouse-movement-scanning-verification.md).
+
+## Jejak stok barang jadi per lot (v0.62)
+
+Buka penerimaan barang jadi, termasuk lewat scan QR, lalu pilih **Jejak stok lengkap**. Satu layar
+menampilkan posisi stok saat ini serta riwayat penerimaan, transfer/keputusan hold, reservasi,
+picking, packing, pengiriman, retur, adjustment, dan stock opname. Koreksi dan pelepasan reservasi
+tetap tampil terpisah dari catatan asalnya.
+
+Setiap catatan memuat referensi, jumlah, status, alasan, pelaku, tanggal transaksi dan waktu pencatatan,
+beserta tautan ke rincian. Scan pada catatan asal ditampilkan jika tersedia. Tautan batch bahan,
+bundle, dan final QC menghubungkan lot dengan asal produksinya.
+
+API: `GET /api/finished-goods-receipts/{receipt_id}/traceability?limit=100`. Respons berisi
+`receipt`, `events`, `total`, dan `next_before`. Kirim pasangan `before_time` dan `before_event`
+dari cursor untuk halaman berikutnya. Urutan memakai waktu pencatatan terbaru, bukan tanggal transaksi
+yang dapat diisi mundur. Semua akun aktif dapat membaca; tidak ada perubahan stok, audit, atau schema.
+
+Jumlah tiap event memiliki arti berbeda sehingga tidak boleh dijumlahkan menjadi saldo. Posisi sekarang
+diambil dari ledger inventori. Riwayat disusun per lot di memori; lot dengan ribuan event belum diuji.
+Runtime connector Jubelio/Mekari tetap ditunda.
+
+Rencana: [Finished goods traceability plan](docs/finished-goods-traceability-plan.md).
+Bukti: [Finished goods traceability verification](docs/finished-goods-traceability-verification.md).
