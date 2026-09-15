@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.74.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor serta alert kualitas di Command Center, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.75.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2376,3 +2376,20 @@ Perubahan ini memperkaya respons `GET /api/command-center` dan tidak menambah en
 
 Rencana: [Command Center quality alerts plan](docs/command-center-quality-alerts-plan.md).
 Bukti: [Command Center quality alerts verification](docs/command-center-quality-alerts-verification.md).
+
+## Alert kapasitas di Command Center (v0.75)
+
+Command Center sekarang menghitung rencana kapasitas 14 hari dari saldo WIP, standar routing SKU, kapasitas harian
+work center, dan override kalender. Snapshot **Kapasitas produksi** menampilkan total beban dan menit tersedia,
+jumlah work center yang perlu perhatian, order berisiko, serta kelengkapan standar.
+
+Overload atau risiko kapasitas sebelum deadline menjadi alert kritis. Utilisasi minimal 80% menjadi alert
+perhatian jika belum ada risiko yang lebih tinggi. Gap standar atau work center nonaktif menjadi alert data agar
+kapasitas nol tidak dianggap aman. Tombol alert dan kartu membuka **Kapasitas produksi** untuk melihat work center,
+kalender, order, dan SKU penyebab beban.
+
+Perubahan ini memperkaya respons `GET /api/command-center` dan tidak menambah endpoint atau tabel. Schema tetap
+49. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Command Center capacity alerts plan](docs/command-center-capacity-alerts-plan.md).
+Bukti: [Command Center capacity alerts verification](docs/command-center-capacity-alerts-verification.md).

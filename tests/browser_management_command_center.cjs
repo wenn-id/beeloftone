@@ -19,11 +19,16 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.locator('#command-center-summary dd').first().waitFor();
   await page.locator('[data-command-snapshot="production"]').waitFor();
   await page.locator('[data-command-snapshot="quality"]').getByText('Yield',{exact:true}).waitFor();
+  await page.locator('[data-command-snapshot="capacity"]').getByText('Beban 14 hari',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="inventory"]').waitFor();
   await page.locator('[data-command-snapshot="sales"]').getByText('Pendapatan kotor',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="finance"]').getByText('Laba bersih',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="integrations"]').waitFor();
   assert.ok((await page.locator('[data-command-attention]').count())>0);
+  await page.locator('[data-command-attention="production-capacity-risk"]')
+    .getByRole('heading',{name:'Kapasitas produksi berisiko',exact:true}).waitFor();
+  await page.locator('[data-command-attention="production-capacity-coverage"]')
+    .getByRole('heading',{name:'Standar kapasitas belum lengkap',exact:true}).waitFor();
   assert.equal((await apiGet('/api/command-center')).status.state,'attention');
   await page.unroute('**/api/command-center');
 
@@ -35,6 +40,13 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
     'beeloft-management-command-center-mobile.png'),fullPage:true});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.setViewportSize({width:1440,height:1000});
+
+  await page.locator('[data-command-attention="production-capacity-risk"]')
+    .getByRole('button',{name:'Buka rencana kapasitas',exact:true}).click();
+  const capacityDialog=page.locator('dialog');
+  await capacityDialog.getByRole('heading',{name:'Kapasitas produksi',exact:true}).waitFor();
+  await capacityDialog.locator('[data-capacity-center]').filter({hasText:'Overload'}).first().waitFor();
+  await page.keyboard.press('Escape');
 
   await page.locator('[data-command-snapshot="production"]').getByRole('button',{name:'Buka papan produksi'}).click();
   await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();

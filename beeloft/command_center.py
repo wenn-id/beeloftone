@@ -23,6 +23,10 @@ def build_command_center(store):
         generated.astimezone(JAKARTA).date(), window_days=30, warning_percent=5,
         change_threshold=1, status="attention", limit=25
     )
+    capacity = store.capacity_plan(
+        generated.astimezone(JAKARTA).date(), horizon_days=14, warning_percent=80,
+        status="all", limit=100
+    )
 
     production_summary = production["summary"]
     approval_kinds = Counter(row["kind"] for row in approvals)
@@ -35,6 +39,7 @@ def build_command_center(store):
     receivable_summary = receivables["summary"]
     replenishment_summary = replenishment["summary"]
     quality_summary = quality["summary"]
+    capacity_summary = capacity["summary"]
 
     attention = []
 
@@ -76,6 +81,25 @@ def build_command_center(store):
             f'Rework + reject {current_quality["nonconforming_rate_percent"]}% dari '
             f'{current_quality["inspected_quantity"]} pcs; {comparison}.',
             "production_quality", "Buka analisis kualitas")
+    capacity_risks = (capacity_summary["overloaded_work_centers"]
+                      + capacity_summary["deadline_risk_work_centers"])
+    if capacity_risks:
+        add("production-capacity-risk", "critical", "capacity", "Kapasitas produksi berisiko",
+            f'{capacity_summary["overloaded_work_centers"]} work center overload dan '
+            f'{capacity_summary["deadline_risk_work_centers"]} berisiko deadline; '
+            f'{capacity_summary["at_risk_orders"]} order tidak cukup kapasitas sebelum target.',
+            "production_capacity", "Buka rencana kapasitas")
+    elif capacity_summary["near_capacity_work_centers"]:
+        add("production-capacity-near", "warning", "capacity", "Kapasitas mendekati batas",
+            f'{capacity_summary["near_capacity_work_centers"]} work center mencapai sedikitnya '
+            f'{capacity["warning_percent"]}% utilisasi dalam 14 hari.',
+            "production_capacity", "Buka rencana kapasitas")
+    if capacity_summary["coverage_gaps"]:
+        add("production-capacity-coverage", "warning", "data_quality",
+            "Standar kapasitas belum lengkap",
+            f'{capacity_summary["coverage_gaps"]} kebutuhan tahap untuk '
+            f'{capacity_summary["missing_standard_quantity"]} pcs belum punya standar aktif.',
+            "production_capacity", "Lengkapi standar kapasitas")
     stockout_soon = (replenishment_summary["stockout_before_replenishment"]
                      + replenishment_summary["below_safety_stock"])
     if stockout_soon:
@@ -130,6 +154,21 @@ def build_command_center(store):
             "reject_rate_percent": quality_summary["reject_rate_percent"],
             "groups": quality_summary["groups"],
             "attention_groups": quality_summary["attention_groups"],
+        },
+        "capacity": {
+            "as_of": capacity["as_of"],
+            "horizon_end": capacity["horizon_end"],
+            "capacity_complete": capacity["capacity_complete"],
+            "required_minutes": capacity_summary["required_minutes"],
+            "available_minutes": capacity_summary["available_minutes"],
+            "work_centers": capacity_summary["work_centers"],
+            "attention_work_centers": capacity_summary["attention_work_centers"],
+            "overloaded_work_centers": capacity_summary["overloaded_work_centers"],
+            "deadline_risk_work_centers": capacity_summary["deadline_risk_work_centers"],
+            "near_capacity_work_centers": capacity_summary["near_capacity_work_centers"],
+            "at_risk_orders": capacity_summary["at_risk_orders"],
+            "coverage_gaps": capacity_summary["coverage_gaps"],
+            "missing_standard_quantity": capacity_summary["missing_standard_quantity"],
         },
         "approvals": {
             "pending_count": len(approvals),

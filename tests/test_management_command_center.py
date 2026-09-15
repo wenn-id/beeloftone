@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 import test_production_quality_insights as quality_tests
+import test_production_capacity as capacity_tests
 
 
 class ManagementCommandCenterTest(TestCase):
@@ -18,6 +19,9 @@ class ManagementCommandCenterTest(TestCase):
     create_bundle = quality_tests.ProductionQualityInsightsTest.create_bundle
     setup_bundle = quality_tests.ProductionQualityInsightsTest.setup_bundle
     setup_quality = quality_tests.ProductionQualityInsightsTest.setup_quality
+    move = capacity_tests.ProductionCapacityTest.move
+    center = capacity_tests.ProductionCapacityTest.center
+    standard = capacity_tests.ProductionCapacityTest.standard
 
     def sync_window(self):
         finished = datetime.now(timezone.utc).replace(microsecond=0)
@@ -37,6 +41,9 @@ class ManagementCommandCenterTest(TestCase):
         self.assertEqual((report['quality']['inspected_quantity'],
                           report['quality']['first_pass_yield_percent'],
                           report['quality']['attention_groups']), (0, '0.00', 0))
+        self.assertEqual((report['capacity']['work_centers'],
+                          report['capacity']['attention_work_centers'],
+                          report['capacity']['coverage_gaps']), (0, 0, 0))
         self.assertIsNone(report['sales']['snapshot_at'])
         self.assertIsNone(report['finance']['current'])
         self.assertEqual(report['integrations']['attention_count'], 8)
@@ -124,6 +131,50 @@ class ManagementCommandCenterTest(TestCase):
         self.assertEqual(alert['title'], 'Kualitas Vendor <B> (vendor makloon) perlu perhatian')
         self.assertEqual(alert['detail'],
                          'Rework + reject 60.00% dari 5 pcs; naik 60.00 poin dari periode sebelumnya.')
+
+    def test_capacity_risk_and_coverage_alerts_use_fourteen_day_plan(self):
+        with patch('beeloft.store.now', return_value='2026-10-01T02:00:00+00:00'):
+            self.order(30, reference='CMD-CAPACITY', title='Target kapasitas',
+                       due_date='2026-10-09')
+
+        def command_center():
+            with patch('beeloft.command_center.datetime') as clock:
+                clock.now.return_value = datetime(2026, 10, 5, 5, tzinfo=timezone.utc)
+                return self.client.get('/api/command-center').json()
+
+        missing = command_center()
+        self.assertFalse(missing['capacity']['capacity_complete'])
+        self.assertEqual((missing['capacity']['coverage_gaps'],
+                          missing['capacity']['missing_standard_quantity']), (4, 120))
+        coverage = next(row for row in missing['attention']
+                        if row['id'] == 'production-capacity-coverage')
+        self.assertEqual((coverage['priority'], coverage['action'], coverage['action_label']),
+                         ('warning', 'production_capacity', 'Lengkapi standar kapasitas'))
+
+        centers = {stage: self.center('CMD-'+stage.upper(), stage,
+                    10 if stage == 'sewing' else 480)
+                   for stage in ('cutting', 'sewing', 'finishing', 'qc')}
+        for stage, minutes in {'cutting': '1', 'sewing': '10',
+                               'finishing': '1', 'qc': '1'}.items():
+            self.standard(stage, centers[stage], minutes)
+        report = command_center()
+        self.assertEqual(report['capacity'], {
+            'as_of': '2026-10-05', 'horizon_end': '2026-10-18',
+            'capacity_complete': True, 'required_minutes': '390.000',
+            'available_minutes': 14500, 'work_centers': 4,
+            'attention_work_centers': 1, 'overloaded_work_centers': 1,
+            'deadline_risk_work_centers': 0, 'near_capacity_work_centers': 0,
+            'at_risk_orders': 1, 'coverage_gaps': 0, 'missing_standard_quantity': 0,
+        })
+        alert = next(row for row in report['attention']
+                     if row['id'] == 'production-capacity-risk')
+        self.assertEqual((alert['priority'], alert['kind'], alert['action'], alert['action_label']),
+                         ('critical', 'capacity', 'production_capacity', 'Buka rencana kapasitas'))
+        self.assertEqual(alert['detail'],
+                         '1 work center overload dan 0 berisiko deadline; '
+                         '1 order tidak cukup kapasitas sebelum target.')
+        self.assertNotIn('production-capacity-coverage',
+                         {row['id'] for row in report['attention']})
 
     def test_all_active_roles_can_read_but_anonymous_cannot(self):
         for account in (self.admin, self.operator, self.viewer):
