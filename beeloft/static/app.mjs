@@ -14,6 +14,7 @@ let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
 let commandCenterRequest = 0;
 let auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
+let workforceFilters = {work_date:'',status:'all',q:''};
 let exportBusy = false;
 let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
@@ -415,6 +416,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         purchaseOrderDialog(result.purchase_order_id || result.id);
       }
       else if (path.startsWith('/api/purchase-requests')) purchaseRequestDialog(result.id);
+      else if (/^\/api\/workforce\/employees(\/[^/]+\/(changes|attendance))?$/.test(path)) workforceDialog();
       else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) productMappingDialog(result.product_id);
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
       else if (view === 'materials') loadMaterials();
@@ -543,6 +545,7 @@ async function orderForm() {
 }
 $('products').onclick = productsDialog; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = auditEventsDialog;
+$('workforce').onclick = workforceDialog;
 $('scan-bundle').onclick = bundleScanDialog;
 $('scan-finished-goods').onclick = finishedGoodsScanDialog;
 document.addEventListener('click', event => {
@@ -620,6 +623,11 @@ document.addEventListener('click', event => {
     'command-production-issues':()=>showCommandOrders('blocked'),
     'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,
+    workforce:workforceDialog,'employee-master':workforceEmployeeMasterDialog,
+    'new-employee':()=>workforceEmployeeForm(),'edit-employee':()=>workforceEmployeeForm(id),
+    'employee-history':()=>workforceEmployeeHistoryDialog(id),
+    'attendance-form':()=>workforceAttendanceForm(id,button.dataset.date),
+    'attendance-history':()=>workforceAttendanceHistoryDialog(id),
     'capacity-plan':capacityPlanDialog,'production-quality-insights':productionQualityInsightsDialog,
     'new-work-center':()=>capacityWorkCenterForm(),
     'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
@@ -3107,6 +3115,134 @@ async function capacityCalendarForm(workCenterId,workDate) {
     },`/api/work-centers/${encodeURIComponent(workCenterId)}/calendar`,
     `${calendar.work_center.code} · ${calendar.work_center.name}. Isi 0 untuk libur atau isi menit tambahan untuk lembur.`);
   }catch(error){if(version===epoch)notify(error.message);}
+}
+
+const workforceStatusLabels={present:'Hadir',leave:'Cuti',absent:'Absen',unrecorded:'Belum dicatat'};
+const jakartaToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date());
+
+async function workforcePage(path,params={}) {
+  let items=[],page;
+  do{
+    page=await api.get(path+'?'+new URLSearchParams({...params,limit:500,offset:items.length}));
+    items.push(...page.items);
+  }while(page.items.length&&items.length<page.total);
+  return {...page,items};
+}
+
+async function workforceDialog() {
+  if(guardPending())return;
+  workforceFilters.work_date=workforceFilters.work_date||jakartaToday();
+  const version=epoch;
+  openDialog('People','<p class="state">Memuat roster karyawan…</p>');
+  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  $('dialog-content').innerHTML=`<div class="workforce-screen">
+    <div class="workforce-heading"><div><p class="eyebrow">Roster harian</p><p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan.</p></div><div class="actions"><button data-action="employee-master" type="button">Daftar karyawan</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div>
+    <form id="workforce-filter"><div class="form-grid">
+      ${field('work_date','Tanggal','date',`required max="${jakartaToday()}" value="${e(workforceFilters.work_date)}"`)}
+      <label>Status<select name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
+      <label class="full">Cari kode, nama, atau departemen<input name="q" type="search" maxlength="160" value="${e(workforceFilters.q)}"></label>
+    </div><div class="form-actions"><button class="primary" type="submit">Tampilkan roster</button></div></form>
+    <p id="workforce-message" class="state" role="status">Memuat roster karyawan…</p>
+    <dl id="workforce-summary" class="workforce-summary" hidden></dl><div id="workforce-list"></div>
+  </div>`;
+  const form=$('workforce-filter');form.elements.status.value=workforceFilters.status;
+  let generation=0;
+  const load=async()=>{
+    const gen=++generation;message('workforce-message','Memuat roster karyawan…');
+    $('workforce-summary').hidden=true;$('workforce-list').replaceChildren();
+    try{
+      const params=Object.fromEntries(new FormData(form));workforceFilters={...params};
+      const [employees,attendance]=await Promise.all([
+        workforcePage('/api/workforce/employees',{status:'active',q:params.q}),
+        workforcePage('/api/workforce/attendance',{start_date:params.work_date,end_date:params.work_date,status:'all',q:params.q})
+      ]);
+      if(!current()||gen!==generation)return;
+      message('workforce-message','');
+      const attendanceByEmployee=new Map(attendance.items.map(item=>[item.employee_id,item]));
+      const rows=employees.items.map(employee=>({employee,attendance:attendanceByEmployee.get(employee.id)||null}));
+      const filtered=rows.filter(row=>params.status==='all'?(true):params.status==='unrecorded'?!row.attendance:row.attendance?.status===params.status);
+      const recorded=rows.filter(row=>row.attendance),present=recorded.filter(row=>row.attendance.status==='present');
+      const leave=recorded.filter(row=>row.attendance.status==='leave'),absent=recorded.filter(row=>row.attendance.status==='absent');
+      const overtime=recorded.reduce((total,row)=>total+row.attendance.overtime_minutes,0);
+      $('workforce-summary').innerHTML=`<div><dt>Karyawan aktif</dt><dd>${n(rows.length)}</dd></div><div><dt>Belum dicatat</dt><dd>${n(rows.length-recorded.length)}</dd></div><div><dt>Hadir</dt><dd>${n(present.length)}</dd></div><div><dt>Cuti</dt><dd>${n(leave.length)}</dd></div><div><dt>Absen</dt><dd>${n(absent.length)}</dd></div><div><dt>Lembur</dt><dd>${e(minuteQty(overtime))}</dd></div>`;
+      $('workforce-summary').hidden=false;
+      $('workforce-list').innerHTML=filtered.length?filtered.map(({employee,attendance:item})=>{
+        const status=item?.status||'unrecorded',statusClass=status==='present'?'done':status==='absent'?'late':'';
+        const detail=item?.status==='present'?`${item.clock_in.slice(0,5)}–${item.clock_out.slice(0,5)} · kerja ${minuteQty(item.work_minutes)} · lembur ${minuteQty(item.overtime_minutes)}`:item?.notes||'Belum ada catatan untuk tanggal ini.';
+        return `<article class="workforce-row" data-workforce-employee="${e(employee.id)}"><div><span class="reference">${e(employee.code)} · ${e(employee.department)}</span><h3>${e(employee.name)}</h3><p>${e(detail)}</p>${item?.notes&&item.status==='present'?`<p class="hint">${e(item.notes)}</p>`:''}</div><div class="workforce-row-actions"><span class="status-label ${statusClass}">${e(workforceStatusLabels[status])}</span>${user.role!=='viewer'?`<button type="button" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:''}${item?`<button type="button" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:''}</div></article>`;
+      }).join(''):'<p class="state">Tidak ada karyawan yang cocok dengan status dan pencarian ini.</p>';
+    }catch(error){if(current()&&gen===generation){message('workforce-message',error.message,true);$('workforce-message').insertAdjacentHTML('beforeend','<br><button id="workforce-retry" type="button">Coba lagi</button>');$('workforce-retry').onclick=load;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load();};await load();
+}
+
+async function workforceEmployeeMasterDialog() {
+  if(guardPending())return;
+  const version=epoch;openDialog('Daftar karyawan','<p class="state">Memuat daftar karyawan…</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const report=await workforcePage('/api/workforce/employees',{status:'all'});if(!current())return;
+    $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Status dan perubahan master tersimpan sebagai revisi.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div><div class="product-list workforce-master">${report.items.map(item=>`<article class="product-item" data-workforce-master="${e(item.id)}"><div><strong>${e(item.code)} · ${e(item.name)}</strong><span>${e(item.department)} · ${item.active?'aktif':'nonaktif'} · revisi ${n(item.revision)}</span></div><div class="actions">${user.role==='admin'?`<button data-action="edit-employee" data-id="${e(item.id)}" type="button">Ubah</button>`:''}<button data-action="employee-history" data-id="${e(item.id)}" type="button">Riwayat</button></div></article>`).join('')||'<p class="state">Belum ada karyawan.</p>'}</div></div>`;
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="employee-master">Coba lagi</button>`;}
+}
+
+async function workforceEmployeeForm(employeeId=null) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+    const employee=employeeId?await api.get('/api/workforce/employees/'+encodeURIComponent(employeeId)):null;
+    if(version!==epoch)return;
+    const changing=Boolean(employee);
+    formDialog(changing?'Ubah karyawan':'Tambah karyawan',
+      (changing?`<p class="full"><strong>${e(employee.code)}</strong></p>`:field('code','Kode karyawan','text','required maxlength="40" autocomplete="off"'))+
+      field('name','Nama karyawan','text','required maxlength="160"')+field('department','Departemen','text','required maxlength="160"')+
+      (changing?'<label>Status<select name="active"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></label>':'')+
+      `<label class="full">${changing?'Alasan perubahan':'Sumber data awal'}<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>{
+        const data=new FormData(form);
+        return changing?{expected_revision:employee.revision,name:data.get('name').trim(),department:data.get('department').trim(),active:data.get('active')==='true',reason:data.get('reason').trim()}:{code:data.get('code').trim(),name:data.get('name').trim(),department:data.get('department').trim(),reason:data.get('reason').trim()};
+      },changing?`/api/workforce/employees/${encodeURIComponent(employee.id)}/changes`:'/api/workforce/employees',changing?`Revisi ${employee.revision}. Kode karyawan tidak dapat diubah.`:'Kode dinormalisasi menjadi huruf besar dan tidak dapat dipakai ulang.');
+    const form=$('action-form');if(employee){form.elements.name.value=employee.name;form.elements.department.value=employee.department;form.elements.active.value=String(employee.active);}
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function workforceAttendanceForm(employeeId,workDate) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+    const [employee,report]=await Promise.all([api.get('/api/workforce/employees/'+encodeURIComponent(employeeId)),workforcePage('/api/workforce/attendance',{start_date:workDate,end_date:workDate,employee_id:employeeId})]);
+    if(version!==epoch)return;const current=report.items[0]||null;
+    formDialog(current?'Koreksi kehadiran':'Catat kehadiran',`<p class="full"><strong>${e(employee.code)} · ${e(employee.name)}</strong><br><span class="hint">${e(employee.department)}</span></p>`+
+      field('work_date','Tanggal','date',`required readonly value="${e(workDate)}"`)+
+      '<label>Status<select name="status"><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>'+
+      field('clock_in','Jam masuk','time','required')+field('clock_out','Jam pulang','time','required')+
+      field('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')+
+      '<label class="full">Catatan<textarea name="notes" maxlength="1000"></textarea></label><label class="full">Alasan pencatatan atau koreksi<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+        const data=new FormData(form),present=data.get('status')==='present';
+        return {work_date:data.get('work_date'),expected_revision:current?.revision||0,status:data.get('status'),clock_in:present?data.get('clock_in'):null,clock_out:present?data.get('clock_out'):null,overtime_minutes:present?Number(data.get('overtime_minutes')):0,notes:data.get('notes').trim(),reason:data.get('reason').trim()};
+      },`/api/workforce/employees/${encodeURIComponent(employeeId)}/attendance`,current?`Catatan saat ini revisi ${current.revision}. Koreksi menambah revisi baru; catatan lama tetap utuh.`:'Satu catatan per karyawan per tanggal.');
+    const form=$('action-form'),toggle=()=>{const present=form.elements.status.value==='present';for(const name of ['clock_in','clock_out','overtime_minutes']){form.elements[name].disabled=!present;form.elements[name].required=present;}if(!present){form.elements.clock_in.value='';form.elements.clock_out.value='';form.elements.overtime_minutes.value='0';}};
+    if(current){form.elements.status.value=current.status;form.elements.clock_in.value=current.clock_in?.slice(0,5)||'';form.elements.clock_out.value=current.clock_out?.slice(0,5)||'';form.elements.overtime_minutes.value=current.overtime_minutes;form.elements.notes.value=current.notes;}
+    else{form.elements.clock_in.value='08:00';form.elements.clock_out.value='17:00';}
+    form.elements.status.onchange=toggle;toggle();
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function workforceEmployeeHistoryDialog(employeeId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Riwayat karyawan','<p class="state">Memuat riwayat karyawan…</p>');const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const page=await api.get(`/api/workforce/employees/${encodeURIComponent(employeeId)}/history?limit=100`);if(!current())return;
+    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(page.employee.code)} · ${e(page.employee.name)} · ${e(page.employee.department)}</p><div>${page.items.map(item=>`<article class="history-item"><time>${e(auditStamp(item.created_at))}</time><div><strong>Revisi ${n(item.revision)} · ${item.active?'Aktif':'Nonaktif'}</strong><p>${e(item.name)} · ${e(item.department)}</p><p class="reason">${e(item.reason)}</p><p class="hint">${e(item.actor_name)}</p></div></article>`).join('')}</div>${page.next_before?'<p class="hint">Menampilkan 100 revisi terbaru.</p>':''}<button data-action="employee-master" type="button">Kembali ke daftar karyawan</button></div>`;
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="employee-history" data-id="${e(employeeId)}">Coba lagi</button>`;}
+}
+
+async function workforceAttendanceHistoryDialog(attendanceId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Riwayat kehadiran','<p class="state">Memuat riwayat kehadiran…</p>');const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const page=await api.get(`/api/workforce/attendance/${encodeURIComponent(attendanceId)}/history?limit=100`);if(!current())return;const attendance=page.attendance;
+    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(attendance.employee_code)} · ${e(attendance.employee_name)}<br>${date(attendance.work_date)}</p><div>${page.items.map(item=>`<article class="history-item"><time>${e(auditStamp(item.created_at))}</time><div><strong>Revisi ${n(item.revision)} · ${e(workforceStatusLabels[item.status])}</strong><p>${item.status==='present'?`${e(item.clock_in.slice(0,5))}–${e(item.clock_out.slice(0,5))} · kerja ${e(minuteQty(item.work_minutes))} · lembur ${e(minuteQty(item.overtime_minutes))}`:'Tanpa jam kerja'}</p>${item.notes?`<p>${e(item.notes)}</p>`:''}<p class="reason">${e(item.reason)}</p><p class="hint">${e(item.actor_name)}</p></div></article>`).join('')}</div>${page.next_before?'<p class="hint">Menampilkan 100 revisi terbaru.</p>':''}<button data-action="workforce" type="button">Kembali ke roster</button></div>`;
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="attendance-history" data-id="${e(attendanceId)}">Coba lagi</button>`;}
 }
 
 async function capacityPlanDialog() {
