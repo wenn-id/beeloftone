@@ -418,6 +418,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         purchaseOrderDialog(result.purchase_order_id || result.id);
       }
       else if (path.startsWith('/api/purchase-requests')) purchaseRequestDialog(result.id);
+      else if (path === '/api/workforce/requests' || path.startsWith('/api/workforce/requests/')) workforceRequestDialog(result.id);
       else if (/^\/api\/workforce\/employees(\/[^/]+\/(changes|attendance))?$/.test(path)) workforceDialog();
       else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) productMappingDialog(result.product_id);
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
@@ -593,7 +594,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'material-batch-traceability':()=>materialBatchTraceabilityDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
+    products:productsDialog,approvals:approvalsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
     'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
     integrations:integrationsDialog,'integration-runs':integrationRunsDialog,
     'integration-run':()=>integrationRunDialog(id),
@@ -631,6 +632,9 @@ document.addEventListener('click', event => {
     'employee-history':()=>workforceEmployeeHistoryDialog(id),
     'attendance-form':()=>workforceAttendanceForm(id,button.dataset.date),
     'attendance-history':()=>workforceAttendanceHistoryDialog(id),
+    'workforce-requests':workforceRequestsDialog,'new-workforce-request':workforceRequestForm,
+    'workforce-request':()=>workforceRequestDialog(id),
+    'workforce-request-decision':()=>workforceRequestDecisionForm(id,button.dataset.status),
     'capacity-plan':capacityPlanDialog,'production-quality-insights':productionQualityInsightsDialog,
     'new-work-center':()=>capacityWorkCenterForm(),
     'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
@@ -3139,7 +3143,7 @@ async function workforceDialog() {
   openDialog('People','<p class="state">Memuat roster karyawan…</p>');
   const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   $('dialog-content').innerHTML=`<div class="workforce-screen">
-    <div class="workforce-heading"><div><p class="eyebrow">Roster harian</p><p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan.</p></div><div class="actions"><button data-action="employee-master" type="button">Daftar karyawan</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div>
+    <div class="workforce-heading"><div><p class="eyebrow">Roster harian</p><p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan.</p></div><div class="actions"><button data-action="workforce-requests" type="button">Permintaan cuti / lembur</button><button data-action="employee-master" type="button">Daftar karyawan</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div>
     <form id="workforce-filter"><div class="form-grid">
       ${field('work_date','Tanggal','date',`required max="${jakartaToday()}" value="${e(workforceFilters.work_date)}"`)}
       <label>Status<select name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
@@ -3246,6 +3250,60 @@ async function workforceAttendanceHistoryDialog(attendanceId) {
     const page=await api.get(`/api/workforce/attendance/${encodeURIComponent(attendanceId)}/history?limit=100`);if(!current())return;const attendance=page.attendance;
     $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(attendance.employee_code)} · ${e(attendance.employee_name)}<br>${date(attendance.work_date)}</p><div>${page.items.map(item=>`<article class="history-item"><time>${e(auditStamp(item.created_at))}</time><div><strong>Revisi ${n(item.revision)} · ${e(workforceStatusLabels[item.status])}</strong><p>${item.status==='present'?`${e(item.clock_in.slice(0,5))}–${e(item.clock_out.slice(0,5))} · kerja ${e(minuteQty(item.work_minutes))} · lembur ${e(minuteQty(item.overtime_minutes))}`:'Tanpa jam kerja'}</p>${item.notes?`<p>${e(item.notes)}</p>`:''}<p class="reason">${e(item.reason)}</p><p class="hint">${e(item.actor_name)}</p></div></article>`).join('')}</div>${page.next_before?'<p class="hint">Menampilkan 100 revisi terbaru.</p>':''}<button data-action="workforce" type="button">Kembali ke roster</button></div>`;
   }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="attendance-history" data-id="${e(attendanceId)}">Coba lagi</button>`;}
+}
+
+const workforceRequestLabels={leave:'Cuti',overtime:'Lembur'};
+
+async function workforceRequestsDialog() {
+  if(guardPending())return;
+  const version=epoch;openDialog('Permintaan cuti dan lembur','<p class="state">Memuat permintaan People…</p>');const modal=dialogVersion;
+  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Approval memberi izin; kehadiran aktual tetap dicatat terpisah.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role!=='viewer'?'<button class="primary" data-action="new-workforce-request" type="button">Ajukan permintaan</button>':''}<button data-action="approvals" type="button">Inbox approval</button></div></div><form id="workforce-request-filter"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis<select name="kind"><option value="all">Semua jenis</option><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label><label class="full">Cari referensi, karyawan, atau departemen<input name="q" type="search" maxlength="160"></label></div><div class="form-actions"><button class="primary" type="submit">Tampilkan permintaan</button></div></form><p id="workforce-request-message" class="state" role="status"></p><dl id="workforce-request-summary" class="workforce-summary" hidden></dl><div id="workforce-request-list"></div></div>`;
+  const form=$('workforce-request-filter');let generation=0;
+  const load=async()=>{
+    const gen=++generation;message('workforce-request-message','Memuat permintaan People…');$('workforce-request-summary').hidden=true;$('workforce-request-list').replaceChildren();
+    try{
+      const params=Object.fromEntries(new FormData(form)),report=await workforcePage('/api/workforce/requests',params);if(!current()||gen!==generation)return;
+      message('workforce-request-message','');
+      $('workforce-request-summary').innerHTML=`<div><dt>Total</dt><dd>${n(report.total)}</dd></div><div><dt>Menunggu</dt><dd>${n(report.summary.submitted)}</dd></div><div><dt>Disetujui</dt><dd>${n(report.summary.approved)}</dd></div><div><dt>Cuti</dt><dd>${n(report.summary.leave)}</dd></div><div><dt>Lembur</dt><dd>${n(report.summary.overtime)}</dd></div>`;$('workforce-request-summary').hidden=false;
+      $('workforce-request-list').innerHTML=report.items.length?report.items.map(item=>`<article class="workforce-row" data-workforce-request="${e(item.id)}"><div><span class="reference">${e(item.reference)} · ${e(item.department)}</span><h3>${e(item.code)} · ${e(item.employee_name)}</h3><p>${e(workforceRequestLabels[item.kind])} · ${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''}${item.kind==='overtime'?' · '+e(minuteQty(item.overtime_minutes)):''}</p><p class="reason">${e(item.reason)}</p></div><div class="workforce-row-actions"><span class="status-label ${item.status==='approved'?'done':item.status==='rejected'?'late':''}">${e(approvalStatus[item.status])}</span><button data-action="workforce-request" data-id="${e(item.id)}" type="button">Rincian</button></div></article>`).join(''):'<p class="state">Belum ada permintaan yang sesuai filter.</p>';
+    }catch(error){if(current()&&gen===generation){message('workforce-request-message',error.message,true);$('workforce-request-message').insertAdjacentHTML('beforeend','<br><button id="workforce-request-retry" type="button">Coba lagi</button>');$('workforce-request-retry').onclick=load;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load();};await load();
+}
+
+async function workforceRequestForm() {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+    const employees=await workforcePage('/api/workforce/employees',{status:'active'});if(version!==epoch)return;
+    if(!employees.items.length){notify('Tambahkan karyawan aktif sebelum membuat permintaan.');return;}
+    formDialog('Ajukan cuti atau lembur',`<label class="full">Karyawan<select name="employee_id">${employees.items.map(item=>option(item.id,`${item.code} · ${item.name} · ${item.department}`)).join('')}</select></label><label>Jenis<select name="kind"><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label>${field('start_date','Tanggal mulai','date','required')}${field('end_date','Tanggal selesai','date','required')}${field('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')}<label class="full">Alasan permintaan<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>{
+      const data=new FormData(form),kind=data.get('kind'),start=data.get('start_date');return {employee_id:data.get('employee_id'),kind,start_date:start,end_date:kind==='overtime'?start:data.get('end_date'),overtime_minutes:kind==='overtime'?Number(data.get('overtime_minutes')):0,reason:data.get('reason').trim()};
+    },'/api/workforce/requests','Permintaan masuk ke inbox approval. Persetujuan tidak otomatis mencatat kehadiran aktual.');
+    const form=$('action-form'),toggle=()=>{const overtime=form.elements.kind.value==='overtime';form.elements.end_date.readOnly=overtime;form.elements.overtime_minutes.disabled=!overtime;form.elements.overtime_minutes.required=overtime;if(overtime)form.elements.end_date.value=form.elements.start_date.value;else if(!form.elements.end_date.value)form.elements.end_date.value=form.elements.start_date.value;};
+    form.elements.start_date.value=jakartaToday();form.elements.end_date.value=jakartaToday();form.elements.kind.onchange=toggle;form.elements.start_date.onchange=toggle;toggle();
+  }catch(error){if(version===epoch)notify(error.message);}
+}
+
+async function workforceRequestDialog(requestId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian permintaan People','<p class="state">Memuat permintaan…</p>');const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  try{
+    const item=await api.get('/api/workforce/requests/'+encodeURIComponent(requestId));if(!current())return;
+    const pending=item.status==='submitted',canCancel=pending&&user.role==='operator'&&user.id===item.actor_id;
+    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(item.reference)} · ${e(approvalStatus[item.status])}</p><h3>${e(item.code)} · ${e(item.employee_name)}</h3><p>${e(item.department)}${item.employee_active?'':' · karyawan nonaktif'}</p><article class="material-event"><h3>${e(workforceRequestLabels[item.kind])}</h3><p>${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''} · ${n(item.days)} hari${item.kind==='overtime'?' · '+e(minuteQty(item.overtime_minutes)):''}</p><p class="reason">${e(item.reason)}</p><p class="hint">Diajukan ${e(item.actor_name)} · ${e(auditStamp(item.created_at))}</p></article><h3>Riwayat keputusan</h3><div>${item.history.map(event=>`<article class="history-item"><time>${e(auditStamp(event.created_at))}</time><div><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)}</p></div></article>`).join('')}</div><div class="actions"><button data-action="workforce-requests" type="button">Semua permintaan</button><button data-action="workforce" type="button">Roster People</button>${pending&&user.role==='admin'?`<button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="approved" type="button">Setujui</button><button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="rejected" type="button">Tolak</button>`:''}${canCancel?`<button class="quiet" data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="cancelled" type="button">Batalkan</button>`:''}</div></div>`;
+  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="workforce-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+}
+
+async function workforceRequestDecisionForm(requestId,status) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+    const item=await api.get('/api/workforce/requests/'+encodeURIComponent(requestId));if(version!==epoch)return;
+    const label={approved:'Setujui',rejected:'Tolak',cancelled:'Batalkan'}[status];
+    formDialog(`${label} permintaan ${workforceRequestLabels[item.kind].toLowerCase()}`,`<p class="full"><strong>${e(item.reference)} · ${e(item.code)} · ${e(item.employee_name)}</strong></p><label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>({status,expected_revision:item.revision,reason:new FormData(form).get('reason').trim()}),`/api/workforce/requests/${encodeURIComponent(item.id)}/decisions`,'Keputusan tersimpan permanen di riwayat approval.');
+  }catch(error){if(version===epoch)notify(error.message);}
 }
 
 async function capacityPlanDialog() {
@@ -3423,8 +3481,18 @@ $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
 const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
-const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',ai_action:'AI Brain · tindakan'};
-const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',ai_action:'ai-action-proposal'};
+const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',workforce_leave:'People · cuti',workforce_overtime:'People · lembur',ai_action:'AI Brain · tindakan'};
+const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',workforce_leave:'workforce-request',workforce_overtime:'workforce-request',ai_action:'ai-action-proposal'};
+function approvalContextHTML(row) {
+  if(row.kind==='purchase_request')return `<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`;
+  if(row.kind==='purchase_order')return `<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`;
+  if(row.kind==='supplier_payment')return `<p>Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}</p>`;
+  if(row.kind==='marketing_budget')return `<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`;
+  if(row.kind==='workforce_leave')return `<p>${date(row.context.start_date)}${row.context.end_date!==row.context.start_date?'–'+date(row.context.end_date):''} · ${n(row.context.days)} hari</p>`;
+  if(row.kind==='workforce_overtime')return `<p>${date(row.context.start_date)} · ${e(minuteQty(row.context.overtime_minutes))}</p>`;
+  if(row.kind==='ai_action')return `<p>${e(row.context.recommendation_title)}</p>`;
+  return `<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`;
+}
 const rupiah = value => 'Rp' + BigInt(value.split('.')[0]).toLocaleString('id-ID') + ',' + value.split('.')[1];
 const purchaseStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
 $('purchase-requests').onclick = () => purchaseRequestsDialog();
@@ -3435,7 +3503,7 @@ async function approvalsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan PR, penerbitan PO, pembayaran supplier, budget marketing, perubahan produksi, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
@@ -3443,7 +3511,7 @@ async function approvalsDialog() {
     try{
       const rows=await api.get('/api/approvals?'+new URLSearchParams({limit:25,offset,status:$('approval-status').value,kind:$('approval-kind').value}));
       if(!current()||gen!==generation)return;
-      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${row.kind==='purchase_request'?`<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='purchase_order'?`<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`:row.kind==='supplier_payment'?`<p>Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}</p>`:row.kind==='marketing_budget'?`<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`:row.kind==='ai_action'?`<p>${e(row.context.recommendation_title)}</p>`:`<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
+      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
       if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
     }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}

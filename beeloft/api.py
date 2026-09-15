@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkCenterChange, WorkCenterCreate
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.78.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.79.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -174,7 +174,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
                   status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','ai_action'] = 'all'):
+                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','workforce_leave','workforce_overtime','ai_action'] = 'all'):
         return store.approvals(limit, offset, status, kind)
 
     @app.get('/api/ai/action-proposals', tags=['AI Brain','Approvals'])
@@ -459,6 +459,28 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def attendance_history(attendance_id: str, user: Actor, limit: Limit = 100,
                            before: Annotated[int | None, Query(ge=1)] = None):
         return store.attendance_history(attendance_id,limit,before)
+
+    @app.get('/api/workforce/requests', tags=['People','Approvals'])
+    def workforce_requests(user: Actor,
+                           status: Literal['all','submitted','approved','rejected','cancelled'] = 'all',
+                           kind: Literal['all','leave','overtime'] = 'all',
+                           q: Annotated[str, Query(max_length=160)] = '',
+                           limit: Limit = 100, offset: Offset = 0):
+        return store.workforce_requests(status,kind,q,limit,offset)
+
+    @app.post('/api/workforce/requests', status_code=201, tags=['People','Approvals'])
+    def create_workforce_request(body: WorkforceRequestCreate, user: Actor, key: RequestKey):
+        return store.create_workforce_request(body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/workforce/requests/{request_id}', tags=['People','Approvals'])
+    def workforce_request(request_id: str, user: Actor):
+        return store.workforce_request(request_id)
+
+    @app.post('/api/workforce/requests/{request_id}/decisions', status_code=201,
+              tags=['People','Approvals'])
+    def decide_workforce_request(request_id: str, body: WorkforceRequestDecision,
+                                 user: Actor, key: RequestKey):
+        return store.decide_workforce_request(request_id,body.model_dump(mode='json'),user,key)
 
     @app.post('/api/work-centers', status_code=201, tags=['Production Capacity'])
     def create_work_center(body: WorkCenterCreate, user: Actor, key: RequestKey):

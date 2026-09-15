@@ -171,6 +171,36 @@ class AttendanceSave(Input):
         return self
 
 
+class WorkforceRequestCreate(Input):
+    employee_id: Text
+    kind: Literal['leave','overtime']
+    start_date: date
+    end_date: date
+    overtime_minutes: Annotated[int, Field(strict=True, ge=0, le=720)] = 0
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def valid_request(self):
+        if self.start_date>self.end_date:
+            raise ValueError('Tanggal selesai tidak boleh sebelum tanggal mulai.')
+        if (self.end_date-self.start_date).days>=366:
+            raise ValueError('Rentang permintaan maksimal 366 hari.')
+        if self.kind=='leave' and self.overtime_minutes:
+            raise ValueError('Permintaan cuti tidak boleh memuat menit lembur.')
+        if self.kind=='overtime':
+            if self.start_date!=self.end_date:
+                raise ValueError('Permintaan lembur hanya boleh untuk satu tanggal.')
+            if not self.overtime_minutes:
+                raise ValueError('Menit lembur harus lebih dari nol.')
+        return self
+
+
+class WorkforceRequestDecision(Input):
+    status: Literal['approved','rejected','cancelled']
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
 class OrderChange(Input):
     owner_id: Text
     due_date: date

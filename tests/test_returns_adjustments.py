@@ -377,6 +377,6 @@ class ReturnsAdjustmentsTest(TestCase):
             db.execute('PRAGMA user_version=23');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],50)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],51)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_returns').fetchone()[0],0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_adjustments').fetchone()[0],0)

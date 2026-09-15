@@ -30,7 +30,8 @@ AUDIT_BULK_FIELDS = {'items','orders','returns','listings','periods','payables',
 AUDIT_SECRET_FIELDS = {'api_key','client_secret','code','code_verifier','csrf','password','token'}
 AUDIT_APPROVAL_OPERATIONS = {
     'purchase-request-decision','purchase-order-decision','supplier-payment-decision',
-    'marketing-budget-decision','production-change-request-decision','ai-action-proposal-decision'
+    'marketing-budget-decision','production-change-request-decision','ai-action-proposal-decision',
+    'workforce-request','workforce-request-decision'
 }
 
 
@@ -92,7 +93,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -213,6 +214,8 @@ class Store:
                 db.executescript(Path(__file__).with_name('production_capacity.sql').read_text(encoding='utf-8'))
             if version < 50:
                 db.executescript(Path(__file__).with_name('workforce.sql').read_text(encoding='utf-8'))
+            if version < 51:
+                db.executescript(Path(__file__).with_name('workforce_approvals.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -6128,6 +6131,24 @@ class Store:
                         "old_due_date":request["old_due_date"],"new_due_date":request["new_due_date"],
                         "old_owner_name":request["old_owner_name"],"new_owner_name":request["new_owner_name"],
                         "stale":request["stale"]}})
+            for workforce_kind in ('leave','overtime'):
+                approval_kind='workforce_'+workforce_kind
+                if kind not in ('all',approval_kind):
+                    continue
+                for row in db.execute('SELECT id FROM workforce_requests WHERE kind=?',(workforce_kind,)):
+                    request=self._workforce_request(db,row['id'])
+                    current_status='pending' if request['status']=='submitted' else request['status']
+                    if status not in ('all',current_status):
+                        continue
+                    items.append({'id':request['id'],'kind':approval_kind,'department':'People',
+                        'status':current_status,'reference':request['reference'],
+                        'title':request['code']+' · '+request['employee_name'],
+                        'amount':None,'currency':None,'reason':request['reason'],
+                        'actor_id':request['actor_id'],'actor_name':request['actor_name'],
+                        'created_at':request['created_at'],'context':{
+                        'employee_id':request['employee_id'],'start_date':request['start_date'],
+                        'end_date':request['end_date'],'days':request['days'],
+                        'overtime_minutes':request['overtime_minutes']}})
             if kind in ('all','ai_action'):
                 for row in db.execute('SELECT id FROM ai_action_proposals'):
                     proposal=self._ai_action_proposal(db,row['id'])
@@ -6565,6 +6586,97 @@ class Store:
             return self._attendance(db,attendance_id)
         operation='workforce-attendance:'+employee_id+':'+str(payload['work_date'])
         return self._write(actor,('admin','operator'),key,operation,payload,perform)
+
+    def _workforce_request(self,db,request_id):
+        row=db.execute('''SELECT r.*,e.code,c.name AS employee_name,c.department,
+            c.active AS employee_active,u.name AS actor_name
+            FROM workforce_requests r JOIN workforce_employees e ON e.id=r.employee_id
+            JOIN workforce_employee_events c ON c.employee_id=e.id
+                AND c.sequence=(SELECT MAX(x.sequence) FROM workforce_employee_events x
+                                WHERE x.employee_id=e.id)
+            JOIN users u ON u.id=r.actor_id WHERE r.id=?''',(request_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Permintaan People tidak ditemukan.')
+        record=dict(row);record['employee_active']=bool(record['employee_active'])
+        record['days']=(date.fromisoformat(record['end_date'])-
+                        date.fromisoformat(record['start_date'])).days+1
+        record['history']=[dict(event) for event in db.execute('''SELECT x.*,u.name AS actor_name
+            FROM workforce_request_events x JOIN users u ON u.id=x.actor_id
+            WHERE x.request_id=? ORDER BY x.sequence DESC''',(request_id,))]
+        record['status']=record['history'][0]['status']
+        record['revision']=record['history'][0]['sequence']
+        return record
+
+    def workforce_request(self,request_id):
+        with self.transaction() as db:
+            return self._workforce_request(db,request_id)
+
+    def workforce_requests(self,status='all',kind='all',query='',limit=100,offset=0):
+        needle=query.strip().casefold()
+        with self.transaction() as db:
+            items=[]
+            for row in db.execute('SELECT id FROM workforce_requests ORDER BY sequence DESC'):
+                request=self._workforce_request(db,row['id'])
+                if status!='all' and request['status']!=status:
+                    continue
+                if kind!='all' and request['kind']!=kind:
+                    continue
+                searchable=' '.join((request['reference'],request['code'],request['employee_name'],
+                                     request['department'])).casefold()
+                if needle and needle not in searchable:
+                    continue
+                items.append(request)
+        summary={state:sum(row['status']==state for row in items)
+                 for state in ('submitted','approved','rejected','cancelled')}
+        summary.update({'leave':sum(row['kind']=='leave' for row in items),
+                        'overtime':sum(row['kind']=='overtime' for row in items)})
+        return {'status':status,'kind':kind,'query':query.strip(),'total':len(items),
+                'limit':limit,'offset':offset,'summary':summary,
+                'items':items[offset:offset+limit]}
+
+    def create_workforce_request(self,payload,actor,key):
+        def perform(db):
+            employee=self._employee(db,payload['employee_id'])
+            if not employee['active']:
+                raise DomainError(422,'Permintaan baru hanya dapat dibuat untuk karyawan aktif.')
+            overlap=db.execute('''SELECT r.id FROM workforce_requests r
+                WHERE r.employee_id=? AND r.start_date<=? AND r.end_date>=?
+                  AND (SELECT x.status FROM workforce_request_events x WHERE x.request_id=r.id
+                       ORDER BY x.sequence DESC LIMIT 1) IN ('submitted','approved') LIMIT 1''',
+                (payload['employee_id'],payload['end_date'],payload['start_date'])).fetchone()
+            if overlap:
+                raise DomainError(409,'Karyawan sudah memiliki permintaan aktif pada tanggal tersebut.')
+            request_id=str(uuid4());timestamp=now()
+            prefix='CUTI' if payload['kind']=='leave' else 'LBR'
+            reference=f'{prefix}-{datetime.now(timezone(timedelta(hours=7))).strftime("%Y%m%d")}-{request_id[:8].upper()}'
+            db.execute('''INSERT INTO workforce_requests(id,reference,employee_id,kind,start_date,
+                end_date,overtime_minutes,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)''',(request_id,reference,payload['employee_id'],
+                payload['kind'],payload['start_date'],payload['end_date'],
+                payload['overtime_minutes'],payload['reason'],actor['id'],timestamp))
+            db.execute('''INSERT INTO workforce_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,'submitted',?,?,?)''',(request_id,payload['reason'],actor['id'],timestamp))
+            return self._workforce_request(db,request_id)
+        return self._write(actor,('admin','operator'),key,'workforce-request',payload,perform)
+
+    def decide_workforce_request(self,request_id,payload,actor,key):
+        def perform(db):
+            request=self._workforce_request(db,request_id)
+            role=db.execute('SELECT role FROM users WHERE id=?',(actor['id'],)).fetchone()[0]
+            allowed=(role=='admin' and payload['status'] in ('approved','rejected')) or (
+                role=='operator' and payload['status']=='cancelled' and
+                request['actor_id']==actor['id'])
+            if not allowed:
+                raise DomainError(403,'Hanya admin memutuskan permintaan; pemohon boleh membatalkan pengajuannya.')
+            if request['revision']!=payload['expected_revision']:
+                raise DomainError(409,'Permintaan People sudah berubah. Buka ulang rincian keputusan terbaru.')
+            if request['status']!='submitted':
+                raise DomainError(409,'Permintaan People sudah diputuskan.')
+            db.execute('''INSERT INTO workforce_request_events(request_id,status,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?)''',(request_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._workforce_request(db,request_id)
+        return self._write(actor,('admin','operator'),key,
+                           'workforce-request-decision:'+request_id,payload,perform)
 
     def activity(self, day=None, kind="all", limit=50, before_time=None, before_id=None, start_date=None, end_date=None):
         jakarta = timezone(timedelta(hours=7))

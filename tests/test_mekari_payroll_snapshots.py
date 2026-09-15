@@ -107,5 +107,5 @@ class MekariPayrollSnapshotTest(TestCase):
             db.execute('PRAGMA user_version=41');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],50)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],51)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM mekari_payroll_snapshot_batches').fetchone()[0],0)
