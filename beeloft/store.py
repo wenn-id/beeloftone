@@ -50,7 +50,7 @@ def audit_category(operation):
         return 'purchasing'
     if root.startswith(('material-', 'consumption-', 'bom')):
         return 'materials'
-    if root == 'supplier' or root.startswith('product'):
+    if root == 'supplier' or root.startswith('product') or root == 'workforce-employee':
         return 'master_data'
     return 'production'
 
@@ -92,7 +92,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -211,6 +211,8 @@ class Store:
                 db.executescript(Path(__file__).with_name(migration).read_text(encoding="utf-8"))
             if version < 49:
                 db.executescript(Path(__file__).with_name('production_capacity.sql').read_text(encoding='utf-8'))
+            if version < 50:
+                db.executescript(Path(__file__).with_name('workforce.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -6386,6 +6388,183 @@ class Store:
                 JOIN order_lines l ON l.id=m.line_id JOIN users u ON u.id=m.actor_id
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",
                 (order_id, limit, offset))]
+
+    def _employee(self,db,employee_id):
+        row=db.execute('''SELECT e.id,e.code,e.created_by,e.created_at,
+            x.sequence,x.id AS event_id,x.revision,x.name,x.department,x.active,x.reason,
+            x.actor_id,x.created_at AS updated_at,u.name AS actor_name
+            FROM workforce_employees e JOIN workforce_employee_events x
+                ON x.employee_id=e.id AND x.sequence=(SELECT MAX(y.sequence)
+                    FROM workforce_employee_events y WHERE y.employee_id=e.id)
+            JOIN users u ON u.id=x.actor_id WHERE e.id=?''',(employee_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Karyawan tidak ditemukan.')
+        record=dict(row);record['active']=bool(record['active']);return record
+
+    def employees(self,status='all',department='',query='',limit=100,offset=0):
+        params={'status':status,'department':department.strip().casefold(),
+                'query':query.strip().casefold()}
+        with self.transaction() as db:
+            ids=[row['id'] for row in db.execute('''SELECT e.id FROM workforce_employees e
+                JOIN workforce_employee_events x ON x.employee_id=e.id
+                    AND x.sequence=(SELECT MAX(y.sequence) FROM workforce_employee_events y
+                        WHERE y.employee_id=e.id)
+                WHERE (:status='all' OR x.active=(:status='active'))
+                  AND (:department='' OR lower(x.department)=:department)
+                  AND (:query='' OR instr(lower(e.code),:query)>0
+                    OR instr(lower(x.name),:query)>0 OR instr(lower(x.department),:query)>0)
+                ORDER BY x.active DESC,e.code,e.id''',params)]
+            return {'total':len(ids),'limit':limit,'offset':offset,
+                    'items':[self._employee(db,value) for value in ids[offset:offset+limit]]}
+
+    def employee(self,employee_id):
+        with self.transaction() as db:
+            return self._employee(db,employee_id)
+
+    def employee_history(self,employee_id,limit=100,before=None):
+        with self.transaction() as db:
+            employee=self._employee(db,employee_id)
+            rows=[dict(row) for row in db.execute('''SELECT x.*,u.name AS actor_name
+                FROM workforce_employee_events x JOIN users u ON u.id=x.actor_id
+                WHERE x.employee_id=? AND (? IS NULL OR x.sequence<?)
+                ORDER BY x.sequence DESC LIMIT ?''',(employee_id,before,before,limit+1))]
+            more=len(rows)>limit;rows=rows[:limit]
+            for row in rows: row['active']=bool(row['active'])
+            return {'employee':employee,'items':rows,
+                    'next_before':rows[-1]['sequence'] if more else None}
+
+    def create_employee(self,payload,actor,key):
+        def perform(db):
+            employee_id=str(uuid4());created=now()
+            db.execute('''INSERT INTO workforce_employees(id,code,created_by,created_at)
+                VALUES(?,?,?,?)''',(employee_id,payload['code'],actor['id'],created))
+            db.execute('''INSERT INTO workforce_employee_events(id,employee_id,revision,name,
+                department,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()),employee_id,1,payload['name'],payload['department'],1,
+                 payload['reason'],actor['id'],created))
+            return self._employee(db,employee_id)
+        return self._write(actor,('admin',),key,'workforce-employee',payload,perform)
+
+    def change_employee(self,employee_id,payload,actor,key):
+        def perform(db):
+            current=self._employee(db,employee_id)
+            if current['revision']!=payload['expected_revision']:
+                raise DomainError(409,'Data karyawan sudah berubah. Muat ulang lalu coba lagi.')
+            if (current['name']==payload['name'] and current['department']==payload['department']
+                    and current['active']==payload['active']):
+                raise DomainError(422,'Belum ada perubahan pada data karyawan.')
+            db.execute('''INSERT INTO workforce_employee_events(id,employee_id,revision,name,
+                department,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()),employee_id,current['revision']+1,payload['name'],
+                 payload['department'],int(payload['active']),payload['reason'],actor['id'],now()))
+            return self._employee(db,employee_id)
+        return self._write(actor,('admin',),key,'workforce-employee:'+employee_id,payload,perform)
+
+    @staticmethod
+    def _attendance_work_minutes(record):
+        if record['status']!='present': return 0
+        start=time.fromisoformat(record['clock_in']);end=time.fromisoformat(record['clock_out'])
+        return int((datetime.combine(date.min,end)-datetime.combine(date.min,start)).total_seconds()//60)
+
+    def _attendance(self,db,attendance_id):
+        row=db.execute('''SELECT r.id,r.employee_id,r.work_date,r.created_by,r.created_at,
+            x.sequence,x.id AS event_id,x.revision,x.status,x.clock_in,x.clock_out,
+            x.overtime_minutes,x.notes,x.reason,x.actor_id,x.created_at AS updated_at,
+            u.name AS actor_name,e.code AS employee_code,c.name AS employee_name,
+            c.department,c.active AS employee_active
+            FROM workforce_attendance_records r JOIN workforce_attendance_events x
+                ON x.attendance_id=r.id AND x.sequence=(SELECT MAX(y.sequence)
+                    FROM workforce_attendance_events y WHERE y.attendance_id=r.id)
+            JOIN users u ON u.id=x.actor_id JOIN workforce_employees e ON e.id=r.employee_id
+            JOIN workforce_employee_events c ON c.employee_id=e.id
+                AND c.sequence=(SELECT MAX(y.sequence) FROM workforce_employee_events y
+                    WHERE y.employee_id=e.id)
+            WHERE r.id=?''',(attendance_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan kehadiran tidak ditemukan.')
+        record=dict(row);record['employee_active']=bool(record['employee_active'])
+        record['work_minutes']=self._attendance_work_minutes(record)
+        return record
+
+    def attendance_records(self,start_date,end_date,status='all',employee_id='',department='',
+                           query='',limit=100,offset=0):
+        if not 0 <= (end_date-start_date).days < 366:
+            raise DomainError(422,'Rentang kehadiran harus berurutan dan maksimal 366 hari.')
+        params={'start':start_date.isoformat(),'end':end_date.isoformat(),'status':status,
+                'employee_id':employee_id,'department':department.strip().casefold(),
+                'query':query.strip().casefold()}
+        with self.transaction() as db:
+            if employee_id: self._employee(db,employee_id)
+            ids=[row['id'] for row in db.execute('''SELECT r.id FROM workforce_attendance_records r
+                JOIN workforce_attendance_events x ON x.attendance_id=r.id
+                    AND x.sequence=(SELECT MAX(y.sequence) FROM workforce_attendance_events y
+                        WHERE y.attendance_id=r.id)
+                JOIN workforce_employees e ON e.id=r.employee_id
+                JOIN workforce_employee_events c ON c.employee_id=e.id
+                    AND c.sequence=(SELECT MAX(y.sequence) FROM workforce_employee_events y
+                        WHERE y.employee_id=e.id)
+                WHERE r.work_date BETWEEN :start AND :end
+                  AND (:status='all' OR x.status=:status)
+                  AND (:employee_id='' OR r.employee_id=:employee_id)
+                  AND (:department='' OR lower(c.department)=:department)
+                  AND (:query='' OR instr(lower(e.code),:query)>0
+                    OR instr(lower(c.name),:query)>0 OR instr(lower(c.department),:query)>0
+                    OR instr(lower(x.notes),:query)>0)
+                ORDER BY r.work_date DESC,e.code,r.id''',params)]
+            records=[self._attendance(db,value) for value in ids]
+        summary={'records':len(records),'employees':len({row['employee_id'] for row in records}),
+                 'present':sum(row['status']=='present' for row in records),
+                 'leave':sum(row['status']=='leave' for row in records),
+                 'absent':sum(row['status']=='absent' for row in records),
+                 'work_minutes':sum(row['work_minutes'] for row in records),
+                 'overtime_minutes':sum(row['overtime_minutes'] for row in records)}
+        return {'start_date':start_date.isoformat(),'end_date':end_date.isoformat(),
+                'status':status,'employee_id':employee_id,'department':department.strip(),
+                'query':query.strip(),'total':len(records),'limit':limit,'offset':offset,
+                'summary':summary,'items':records[offset:offset+limit]}
+
+    def attendance_history(self,attendance_id,limit=100,before=None):
+        with self.transaction() as db:
+            attendance=self._attendance(db,attendance_id)
+            rows=[dict(row) for row in db.execute('''SELECT x.*,u.name AS actor_name
+                FROM workforce_attendance_events x JOIN users u ON u.id=x.actor_id
+                WHERE x.attendance_id=? AND (? IS NULL OR x.sequence<?)
+                ORDER BY x.sequence DESC LIMIT ?''',(attendance_id,before,before,limit+1))]
+            more=len(rows)>limit;rows=rows[:limit]
+            for row in rows: row['work_minutes']=self._attendance_work_minutes(row)
+            return {'attendance':attendance,'items':rows,
+                    'next_before':rows[-1]['sequence'] if more else None}
+
+    def save_attendance(self,employee_id,payload,actor,key):
+        def perform(db):
+            employee=self._employee(db,employee_id);work_date=payload['work_date']
+            row=db.execute('''SELECT id FROM workforce_attendance_records
+                WHERE employee_id=? AND work_date=?''',(employee_id,work_date)).fetchone()
+            current=self._attendance(db,row['id']) if row else None
+            revision=current['revision'] if current else 0
+            if revision!=payload['expected_revision']:
+                raise DomainError(409,'Catatan kehadiran sudah berubah. Muat ulang lalu coba lagi.')
+            if not current and not employee['active']:
+                raise DomainError(422,'Karyawan nonaktif tidak dapat menerima catatan kehadiran baru.')
+            today=datetime.now(timezone(timedelta(hours=7))).date().isoformat()
+            if work_date>today:
+                raise DomainError(422,'Kehadiran tidak dapat dicatat untuk tanggal mendatang.')
+            comparable=('status','clock_in','clock_out','overtime_minutes','notes')
+            if current and all(current[field]==payload[field] for field in comparable):
+                raise DomainError(422,'Catatan kehadiran belum berubah.')
+            attendance_id=current['id'] if current else str(uuid4());created=now()
+            if not current:
+                db.execute('''INSERT INTO workforce_attendance_records
+                    (id,employee_id,work_date,created_by,created_at) VALUES(?,?,?,?,?)''',
+                    (attendance_id,employee_id,work_date,actor['id'],created))
+            db.execute('''INSERT INTO workforce_attendance_events(id,attendance_id,revision,status,
+                clock_in,clock_out,overtime_minutes,notes,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),attendance_id,revision+1,
+                payload['status'],payload['clock_in'],payload['clock_out'],payload['overtime_minutes'],
+                payload['notes'],payload['reason'],actor['id'],created))
+            return self._attendance(db,attendance_id)
+        operation='workforce-attendance:'+employee_id+':'+str(payload['work_date'])
+        return self._write(actor,('admin','operator'),key,operation,payload,perform)
 
     def activity(self, day=None, kind="all", limit=50, before_time=None, before_id=None, start_date=None, end_date=None):
         jakarta = timezone(timedelta(hours=7))

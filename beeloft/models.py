@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -125,6 +125,50 @@ class CapacityCalendarSave(Input):
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
     available_minutes: Annotated[int, Field(strict=True, ge=0, le=100_000)]
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class EmployeeCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    department: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls,value):
+        return value.upper()
+
+
+class EmployeeChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    department: Text
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class AttendanceSave(Input):
+    work_date: date
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    status: Literal['present','leave','absent']
+    clock_in: time | None = None
+    clock_out: time | None = None
+    overtime_minutes: Annotated[int, Field(strict=True, ge=0, le=720)] = 0
+    notes: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ''
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def valid_times(self):
+        if self.status=='present':
+            if self.clock_in is None or self.clock_out is None:
+                raise ValueError('Jam masuk dan pulang wajib untuk status hadir.')
+            if self.clock_in.tzinfo is not None or self.clock_out.tzinfo is not None:
+                raise ValueError('Jam kehadiran memakai waktu lokal tanpa zona waktu.')
+            if self.clock_out<=self.clock_in:
+                raise ValueError('Jam pulang harus setelah jam masuk pada hari yang sama.')
+        elif self.clock_in is not None or self.clock_out is not None or self.overtime_minutes:
+            raise ValueError('Cuti atau absen tidak boleh memuat jam kerja maupun lembur.')
+        return self
 
 
 class OrderChange(Input):

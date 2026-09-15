@@ -103,4 +103,4 @@ class WipAgeingInsightsTest(TestCase):
         self.assertEqual(Store(backup).wip_ageing_insights('2026-10-20',7,status='all')
                          ['items'][0]['order_id'],active['id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],49)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],50)

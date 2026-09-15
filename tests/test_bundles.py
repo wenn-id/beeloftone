@@ -178,7 +178,7 @@ class BundleTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],49)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],50)
         after = self.client.get('/api/cutting-runs/'+run['id']).json()
         self.assertEqual({k: after[k] for k in before if k != 'outputs'},
                          {k: before[k] for k in before if k != 'outputs'})

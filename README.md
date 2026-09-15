@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.75.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan operasi internal, versi 0.76.0. Dashboard dan API memakai database lokal yang sama: employee master, kehadiran, cuti, absen, dan lembur; management command center; order, posisi barang per tahap, WIP ageing dan sinyal hambatan; perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja; tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center; batch bahan dengan label QR, scan, dan jejak produksi lengkap; hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak; job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi; scan untuk membuka aksi dan memverifikasi pergerakan gudang; jejak stok lengkap per lot; reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan; analisis retur per SKU/ukuran/marketplace, demand dan risiko stockout per ukuran, dead stock, adjustment, stock opname, serta adjustment tidak normal; kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka; biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan; inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim; status sinkronisasi Jubelio/Mekari, mapping SKU, snapshot Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari; serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2393,3 +2393,22 @@ Perubahan ini memperkaya respons `GET /api/command-center` dan tidak menambah en
 
 Rencana: [Command Center capacity alerts plan](docs/command-center-capacity-alerts-plan.md).
 Bukti: [Command Center capacity alerts verification](docs/command-center-capacity-alerts-verification.md).
+
+## Fondasi People dan kehadiran (v0.76)
+
+Employee master lokal menyimpan kode karyawan tetap, nama, departemen, status aktif, alasan perubahan, aktor, dan
+revisi. Admin membuat atau mengubah data karyawan. Semua perubahan bersifat append-only dan benturan edit ditolak
+dengan `expected_revision`.
+
+Admin dan operator dapat mencatat satu status per karyawan per hari melalui
+`POST /api/workforce/employees/{employee_id}/attendance`: hadir dengan jam masuk/pulang dan menit lembur, atau
+cuti/absen tanpa jam kerja. Koreksi menambah revisi baru pada catatan yang sama. `GET /api/workforce/attendance`
+menyediakan filter tanggal, status, karyawan, departemen, pencarian, pagination, serta ringkasan jumlah orang,
+status, menit kerja, dan menit lembur. Endpoint history employee dan attendance membuka jejak revisinya.
+
+Schema 50 menambah empat tabel immutable. Employee master masuk kategori audit `master_data`; attendance masuk
+`production`. Data gaji, pajak, rekening, dan perhitungan payroll tidak disimpan di modul ini. Payroll agregat
+tetap mengikuti snapshot Mekari, dan runtime connector Mekari/Jubelio tetap ditunda sampai API resmi tersedia.
+
+Rencana: [Workforce foundation plan](docs/workforce-foundation-plan.md).
+Bukti: [Workforce foundation verification](docs/workforce-foundation-verification.md).
