@@ -405,6 +405,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       }
       else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
+      else if (path.includes('/payroll-periods/') || path.startsWith('/api/payroll-approval-requests/')) payrollApprovalRequestDialog(result.id);
       else if (path === '/api/marketing-budget-requests' || path.startsWith('/api/marketing-budget-requests/')) marketingBudgetRequestDialog(result.id);
       else if (path === '/api/ai/investigations' || /^\/api\/ai\/investigations\/[^/]+\/feedback$/.test(path)) aiInvestigationDetailDialog(result.id);
       else if (path === '/api/ai/action-proposals' || path.startsWith('/api/ai/action-proposals/')) aiActionProposalDialog(result.id);
@@ -622,6 +623,8 @@ document.addEventListener('click', event => {
     'mekari-payroll-summary':mekariPayrollSummaryDialog,
     'mekari-payroll-snapshots':mekariPayrollSnapshotsDialog,
     'mekari-payroll-snapshot':()=>mekariPayrollSnapshotDialog(id),
+    'new-payroll-approval':()=>payrollApprovalForm(id),
+    'payroll-approval-request':()=>payrollApprovalRequestDialog(id),
     'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
     'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};workforceDialog();},
@@ -2377,7 +2380,11 @@ async function mekariReceivableSnapshotDialog(batchId) {
 }
 
 const payrollStatus={draft:'Draft',reviewing:'Ditinjau',approved:'Disetujui',paid:'Dibayar',cancelled:'Dibatalkan'};
-const payrollPeriodCard=row=>`<article class="material-event"><p class="status-label ${row.status==='paid'?'done':row.status==='cancelled'?'late':''}">${e(payrollStatus[row.status])}</p><h3>${date(row.period_start)}–${date(row.period_end)}</h3><p>${n(row.employee_count)} karyawan · gaji neto ${financeRupiah(row.net_pay)}</p><dl class="requirement-values"><div><dt>Gaji bruto</dt><dd>${financeRupiah(row.gross_pay)}</dd></div><div><dt>Potongan karyawan</dt><dd>${financeRupiah(row.employee_deductions)}</dd></div><div><dt>Kontribusi perusahaan</dt><dd>${financeRupiah(row.employer_contributions)}</dd></div><div><dt>Total biaya perusahaan</dt><dd>${financeRupiah(row.total_employer_cost)}</dd></div></dl><p class="hint">ID sumber ${e(row.external_payroll_id)}${row.payment_date?' · dibayar '+date(row.payment_date):''}</p></article>`;
+const payrollPeriodCard=row=>{
+  const approval=row.approval_request,canSubmit=user.role!=='viewer'&&row.status==='reviewing'&&
+    (!approval||['rejected','cancelled'].includes(approval.status));
+  return `<article class="material-event" data-payroll-period="${e(row.id)}"><p class="status-label ${row.status==='paid'?'done':row.status==='cancelled'?'late':''}">Mekari · ${e(payrollStatus[row.status])}</p><h3>${date(row.period_start)}–${date(row.period_end)}</h3><p>${n(row.employee_count)} karyawan · gaji neto ${financeRupiah(row.net_pay)}</p><dl class="requirement-values"><div><dt>Gaji bruto</dt><dd>${financeRupiah(row.gross_pay)}</dd></div><div><dt>Potongan karyawan</dt><dd>${financeRupiah(row.employee_deductions)}</dd></div><div><dt>Kontribusi perusahaan</dt><dd>${financeRupiah(row.employer_contributions)}</dd></div><div><dt>Total biaya perusahaan</dt><dd>${financeRupiah(row.total_employer_cost)}</dd></div></dl><p class="hint">ID sumber ${e(row.external_payroll_id)}${row.payment_date?' · dibayar '+date(row.payment_date):''}</p>${approval?`<p class="status-label ${approval.status==='approved'?'done':approval.status==='rejected'||approval.stale?'late':''}">Approval Beeloft · ${e(approvalStatus[approval.status])}${approval.stale?' · sumber berubah':''}</p><button data-action="payroll-approval-request" data-id="${e(approval.id)}" type="button">Rincian approval</button>`:''}${canSubmit?`<button data-action="new-payroll-approval" data-id="${e(row.id)}" type="button">${approval?'Ajukan ulang approval':'Ajukan approval'}</button>`:''}</article>`;
+};
 
 async function mekariPayrollSummaryDialog() {
   if(guardPending())return;
@@ -2388,7 +2395,7 @@ async function mekariPayrollSummaryDialog() {
     if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot payroll Mekari. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
     if(!report.current){$('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · tidak memuat periode payroll</p><p class="state">Connector menyelesaikan snapshot kosong. Periksa sumber payroll Mekari sebelum memakai ringkasan ini.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="integrations">Kesehatan integrasi</button></div>`;return;}
     const counts=report.status_counts;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(report.current.period_start)}–${date(report.current.period_end)}</p><dl class="requirement-values"><div><dt>Draft</dt><dd>${n(counts.draft)}</dd></div><div><dt>Ditinjau</dt><dd>${n(counts.reviewing)}</dd></div><div><dt>Disetujui</dt><dd>${n(counts.approved)}</dd></div><div><dt>Dibayar</dt><dd>${n(counts.paid)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(counts.cancelled)}</dd></div></dl><p class="hint">Angka merupakan ringkasan agregat dari Mekari tanpa identitas karyawan. Layar ini tidak menghitung atau menyetujui payroll, menjalankan pembayaran, atau membuat jurnal.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Periode terbaru</h3>${payrollPeriodCard(report.current)}<h3>Periode dalam snapshot</h3>${report.periods.map(payrollPeriodCard).join('')}`;
+    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(report.current.period_start)}–${date(report.current.period_end)}</p><dl class="requirement-values"><div><dt>Draft</dt><dd>${n(counts.draft)}</dd></div><div><dt>Ditinjau</dt><dd>${n(counts.reviewing)}</dd></div><div><dt>Disetujui</dt><dd>${n(counts.approved)}</dd></div><div><dt>Dibayar</dt><dd>${n(counts.paid)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(counts.cancelled)}</dd></div></dl><p class="hint">Angka merupakan ringkasan agregat dari Mekari tanpa identitas karyawan. Approval Beeloft menyimpan otorisasi manajemen tanpa mengubah status Mekari, menjalankan pembayaran, atau membuat jurnal.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="integrations">Kesehatan integrasi</button><button data-action="approvals">Inbox approval</button></div><h3>Periode terbaru</h3>${payrollPeriodCard(report.current)}<h3>Periode dalam snapshot</h3>${report.periods.map(payrollPeriodCard).join('')}`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payroll-summary">Coba lagi</button>`;}
 }
 
@@ -2676,6 +2683,41 @@ function returnInsightsDialog() {
   };
   form.onsubmit=event=>{event.preventDefault();load(true);};
   $('return-insights-more').onclick=()=>load();
+}
+
+async function payrollApprovalForm(periodId) {
+  if(guardPending())return;
+  const version=epoch;
+  try{
+    const report=await api.get('/api/integrations/mekari/payroll-summary');if(version!==epoch)return;
+    const period=report.periods.find(row=>row.id===periodId);
+    if(!period){notify('Periode tidak lagi berada pada snapshot payroll terbaru.');return;}
+    formDialog('Ajukan approval payroll',materialReason,
+      form=>({reason:new FormData(form).get('reason').trim()}),
+      '/api/integrations/mekari/payroll-periods/'+encodeURIComponent(period.id)+'/approval-requests',
+      `${period.external_payroll_id} · ${date(period.period_start)}–${date(period.period_end)} · ${financeRupiah(period.total_employer_cost)}\nApproval hanya mencatat otorisasi manajemen dan tidak mengubah Mekari atau menjalankan pembayaran.`);
+  }catch(error){notify(error.message);}
+}
+
+async function payrollApprovalRequestDialog(requestId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Approval batch payroll','<p class="state">Memuat permintaan payroll…</p>');const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/payroll-approval-requests/'+encodeURIComponent(requestId));
+    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    const source=row.source,pending=row.status==='submitted',buttons=[];
+    if(pending&&user.role==='admin'&&!row.stale)buttons.push(['approved','Setujui payroll']);
+    if(pending&&user.role==='admin')buttons.push(['rejected','Tolak payroll']);
+    if(pending&&user.role==='operator'&&row.actor_id===user.id)buttons.push(['cancelled','Batalkan pengajuan']);
+    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p>${row.stale?(pending?'<p class="error">Snapshot payroll sumber sudah berubah atau tidak lagi tersedia. Permintaan ini tidak dapat disetujui.</p>':'<p class="hint">Snapshot payroll sumber berubah setelah keputusan ini dicatat.</p>'):''}<h3>${date(source.period_start)}–${date(source.period_end)}</h3><p>${n(source.employee_count)} karyawan · status Mekari ${e(payrollStatus[source.status])}</p><dl class="requirement-values"><div><dt>Gaji bruto</dt><dd>${financeRupiah(source.gross_pay)}</dd></div><div><dt>Potongan karyawan</dt><dd>${financeRupiah(source.employee_deductions)}</dd></div><div><dt>Gaji neto</dt><dd>${financeRupiah(source.net_pay)}</dd></div><div><dt>Kontribusi perusahaan</dt><dd>${financeRupiah(source.employer_contributions)}</dd></div><div><dt>Total biaya perusahaan</dt><dd>${financeRupiah(source.total_employer_cost)}</dd></div></dl><p class="reason">${e(row.reason)}</p><p class="hint">ID sumber ${e(source.external_payroll_id)} · snapshot ${purchaseStamp(source.snapshot_at)} · diajukan ${e(row.actor_name)} ${purchaseStamp(row.created_at)}. Keputusan tidak mengubah Mekari atau menjalankan pembayaran.</p><div class="actions">${buttons.map(([status,label])=>`<button data-payroll-decision="${status}" type="button">${label}</button>`).join('')}<button data-action="mekari-payroll-summary" type="button">Ringkasan payroll</button><button data-action="approvals" type="button">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="history-item"><time>${e(auditStamp(event.created_at))}</time><div><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)}</p></div></article>`).join('')}`;
+    $('dialog-content').querySelectorAll('[data-payroll-decision]').forEach(button=>button.onclick=()=>{
+      const decision=button.dataset.payrollDecision;
+      formDialog(button.textContent,materialReason,
+        form=>({status:decision,expected_revision:row.revision,reason:new FormData(form).get('reason').trim()}),
+        '/api/payroll-approval-requests/'+encodeURIComponent(row.id)+'/decisions',
+        `${row.reference} · ${financeRupiah(source.total_employer_cost)}\nKeputusan dan alasan tersimpan permanen; status sumber Mekari tidak berubah.`);
+    });
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="payroll-approval-request" data-id="${e(requestId)}">Coba lagi</button>`;}
 }
 $('return-insights').onclick=returnInsightsDialog;
 
@@ -3481,8 +3523,8 @@ $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
 const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
-const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',workforce_leave:'People · cuti',workforce_overtime:'People · lembur',ai_action:'AI Brain · tindakan'};
-const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',workforce_leave:'workforce-request',workforce_overtime:'workforce-request',ai_action:'ai-action-proposal'};
+const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',workforce_leave:'People · cuti',workforce_overtime:'People · lembur',payroll_batch:'People · batch payroll',ai_action:'AI Brain · tindakan'};
+const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',workforce_leave:'workforce-request',workforce_overtime:'workforce-request',payroll_batch:'payroll-approval-request',ai_action:'ai-action-proposal'};
 function approvalContextHTML(row) {
   if(row.kind==='purchase_request')return `<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`;
   if(row.kind==='purchase_order')return `<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`;
@@ -3490,6 +3532,7 @@ function approvalContextHTML(row) {
   if(row.kind==='marketing_budget')return `<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`;
   if(row.kind==='workforce_leave')return `<p>${date(row.context.start_date)}${row.context.end_date!==row.context.start_date?'–'+date(row.context.end_date):''} · ${n(row.context.days)} hari</p>`;
   if(row.kind==='workforce_overtime')return `<p>${date(row.context.start_date)} · ${e(minuteQty(row.context.overtime_minutes))}</p>`;
+  if(row.kind==='payroll_batch')return `<p>${date(row.context.period_start)}–${date(row.context.period_end)} · ${n(row.context.employee_count)} karyawan${row.context.stale?' · sumber berubah':''}</p>`;
   if(row.kind==='ai_action')return `<p>${e(row.context.recommendation_title)}</p>`;
   return `<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`;
 }
@@ -3503,7 +3546,7 @@ async function approvalsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="payroll_batch">People · batch payroll</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}

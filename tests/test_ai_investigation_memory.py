@@ -134,5 +134,5 @@ class AiInvestigationMemoryTest(TestCase):
             db.execute('PRAGMA user_version=31');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],51)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],52)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM ai_investigations').fetchone()[0],0)

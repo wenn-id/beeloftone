@@ -201,6 +201,16 @@ class WorkforceRequestDecision(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class PayrollApprovalRequestCreate(Input):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class PayrollApprovalDecision(Input):
+    status: Literal['approved','rejected','cancelled']
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
 class OrderChange(Input):
     owner_id: Text
     due_date: date

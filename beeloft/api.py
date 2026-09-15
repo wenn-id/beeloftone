@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 
-from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
+from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, PayrollApprovalDecision, PayrollApprovalRequestCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.79.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.80.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -174,7 +174,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
                   status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','workforce_leave','workforce_overtime','ai_action'] = 'all'):
+                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','workforce_leave','workforce_overtime','payroll_batch','ai_action'] = 'all'):
         return store.approvals(limit, offset, status, kind)
 
     @app.get('/api/ai/action-proposals', tags=['AI Brain','Approvals'])
@@ -404,6 +404,28 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/integrations/mekari/payroll-summary', tags=['Integrations'])
     def mekari_payroll_summary(user: Actor):
         return store.mekari_payroll_summary()
+
+    @app.post('/api/integrations/mekari/payroll-periods/{period_id}/approval-requests',
+              status_code=201, tags=['Integrations','People','Approvals'])
+    def create_payroll_approval_request(period_id: str, body: PayrollApprovalRequestCreate,
+                                        user: Actor, key: RequestKey):
+        return store.create_payroll_approval_request(period_id,body.model_dump(mode='json'),user,key)
+
+    @app.get('/api/payroll-approval-requests', tags=['People','Approvals'])
+    def payroll_approval_requests(user: Actor, limit: Limit = 100,
+                                  before: Annotated[int | None, Query(ge=1)] = None,
+                                  status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
+        return store.payroll_approval_requests(status,limit,before)
+
+    @app.get('/api/payroll-approval-requests/{request_id}', tags=['People','Approvals'])
+    def payroll_approval_request(request_id: str, user: Actor):
+        return store.payroll_approval_request(request_id)
+
+    @app.post('/api/payroll-approval-requests/{request_id}/decisions', status_code=201,
+              tags=['People','Approvals'])
+    def decide_payroll_approval_request(request_id: str, body: PayrollApprovalDecision,
+                                        user: Actor, key: RequestKey):
+        return store.decide_payroll_approval_request(request_id,body.model_dump(mode='json'),user,key)
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

@@ -31,7 +31,8 @@ AUDIT_SECRET_FIELDS = {'api_key','client_secret','code','code_verifier','csrf','
 AUDIT_APPROVAL_OPERATIONS = {
     'purchase-request-decision','purchase-order-decision','supplier-payment-decision',
     'marketing-budget-decision','production-change-request-decision','ai-action-proposal-decision',
-    'workforce-request','workforce-request-decision'
+    'workforce-request','workforce-request-decision','payroll-approval-request',
+    'payroll-approval-decision'
 }
 
 
@@ -93,7 +94,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -216,6 +217,8 @@ class Store:
                 db.executescript(Path(__file__).with_name('workforce.sql').read_text(encoding='utf-8'))
             if version < 51:
                 db.executescript(Path(__file__).with_name('workforce_approvals.sql').read_text(encoding='utf-8'))
+            if version < 52:
+                db.executescript(Path(__file__).with_name('payroll_approvals.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1399,9 +1402,21 @@ class Store:
         record['period_count']=db.execute('SELECT COUNT(*) FROM mekari_payroll_snapshot_periods WHERE batch_id=?',
                                           (batch_id,)).fetchone()[0]
         if include_periods:
-            record['periods']=[self._mekari_payroll_period(source) for source in db.execute('''
-                SELECT * FROM mekari_payroll_snapshot_periods WHERE batch_id=?
-                ORDER BY period_end DESC,period_start DESC,sequence DESC''',(batch_id,))]
+            record['periods']=[]
+            latest_batch=db.execute('SELECT MAX(sequence) FROM mekari_payroll_snapshot_batches').fetchone()[0]
+            for source in db.execute('''SELECT * FROM mekari_payroll_snapshot_periods WHERE batch_id=?
+                ORDER BY period_end DESC,period_start DESC,sequence DESC''',(batch_id,)):
+                period=self._mekari_payroll_period(source)
+                if record['sequence']==latest_batch:
+                    approval=db.execute('''SELECT r.id FROM payroll_approval_requests r
+                        JOIN mekari_payroll_snapshot_periods p ON p.id=r.source_period_id
+                        WHERE p.external_payroll_id=? ORDER BY r.sequence DESC LIMIT 1''',
+                        (period['external_payroll_id'],)).fetchone()
+                else:
+                    approval=db.execute('''SELECT id FROM payroll_approval_requests
+                        WHERE source_period_id=? ORDER BY sequence DESC LIMIT 1''',(period['id'],)).fetchone()
+                period['approval_request']=self._payroll_approval_request(db,approval['id']) if approval else None
+                record['periods'].append(period)
         return record
 
     def import_mekari_payroll_snapshot(self, payload, actor, key):
@@ -1451,6 +1466,111 @@ class Store:
             'records_read','records_written','error','created_at')}
         return {'snapshot':header,'current':snapshot['periods'][0] if snapshot['periods'] else None,
                 'status_counts':statuses,'periods':snapshot['periods']}
+
+    def _payroll_source_period(self,db,period_id):
+        row=db.execute('''SELECT p.*,b.sequence AS batch_sequence,b.snapshot_at
+            FROM mekari_payroll_snapshot_periods p JOIN mekari_payroll_snapshot_batches b ON b.id=p.batch_id
+            WHERE p.id=?''',(period_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Periode payroll Mekari tidak ditemukan.')
+        return self._mekari_payroll_period(row)
+
+    def _latest_payroll_source(self,db,external_payroll_id):
+        row=db.execute('''SELECT p.*,b.sequence AS batch_sequence,b.snapshot_at
+            FROM mekari_payroll_snapshot_periods p JOIN mekari_payroll_snapshot_batches b ON b.id=p.batch_id
+            WHERE p.external_payroll_id=? AND
+                b.sequence=(SELECT MAX(sequence) FROM mekari_payroll_snapshot_batches)
+            ORDER BY p.sequence DESC LIMIT 1''',
+            (external_payroll_id,)).fetchone()
+        return self._mekari_payroll_period(row) if row else None
+
+    @staticmethod
+    def _payroll_source_stale(source,current):
+        if not current:
+            return True
+        fields=('period_start','period_end','status','currency','employee_count','gross_pay',
+                'employee_deductions','employer_contributions','payment_date','updated_at')
+        return any(source[name]!=current[name] for name in fields)
+
+    def _payroll_approval_request(self,db,request_id):
+        row=db.execute('''SELECT r.*,u.name AS actor_name FROM payroll_approval_requests r
+            JOIN users u ON u.id=r.actor_id WHERE r.id=?''',(request_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Permintaan approval payroll tidak ditemukan.')
+        record=dict(row);source=self._payroll_source_period(db,record['source_period_id'])
+        record['history']=[dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
+            FROM payroll_approval_request_events e JOIN users u ON u.id=e.actor_id
+            WHERE e.request_id=? ORDER BY e.sequence DESC''',(request_id,))]
+        record['status']=record['history'][0]['status'];record['revision']=record['history'][0]['sequence']
+        current=self._latest_payroll_source(db,source['external_payroll_id'])
+        record['source']=source;record['stale']=self._payroll_source_stale(source,current)
+        record['current_source_period_id']=current['id'] if current else None
+        return record
+
+    def payroll_approval_request(self,request_id):
+        with self.transaction() as db:
+            return self._payroll_approval_request(db,request_id)
+
+    def payroll_approval_requests(self,status='all',limit=100,before=None):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT id FROM payroll_approval_requests
+                WHERE (? IS NULL OR sequence<?) ORDER BY sequence DESC''',(before,before)).fetchall()
+            items=[]
+            for row in rows:
+                request=self._payroll_approval_request(db,row['id'])
+                if status=='all' or request['status']==status:
+                    items.append(request)
+                    if len(items)==limit:
+                        break
+            return items
+
+    def create_payroll_approval_request(self,period_id,payload,actor,key):
+        def perform(db):
+            source=self._payroll_source_period(db,period_id)
+            latest_batch=db.execute('''SELECT sequence FROM mekari_payroll_snapshot_batches
+                ORDER BY sequence DESC LIMIT 1''').fetchone()
+            if not latest_batch or source['batch_sequence']!=latest_batch['sequence']:
+                raise DomainError(409,'Ajukan payroll dari snapshot Mekari terbaru.')
+            if source['status']!='reviewing':
+                raise DomainError(409,'Hanya payroll berstatus ditinjau yang dapat diajukan untuk approval.')
+            pending=db.execute('''SELECT r.id FROM payroll_approval_requests r
+                JOIN mekari_payroll_snapshot_periods p ON p.id=r.source_period_id
+                WHERE p.external_payroll_id=? AND (SELECT e.status FROM payroll_approval_request_events e
+                    WHERE e.request_id=r.id ORDER BY e.sequence DESC LIMIT 1)='submitted' LIMIT 1''',
+                (source['external_payroll_id'],)).fetchone()
+            if pending:
+                raise DomainError(409,'Payroll ini masih memiliki permintaan yang menunggu keputusan.')
+            request_id=str(uuid4());timestamp=now()
+            reference=f'PAY-{datetime.now(timezone(timedelta(hours=7))).strftime("%Y%m%d")}-{request_id[:8].upper()}'
+            db.execute('''INSERT INTO payroll_approval_requests
+                (id,reference,source_period_id,reason,actor_id,created_at) VALUES(?,?,?,?,?,?)''',
+                (request_id,reference,period_id,payload['reason'],actor['id'],timestamp))
+            db.execute('''INSERT INTO payroll_approval_request_events
+                (request_id,status,reason,actor_id,created_at) VALUES(?,'submitted',?,?,?)''',
+                (request_id,payload['reason'],actor['id'],timestamp))
+            return self._payroll_approval_request(db,request_id)
+        return self._write(actor,('admin','operator'),key,'payroll-approval-request:'+period_id,payload,perform)
+
+    def decide_payroll_approval_request(self,request_id,payload,actor,key):
+        def perform(db):
+            request=self._payroll_approval_request(db,request_id)
+            role=db.execute('SELECT role FROM users WHERE id=?',(actor['id'],)).fetchone()[0]
+            allowed=(role=='admin' and payload['status'] in ('approved','rejected')) or (
+                role=='operator' and payload['status']=='cancelled' and request['actor_id']==actor['id'])
+            if not allowed:
+                raise DomainError(403,'Hanya admin memutuskan payroll; operator pemohon boleh membatalkan pengajuannya.')
+            if request['revision']!=payload['expected_revision']:
+                raise DomainError(409,'Permintaan approval payroll sudah berubah. Buka ulang rincian terbaru.')
+            if request['status']!='submitted':
+                raise DomainError(409,'Permintaan approval payroll sudah diputuskan.')
+            if payload['status']=='approved' and request['stale']:
+                raise DomainError(409,'Snapshot payroll berubah. Tolak permintaan lama dan ajukan dari snapshot terbaru.')
+            db.execute('''INSERT INTO payroll_approval_request_events
+                (request_id,status,reason,actor_id,created_at) VALUES(?,?,?,?,?)''',
+                (request_id,payload['status'],payload['reason'],actor['id'],now()))
+            return self._payroll_approval_request(db,request_id)
+        return self._write(actor,('admin','operator'),key,
+                           'payroll-approval-decision:'+request_id,payload,perform)
 
     def create_material(self, payload, actor, key):
         def perform(db):
@@ -6166,6 +6286,26 @@ class Store:
                             'recommendation_title':proposal['recommendation']['title'],
                             'executed_entity_type':proposal['executed_entity_type'],
                             'executed_entity_id':proposal['executed_entity_id']}})
+            if kind in ('all','payroll_batch'):
+                for row in db.execute('SELECT id FROM payroll_approval_requests'):
+                    request=self._payroll_approval_request(db,row['id'])
+                    current_status='pending' if request['status']=='submitted' else request['status']
+                    if status not in ('all',current_status):
+                        continue
+                    source=request['source']
+                    items.append({'id':request['id'],'kind':'payroll_batch',
+                        'department':'People · Finance','status':current_status,
+                        'reference':request['reference'],
+                        'title':'Payroll '+source['period_start']+'–'+source['period_end'],
+                        'amount':source['total_employer_cost'],'currency':'IDR',
+                        'reason':request['reason'],'actor_id':request['actor_id'],
+                        'actor_name':request['actor_name'],'created_at':request['created_at'],
+                        'context':{'source_period_id':source['id'],
+                            'external_payroll_id':source['external_payroll_id'],
+                            'period_start':source['period_start'],'period_end':source['period_end'],
+                            'employee_count':source['employee_count'],'net_pay':source['net_pay'],
+                            'total_employer_cost':source['total_employer_cost'],
+                            'source_status':source['status'],'stale':request['stale']}})
             items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
             return items[offset:offset+limit]
 
