@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan operasi internal, versi 0.77.0. Dashboard dan API memakai database lokal yang sama: employee master, kehadiran, cuti, absen, dan lembur; management command center; order, posisi barang per tahap, WIP ageing dan sinyal hambatan; perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja; tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center; batch bahan dengan label QR, scan, dan jejak produksi lengkap; hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak; job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi; scan untuk membuka aksi dan memverifikasi pergerakan gudang; jejak stok lengkap per lot; reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan; analisis retur per SKU/ukuran/marketplace, demand dan risiko stockout per ukuran, dead stock, adjustment, stock opname, serta adjustment tidak normal; kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka; biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan; inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim; status sinkronisasi Jubelio/Mekari, mapping SKU, snapshot Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari; serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan operasi internal, versi 0.78.0. Dashboard dan API memakai database lokal yang sama: employee master, kehadiran, cuti, absen, dan lembur; management command center; order, posisi barang per tahap, WIP ageing dan sinyal hambatan; perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja; tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center; batch bahan dengan label QR, scan, dan jejak produksi lengkap; hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak; job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi; scan untuk membuka aksi dan memverifikasi pergerakan gudang; jejak stok lengkap per lot; reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan; analisis retur per SKU/ukuran/marketplace, demand dan risiko stockout per ukuran, dead stock, adjustment, stock opname, serta adjustment tidak normal; kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka; biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan; inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim; status sinkronisasi Jubelio/Mekari, mapping SKU, snapshot Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari; serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2429,3 +2429,20 @@ data gaji per karyawan, serta runtime connector Mekari/Jubelio tetap belum dicak
 
 Rencana: [People UI plan](docs/workforce-ui-plan.md).
 Bukti: [People UI verification](docs/workforce-ui-verification.md).
+
+## Alert People di Command Center (v0.78)
+
+Command Center sekarang memuat snapshot roster tanggal Jakarta: jumlah karyawan aktif, sudah dan belum dicatat,
+hadir, cuti, absen, menit kerja, serta menit lembur. Catatan kehadiran karyawan nonaktif tetap tersimpan dalam
+riwayat tetapi tidak dihitung sebagai cakupan roster aktif.
+
+Jika seluruh karyawan aktif belum dicatat, alert **Kehadiran belum lengkap** bersifat kritis. Jika hanya sebagian
+yang belum dicatat, alert menjadi perhatian. Status absen menghasilkan alert terpisah; lembur tetap ditampilkan
+sebagai fakta tanpa threshold buatan. Tombol pada alert dan kartu snapshot membuka roster People hari yang sama
+dengan filter bersih, termasuk ketika pengguna sebelumnya membuka tanggal atau status lain.
+
+Perubahan ini memperkaya `GET /api/command-center` tanpa menambah endpoint atau tabel. Schema tetap 50. Runtime
+connector Jubelio/Mekari tetap ditunda sampai API resmi tersedia.
+
+Rencana: [Command Center People alerts plan](docs/command-center-workforce-alerts-plan.md).
+Bukti: [Command Center People alerts verification](docs/command-center-workforce-alerts-verification.md).

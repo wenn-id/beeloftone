@@ -1,7 +1,18 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,viewer,apiGet,work})=>{
+module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
+  const unique=Date.now(),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date());
+  const absent=await apiPost('/api/workforce/employees',{
+    code:'CMD-ABS-'+unique,name:'Sari <Packing>',department:'Packing',reason:'Browser QA Command Center'
+  });
+  await apiPost(`/api/workforce/employees/${absent.id}/attendance`,{
+    work_date:today,expected_revision:0,status:'absent',clock_in:null,clock_out:null,
+    overtime_minutes:0,notes:'Sakit',reason:'Browser QA Command Center'
+  });
+  const missing=await apiPost('/api/workforce/employees',{
+    code:'CMD-MISS-'+unique,name:'Dewi <Cutting>',department:'Cutting',reason:'Browser QA Command Center'
+  });
   await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(viewer);
@@ -20,6 +31,9 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.locator('[data-command-snapshot="production"]').waitFor();
   await page.locator('[data-command-snapshot="quality"]').getByText('Yield',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="capacity"]').getByText('Beban 14 hari',{exact:true}).waitFor();
+  const people=page.locator('[data-command-snapshot="workforce"]');
+  await people.getByText('Belum dicatat',{exact:true}).waitFor();
+  assert.ok((await people.innerText()).includes('1 orang'));
   await page.locator('[data-command-snapshot="inventory"]').waitFor();
   await page.locator('[data-command-snapshot="sales"]').getByText('Pendapatan kotor',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="finance"]').getByText('Laba bersih',{exact:true}).waitFor();
@@ -29,6 +43,10 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
     .getByRole('heading',{name:'Kapasitas produksi berisiko',exact:true}).waitFor();
   await page.locator('[data-command-attention="production-capacity-coverage"]')
     .getByRole('heading',{name:'Standar kapasitas belum lengkap',exact:true}).waitFor();
+  await page.locator('[data-command-attention="workforce-incomplete"]')
+    .getByRole('heading',{name:'Kehadiran belum lengkap',exact:true}).waitFor();
+  await page.locator('[data-command-attention="workforce-absence"]')
+    .getByRole('heading',{name:'Karyawan absen hari ini',exact:true}).waitFor();
   assert.equal((await apiGet('/api/command-center')).status.state,'attention');
   await page.unroute('**/api/command-center');
 
@@ -40,6 +58,16 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
     'beeloft-management-command-center-mobile.png'),fullPage:true});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.setViewportSize({width:1440,height:1000});
+
+  await page.locator('[data-command-attention="workforce-incomplete"]')
+    .getByRole('button',{name:'Buka roster People',exact:true}).click();
+  const peopleDialog=page.locator('dialog');
+  await peopleDialog.locator(`[data-workforce-employee="${missing.id}"]`)
+    .getByText('Belum dicatat',{exact:true}).waitFor();
+  await peopleDialog.locator(`[data-workforce-employee="${absent.id}"]`)
+    .getByText('Absen',{exact:true}).waitFor();
+  assert.equal(await peopleDialog.getByRole('button',{name:/Catat kehadiran|Koreksi kehadiran/}).count(),0);
+  await page.keyboard.press('Escape');
 
   await page.locator('[data-command-attention="production-capacity-risk"]')
     .getByRole('button',{name:'Buka rencana kapasitas',exact:true}).click();

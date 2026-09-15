@@ -176,6 +176,68 @@ class ManagementCommandCenterTest(TestCase):
         self.assertNotIn('production-capacity-coverage',
                          {row['id'] for row in report['attention']})
 
+    def test_workforce_snapshot_flags_missing_and_absent_people(self):
+        instant = datetime.now(timezone.utc).replace(microsecond=0)
+        work_date = instant.astimezone(timezone(timedelta(hours=7))).date().isoformat()
+
+        def employee(code, name, department):
+            return self.post('/api/workforce/employees', {
+                'code': code, 'name': name, 'department': department,
+                'reason': 'Setup Command Center',
+            })
+
+        missing = employee('CMD-MISSING', 'Cici', 'Cutting')
+        inactive = employee('CMD-INACTIVE', 'Dodi', 'Warehouse')
+        self.post('/api/workforce/employees/'+inactive['id']+'/changes', {
+            'expected_revision': 1, 'name': 'Dodi', 'department': 'Warehouse',
+            'active': False, 'reason': 'Kontrak selesai',
+        })
+
+        def command_center():
+            with patch('beeloft.command_center.datetime') as clock:
+                clock.now.return_value = instant
+                return self.client.get('/api/command-center').json()
+
+        empty = command_center()
+        self.assertEqual(empty['workforce']['active_employees'], 1)
+        initial = next(row for row in empty['attention'] if row['id'] == 'workforce-incomplete')
+        self.assertEqual((initial['priority'], initial['action']), ('critical', 'workforce'))
+
+        present = employee('CMD-PRESENT', 'Ayu', 'Sewing')
+        absent = employee('CMD-ABSENT', 'Bima', 'Finishing')
+        self.post('/api/workforce/employees/'+present['id']+'/attendance', {
+            'work_date': work_date, 'expected_revision': 0, 'status': 'present',
+            'clock_in': '08:00', 'clock_out': '17:00', 'overtime_minutes': 60,
+            'notes': 'Shift pagi', 'reason': 'Rekap harian',
+        })
+        self.post('/api/workforce/employees/'+absent['id']+'/attendance', {
+            'work_date': work_date, 'expected_revision': 0, 'status': 'absent',
+            'clock_in': None, 'clock_out': None, 'overtime_minutes': 0,
+            'notes': 'Sakit', 'reason': 'Rekap harian',
+        })
+        report = command_center()
+        self.assertEqual(report['workforce'], {
+            'as_of': work_date, 'active_employees': 3, 'recorded_employees': 2,
+            'unrecorded_employees': 1, 'present': 1, 'leave': 0, 'absent': 1,
+            'work_minutes': 540, 'overtime_minutes': 60,
+        })
+        attention = {row['id']: row for row in report['attention']}
+        self.assertEqual((attention['workforce-incomplete']['priority'],
+                          attention['workforce-incomplete']['kind'],
+                          attention['workforce-incomplete']['action_label']),
+                         ('warning', 'people', 'Buka roster People'))
+        self.assertEqual(attention['workforce-absence']['detail'],
+                         f'1 karyawan tercatat absen pada {work_date}.')
+
+        self.post('/api/workforce/employees/'+missing['id']+'/attendance', {
+            'work_date': work_date, 'expected_revision': 0, 'status': 'leave',
+            'clock_in': None, 'clock_out': None, 'overtime_minutes': 0,
+            'notes': 'Cuti', 'reason': 'Rekap harian',
+        })
+        complete = command_center()
+        self.assertEqual(complete['workforce']['unrecorded_employees'], 0)
+        self.assertNotIn('workforce-incomplete', {row['id'] for row in complete['attention']})
+
     def test_all_active_roles_can_read_but_anonymous_cannot(self):
         for account in (self.admin, self.operator, self.viewer):
             response = self.client.get('/api/command-center',

@@ -8,6 +8,7 @@ JAKARTA = timezone(timedelta(hours=7))
 
 def build_command_center(store):
     generated = datetime.now(timezone.utc)
+    today = generated.astimezone(JAKARTA).date()
     production = store.production_board(limit=1)
     approvals = store.approvals(limit=500, status="pending")
     integrations = store.integrations()
@@ -16,17 +17,17 @@ def build_command_center(store):
     finance = store.mekari_finance_summary()
     payables = store.mekari_payables_summary()
     receivables = store.mekari_receivables_summary()
-    replenishment = store.replenishment_recommendations(
-        generated.astimezone(JAKARTA).date(), limit=25
-    )
+    replenishment = store.replenishment_recommendations(today, limit=25)
     quality = store.production_quality_insights(
-        generated.astimezone(JAKARTA).date(), window_days=30, warning_percent=5,
+        today, window_days=30, warning_percent=5,
         change_threshold=1, status="attention", limit=25
     )
     capacity = store.capacity_plan(
-        generated.astimezone(JAKARTA).date(), horizon_days=14, warning_percent=80,
+        today, horizon_days=14, warning_percent=80,
         status="all", limit=100
     )
+    employees = store.employees(status="active", limit=1_000_000_000)
+    attendance = store.attendance_records(today, today, limit=1_000_000_000)
 
     production_summary = production["summary"]
     approval_kinds = Counter(row["kind"] for row in approvals)
@@ -40,6 +41,20 @@ def build_command_center(store):
     replenishment_summary = replenishment["summary"]
     quality_summary = quality["summary"]
     capacity_summary = capacity["summary"]
+    active_ids = {row["id"] for row in employees["items"]}
+    attendance_rows = [row for row in attendance["items"]
+                       if row["employee_id"] in active_ids]
+    workforce = {
+        "as_of": today.isoformat(),
+        "active_employees": employees["total"],
+        "recorded_employees": len(attendance_rows),
+        "unrecorded_employees": employees["total"] - len(attendance_rows),
+        "present": sum(row["status"] == "present" for row in attendance_rows),
+        "leave": sum(row["status"] == "leave" for row in attendance_rows),
+        "absent": sum(row["status"] == "absent" for row in attendance_rows),
+        "work_minutes": sum(row["work_minutes"] for row in attendance_rows),
+        "overtime_minutes": sum(row["overtime_minutes"] for row in attendance_rows),
+    }
 
     attention = []
 
@@ -57,6 +72,16 @@ def build_command_center(store):
         add("production-issues", "critical", "production", "Kendala produksi terbuka",
             f'{production["open_issues"]} kendala masih menunggu penyelesaian.',
             "production_issues", "Lihat order terkendala")
+    if workforce["unrecorded_employees"]:
+        workforce_priority = "critical" if not workforce["recorded_employees"] else "warning"
+        add("workforce-incomplete", workforce_priority, "people", "Kehadiran belum lengkap",
+            f'{workforce["unrecorded_employees"]} dari {workforce["active_employees"]} '
+            f'karyawan aktif belum dicatat untuk {workforce["as_of"]}.',
+            "workforce", "Buka roster People")
+    if workforce["absent"]:
+        add("workforce-absence", "warning", "people", "Karyawan absen hari ini",
+            f'{workforce["absent"]} karyawan tercatat absen pada {workforce["as_of"]}.',
+            "workforce", "Buka roster People")
     if replenishment_summary["out_of_stock"]:
         add("inventory-out", "critical", "inventory", "SKU kehabisan stok",
             f'{replenishment_summary["out_of_stock"]} SKU dengan demand aktif tidak punya stok tersedia.',
@@ -170,6 +195,7 @@ def build_command_center(store):
             "coverage_gaps": capacity_summary["coverage_gaps"],
             "missing_standard_quantity": capacity_summary["missing_standard_quantity"],
         },
+        "workforce": workforce,
         "approvals": {
             "pending_count": len(approvals),
             "pending_amount": format(approval_amount, ".2f"),
