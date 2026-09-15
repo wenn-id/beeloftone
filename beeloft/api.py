@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.72.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.73.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -1021,6 +1021,18 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                       limit: Limit = 100, offset: Offset = 0):
         return store.capacity_plan(as_of or date.today(),horizon_days,warning_percent,
                                    work_center_id,stage,status,limit,offset)
+
+    @app.get('/api/production-quality-insights', tags=['Production','Quality'])
+    def production_quality_insights(user: Actor, as_of: date | None = None,
+                                    window_days: Annotated[int, Query(ge=7, le=365)] = 30,
+                                    warning_percent: Annotated[int, Query(ge=1, le=100)] = 5,
+                                    change_threshold: Annotated[int, Query(ge=1, le=100)] = 1,
+                                    query: Annotated[str, Query(max_length=160)] = '',
+                                    assignment_type: Literal['all','internal','makloon'] = 'all',
+                                    status: Literal['all','attention','healthy'] = 'attention',
+                                    limit: Limit = 100, offset: Offset = 0):
+        return store.production_quality_insights(as_of or date.today(),window_days,
+            warning_percent,change_threshold,query,assignment_type,status,limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
     def replenishment_recommendations(user: Actor, as_of: date | None = None,

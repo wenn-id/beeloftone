@@ -98,4 +98,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   totals=(await apiGet('/api/orders/'+order.id)).totals;
   assert.deepEqual([totals.qc,totals.warehouse,totals.rework,totals.reject],[20,0,0,0]);
   console.log('Final QC browser QA PASS: findings, outcomes, lineage, retry, roles, correction, WIP, empty/error, mobile/200%.');
+  return {qualityFinishing:finishing,qualityOrder:order,qualityProduct:product};
 };

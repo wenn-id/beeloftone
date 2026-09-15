@@ -616,7 +616,8 @@ document.addEventListener('click', event => {
     'command-production-issues':()=>showCommandOrders('blocked'),
     'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,
-    'capacity-plan':capacityPlanDialog,'new-work-center':()=>capacityWorkCenterForm(),
+    'capacity-plan':capacityPlanDialog,'production-quality-insights':productionQualityInsightsDialog,
+    'new-work-center':()=>capacityWorkCenterForm(),
     'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
     'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
@@ -3168,6 +3169,57 @@ async function capacityPlanDialog() {
   }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="capacity-plan">Coba lagi</button>`;}
 }
 $('capacity-plan').onclick=capacityPlanDialog;
+
+function productionQualityInsightsDialog() {
+  if(guardPending())return;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  openDialog('Kualitas produksi',`<form id="production-quality-form">
+    <p class="hint">Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.</p>
+    <div class="form-grid">
+      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
+      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="30"')}
+      ${field('warning_percent','Batas rework + reject (%)','number','required min="1" max="100" step="1" value="5"')}
+      ${field('change_threshold','Batas perubahan (poin persentase)','number','required min="1" max="100" step="1" value="1"')}
+      ${field('query','Cari vendor, line, SKU, order, atau defect','search','maxlength="160"')}
+      <label>Jenis pengerjaan<select name="assignment_type"><option value="all">Internal dan makloon</option><option value="internal">Internal</option><option value="makloon">Makloon</option></select></label>
+      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua</option></select></label>
+    </div><div class="form-actions"><button class="primary" id="production-quality-submit" type="submit">Tampilkan kualitas</button></div>
+  </form><p id="production-quality-message" class="state" role="status" hidden></p><div id="production-quality-summary"></div><div id="production-quality-results"></div><button id="production-quality-more" type="button" hidden>Muat penanggung jawab berikutnya</button>`);
+  const version=epoch,modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const form=$('production-quality-form'),submit=$('production-quality-submit');let offset=0,generation=0;
+  const trendLabels={worsening:'Memburuk',improving:'Membaik',stable:'Stabil',new_baseline:'Baseline baru'};
+  const assignmentLabels={internal:'Internal',makloon:'Makloon'};
+  const delta=value=>value===null?'Belum ada pembanding':`${Number(value)>0?'+':''}${e(value)} poin`;
+  const load=async(reset=false)=>{
+    if(!current())return;
+    if(reset){generation++;offset=0;$('production-quality-summary').replaceChildren();$('production-quality-results').replaceChildren();}
+    const gen=generation,more=$('production-quality-more');submit.disabled=true;more.disabled=true;more.hidden=true;
+    message('production-quality-message',offset?'Memuat penanggung jawab berikutnya...':'Menghitung yield dan tren defect...');
+    try{
+      const params=new URLSearchParams(Object.fromEntries(new FormData(form)));params.set('limit','25');params.set('offset',String(offset));
+      const report=await api.get('/api/production-quality-insights?'+params);if(!current()||gen!==generation)return;
+      message('production-quality-message','');
+      if(!offset){
+        const s=report.summary;
+        $('production-quality-summary').innerHTML=`<p class="form-info">${date(report.current_period_start)} sampai ${date(report.as_of)} dibanding ${date(report.previous_period_start)} sampai ${date(report.previous_period_end)}<br>${n(s.inspected_quantity)} pcs diperiksa · yield ${e(s.first_pass_yield_percent)}% · rework + reject ${e(s.nonconforming_rate_percent)}% · perubahan ${delta(s.nonconforming_rate_change_points)}<br>${n(s.groups)} penanggung jawab · ${n(s.attention_groups)} perlu perhatian</p><p class="hint">Perlu perhatian berarti rework + reject mencapai batas atau trennya memburuk melewati ambang perubahan.</p>`;
+      }
+      const html=report.items.map(row=>{
+        const attention=row.status==='attention',c=row.current,p=row.previous;
+        const defects=row.defect_types.length?row.defect_types.map(item=>`<li><strong>${e(item.defect_type||'Tanpa jenis defect')}</strong>: ${n(item.nonconforming_quantity)} pcs dari ${n(item.record_count)} catatan</li>`).join(''):'<li>Tidak ada defect atau rework pada periode ini.</li>';
+        const sources=row.responsible_sources.length?row.responsible_sources.map(item=>`<li><strong>${e(item.responsible_source||'Sumber belum diisi')}</strong>: ${n(item.nonconforming_quantity)} pcs</li>`).join(''):'<li>Tidak ada sumber masalah pada periode ini.</li>';
+        const skus=row.skus.map(item=>`<article class="material-event"><strong>${e(item.sku)} · ${e(item.product_name)}</strong><p>${e(item.color)} · ${e(item.size)} · ${n(item.inspected_quantity)} pcs diperiksa · rework + reject ${e(item.nonconforming_rate_percent)}%</p></article>`).join('');
+        const records=row.recent_records.map(item=>`<article class="material-event"><strong>${e(item.reference)} · ${e(item.order_reference)}</strong><p>${date(item.inspection_date)} · ${e(item.sku)} · diterima ${n(item.accepted_quantity)}, rework ${n(item.rework_quantity)}, reject ${n(item.reject_quantity)}</p><p>${e(item.defect_type||'Tanpa jenis defect')} · ${e(item.responsible_source||'Sumber belum diisi')}</p><button data-action="final-qc-record" data-id="${e(item.id)}">Buka final QC ${e(item.reference)}</button></article>`).join('');
+        return `<article class="material-event" data-production-quality="${e(row.assignment_type)}-${e(row.assignee)}"><div class="issue-heading"><h3>${e(row.assignee)}</h3><span class="status-label ${attention?'late':'done'}">${attention?'Perlu perhatian':'Sehat'}</span></div><p>${e(assignmentLabels[row.assignment_type])} · tren <strong>${e(trendLabels[row.trend])}</strong> · ${delta(row.nonconforming_rate_change_points)}</p><dl class="requirement-values"><div><dt>Diperiksa</dt><dd>${n(c.inspected_quantity)} pcs</dd></div><div><dt>Yield</dt><dd>${e(c.first_pass_yield_percent)}%</dd></div><div><dt>Rework + reject</dt><dd>${e(c.nonconforming_rate_percent)}%</dd></div><div><dt>Rework</dt><dd>${e(c.rework_rate_percent)}%</dd></div><div><dt>Reject</dt><dd>${e(c.reject_rate_percent)}%</dd></div><div><dt>Periode lalu</dt><dd>${e(p.nonconforming_rate_percent)}%</dd></div></dl><h4>Jenis defect</h4><ul>${defects}</ul><h4>Sumber penanggung jawab</h4><ul>${sources}</ul><h4>SKU periode ini</h4>${skus}<h4>Final QC terbaru</h4>${records}</article>`;
+      }).join('');
+      $('production-quality-results').insertAdjacentHTML('beforeend',html);
+      if(!offset&&!report.items.length)$('production-quality-results').innerHTML='<p class="state">Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.</p>';
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat penanggung jawab berikutnya';
+    }catch(error){if(current()&&gen===generation){message('production-quality-message',error.message,true);$('production-quality-message').insertAdjacentHTML('beforeend','<br><button id="production-quality-retry" type="button">Coba lagi</button>');$('production-quality-retry').onclick=()=>load();}}
+    finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
+  };
+  form.onsubmit=event=>{event.preventDefault();load(true);};$('production-quality-more').onclick=()=>load();load(true);
+}
+$('production-quality-insights').onclick=productionQualityInsightsDialog;
 
 function replenishmentDialog() {
   if(guardPending())return;

@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.72.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.73.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2342,3 +2342,20 @@ sampai akses API resmi tersedia.
 
 Rencana: [Production capacity plan](docs/production-capacity-plan.md).
 Bukti: [Production capacity verification](docs/production-capacity-verification.md).
+
+## Tren kualitas produksi dan vendor (v0.73)
+
+Pilih **Kualitas produksi** untuk membandingkan hasil final QC per line internal atau vendor makloon dengan
+periode sebelumnya yang sama panjang. Laporan menghitung first-pass yield serta persentase rework dan reject dari
+catatan final QC aktif. Catatan yang sudah dikoreksi tidak ikut dihitung.
+
+Penanggung jawab berstatus perlu perhatian ketika persentase gabungan rework dan reject mencapai batas atau
+naik melewati ambang perubahan. Setiap hasil menyertakan jenis defect, sumber penanggung jawab, SKU, dan lima
+catatan final QC terbaru untuk drill-down. Filter tersedia untuk tanggal akhir, panjang periode 7–365 hari,
+batas kualitas, ambang perubahan, jenis pengerjaan, status, serta pencarian vendor, line, SKU, order, dan defect.
+
+API: `GET /api/production-quality-insights`. Semua akun aktif dapat membaca dan endpoint bersifat read-only.
+Schema database tetap 49. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Production quality insights plan](docs/production-quality-insights-plan.md).
+Bukti: [Production quality insights verification](docs/production-quality-insights-verification.md).

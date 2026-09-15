@@ -4199,6 +4199,144 @@ class Store:
             'total':len(scoped),'limit':limit,'offset':offset,'owners':owners,
             'summary':summary,'stages':stages,'items':scoped[offset:offset+limit]}
 
+    def production_quality_insights(self, as_of, window_days=30, warning_percent=5,
+                                    change_threshold=1, query='', assignment_type='all',
+                                    status='attention', limit=100, offset=0):
+        as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
+        current_start=as_of_date-timedelta(days=window_days-1)
+        previous_end=current_start-timedelta(days=1)
+        previous_start=previous_end-timedelta(days=window_days-1)
+        params={'previous_start':previous_start.isoformat(),'as_of':as_of_date.isoformat(),
+                'query':query.strip().casefold(),'assignment_type':assignment_type}
+        with self.transaction() as db:
+            rows=[dict(row) for row in db.execute('''SELECT q.sequence,q.id,q.reference,q.inspection_date,
+                q.accepted_quantity,q.rework_quantity,q.reject_quantity,q.defect_type,
+                q.responsible_source,q.disposition,q.created_at,f.id AS finishing_record_id,
+                f.reference AS finishing_reference,j.assignment_type,j.assignee,
+                o.id AS order_id,o.reference AS order_reference,o.title AS order_title,
+                p.id AS product_id,p.sku,p.name AS product_name,p.color,p.size
+                FROM final_qc_records q JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs c ON c.id=b.cutting_run_id JOIN orders o ON o.id=c.order_id
+                JOIN movements source ON source.id=b.output_movement_id
+                JOIN order_lines l ON l.id=source.line_id JOIN products p ON p.id=l.product_id
+                WHERE q.inspection_date BETWEEN :previous_start AND :as_of
+                  AND NOT EXISTS(SELECT 1 FROM final_qc_record_reversals r WHERE r.record_id=q.id)
+                  AND (:assignment_type='all' OR j.assignment_type=:assignment_type)
+                  AND (:query='' OR instr(lower(q.reference),:query)>0
+                    OR instr(lower(q.defect_type),:query)>0
+                    OR instr(lower(q.responsible_source),:query)>0
+                    OR instr(lower(j.assignee),:query)>0 OR instr(lower(o.reference),:query)>0
+                    OR instr(lower(o.title),:query)>0 OR instr(lower(p.sku),:query)>0
+                    OR instr(lower(p.name),:query)>0 OR instr(lower(p.color),:query)>0
+                    OR instr(lower(p.size),:query)>0)
+                ORDER BY q.inspection_date DESC,q.sequence DESC''',params)]
+
+        def blank():
+            return {'record_count':0,'inspected_quantity':0,'accepted_quantity':0,
+                    'rework_quantity':0,'reject_quantity':0,'nonconforming_quantity':0}
+
+        def add(metric,row):
+            inspected=row['accepted_quantity']+row['rework_quantity']+row['reject_quantity']
+            metric['record_count']+=1;metric['inspected_quantity']+=inspected
+            metric['accepted_quantity']+=row['accepted_quantity']
+            metric['rework_quantity']+=row['rework_quantity']
+            metric['reject_quantity']+=row['reject_quantity']
+            metric['nonconforming_quantity']+=row['rework_quantity']+row['reject_quantity']
+
+        def percent(value,total):
+            return format((Decimal(value)*100/total).quantize(
+                Decimal('.01'),rounding=ROUND_HALF_UP),'.2f') if total else '0.00'
+
+        def finish(metric):
+            total=metric['inspected_quantity']
+            return metric|{'first_pass_yield_percent':percent(metric['accepted_quantity'],total),
+                'nonconforming_rate_percent':percent(metric['nonconforming_quantity'],total),
+                'rework_rate_percent':percent(metric['rework_quantity'],total),
+                'reject_rate_percent':percent(metric['reject_quantity'],total)}
+
+        groups={};overall_current=blank();overall_previous=blank()
+        for row in rows:
+            period='current' if row['inspection_date']>=current_start.isoformat() else 'previous'
+            key=(row['assignment_type'],row['assignee'].casefold())
+            group=groups.setdefault(key,{'assignment_type':row['assignment_type'],'assignee':row['assignee'],
+                'current':blank(),'previous':blank(),'skus':{},'defect_types':{},
+                'responsible_sources':{},'recent_records':[]})
+            add(group[period],row);add(overall_current if period=='current' else overall_previous,row)
+            if period!='current':
+                continue
+            inspected=row['accepted_quantity']+row['rework_quantity']+row['reject_quantity']
+            nonconforming=row['rework_quantity']+row['reject_quantity']
+            sku=group['skus'].setdefault(row['product_id'],{'product_id':row['product_id'],'sku':row['sku'],
+                'product_name':row['product_name'],'color':row['color'],'size':row['size'],**blank()})
+            add(sku,row)
+            if nonconforming:
+                defect=group['defect_types'].setdefault(row['defect_type'],{
+                    'defect_type':row['defect_type'],'record_count':0,'nonconforming_quantity':0})
+                defect['record_count']+=1;defect['nonconforming_quantity']+=nonconforming
+                source=group['responsible_sources'].setdefault(row['responsible_source'],{
+                    'responsible_source':row['responsible_source'],'record_count':0,
+                    'nonconforming_quantity':0})
+                source['record_count']+=1;source['nonconforming_quantity']+=nonconforming
+            group['recent_records'].append({key:row[key] for key in ('id','reference','inspection_date',
+                'order_id','order_reference','order_title','finishing_record_id','finishing_reference',
+                'product_id','sku','product_name','color','size','defect_type','responsible_source',
+                'disposition','accepted_quantity','rework_quantity','reject_quantity')}|{
+                'inspected_quantity':inspected,'nonconforming_quantity':nonconforming})
+
+        items=[]
+        for group in groups.values():
+            if not group['current']['inspected_quantity']:
+                continue
+            current=finish(group['current']);previous=finish(group['previous'])
+            if previous['inspected_quantity']:
+                change=(Decimal(current['nonconforming_rate_percent'])-
+                        Decimal(previous['nonconforming_rate_percent']))
+                change_points=format(change.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
+                trend=('worsening' if change>=change_threshold else
+                       'improving' if change<=-change_threshold else 'stable')
+            else:
+                change_points=None;trend='new_baseline'
+            reasons=[]
+            if (current['nonconforming_quantity'] and
+                    Decimal(current['nonconforming_rate_percent'])>=warning_percent):
+                reasons.append('above_warning')
+            if trend=='worsening':
+                reasons.append('worsening')
+            skus=[finish(value) for value in group['skus'].values()]
+            skus.sort(key=lambda row:(-row['nonconforming_quantity'],
+                -Decimal(row['nonconforming_rate_percent']),row['sku'].casefold(),row['product_id']))
+            defects=list(group['defect_types'].values());defects.sort(
+                key=lambda row:(-row['nonconforming_quantity'],row['defect_type'].casefold()))
+            sources=list(group['responsible_sources'].values());sources.sort(
+                key=lambda row:(-row['nonconforming_quantity'],row['responsible_source'].casefold()))
+            items.append({'assignment_type':group['assignment_type'],'assignee':group['assignee'],
+                'status':'attention' if reasons else 'healthy','attention_reasons':reasons,'trend':trend,
+                'nonconforming_rate_change_points':change_points,'current':current,'previous':previous,
+                'skus':skus,'defect_types':defects,'responsible_sources':sources,
+                'recent_records':group['recent_records'][:5]})
+        items.sort(key=lambda row:(row['status']!='attention',
+            -Decimal(row['current']['nonconforming_rate_percent']),
+            -row['current']['inspected_quantity'],row['assignee'].casefold(),row['assignment_type']))
+        scoped=items if status=='all' else [row for row in items if row['status']==status]
+        current=finish(overall_current);previous=finish(overall_previous)
+        overall_change=(format((Decimal(current['nonconforming_rate_percent'])-
+            Decimal(previous['nonconforming_rate_percent'])).quantize(
+                Decimal('.01'),rounding=ROUND_HALF_UP),'.2f') if previous['inspected_quantity'] else None)
+        summary=current|{'groups':len(items),'attention_groups':sum(row['status']=='attention' for row in items),
+            'previous_inspected_quantity':previous['inspected_quantity'],
+            'previous_nonconforming_quantity':previous['nonconforming_quantity'],
+            'previous_nonconforming_rate_percent':previous['nonconforming_rate_percent'],
+            'nonconforming_rate_change_points':overall_change}
+        return {'as_of':as_of_date.isoformat(),'window_days':window_days,
+            'current_period_start':current_start.isoformat(),
+            'previous_period_start':previous_start.isoformat(),
+            'previous_period_end':previous_end.isoformat(),'warning_percent':warning_percent,
+            'change_threshold':change_threshold,'query':query.strip(),'assignment_type':assignment_type,
+            'status':status,'source':'active_final_qc_records','corrected_records':'excluded',
+            'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
+            'items':scoped[offset:offset+limit]}
+
     @staticmethod
     def _capacity_minutes(value):
         return format(Decimal(value)/1000,'.3f')
