@@ -158,7 +158,7 @@ class ProductionCapacityTest(TestCase):
         self.assertEqual(restored.work_centers()[0]['id'],center['id'])
         self.assertEqual(restored.routing_standard(self.product['id'],'qc')['revision'],1)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],52)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],53)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
         self.assertEqual(self.client.get('/api/orders/'+order['id']).status_code,200)

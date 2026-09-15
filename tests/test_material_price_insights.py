@@ -96,4 +96,4 @@ class MaterialPriceInsightsTest(TestCase):
         self.assertEqual(Store(backup).material_price_insights('2026-10-15',30,status='all')
                          ['items'][0]['supplier_id'],order['supplier_id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],52)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],53)

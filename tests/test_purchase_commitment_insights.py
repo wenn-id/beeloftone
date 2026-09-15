@@ -98,6 +98,6 @@ class PurchaseCommitmentInsightsTest(TestCase):
         self.assertEqual(Store(backup).purchase_commitment_insights('2026-10-20',7,status='all')
                          ['items'][0]['purchase_order_id'],po['id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],52)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],53)
         self.post('/api/purchase-orders/'+po['id']+'/close',{'reason':'Penerimaan selesai'})
         self.assertEqual(self.client.get(base+'&status=all').json()['total'],0)

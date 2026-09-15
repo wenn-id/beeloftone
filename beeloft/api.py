@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.81.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.82.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -432,6 +432,13 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                        status: Literal['all','awaiting_payment','paid','exception'] = 'all',
                                        q: Annotated[str, Query(max_length=160)] = ''):
         return store.payroll_payment_reconciliation(status,q,limit,offset)
+
+    @app.get('/api/payroll-accounting-reconciliation', tags=['People','Finance'])
+    def payroll_accounting_reconciliation(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                                          status: Literal['all','waiting_payment','awaiting_posting',
+                                                          'posted','exception'] = 'all',
+                                          q: Annotated[str, Query(max_length=160)] = ''):
+        return store.payroll_accounting_reconciliation(status,q,limit,offset)
 
     @app.post("/api/products", status_code=201, tags=["Products"])
     def create_product(body: ProductCreate, user: Actor, key: RequestKey):

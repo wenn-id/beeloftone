@@ -94,7 +94,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -219,6 +219,8 @@ class Store:
                 db.executescript(Path(__file__).with_name('workforce_approvals.sql').read_text(encoding='utf-8'))
             if version < 52:
                 db.executescript(Path(__file__).with_name('payroll_approvals.sql').read_text(encoding='utf-8'))
+            if version < 53:
+                db.executescript(Path(__file__).with_name('payroll_accounting.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1391,6 +1393,22 @@ class Store:
         record.update(net_pay=format(net_pay,'.2f'),total_employer_cost=format(employer_cost,'.2f'))
         return record
 
+    @staticmethod
+    def _mekari_payroll_posting(db,period_id):
+        row=db.execute('SELECT * FROM mekari_payroll_snapshot_postings WHERE period_id=?',
+                       (period_id,)).fetchone()
+        if not row:
+            return None
+        record=dict(row)
+        for name in ('debit_total','credit_total'):
+            record[name]=format(Decimal(record.pop(name+'_minor'))/100,'.2f')
+        return record
+
+    def _mekari_payroll_period_record(self,db,row):
+        record=self._mekari_payroll_period(row)
+        record['accounting']=self._mekari_payroll_posting(db,record['id'])
+        return record
+
     def _mekari_payroll_snapshot(self, db, batch_id, include_periods=True):
         row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
             r.external_cursor,r.error,r.reason,u.name AS actor_name FROM mekari_payroll_snapshot_batches b
@@ -1401,12 +1419,15 @@ class Store:
         record=dict(row)
         record['period_count']=db.execute('SELECT COUNT(*) FROM mekari_payroll_snapshot_periods WHERE batch_id=?',
                                           (batch_id,)).fetchone()[0]
+        record['posting_count']=db.execute('''SELECT COUNT(*) FROM mekari_payroll_snapshot_postings a
+            JOIN mekari_payroll_snapshot_periods p ON p.id=a.period_id WHERE p.batch_id=?''',
+            (batch_id,)).fetchone()[0]
         if include_periods:
             record['periods']=[]
             latest_batch=db.execute('SELECT MAX(sequence) FROM mekari_payroll_snapshot_batches').fetchone()[0]
             for source in db.execute('''SELECT * FROM mekari_payroll_snapshot_periods WHERE batch_id=?
                 ORDER BY period_end DESC,period_start DESC,sequence DESC''',(batch_id,)):
-                period=self._mekari_payroll_period(source)
+                period=self._mekari_payroll_period_record(db,source)
                 if record['sequence']==latest_batch:
                     approval=db.execute('''SELECT r.id FROM payroll_approval_requests r
                         JOIN mekari_payroll_snapshot_periods p ON p.id=r.source_period_id
@@ -1434,12 +1455,22 @@ class Store:
             for period in payload['periods']:
                 values=[int(Decimal(period[name])*100) for name in
                         ('gross_pay','employee_deductions','employer_contributions')]
+                period_id=str(uuid4())
                 db.execute('''INSERT INTO mekari_payroll_snapshot_periods(id,batch_id,external_payroll_id,
                     period_start,period_end,status,currency,employee_count,gross_pay_minor,
                     employee_deductions_minor,employer_contributions_minor,payment_date,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(str(uuid4()),batch_id,period['external_payroll_id'],
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',(period_id,batch_id,period['external_payroll_id'],
                     period['period_start'],period['period_end'],period['status'],period['currency'],
                     period['employee_count'],*values,period['payment_date'],period['updated_at']))
+                accounting=period['accounting']
+                if accounting:
+                    debit=int(Decimal(accounting['debit_total'])*100)
+                    credit=int(Decimal(accounting['credit_total'])*100)
+                    db.execute('''INSERT INTO mekari_payroll_snapshot_postings(id,period_id,status,
+                        journal_reference,posting_date,debit_total_minor,credit_total_minor,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?)''',(str(uuid4()),period_id,accounting['status'],
+                        accounting['journal_reference'],accounting['posting_date'],debit,credit,
+                        accounting['updated_at']))
             return self._mekari_payroll_snapshot(db,batch_id)
         return self._write(actor,('admin',),key,'mekari-payroll-snapshot',payload,perform)
 
@@ -1473,7 +1504,7 @@ class Store:
             WHERE p.id=?''',(period_id,)).fetchone()
         if not row:
             raise DomainError(404,'Periode payroll Mekari tidak ditemukan.')
-        return self._mekari_payroll_period(row)
+        return self._mekari_payroll_period_record(db,row)
 
     def _latest_payroll_source(self,db,external_payroll_id):
         row=db.execute('''SELECT p.*,b.sequence AS batch_sequence,b.snapshot_at
@@ -1482,7 +1513,7 @@ class Store:
                 b.sequence=(SELECT MAX(sequence) FROM mekari_payroll_snapshot_batches)
             ORDER BY p.sequence DESC LIMIT 1''',
             (external_payroll_id,)).fetchone()
-        return self._mekari_payroll_period(row) if row else None
+        return self._mekari_payroll_period_record(db,row) if row else None
 
     @staticmethod
     def _payroll_source_stale(source,current):
@@ -1627,6 +1658,77 @@ class Store:
                 'paid_net_pay':format(sum((Decimal(item['current_net_pay']) for item in items
                     if item['payment_status']=='paid'),Decimal()),'.2f')}
             scoped=items if status=='all' else [item for item in items if item['payment_status']==status]
+            return {'status':status,'query':query.strip(),'total':len(scoped),'limit':limit,
+                    'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
+
+    def payroll_accounting_reconciliation(self,status='all',query='',limit=100,offset=0):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT r.id,p.external_payroll_id FROM payroll_approval_requests r
+                JOIN mekari_payroll_snapshot_periods p ON p.id=r.source_period_id
+                ORDER BY r.sequence DESC''').fetchall()
+            seen=set();items=[]
+            for row in rows:
+                external_id=row['external_payroll_id']
+                if external_id in seen:
+                    continue
+                seen.add(external_id)
+                request=self._payroll_approval_request(db,row['id'])
+                if request['status']!='approved':
+                    continue
+                source=request['source'];current=self._latest_payroll_source(db,external_id)
+                changed=[]
+                if current:
+                    fields=('period_start','period_end','currency','employee_count','gross_pay',
+                            'employee_deductions','employer_contributions')
+                    changed=[name for name in fields if source[name]!=current[name]]
+                posting=current['accounting'] if current else None
+                if not current:
+                    workflow='exception';exception='payment_source_missing'
+                elif changed:
+                    workflow='exception';exception='payment_financial_mismatch'
+                elif current['status'] in ('reviewing','approved'):
+                    workflow='waiting_payment';exception=None
+                elif current['status']!='paid':
+                    workflow='exception';exception='payment_source_'+current['status']
+                elif not posting or posting['status']=='draft':
+                    workflow='awaiting_posting';exception=None
+                elif posting['status']=='reversed':
+                    workflow='exception';exception='posting_reversed'
+                elif posting['debit_total']!=posting['credit_total']:
+                    workflow='exception';exception='posting_unbalanced'
+                elif posting['debit_total']!=source['total_employer_cost']:
+                    workflow='exception';exception='posting_amount_mismatch'
+                else:
+                    workflow='posted';exception=None
+                items.append({'id':request['id'],'approval_request_id':request['id'],
+                    'approval_reference':request['reference'],'external_payroll_id':external_id,
+                    'period_start':source['period_start'],'period_end':source['period_end'],
+                    'employee_count':source['employee_count'],'currency':source['currency'],
+                    'expected_total_employer_cost':source['total_employer_cost'],
+                    'payment_status':current['status'] if current else None,
+                    'payment_date':current['payment_date'] if current else None,
+                    'workflow_status':workflow,'exception_reason':exception,'changed_fields':changed,
+                    'journal_status':posting['status'] if posting else None,
+                    'journal_reference':posting['journal_reference'] if posting else None,
+                    'posting_date':posting['posting_date'] if posting else None,
+                    'debit_total':posting['debit_total'] if posting else None,
+                    'credit_total':posting['credit_total'] if posting else None,
+                    'journal_updated_at':posting['updated_at'] if posting else None})
+            needle=query.strip().casefold()
+            if needle:
+                items=[item for item in items if needle in ' '.join(filter(None,(
+                    item['approval_reference'],item['external_payroll_id'],item['journal_reference'],
+                    item['period_start'],item['period_end']))).casefold()]
+            summary={'approved_batches':len(items),
+                'waiting_payment':sum(item['workflow_status']=='waiting_payment' for item in items),
+                'awaiting_posting':sum(item['workflow_status']=='awaiting_posting' for item in items),
+                'posted':sum(item['workflow_status']=='posted' for item in items),
+                'exceptions':sum(item['workflow_status']=='exception' for item in items),
+                'expected_employer_cost':format(sum((Decimal(item['expected_total_employer_cost'])
+                    for item in items),Decimal()),'.2f'),
+                'posted_employer_cost':format(sum((Decimal(item['debit_total']) for item in items
+                    if item['workflow_status']=='posted'),Decimal()),'.2f')}
+            scoped=items if status=='all' else [item for item in items if item['workflow_status']==status]
             return {'status':status,'query':query.strip(),'total':len(scoped),'limit':limit,
                     'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
 

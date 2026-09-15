@@ -76,7 +76,9 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,apiPost,work})=>{
   await dialog.locator(`[data-payroll-period="${first.id}"]`).first().getByRole('button',{name:'Ajukan approval',exact:true}).click();
   await dialog.getByLabel('Alasan / catatan',{exact:true}).fill('Menunggu keputusan sebelum perubahan');
   await dialog.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
+  await dialog.getByText('Menunggu keputusan',{exact:true}).first().waitFor();
   const staleRequest=(await apiGet('/api/payroll-approval-requests')).find(row=>row.source.external_payroll_id===staleExternal);
+  assert.ok(staleRequest);
   await snapshot(payroll(staleExternal,'3750000',new Date(Date.now()+1000).toISOString()));
 
   await role(admin);

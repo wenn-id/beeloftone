@@ -754,6 +754,36 @@ class MekariReceivableSnapshotImport(Input):
         return self
 
 
+class MekariPayrollAccounting(Input):
+    status: Literal['draft','posted','reversed']
+    journal_reference: Text
+    posting_date: date | None = None
+    debit_total: FinanceAmount
+    credit_total: FinanceAmount
+    updated_at: datetime
+
+    @field_validator('debit_total','credit_total')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount=Decimal(value)
+        if not 0<amount<=1_000_000_000_000_000:
+            raise ValueError('Nilai posting payroll harus positif dan maksimal Rp1.000.000.000.000.000.')
+        return format(amount,'.2f')
+
+    @field_validator('updated_at')
+    @classmethod
+    def timezone_required(cls, value):
+        if value.utcoffset() is None:
+            raise ValueError('Waktu pembaruan posting payroll harus menyertakan zona waktu.')
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode='after')
+    def valid_posting(self):
+        if (self.status=='draft')!=(self.posting_date is None):
+            raise ValueError('Tanggal posting hanya wajib untuk jurnal posted atau reversed.')
+        return self
+
+
 class MekariPayrollSnapshotPeriod(Input):
     external_payroll_id: Text
     period_start: date
@@ -766,6 +796,7 @@ class MekariPayrollSnapshotPeriod(Input):
     employer_contributions: FinanceAmount
     payment_date: date | None = None
     updated_at: datetime
+    accounting: MekariPayrollAccounting | None = None
 
     @field_validator('gross_pay','employee_deductions','employer_contributions')
     @classmethod
@@ -792,6 +823,8 @@ class MekariPayrollSnapshotPeriod(Input):
             raise ValueError('Tanggal pembayaran hanya wajib untuk payroll berstatus dibayar.')
         if self.payment_date is not None and self.payment_date<self.period_start:
             raise ValueError('Tanggal pembayaran tidak boleh sebelum awal periode payroll.')
+        if self.accounting and self.accounting.posting_date and self.accounting.posting_date<self.period_start:
+            raise ValueError('Tanggal posting tidak boleh sebelum awal periode payroll.')
         return self
 
 
