@@ -7,7 +7,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work,qualityFinishing})=>
     visual_notes:'Jahitan diperiksa menyeluruh',defect_type:'Jahitan <loncat>',
     responsible_source:'Line QC <A>',disposition:'Rework sebelum masuk gudang',
     accepted_quantity:15,rework_quantity:3,reject_quantity:2,
-    inspection_date:'2026-09-18',reason:'CONTOH laporan kualitas produksi'
+    inspection_date:'2026-09-15',reason:'CONTOH laporan kualitas produksi'
   },'fqc-quality-trend');
   const params=new URLSearchParams({as_of:'2026-09-30',window_days:'30',warning_percent:'20',
     change_threshold:'1',status:'attention'});
@@ -56,6 +56,17 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work,qualityFinishing})=>
   await dialog.getByText('Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
   await dialog.locator('select[name="status"]').selectOption('attention');
   await dialog.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
+  await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Command center',exact:true}).click();
+  const qualitySnapshot=page.locator('[data-command-snapshot="quality"]');
+  await qualitySnapshot.getByText('75.00%',{exact:true}).waitFor();
+  await qualitySnapshot.getByText('25.00%',{exact:true}).waitFor();
+  const alert=page.locator('[data-command-attention="production-quality"]');
+  await alert.getByRole('heading',{name:'Kualitas Line QC <A> (line internal) perlu perhatian',exact:true}).waitFor();
+  await alert.getByText('Rework + reject 25.00% dari 20 pcs; melewati batas 5%.',{exact:true}).waitFor();
+  await alert.getByRole('button',{name:'Buka analisis kualitas',exact:true}).click();
+  await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
   await item.getByRole('button',{name:'Buka final QC FQC-QUALITY-TREND',exact:true}).click();
   await page.getByRole('heading',{name:'Rincian final QC',exact:true}).waitFor();
   console.log('Production quality browser QA PASS: yield, defect trend, escaping, retry, viewer, empty state, drill-down, mobile/200%.');

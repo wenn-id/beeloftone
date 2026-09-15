@@ -19,6 +19,10 @@ def build_command_center(store):
     replenishment = store.replenishment_recommendations(
         generated.astimezone(JAKARTA).date(), limit=25
     )
+    quality = store.production_quality_insights(
+        generated.astimezone(JAKARTA).date(), window_days=30, warning_percent=5,
+        change_threshold=1, status="attention", limit=25
+    )
 
     production_summary = production["summary"]
     approval_kinds = Counter(row["kind"] for row in approvals)
@@ -30,6 +34,7 @@ def build_command_center(store):
     payable_summary = payables["summary"]
     receivable_summary = receivables["summary"]
     replenishment_summary = replenishment["summary"]
+    quality_summary = quality["summary"]
 
     attention = []
 
@@ -59,6 +64,18 @@ def build_command_center(store):
         add("approvals-pending", "warning", "approval", "Keputusan menunggu",
             f"{len(approvals)} pengajuan senilai Rp{format(approval_amount, '.2f')} ada di inbox.",
             "approvals", "Buka inbox approval")
+    if quality["items"]:
+        top_quality = quality["items"][0]
+        current_quality = top_quality["current"]
+        subject = top_quality["assignee"] + (" (vendor makloon)" if
+            top_quality["assignment_type"] == "makloon" else " (line internal)")
+        change = top_quality["nonconforming_rate_change_points"]
+        comparison = (f"naik {change} poin dari periode sebelumnya" if change is not None
+                      and Decimal(change) > 0 else f'melewati batas {quality["warning_percent"]}%')
+        add("production-quality", "warning", "quality", f"Kualitas {subject} perlu perhatian",
+            f'Rework + reject {current_quality["nonconforming_rate_percent"]}% dari '
+            f'{current_quality["inspected_quantity"]} pcs; {comparison}.',
+            "production_quality", "Buka analisis kualitas")
     stockout_soon = (replenishment_summary["stockout_before_replenishment"]
                      + replenishment_summary["below_safety_stock"])
     if stockout_soon:
@@ -102,6 +119,17 @@ def build_command_center(store):
             "in_progress_quantity": production_summary["in_progress"],
             "rework_quantity": production_summary["rework"],
             "open_issues": production["open_issues"],
+        },
+        "quality": {
+            "as_of": quality["as_of"],
+            "period_start": quality["current_period_start"],
+            "inspected_quantity": quality_summary["inspected_quantity"],
+            "first_pass_yield_percent": quality_summary["first_pass_yield_percent"],
+            "nonconforming_rate_percent": quality_summary["nonconforming_rate_percent"],
+            "rework_rate_percent": quality_summary["rework_rate_percent"],
+            "reject_rate_percent": quality_summary["reject_rate_percent"],
+            "groups": quality_summary["groups"],
+            "attention_groups": quality_summary["attention_groups"],
         },
         "approvals": {
             "pending_count": len(approvals),

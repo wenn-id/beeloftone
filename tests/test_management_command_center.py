@@ -1,13 +1,23 @@
 from datetime import datetime, timedelta, timezone
 from unittest import TestCase
+from unittest.mock import patch
 
-import test_production as production_tests
+import test_production_quality_insights as quality_tests
 
 
 class ManagementCommandCenterTest(TestCase):
-    setUp = production_tests.ProductionTest.setUp
-    post = production_tests.ProductionTest.post
-    order = production_tests.ProductionTest.order
+    setUp = quality_tests.ProductionQualityInsightsTest.setUp
+    post = quality_tests.ProductionQualityInsightsTest.post
+    order = quality_tests.ProductionQualityInsightsTest.order
+    material = quality_tests.ProductionQualityInsightsTest.material
+    receipt = quality_tests.ProductionQualityInsightsTest.receipt
+    issue = quality_tests.ProductionQualityInsightsTest.issue
+    setup_stock = quality_tests.ProductionQualityInsightsTest.setup_stock
+    prepare = quality_tests.ProductionQualityInsightsTest.prepare
+    cut = quality_tests.ProductionQualityInsightsTest.cut
+    create_bundle = quality_tests.ProductionQualityInsightsTest.create_bundle
+    setup_bundle = quality_tests.ProductionQualityInsightsTest.setup_bundle
+    setup_quality = quality_tests.ProductionQualityInsightsTest.setup_quality
 
     def sync_window(self):
         finished = datetime.now(timezone.utc).replace(microsecond=0)
@@ -24,6 +34,9 @@ class ManagementCommandCenterTest(TestCase):
             'rework_quantity': 0, 'open_issues': 0,
         })
         self.assertEqual(report['approvals']['pending_count'], 0)
+        self.assertEqual((report['quality']['inspected_quantity'],
+                          report['quality']['first_pass_yield_percent'],
+                          report['quality']['attention_groups']), (0, '0.00', 0))
         self.assertIsNone(report['sales']['snapshot_at'])
         self.assertIsNone(report['finance']['current'])
         self.assertEqual(report['integrations']['attention_count'], 8)
@@ -93,6 +106,24 @@ class ManagementCommandCenterTest(TestCase):
         self.assertEqual(attention['approvals-pending']['action'], 'approvals')
         self.assertEqual(attention['payables-overdue']['action'], 'mekari_payables')
         self.assertEqual(report['status']['critical_count'], 3)
+
+    def test_vendor_quality_alert_uses_active_final_qc_and_opens_analysis(self):
+        self.setup_quality()
+        with patch('beeloft.command_center.datetime') as clock:
+            clock.now.return_value = datetime(2026, 10, 16, 5, tzinfo=timezone.utc)
+            report = self.client.get('/api/command-center').json()
+        self.assertEqual(report['quality'], {
+            'as_of': '2026-10-16', 'period_start': '2026-09-17',
+            'inspected_quantity': 10, 'first_pass_yield_percent': '70.00',
+            'nonconforming_rate_percent': '30.00', 'rework_rate_percent': '20.00',
+            'reject_rate_percent': '10.00', 'groups': 2, 'attention_groups': 1,
+        })
+        alert = next(row for row in report['attention'] if row['id'] == 'production-quality')
+        self.assertEqual((alert['priority'], alert['kind'], alert['action'], alert['action_label']),
+                         ('warning', 'quality', 'production_quality', 'Buka analisis kualitas'))
+        self.assertEqual(alert['title'], 'Kualitas Vendor <B> (vendor makloon) perlu perhatian')
+        self.assertEqual(alert['detail'],
+                         'Rework + reject 60.00% dari 5 pcs; naik 60.00 poin dari periode sebelumnya.')
 
     def test_all_active_roles_can_read_but_anonymous_cannot(self):
         for account in (self.admin, self.operator, self.viewer):

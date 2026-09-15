@@ -25,10 +25,10 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const job=await post('/api/bundles/'+bundle.id+'/sewing-jobs',{reference:'FQC-SEW',assignment_type:'internal',assignee:'Line QC <A>',
     quantity_out:20,cost:'100000.00',sent_date:'2026-09-11',reason:'CONTOH sewing final QC'},'fqc-sewing');
   await post('/api/sewing-jobs/'+job.id+'/complete',{completed_quantity:20,defect_quantity:0,missing_quantity:0,
-    returned_date:'2026-09-15',reason:'CONTOH sewing selesai'},'fqc-sewing-complete');
+    returned_date:'2026-09-12',reason:'CONTOH sewing selesai'},'fqc-sewing-complete');
   const finishing=await post('/api/sewing-jobs/'+job.id+'/finishing-records',{reference:'FQC-FIN',quantity:20,
     thread_trimmed:true,ironed:true,labels_attached:true,hangtags_attached:true,packaged:true,
-    completed_date:'2026-09-16',reason:'CONTOH finishing lengkap'},'fqc-finishing');
+    completed_date:'2026-09-13',reason:'CONTOH finishing lengkap'},'fqc-finishing');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-FINAL-QC/}).click();await page.getByRole('heading',{name:'CONTOH inspeksi final',exact:true}).waitFor();}
   async function openQc(){await page.locator('.order-settings').getByRole('button',{name:'Final QC',exact:true}).click();}
@@ -55,7 +55,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByLabel('Jumlah diterima',{exact:true}).fill('10');
   await page.getByLabel('Jumlah rework',{exact:true}).fill('2');
   await page.getByLabel('Jumlah reject',{exact:true}).fill('1');
-  await page.getByLabel('Tanggal inspeksi',{exact:true}).fill('2026-09-17');
+  await page.getByLabel('Tanggal inspeksi',{exact:true}).fill('2026-09-14');
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH inspeksi final selesai');
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));

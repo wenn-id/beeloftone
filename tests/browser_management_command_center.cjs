@@ -18,6 +18,7 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
   await page.locator('#command-center-summary dd').first().waitFor();
   await page.locator('[data-command-snapshot="production"]').waitFor();
+  await page.locator('[data-command-snapshot="quality"]').getByText('Yield',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="inventory"]').waitFor();
   await page.locator('[data-command-snapshot="sales"]').getByText('Pendapatan kotor',{exact:true}).waitFor();
   await page.locator('[data-command-snapshot="finance"]').getByText('Laba bersih',{exact:true}).waitFor();

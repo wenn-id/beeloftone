@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan produksi internal, versi 0.73.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan produksi internal, versi 0.74.0. Dashboard dan API memakai database lokal yang sama: management command center, order, posisi barang per tahap, WIP ageing dan sinyal hambatan, perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja, tren yield dan defect final QC per line atau vendor serta alert kualitas di Command Center, batch bahan dengan label QR, scan, dan jejak produksi lengkap, hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak, job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi, scan untuk membuka aksi dan memverifikasi pergerakan gudang, jejak stok lengkap per lot, reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan, analisis retur per SKU/ukuran/marketplace, analisis demand dan risiko stockout per ukuran, analisis dead stock, adjustment, stock opname, audit adjustment tidak normal, kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka, biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan, inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim, status sinkronisasi Jubelio/Mekari, mapping SKU, serta snapshot stok, order, penjualan, retur, dan listing Jubelio, ringkasan keuangan, utang usaha, piutang usaha, dan payroll agregat Mekari, serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2359,3 +2359,20 @@ Schema database tetap 49. Runtime connector Jubelio/Mekari tetap ditunda sampai 
 
 Rencana: [Production quality insights plan](docs/production-quality-insights-plan.md).
 Bukti: [Production quality insights verification](docs/production-quality-insights-verification.md).
+
+## Alert kualitas di Command Center (v0.74)
+
+Command Center sekarang menghitung ringkasan kualitas dari final QC aktif selama 30 hari terakhir. Snapshot
+**Kualitas produksi** menampilkan jumlah pcs diperiksa, first-pass yield, persentase rework + reject, dan jumlah
+line/vendor yang perlu perhatian.
+
+Jika suatu line internal atau vendor makloon mencapai 5% rework + reject atau memburuk setidaknya 1 poin dari
+periode 30 hari sebelumnya, line/vendor dengan risiko tertinggi masuk antrean **Perlu perhatian**. Alert memuat
+angka dan basis perbandingan serta membuka layar **Kualitas produksi** untuk melihat defect, sumber, SKU, dan
+final QC terkait. Catatan final QC yang sudah dikoreksi tetap dikeluarkan.
+
+Perubahan ini memperkaya respons `GET /api/command-center` dan tidak menambah endpoint atau tabel. Schema tetap
+49. Runtime connector Jubelio/Mekari tetap ditunda sampai akses API resmi tersedia.
+
+Rencana: [Command Center quality alerts plan](docs/command-center-quality-alerts-plan.md).
+Bukti: [Command Center quality alerts verification](docs/command-center-quality-alerts-verification.md).
