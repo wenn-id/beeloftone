@@ -1,6 +1,6 @@
 # Beeloft One
 
-Pelacakan operasi internal, versi 0.80.0. Dashboard dan API memakai database lokal yang sama: employee master, kehadiran, cuti, absen, lembur, serta permintaan dan approval cuti/lembur; management command center; order, posisi barang per tahap, WIP ageing dan sinyal hambatan; perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja; tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center; batch bahan dengan label QR, scan, dan jejak produksi lengkap; hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak; job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi; scan untuk membuka aksi dan memverifikasi pergerakan gudang; jejak stok lengkap per lot; reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan; analisis retur per SKU/ukuran/marketplace, demand dan risiko stockout per ukuran, dead stock, adjustment, stock opname, serta adjustment tidak normal; kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka; biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan; inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim; status sinkronisasi Jubelio/Mekari, mapping SKU, snapshot Jubelio, ringkasan keuangan, utang usaha, piutang usaha, payroll agregat Mekari, dan approval batch payroll; serta global audit trail untuk perubahan bisnis dan approval.
+Pelacakan operasi internal, versi 0.81.0. Dashboard dan API memakai database lokal yang sama: employee master, kehadiran, cuti, absen, lembur, serta permintaan dan approval cuti/lembur; management command center; order, posisi barang per tahap, WIP ageing dan sinyal hambatan; perencanaan kapasitas work center berbasis menit, standar routing SKU, dan kalender kerja; tren yield dan defect final QC per line atau vendor serta alert kualitas dan risiko kapasitas di Command Center; batch bahan dengan label QR, scan, dan jejak produksi lengkap; hasil cutting, identitas dan label QR bundle, scan serta serah-terima bundle dua pihak; job sewing/makloon, finishing, final QC, penerimaan dan label QR barang jadi; scan untuk membuka aksi dan memverifikasi pergerakan gudang; jejak stok lengkap per lot; reservasi marketplace, picking dengan verifikasi SKU/QR lot, packing, shipping, settlement penjualan, retur pelanggan; analisis retur per SKU/ukuran/marketplace, demand dan risiko stockout per ukuran, dead stock, adjustment, stock opname, serta adjustment tidak normal; kinerja supplier, pergerakan harga bahan per supplier, komitmen pembelian terbuka; biaya produksi aktual, margin kontribusi, forecast demand, risiko stockout, rekomendasi produksi dan pembelian bahan; inbox approval, investigasi bisnis berbahasa Indonesia, tindakan AI yang memerlukan approval, riwayat investigasi dan feedback tim; status sinkronisasi Jubelio/Mekari, mapping SKU, snapshot Jubelio, ringkasan keuangan, utang usaha, piutang usaha, payroll agregat Mekari, approval batch payroll, dan rekonsiliasi pembayaran payroll; serta global audit trail untuk perubahan bisnis dan approval.
 
 ## Coba di Windows
 
@@ -2482,3 +2482,25 @@ Mekari, menghitung payroll, menjalankan pembayaran, atau membuat jurnal. Runtime
 
 Rencana: [Payroll approvals plan](docs/payroll-approvals-plan.md).
 Bukti: [Payroll approvals verification](docs/payroll-approvals-verification.md).
+
+## Rekonsiliasi pembayaran payroll (v0.81)
+
+Pilih **Integrasi → Pembayaran payroll** untuk mencocokkan approval batch payroll terbaru dengan snapshot Mekari
+terbaru. Batch approved dibedakan menjadi **Menunggu pembayaran**, **Sudah dibayar**, atau **Perlu perhatian**.
+Pembayaran hanya dinyatakan selesai ketika Mekari melaporkan status `paid` dan tanggal pembayaran.
+
+Rekonsiliasi membandingkan periode, mata uang, jumlah karyawan, gaji bruto, potongan karyawan, dan kontribusi
+perusahaan terhadap konteks yang disetujui. Periode yang hilang, nominal/konteks yang berubah, payroll yang
+dibatalkan, atau status yang kembali draft menjadi exception. Jika ada pengajuan yang lebih baru untuk ID payroll
+yang sama, keputusan terbaru menggantikan approval lama sebagai dasar rekonsiliasi.
+
+Ringkasan menampilkan jumlah batch approved, menunggu, dibayar, exception, total gaji neto approved, dan total
+gaji neto yang sudah dilaporkan dibayar. Filter status, pencarian approval/ID payroll, pagination, dan drill-down
+ke audit approval tersedia untuk semua akun aktif. Endpoint ini read-only, schema tetap 52, serta tidak mengirim
+uang, mengubah Mekari, menyimpan rekening/gaji per karyawan, atau membuat jurnal. Runtime connector Mekari tetap
+ditunda.
+
+API: `GET /api/payroll-payment-reconciliation`.
+
+Rencana: [Payroll payment reconciliation plan](docs/payroll-payment-reconciliation-plan.md).
+Bukti: [Payroll payment reconciliation verification](docs/payroll-payment-reconciliation-verification.md).

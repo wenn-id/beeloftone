@@ -1572,6 +1572,64 @@ class Store:
         return self._write(actor,('admin','operator'),key,
                            'payroll-approval-decision:'+request_id,payload,perform)
 
+    def payroll_payment_reconciliation(self,status='all',query='',limit=100,offset=0):
+        with self.transaction() as db:
+            rows=db.execute('''SELECT r.id,p.external_payroll_id FROM payroll_approval_requests r
+                JOIN mekari_payroll_snapshot_periods p ON p.id=r.source_period_id
+                ORDER BY r.sequence DESC''').fetchall()
+            seen=set();items=[]
+            for row in rows:
+                external_id=row['external_payroll_id']
+                if external_id in seen:
+                    continue
+                seen.add(external_id)
+                request=self._payroll_approval_request(db,row['id'])
+                if request['status']!='approved':
+                    continue
+                source=request['source'];current=self._latest_payroll_source(db,external_id)
+                changed=[]
+                if current:
+                    fields=('period_start','period_end','currency','employee_count','gross_pay',
+                            'employee_deductions','employer_contributions')
+                    changed=[name for name in fields if source[name]!=current[name]]
+                if not current:
+                    payment_status='exception';exception='source_missing'
+                elif changed:
+                    payment_status='exception';exception='financial_mismatch'
+                elif current['status']=='paid':
+                    payment_status='paid';exception=None
+                elif current['status'] in ('reviewing','approved'):
+                    payment_status='awaiting_payment';exception=None
+                else:
+                    payment_status='exception';exception='source_'+current['status']
+                approved=next(event for event in request['history'] if event['status']=='approved')
+                items.append({'id':request['id'],'approval_reference':request['reference'],
+                    'approval_request_id':request['id'],'approved_at':approved['created_at'],
+                    'external_payroll_id':external_id,'period_start':source['period_start'],
+                    'period_end':source['period_end'],'employee_count':source['employee_count'],
+                    'currency':source['currency'],'expected_net_pay':source['net_pay'],
+                    'expected_total_employer_cost':source['total_employer_cost'],
+                    'payment_status':payment_status,'exception_reason':exception,
+                    'changed_fields':changed,'source_status':current['status'] if current else None,
+                    'current_source_period_id':current['id'] if current else None,
+                    'current_net_pay':current['net_pay'] if current else None,
+                    'current_total_employer_cost':current['total_employer_cost'] if current else None,
+                    'payment_date':current['payment_date'] if current else None})
+            needle=query.strip().casefold()
+            if needle:
+                items=[item for item in items if needle in ' '.join((item['approval_reference'],
+                    item['external_payroll_id'],item['period_start'],item['period_end'])).casefold()]
+            summary={'approved_batches':len(items),
+                'awaiting_payment':sum(item['payment_status']=='awaiting_payment' for item in items),
+                'paid':sum(item['payment_status']=='paid' for item in items),
+                'exceptions':sum(item['payment_status']=='exception' for item in items),
+                'expected_net_pay':format(sum((Decimal(item['expected_net_pay']) for item in items),Decimal()),'.2f'),
+                'paid_net_pay':format(sum((Decimal(item['current_net_pay']) for item in items
+                    if item['payment_status']=='paid'),Decimal()),'.2f')}
+            scoped=items if status=='all' else [item for item in items if item['payment_status']==status]
+            return {'status':status,'query':query.strip(),'total':len(scoped),'limit':limit,
+                    'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
+
     def create_material(self, payload, actor, key):
         def perform(db):
             record = {'id':str(uuid4()), **payload, 'created_by':actor['id'], 'created_at':now()}

@@ -350,6 +350,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await require('./browser_mekari_receivable_snapshots.cjs')({page,login,viewer,apiPost,work});
   await require('./browser_mekari_payroll_snapshots.cjs')({page,login,viewer,apiPost,work});
   await require('./browser_payroll_approvals.cjs')({page,login,admin,operator,viewer,apiGet,apiPost,work});
+  await require('./browser_payroll_payment_reconciliation.cjs')({page,login,admin,viewer,apiPost,work});
   await require('./browser_management_command_center.cjs')({page,login,viewer,apiGet,apiPost,work});
   await require('./browser_ai_investigation.cjs')({page,login,admin,operator,viewer,apiGet,work});
   await require('./browser_cutting.cjs')({page,login,admin,operator,viewer,apiGet,work});
