@@ -36,7 +36,19 @@ await sessionApi.save(sessionApi.transaction('/api/products',{sku:'SESSION'}));
 assert.equal(sessionRequests[0].options.headers['X-API-Key'],undefined);
 assert.equal(sessionRequests[0].options.headers['X-CSRF-Token'],'csrf-test-token');
 assert.equal(sessionRequests[0].options.credentials,'same-origin');
-console.log('Client checks PASS: escaping, date, exact write retry, read-only POST, auth header, structured errors.');
+// Binding aktor: setiap pencatatan menyatakan akun yang menyusunnya, sedangkan login/logout yang
+// memakai post() tanpa key tidak boleh membawanya agar pemulihan lewat "Masuk ulang" tetap jalan.
+assert.equal(sessionRequests[0].options.headers['X-Beeloft-Actor'],undefined);
+const boundRequests=[];
+const boundApi=new Api(async(path,options)=>{boundRequests.push({path,options});return new Response('{}');});
+boundApi.actorId='actor-a';
+await boundApi.save(boundApi.transaction('/api/movements',{quantity:1}));
+await boundApi.post('/api/session/logout',{});
+await boundApi.get('/api/me');
+assert.equal(boundRequests[0].options.headers['X-Beeloft-Actor'],'actor-a');
+assert.equal(boundRequests[1].options.headers['X-Beeloft-Actor'],undefined);
+assert.equal(boundRequests[2].options.headers['X-Beeloft-Actor'],undefined);
+console.log('Client checks PASS: escaping, date, exact write retry, read-only POST, auth header, actor binding, structured errors.');
 const exported = new Api(async (path, options) => {
   assert.equal(options.headers['X-API-Key'],'test-csv-key');
   return new Response('ID,Catatan\r\n1,"Uji, CSV"\r\n',{headers:{'Content-Type':'text/csv'}});

@@ -2412,6 +2412,19 @@ mempertahankan draft dan menampilkan tombol Masuk ulang. Sisi klien menyimpan `a
 draft pending dan memeriksa identitas server sebelum mengirim retry, tetapi penegakan invarian tetap
 di server.
 
+Kepemilikan key hanya menolong bila key-nya sudah pernah dipakai, sehingga submit **pertama** sebuah
+form masih dapat berjalan di bawah session yang sudah berganti: key masih baru dan server melihat
+request yang sah dari akun yang sedang memegang cookie bersama. Kondisi itu direproduksi dan memang
+menghasilkan mutasi beserta event audit dengan atribusi akun yang salah, baik pada perpindahan
+produksi maupun pada penyimpanan investigasi AI. Karena itu setiap pencatatan dari dashboard sekarang
+menyatakan akun penyusunnya melalui header `X-Beeloft-Actor`, dan server memverifikasinya pada
+dependency `actor()` lalu menolak 403 sebelum handler mana pun berjalan. Penolakan tidak meninggalkan
+mutasi, event audit, maupun receipt, jadi key yang sama masih dapat dipakai oleh akun yang sah.
+
+Header itu tidak pernah memberi akses; nilainya hanya dapat menolak request. Login dan logout dikirim
+tanpa idempotency key sehingga tidak pernah membawa binding, dan tombol Masuk ulang tetap dapat keluar
+dari session milik akun lain. Klien API key yang tidak mengirim header tidak berubah perilakunya.
+
 Migrasi 53 → 54 menjadikan `requests.key` primary key tunggal. Receipt paling awal per key
 dipertahankan sebagai pemilik, receipt duplikat historis diarsipkan immutable di
 `request_key_conflicts` beserta waktu deteksi, sehingga jejak database yang pernah terkena bug ini

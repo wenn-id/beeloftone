@@ -69,7 +69,7 @@ function clearWorkspace() {
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
-  epoch++; boardRequest++; detailRequest++; api.key = ''; user = null; selected = null; boardData = null;
+  epoch++; boardRequest++; detailRequest++; api.key = ''; api.actorId = ''; user = null; selected = null; boardData = null;
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
   $('menu-toggle').hidden=true;sidebar(false);
@@ -89,7 +89,7 @@ function fail(error, target) {
   else message(target, error.message, true);
 }
 function enterWorkspace(me,workflow) {
-  user=me;transitions=workflow.transitions;$('access-key').value='';
+  user=me;api.actorId=me.id;transitions=workflow.transitions;$('access-key').value='';
   $('account-name').textContent=`${me.name} · ${me.role}`;
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
   $('menu-toggle').hidden=false;

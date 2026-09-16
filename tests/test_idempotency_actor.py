@@ -297,3 +297,118 @@ class RequestKeyMigrationTest(unittest.TestCase):
     def query_requests(self, key):
         with closing(sqlite3.connect(self.path, isolation_level=None)) as db:
             return db.execute('SELECT key FROM requests WHERE key=?', (key,)).fetchall()
+
+
+
+class StaleSessionActorBindingTest(unittest.TestCase):
+    """Submit PERTAMA sebuah form tidak boleh berjalan di bawah session akun lain.
+
+    Cookie session dipakai bersama seluruh tab, sedangkan akun yang membuka form hanya diketahui tab
+    tersebut. Pada submit pertama idempotency key masih baru, jadi kepemilikan key tidak dapat
+    menolong: tanpa binding aktor, server melihat request yang sah dari akun yang sedang memegang
+    session. Klien karena itu menyatakan akun penyusun request pada header `X-Beeloft-Actor`, dan
+    server menolak 403 sebelum mutasi dijalankan bila pernyataan itu tidak cocok.
+    """
+
+    setUp = production_tests.ProductionTest.setUp
+    post = production_tests.ProductionTest.post
+    order = production_tests.ProductionTest.order
+    detail = production_tests.ProductionTest.detail
+    movements = IdempotencyActorBindingTest.movements
+    query = IdempotencyActorBindingTest.query
+    receipts = IdempotencyActorBindingTest.receipts
+    audit = IdempotencyActorBindingTest.audit
+    login = IdempotencyActorBindingTest.login
+
+    def move(self, line, quantity, key, status, headers=None):
+        response = self.client.post('/api/movements',
+            json={'line_id': line, 'from_stage': 'planned', 'to_stage': 'cutting',
+                  'quantity': quantity, 'reason': ''},
+            headers={'Idempotency-Key': key} | (headers or {}))
+        self.assertEqual(response.status_code, status, response.text)
+        return response
+
+    def test_matching_actor_binding_is_accepted(self):
+        order = self.order(100)
+        line = order['lines'][0]['id']
+        self.move(line, 10, 'bound-match', 201,
+                  {'X-Beeloft-Actor': self.admin['id']})
+        self.assertEqual(len(self.movements(order)), 1)
+
+    def test_absent_binding_keeps_api_key_clients_unchanged(self):
+        order = self.order(100)
+        line = order['lines'][0]['id']
+        self.move(line, 10, 'bound-absent', 201)
+        self.assertEqual(len(self.movements(order)), 1)
+        self.assertEqual(self.client.get('/api/me').json()['id'], self.admin['id'])
+
+    def test_mismatched_binding_creates_no_mutation_and_no_audit_event(self):
+        order = self.order(100)
+        line = order['lines'][0]['id']
+        self.move(line, 10, 'bound-mismatch', 403,
+                  {'X-Beeloft-Actor': self.operator['id']})
+        self.assertEqual(len(self.movements(order)), 0)
+        self.assertEqual(self.detail(order)['lines'][0]['balances']['planned'], 100)
+        self.assertEqual(self.audit('bound-mismatch'), [])
+        self.assertEqual(self.receipts('bound-mismatch'), [])
+        # Key belum terpakai, jadi akun penyusun form masih dapat memakainya tepat satu kali.
+        self.move(line, 10, 'bound-mismatch', 201, {'X-Beeloft-Actor': self.admin['id']})
+        self.assertEqual(len(self.movements(order)), 1)
+
+    def test_first_submit_is_refused_after_another_tab_replaced_the_session(self):
+        """Kasus yang dilaporkan: form dibuka akun A, tab lain menukar session, submit pertama."""
+        order = self.order(100)
+        line = order['lines'][0]['id']
+        self.client.headers.pop('X-API-Key', None)
+
+        # Tab 1: akun A membuka form. Identitas yang dipegang klien saat menyusun request adalah A.
+        self.login(self.operator['api_key'])
+        opened_by = self.client.get('/api/me').json()['id']
+        self.assertEqual(opened_by, self.operator['id'])
+
+        # Tab 2 pada browser yang sama masuk sebagai akun B; cookie bersama ikut berganti.
+        self.login(self.admin['api_key'])
+        self.assertEqual(self.client.get('/api/me').json()['id'], self.admin['id'])
+
+        # Submit pertama dari tab 1. Idempotency key masih baru.
+        self.move(line, 8, 'stale-first-submit', 403,
+                  {'X-Beeloft-Actor': opened_by,
+                   'X-CSRF-Token': self.client.cookies.get('beeloft_csrf')})
+        self.assertEqual(len(self.movements(order)), 0)
+        self.assertEqual(self.audit('stale-first-submit'), [])
+        self.assertEqual(self.receipts('stale-first-submit'), [])
+
+        # Setelah masuk ulang sebagai akun pembuka form, pencatatan berjalan tepat satu kali dan
+        # atribusinya benar.
+        self.client.post('/api/session/logout',
+                         headers={'X-CSRF-Token': self.client.cookies.get('beeloft_csrf')})
+        self.login(self.operator['api_key'])
+        self.move(line, 8, 'stale-first-submit', 201,
+                  {'X-Beeloft-Actor': opened_by,
+                   'X-CSRF-Token': self.client.cookies.get('beeloft_csrf')})
+        recorded = self.movements(order)
+        self.assertEqual(len(recorded), 1)
+        self.assertEqual(recorded[0]['actor_id'], self.operator['id'])
+        self.assertEqual([event['actor_id'] for event in self.audit('stale-first-submit')],
+                         [self.operator['id']])
+
+    def test_binding_cannot_grant_access_it_only_refuses(self):
+        """Header tidak pernah menjadi mekanisme autentikasi.
+
+        Menyatakan akun lain tidak membuat request berjalan sebagai akun itu, dan tanpa kredensial
+        yang sah request tetap 401.
+        """
+        order = self.order(100)
+        line = order['lines'][0]['id']
+        self.move(line, 10, 'bound-viewer', 403, {'X-Beeloft-Actor': self.viewer['id']})
+        # Viewer tetap tidak boleh mencatat walau menyatakan dirinya sendiri.
+        self.move(line, 10, 'bound-viewer-self', 403,
+                  {'X-API-Key': self.viewer['api_key'], 'X-Beeloft-Actor': self.viewer['id']})
+        self.client.headers.pop('X-API-Key', None)
+        response = self.client.post('/api/movements',
+            json={'line_id': line, 'from_stage': 'planned', 'to_stage': 'cutting',
+                  'quantity': 10, 'reason': ''},
+            headers={'Idempotency-Key': 'bound-anon', 'X-Beeloft-Actor': self.admin['id']})
+        self.assertEqual(response.status_code, 401, response.text)
+        self.client.headers['X-API-Key'] = self.admin['api_key']
+        self.assertEqual(len(self.movements(order)), 0)

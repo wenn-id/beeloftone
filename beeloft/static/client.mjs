@@ -13,7 +13,7 @@ export function displayDate(value) {
 }
 
 export class Api {
-  constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; this.csrf = ''; }
+  constructor(fetcher = (...args) => fetch(...args)) { this.fetcher = fetcher; this.key = ''; this.csrf = ''; this.actorId = ''; }
   transaction(path, body) { return {path, body: JSON.stringify(body), key: crypto.randomUUID()}; }
   get(path) { return this.request(path); }
   post(path, body) { return this.request(path, {body:JSON.stringify(body), readOnly:true}); }
@@ -27,7 +27,14 @@ export class Api {
       if (this.key) headers['X-API-Key'] = this.key;
       if (transaction) {
         headers['Content-Type'] = 'application/json';
-        if (transaction.key) headers['Idempotency-Key'] = transaction.key;
+        if (transaction.key) {
+          headers['Idempotency-Key'] = transaction.key;
+          // Setiap pencatatan menyatakan akun yang menyusunnya. Server menolak 403 sebelum mutasi
+          // dijalankan bila session bersama ternyata sudah berpindah ke akun lain. Login dan logout
+          // memakai post() tanpa key, jadi keduanya tidak pernah membawa binding ini dan pemulihan
+          // lewat "Masuk ulang" tetap dapat berjalan.
+          if (this.actorId) headers['X-Beeloft-Actor'] = this.actorId;
+        }
         if (!this.key) {
           const cookie = typeof document === 'undefined' ? '' : document.cookie.split('; ').find(row => row.startsWith('beeloft_csrf='))?.slice(13);
           const csrf = this.csrf || (cookie ? decodeURIComponent(cookie) : '');

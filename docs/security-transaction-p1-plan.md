@@ -169,7 +169,7 @@ baru tetap melewati rantai migrasi sampai 54.
   memunculkan `IntegrityError` yang sudah dipetakan ke 409 oleh `api.py`, bahkan bila suatu saat
   pemeriksaan di Python hilang.
 
-### Sisi klien
+### Sisi klien untuk retry
 
 Server menjadi penegak invarian. Perubahan klien hanya untuk UX dan diagnosa:
 
@@ -180,8 +180,64 @@ Server menjadi penegak invarian. Perubahan klien hanya untuk UX dan diagnosa:
 - 403 dari server sudah memicu perilaku klien yang benar tanpa perubahan lain: draft dipertahankan
   dan tombol Masuk ulang muncul.
 
+## 3. Submit pertama di bawah session yang sudah berganti
+
+### Celah yang tersisa
+
+Kepemilikan idempotency key hanya menolong bila key-nya sudah pernah dipakai. Pada **submit pertama**
+sebuah form, key masih baru, jadi server melihat request yang sah dari akun yang sedang memegang
+session bersama. Urutannya:
+
+1. Tab 1 masuk sebagai akun A dan membuka form mutasi, belum menekan simpan. State akun di tab itu
+   hanya ada di memori.
+2. Tab lain menukar session bersama ke akun B.
+3. Tab 1 menekan simpan untuk pertama kali. Guard klien yang ada hanya berjalan untuk retry
+   (`if (initial || unresolved)`), sehingga request dikirim apa adanya.
+4. Server me-resolve akun B, key belum pernah dipakai, mutasi dijalankan dan **diatribusikan ke akun
+   B** tanpa ada yang salah dari sudut pandang server.
+
+Jalur investigasi AI memakai pola yang sama dan terkena hal yang sama.
+
+### Keputusan: binding aktor yang ditegakkan server
+
+Klien menyatakan akun yang dipakainya saat menyusun request melalui header `X-Beeloft-Actor`, dan
+server menolak 403 sebelum mutasi dijalankan bila akun yang benar-benar ter-autentikasi berbeda.
+Pemeriksaan diletakkan pada dependency `actor()` di `beeloft/api.py`, yaitu satu tempat yang dilewati
+seluruh endpoint.
+
+Alternatif yang dipertimbangkan dan tidak dipilih:
+
+- **Pre-flight `GET /api/me` sebelum setiap penyimpanan.** Menambah satu round trip pada setiap
+  pencatatan, dan tetap menyisakan celah TOCTOU: session dapat berganti antara pemeriksaan dan POST.
+- **Membandingkan cookie CSRF dengan nilai saat login.** Lokal dan tanpa round trip, tetapi hanya
+  mendeteksi "session diganti", bukan "akun berbeda". Login ulang oleh akun yang sama juga mengubah
+  cookie, sehingga menimbulkan penolakan palsu.
+
+Binding aktor tidak punya kedua kelemahan itu: pemeriksaan bersifat atomik terhadap request yang sama
+dan membandingkan identitas, bukan token.
+
+### Invarian tambahan
+
+| # | Invarian |
+|---|---|
+| I9 | Setiap pencatatan dari browser menyatakan akun penyusunnya, dan pernyataan itu diverifikasi server sebelum mutasi dijalankan. |
+| I10 | Pernyataan yang tidak cocok menghasilkan 403 tanpa mutasi, tanpa event audit, dan tanpa receipt, sehingga key-nya masih dapat dipakai akun yang sah. |
+| I11 | Header ini tidak pernah memberi akses. Nilainya hanya dapat menolak request, bukan meloloskannya; autentikasi dan otorisasi tetap berasal dari API key atau cookie session. |
+
+### Yang dipertahankan
+
+- **Klien API key.** Header hanya dikirim oleh dashboard. Request tanpa header tidak diperiksa, jadi
+  perilaku klien API key, CLI, dan seluruh test lama tidak berubah.
+- **Kepemilikan idempotency key global.** Tetap berlaku dan tetap menjadi penjaga retry.
+- **Otorisasi.** Pemeriksaan role tidak disentuh. Viewer tetap ditolak walau binding-nya cocok, dan
+  request tanpa kredensial tetap 401 walau membawa header.
+- **Pemulihan draft pending.** Login dan logout memakai `post()` tanpa idempotency key, sehingga
+  keduanya tidak pernah membawa binding. Tombol **Masuk ulang** tetap dapat logout dari session milik
+  akun lain, dan draft pending tetap dapat diselesaikan setelah masuk kembali sebagai akun asli.
+
 ### Batas
 
 Milestone ini tidak menambah TTL atau pembersihan tabel `requests`, tidak menambah notifikasi
 lintas tab, tidak menyentuh isu Final QC/rework, dan tidak mengubah aturan bisnis modul apa pun.
+Binding aktor hanya dikirim untuk pencatatan ber-idempotency-key; request baca belum membawanya.
 Schema naik dari 53 ke 54.

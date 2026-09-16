@@ -44,12 +44,24 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     def actor(request: Request, api_key=Depends(auth_header)):
         if api_key:
-            return store.authenticate(api_key)
-        session=request.cookies.get('beeloft_session')
-        if not session:
-            raise DomainError(401,"Masukkan X-API-Key atau login melalui browser.")
-        return store.authenticate_browser_session(session,request.headers.get('X-CSRF-Token'),
-                                                  request.method not in ('GET','HEAD','OPTIONS'))
+            resolved = store.authenticate(api_key)
+        else:
+            session=request.cookies.get('beeloft_session')
+            if not session:
+                raise DomainError(401,"Masukkan X-API-Key atau login melalui browser.")
+            resolved = store.authenticate_browser_session(session,request.headers.get('X-CSRF-Token'),
+                                                          request.method not in ('GET','HEAD','OPTIONS'))
+        # Binding aktor. Cookie session dipakai bersama seluruh tab pada satu origin, sedangkan akun
+        # yang membuka sebuah form hanya diketahui tab tersebut. Klien menyatakan akun yang
+        # dipakainya saat menyusun request, dan pernyataan itu wajib cocok dengan akun yang
+        # benar-benar ter-autentikasi. Header ini tidak pernah memberi akses: nilainya hanya dapat
+        # menolak request, bukan meloloskannya, sehingga klien API key tanpa header tidak berubah.
+        asserted = request.headers.get('X-Beeloft-Actor')
+        if asserted and asserted != resolved['id']:
+            raise DomainError(403, "Session browser ini sudah berpindah ke akun lain. Masuk ulang "
+                                   "sebagai akun yang membuka form ini; tidak ada pencatatan yang "
+                                   "dijalankan.")
+        return resolved
 
     Actor = Annotated[dict, Depends(actor)]
     RequestKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
