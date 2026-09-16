@@ -12,7 +12,9 @@
 <body>
   <a class="skip-link" href="#main">Lewati ke konten</a>
   <header class="masthead">
-    <a class="brand" href="#" id="brand"><span>beeloft<span class="brand-dot">.</span></span><small>ONE / PRODUKSI</small></a>
+    <button id="menu-toggle" class="quiet menu-toggle" type="button" aria-controls="app-sidebar" aria-expanded="false" hidden>Menu</button>
+    <a class="brand" href="#" id="brand"><span>beeloft<span class="brand-dot">.</span></span><small>ONE / OPERATIONS</small></a>
+    <div class="top-context"><span>Workspace</span><strong>Operasional</strong></div>
     <div class="account"><span id="account-name"></span><button id="theme" class="quiet" type="button">Mode gelap</button><button id="logout" class="quiet" type="button" hidden>Keluar</button></div>
   </header>
   <main id="main" tabindex="-1" aria-busy="true">
@@ -20,17 +22,25 @@
       <div class="login-intro"><p class="eyebrow">Ruang kerja produksi internal</p><h1>Setiap tahap. <br>Setiap jumlah. <br><em>Tercatat.</em></h1><p>Lacak order dari cutting hingga diterima gudang, bersama tim Beeloft.</p><div class="process-label">Cutting <span>→</span> Sewing <span>→</span> QC <span>→</span> Gudang</div></div>
       <form id="login-form" class="login-form"><h2>Masuk ke produksi</h2><p id="login-copy">Gunakan kunci akses akun yang dibuat di server Beeloft.</p><button id="sso-login" class="primary" type="button" hidden></button><p id="sso-separator" class="hint" hidden>Atau gunakan kunci akses lokal.</p><label for="access-key">Kunci akses</label><input id="access-key" type="password" required autocomplete="off" spellcheck="false"><p class="hint">Kunci ditukar satu kali menjadi sesi browser 8 jam dan tidak disimpan oleh halaman.</p><p id="login-error" class="error" role="alert" hidden></p><button class="primary" type="submit">Buka ruang produksi</button></form>
     </section>
-    <section id="workspace" hidden>
-      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><div class="actions"><button id="command-center" class="quiet" type="button">Command center</button><button id="wip-ageing-insights" class="quiet" type="button">WIP ageing</button><button id="capacity-plan" class="quiet" type="button">Kapasitas produksi</button><button id="workforce" class="quiet" type="button">People</button><button id="production-quality-insights" class="quiet" type="button">Kualitas produksi</button><button id="scan-bundle" class="quiet" type="button">Scan bundle</button><button id="scan-finished-goods" class="quiet" type="button">Scan barang jadi</button><button id="ai-brain" class="quiet" type="button">Tanya Beeloft</button><button id="integrations" class="quiet" type="button">Integrasi</button><button id="materials" class="quiet" type="button">Bahan baku</button><button id="supplier-performance-insights" class="quiet" type="button">Kinerja supplier</button><button id="material-price-insights" class="quiet" type="button">Harga bahan</button><button id="purchase-commitment-insights" class="quiet" type="button">Komitmen PO</button><button id="demand-forecast" class="quiet" type="button">Forecast demand</button><button id="replenishment" class="quiet" type="button">Rekomendasi stok</button><button id="size-demand-insights" class="quiet" type="button">Analisis ukuran</button><button id="return-insights" class="quiet" type="button">Analisis retur</button><button id="dead-stock-insights" class="quiet" type="button">Dead stock</button><button id="stock-adjustment-insights" class="quiet" type="button">Audit adjustment</button><button id="activity" class="quiet" type="button">Laporan aktivitas</button><button id="audit-trail" class="quiet" type="button" hidden>Audit trail</button><button id="products" class="quiet" type="button">Master SKU</button><button id="backup" class="quiet" type="button" hidden>Cadangan data</button></div></div>
-      <div class="actions"><button id="approvals" class="primary" type="button">Inbox approval</button><button id="purchase-requests" type="button">Permintaan pembelian</button><button id="marketing-budgets" type="button">Budget marketing</button></div>
-      <section id="command-center-view" hidden>
+    <section id="workspace" class="app-shell" hidden>
+      <aside id="app-sidebar" class="app-sidebar" aria-label="Navigasi utama">
+        <nav class="sidebar-nav">
+          <div class="nav-group"><p>Ringkasan</p><button id="command-center" class="nav-item" type="button">Command center</button><button id="board-home" class="nav-item" type="button" aria-current="page">Produksi</button></div>
+          <div class="nav-group"><p>Operasional</p><button id="materials" class="nav-item" type="button">Bahan baku</button><button id="workforce" class="nav-item" type="button">People</button><button id="scan-bundle" class="nav-item" type="button">Scan bundle</button><button id="scan-finished-goods" class="nav-item" type="button">Scan barang jadi</button><button id="products" class="nav-item" type="button">Master SKU</button></div>
+          <div class="nav-group"><p>Analitik</p><button id="wip-ageing-insights" class="nav-item" type="button">WIP ageing</button><button id="capacity-plan" class="nav-item" type="button">Kapasitas produksi</button><button id="production-quality-insights" class="nav-item" type="button">Kualitas produksi</button><button id="supplier-performance-insights" class="nav-item" type="button">Kinerja supplier</button><button id="material-price-insights" class="nav-item" type="button">Harga bahan</button><button id="purchase-commitment-insights" class="nav-item" type="button">Komitmen PO</button><button id="demand-forecast" class="nav-item" type="button">Forecast demand</button><button id="replenishment" class="nav-item" type="button">Rekomendasi stok</button><button id="size-demand-insights" class="nav-item" type="button">Analisis ukuran</button><button id="return-insights" class="nav-item" type="button">Analisis retur</button><button id="dead-stock-insights" class="nav-item" type="button">Dead stock</button><button id="stock-adjustment-insights" class="nav-item" type="button">Audit adjustment</button></div>
+          <div class="nav-group"><p>Sistem</p><button id="ai-brain" class="nav-item" type="button">Tanya Beeloft</button><button id="integrations" class="nav-item" type="button">Integrasi</button><button id="activity" class="nav-item" type="button">Laporan aktivitas</button><button id="audit-trail" class="nav-item" type="button" hidden>Audit trail</button><button id="backup" class="nav-item" type="button" hidden>Cadangan data</button></div>
+        </nav>
+        <div class="sidebar-actions"><button id="approvals" class="primary" type="button">Inbox approval</button><button id="purchase-requests" type="button">Permintaan pembelian</button><button id="marketing-budgets" type="button">Budget marketing</button></div>
+      </aside>
+      <div class="workspace-main">
+      <section id="command-center-view" class="command-center-view" hidden>
         <button id="command-center-back" class="quiet back" type="button">← Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Management command center</p><h1>Apa yang perlu diputuskan hari ini.</h1></div><div class="actions"><span id="command-center-updated" class="hint"></span><button id="command-center-refresh" type="button">Muat ulang</button></div></div>
-        <dl id="command-center-summary" class="summary" aria-label="Ringkasan bisnis"></dl>
+        <div class="page-heading dashboard-heading"><div><p class="eyebrow">Management command center</p><h1>Apa yang perlu diputuskan hari ini.</h1></div><div class="actions"><span id="command-center-updated" class="hint"></span><button id="command-center-refresh" type="button">Muat ulang</button></div></div>
+        <dl id="command-center-summary" class="summary kpi-grid" aria-label="Ringkasan bisnis"></dl>
         <p id="command-center-message" class="state" role="status" hidden></p>
         <div id="command-center-content" class="command-center-content" hidden>
-          <section><div class="ledger-heading"><h2>Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention"></div></section>
-          <section><h2>Snapshot bisnis</h2><div id="command-center-snapshots"></div></section>
+          <section class="attention-panel card card-raised" aria-labelledby="attention-title"><div class="section-heading"><div><p class="eyebrow">Antrean keputusan</p><h2 id="attention-title">Perlu perhatian</h2></div><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
+          <section class="snapshot-panel" aria-labelledby="snapshot-title"><div class="section-heading"><div><p class="eyebrow">Konteks operasional</p><h2 id="snapshot-title">Snapshot bisnis</h2></div></div><div id="command-center-snapshots" class="snapshot-grid"></div></section>
         </div>
       </section>
       <section id="materials-view" hidden>
@@ -63,6 +73,7 @@
         <div class="pagination"><span id="activity-count" class="hint"></span><button id="activity-more" type="button" hidden>Muat aktivitas sebelumnya</button></div>
       </section>
       <section id="detail-view" hidden><button id="back" class="quiet back" type="button">← Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
+      </div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
   </main>

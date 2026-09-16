@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiPost,work,run})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiPost,work,run})=>{
   const bundle=await apiPost('/api/cutting-runs/'+run.id+'/bundles',{reference:'BDL-SCAN-UI',
     output_movement_id:run.outputs[0].id,quantity:5,reason:'CONTOH label QR untuk handoff'},'bundle-scan-ui');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
@@ -13,7 +13,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,work,run})=>{
       body:JSON.stringify({detail:'Pemindai bundle sedang sibuk'})});}
     else await route.continue();
   });
-  await page.getByRole('button',{name:'Scan bundle',exact:true}).click();
+  await openSidebarDestination('Scan bundle');
   const input=page.getByLabel('Kode bundle',{exact:true});
   assert.equal(await input.evaluate(element=>element===document.activeElement),true);
   await input.fill(bundle.scan_code);await input.press('Enter');
@@ -48,7 +48,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,work,run})=>{
   await page.setViewportSize({width:1440,height:1000});
 
   await role(admin);
-  await page.getByRole('button',{name:'Scan bundle',exact:true}).click();
+  await openSidebarDestination('Scan bundle');
   await page.getByLabel('Kode bundle',{exact:true}).fill('bdl-scan-ui');
   await page.getByLabel('Kode bundle',{exact:true}).press('Enter');
   await page.getByRole('button',{name:'Serahkan bundle',exact:true}).click();
@@ -59,7 +59,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,work,run})=>{
   assert.equal(await page.getByRole('button',{name:'Konfirmasi terima',exact:true}).count(),0);
 
   await role(operator);
-  await page.getByRole('button',{name:'Scan bundle',exact:true}).click();
+  await openSidebarDestination('Scan bundle');
   await page.getByLabel('Kode bundle',{exact:true}).fill(bundle.scan_code);
   await page.getByLabel('Kode bundle',{exact:true}).press('Enter');
   await page.getByRole('button',{name:'Konfirmasi terima',exact:true}).click();

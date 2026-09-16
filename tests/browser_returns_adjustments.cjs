@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt,shipment})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiGet,work,order,receipt,shipment})=>{
   async function post(url,body,key,expected=201,apiKey=admin){
     const response=await fetch(process.env.BEELOFT_QA_BASE+url,{method:'POST',headers:{
       'Content-Type':'application/json','X-API-Key':apiKey,'Idempotency-Key':key
@@ -92,7 +92,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
     returnReport.summary.returned_quantity,returnReport.summary.return_rate],[1,2,1,'50.00']);
 
   await role(viewer);
-  await page.getByRole('button',{name:'Analisis retur',exact:true}).click();
+  await openSidebarDestination('Analisis retur');
   await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-01');
   await page.getByLabel('Panjang periode (hari)',{exact:true}).fill('30');
   await page.getByLabel('Marketplace',{exact:true}).fill('Shopee');

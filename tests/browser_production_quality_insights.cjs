@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,viewer,apiGet,apiPost,work,qualityFinishing})=>{
+module.exports=async({page,login,openSidebarDestination,viewer,apiGet,apiPost,work,qualityFinishing})=>{
   const record=await apiPost('/api/finishing-records/'+qualityFinishing.id+'/qc-records',{
     reference:'FQC-QUALITY-TREND',measurement_notes:'Ukuran sesuai toleransi',
     visual_notes:'Jahitan diperiksa menyeluruh',defect_type:'Jahitan <loncat>',
@@ -27,7 +27,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work,qualityFinishing})=>
       body:JSON.stringify({detail:'Laporan kualitas sedang dihitung ulang'})});}
     else await route.continue();
   });
-  await page.getByRole('button',{name:'Kualitas produksi',exact:true}).click();
+  await openSidebarDestination('Kualitas produksi');
   const dialog=page.locator('dialog');
   await page.locator('#production-quality-message').filter({hasText:'Laporan kualitas sedang dihitung ulang'}).waitFor();
   await dialog.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-09-30');
@@ -58,7 +58,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work,qualityFinishing})=>
   await dialog.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
   await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
   await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Command center',exact:true}).click();
+  await openSidebarDestination('Command center');
   const qualitySnapshot=page.locator('[data-command-snapshot="quality"]');
   await qualitySnapshot.getByText('75.00%',{exact:true}).waitFor();
   await qualitySnapshot.getByText('25.00%',{exact:true}).waitFor();

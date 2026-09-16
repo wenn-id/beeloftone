@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiGet,work})=>{
   async function role(key){
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Keluar',exact:true}).click();
@@ -11,7 +11,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const beforeOrders=(await apiGet('/api/orders')).length;
   const beforeRequests=(await apiGet('/api/purchase-requests')).length;
   await role(viewer);
-  await page.getByRole('button',{name:'Tanya Beeloft',exact:true}).click();
+  await openSidebarDestination('Tanya Beeloft');
   await page.getByRole('button',{name:'Risiko stockout',exact:true}).click();
   assert.equal(await page.getByLabel('Pertanyaan bisnis',{exact:true}).inputValue(),'SKU apa yang berisiko stockout?');
   await page.getByLabel('Pertanyaan bisnis',{exact:true}).fill('Apakah stok COST-UI <aman> atau akan stockout?');
@@ -65,14 +65,14 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.keyboard.press('Escape');
   await page.locator('dialog').waitFor({state:'hidden'});
 
-  await page.getByRole('button',{name:'Tanya Beeloft',exact:true}).click();
+  await openSidebarDestination('Tanya Beeloft');
   await page.getByRole('button',{name:'Riwayat investigasi',exact:true}).click();
   await page.getByText('Apakah stok COST-UI <aman> atau akan stockout?',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Buka investigasi',exact:true}).click();
   await page.getByText('1 membantu · 0 perlu diperbaiki · 1 responden',{exact:true}).waitFor();
 
   await role(operator);
-  await page.getByRole('button',{name:'Tanya Beeloft',exact:true}).click();
+  await openSidebarDestination('Tanya Beeloft');
   await page.getByLabel('Pertanyaan bisnis',{exact:true}).fill('Apakah stok COST-UI akan stockout?');
   await page.getByText('Asumsi analisis',{exact:true}).click();
   await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
