@@ -55,31 +55,97 @@ Values were sampled from the reference with Pillow and read back from the runnin
    the text arrows in back controls with sprite icons.
 4. **Further passes.** Reworked the hero card so it is always populated from real data, widened its chart slot,
    pinned the approval CTA to the bottom of the sidebar as in the reference, coloured the breakdown glyphs, and
-   allowed bar-chart labels to wrap to two lines instead of truncating.
+   stopped bar-chart labels truncating.
+5. **Marketplace rebalance passes.** Rendered the new business band against the reference with a populated
+   snapshot. Fixed rupiah headline figures overflowing the KPI value row (compact `Rp39,9 jt` display with the
+   exact amount kept in the footer and `title`), and stopped the per-channel status flow wrapping by dropping
+   zero-count statuses. Confirmed the hero now mirrors the reference's headline-plus-trend composition and that
+   the comparison table, contribution bars, and ranked products occupy the reference's table, bar-chart, and
+   product-row slots.
 
-## Command Center mapping
+## Command Center hierarchy
+
+The page leads with marketplace business performance and demotes operations to a second, visually quieter band.
+
+### Band 01 — marketplace business performance (Jubelio)
 
 | Reference surface | Beeloft data |
 | --- | --- |
-| Four KPI cards | `production.active_orders`, `approvals.pending_count`, `status.attention_count`, `finance.current.net_profit`, with footers and chips from `overdue_orders`, `open_issues`, `pending_amount`, `critical_count`, `integrations.attention_count`, `snapshot_at` |
-| Hero analytics card + nested breakdown | `status.attention_count` with a bar chart of real exception counts per `attention[].kind`, and a Kritis / Perlu perhatian / Informasi split with bars proportional to real counts |
+| Four KPI cards | `net_revenue`, `orders`, `units`, `average_order_value` from `sales.marketplace.summary`, with chips and footers from `refund_amount`, `completed`, `pending`, `processing`, `cancelled`, `completed_orders`, `marketplaces` |
+| Hero metric + trend chart | `gross_revenue` as the headline with an SVG line/area chart over `sales.marketplace.daily[]` — one real point per order date, no gap filling |
+| Nested breakdown card | Order funnel: `pending / processing / completed / cancelled` with bars proportional to real counts |
+| Table slot | Marketplace performance comparison: per channel `orders`, `units`, `average_order_value`, `contribution_percent`, `gross_revenue`, `net_revenue`, and the non-zero status flow |
+| Bar-chart slot | Marketplace contribution — proportional bars over `contribution_percent`, ordered by completed gross sales |
+| Ranked product rows | Top selling products from `sales.marketplace.products[]`, ordered by units sold, showing SKU, name, colour/size, order count, units, and revenue |
+
+### Band 02 — operational decisions
+
+| Reference surface | Beeloft data |
+| --- | --- |
+| Inline stat strip | `production.active_orders`, `approvals.pending_count`, `status.attention_count`, `finance.current.net_profit` |
 | List / table surface | `Perlu perhatian` — the `attention[]` queue, critical first, with a column header, dashed row rules, a severity tile, and the existing action button |
 | Gauge | `quality.first_pass_yield_percent` (integer display; the exact value stays in the metric list) |
 | Progress / meter treatments | `rework_quantity / in_progress_quantity` and `capacity.required_minutes / available_minutes` |
 | Three-up breakdown | `workforce.present / leave / absent` |
+| Bar chart | Exception counts per `attention[].kind` |
 | Status area | `integrations.systems[].health` badges |
 | AI panel | Tanya Beeloft, opened through the existing `ai-brain` action |
 
-No trend line, target, period-over-period delta, placeholder identity, or new business metric was invented.
-Where the reference shows a time series that Beeloft has no dataset for, the slot carries the closest real
-distribution or ratio instead.
+## Marketplace data rules honoured
+
+- **No schema migration.** Only the existing `jubelio_order_snapshot_*` and `jubelio_return_snapshot_*` tables and
+  the existing `idx_jubelio_order_snapshot_product` index are used.
+- **One endpoint, additive keys.** `/api/command-center` remains the only source. `sales` keeps all nine original
+  keys and gains a single `sales.marketplace` object. Nothing was removed or renamed.
+- **Dynamic channels.** No marketplace name is hardcoded anywhere in the backend or the interface; the UI renders
+  whatever channels the snapshot contains.
+- **Case-insensitive grouping.** Channels group on a whitespace-collapsed, case-folded key, so `Shopee`,
+  `shopee`, and `  SHOPEE  ` are one channel. The displayed label is the most frequent real spelling, preferring
+  mixed case on ties, so `Shopee` wins over `SHOPEE`.
+- **One shared definition.** Sales, units, and AOV all derive from completed orders. AOV is completed gross
+  revenue divided by completed order count, labelled `AOV order selesai`, and returns `0.00` rather than dividing
+  by zero when nothing completed.
+- **Latest batch only.** The trend groups the latest batch by `ordered_at` in Asia/Jakarta, so an order that
+  recurs across snapshot batches is never counted twice. A test asserts that re-sending the same order in a later
+  batch does not accumulate, and that dropping it shrinks the figures.
+- **Honest window metadata.** `period_start` / `period_end` cover every accepted order in the batch;
+  `trend_start` / `trend_end` cover only the completed-sales series the chart actually plots. The UI labels the
+  chart from the latter and the band from the former.
+- **Aligned net sales.** Only refunds whose `external_order_id` matches a completed order in the current order
+  batch are subtracted. Everything else is surfaced separately as `unmatched_refunds` /
+  `unmatched_refund_amount` instead of being netted off unrelated revenue.
+- **Snapshot-scoped wording.** No figure is labelled "today" or "this month". Surfaces read
+  `Jubelio snapshot <time>` plus the real derived order date range.
+- **Not fabricated.** Marketplace fees, commissions, voucher/discount allocation, shipping subsidy, conversion,
+  traffic, true channel margin, and per-shop breakdowns do not exist in the source data and are absent from the
+  interface. Per-SKU refund value is likewise not derivable, so it is not shown.
+
+## Backend additions
+
+Additive only; no schema change, no new endpoint, no permission change.
+
+- `store.jubelio_marketplace_performance()` — reads the latest order batch (and latest return batch when present)
+  and returns `summary`, `marketplaces[]`, `products[]`, `daily[]`, plus snapshot and window metadata.
+- `command_center.py` — calls it once and attaches the result as `sales.marketplace`.
+
+### New Python coverage — `tests/test_jubelio_marketplace_performance.py` (11 tests)
+
+Marketplace case-insensitive normalisation and canonical labelling; latest-batch-only aggregation; no
+double-counting when an order recurs across batches; Jakarta-day sales grouping and window metadata; top-product
+aggregation and unit ordering; aligned refund/net-sales calculation including unmatched and non-refunded returns;
+refunds against uncompleted orders; zero/empty-data behaviour; AOV excluding uncompleted orders; AOV
+zero-division; and preservation of every pre-existing `sales` field.
 
 ## Scope safeguards
 
-- **The Shopeers reconstruction commit itself modifies no test file and no backend file.** It changes no Python
-  module, API response schema, database schema, accounting rule, inventory rule, or production rule. It touches
-  only `beeloft/static/index.html`, `beeloft/static/style.css`, `beeloft/static/app.mjs`, `.gitignore`,
-  `DESIGN.md`, and `docs/`.
+- **The visual reconstruction commit modifies no test file and no backend file.** It touches only
+  `beeloft/static/index.html`, `beeloft/static/style.css`, `beeloft/static/app.mjs`, `.gitignore`, `DESIGN.md`,
+  and `docs/`.
+- **The marketplace dashboard commit does change the backend, additively and by explicit request.** It adds
+  `store.jubelio_marketplace_performance()`, attaches `sales.marketplace` in `command_center.py`, and adds
+  `tests/test_jubelio_marketplace_performance.py`. No database schema, migration, endpoint, permission,
+  accounting rule, inventory rule, or production rule was changed, and no existing API field was removed or
+  renamed.
 - **The pull request as a whole does contain test updates**, inherited from the earlier redesign commit
   (`169d937`) on this branch. Those updates adapted the acceptance suite to that commit's responsive
   sidebar/navigation changes and cover `tests/test_web.py` plus eleven `tests/browser_*.cjs` modules:
@@ -101,7 +167,8 @@ distribution or ratio instead.
 
 ## Verification results
 
-- Python: `python -m unittest discover -s tests` — **340 tests passed** in 204s on the final code.
+- Python: `python -m unittest discover -s tests` — **351 tests passed** on the final code (340 pre-existing plus
+  11 new marketplace-performance tests).
 - Browser: the **complete Playwright acceptance suite passed end to end** on the final code, all 58 modules,
   with `assert.deepEqual(errors, [])` confirming no JavaScript errors.
 - JavaScript: `node --check` on `app.mjs` and `client.mjs`; `node tests/test_client.mjs` passed (escaping, dates,
@@ -130,7 +197,16 @@ viewports. Verified by running the module against unmodified and modified code i
 - [Command Center mobile](screenshots/command-center-mobile.png)
 - [Command Center at 200% text zoom](screenshots/command-center-200-text.png)
 
-All three are regenerated by the acceptance suite itself, so they always reflect the tested build.
+All three are regenerated by the acceptance suite itself, so they always reflect the tested build. The acceptance
+fixture contains a single Jubelio order in one marketplace, so in those three images the marketplace band renders
+its minimal honest state: a one-point trend, one channel at 100%, and one ranked product. That is real fixture
+data, and it doubles as proof that the sparse-data states render correctly.
+
+- [Marketplace band with a populated snapshot](screenshots/command-center-marketplace-seeded-preview.png)
+
+**That last image is a local design-review preview rendered against a seeded snapshot. The numbers in it are
+synthetic fixture data, not Beeloft's trading figures.** It exists only because the acceptance fixture is too
+small to show the layout at scale; the seed script is not part of the repository.
 
 ## Regression report
 

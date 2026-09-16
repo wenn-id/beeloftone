@@ -33,15 +33,26 @@ ENERGY 2 / RHYTHM 2 / MOTION 1.
 - Navigation groups are separated by inset rules rather than uppercase headers, matching the reference. The
   twelve analytics destinations sit in an expanded disclosure group, and the approval inbox is the reference's
   gradient promo block, pinned to the bottom of the sidebar. No route or destination was added or removed.
-- The Command Center answers one question: what needs a decision today. It maps onto the reference composition
-  as: four real KPIs; a hero analytics card (exception total, a per-domain bar chart, and a Kritis / Perlu
-  perhatian / Informasi breakdown with proportional bars); `Perlu perhatian` as the reference's list surface with
-  a column header, dashed row rules, a severity tile, and a right-aligned action; and an operational rail of
-  snapshot cards carrying a yield gauge, load meters, a three-up attendance split, integration badges, and the
-  AI surface.
-- Analytics surfaces only ever visualise fields that already exist in `/api/command-center`. Where the reference
-  shows a time series that Beeloft has no dataset for, the slot carries the closest real distribution or ratio
-  instead. No trend, target, delta, placeholder identity, or business metric is invented.
+- The Command Center is a marketplace business dashboard first and an operational queue second. It answers, in
+  order: how is Beeloft selling, which marketplace contributes most, which products sell most, and what needs
+  operational action. Two numbered bands enforce that hierarchy.
+- Band 01 — marketplace business performance, sourced from Jubelio. Four KPI cards (net sales, total orders,
+  units sold, AOV order selesai); a hero card carrying total sales with the real daily sales trend and the order
+  funnel as the reference's nested breakdown; the marketplace performance comparison in the reference's table
+  slot; and a rail with marketplace contribution and top selling products.
+- Band 02 — operational decisions, visually secondary: a compact inline stat strip, `Perlu perhatian` as the
+  reference's list surface, and the rail of snapshot cards carrying a yield gauge, load meters, a three-up
+  attendance split, integration badges, and the AI surface.
+- Marketplace channels are whatever Jubelio actually returns, normalised case-insensitively. No channel is
+  hardcoded, so a business that does not sell on a given marketplace never sees an empty slot for it.
+- Sales, units, and AOV share one definition: completed orders. AOV is completed gross revenue divided by
+  completed order count and is labelled `AOV order selesai` so the denominator is never ambiguous.
+- Jubelio figures are snapshot-scoped, so they are never labelled "today" or "this month". Surfaces say
+  `Jubelio snapshot`, carry the snapshot time, and state the real derived order date range.
+- Analytics surfaces only ever visualise fields that already exist in `/api/command-center`. Marketplace fees,
+  commissions, vouchers, shipping subsidy, conversion, traffic, true channel margin, and per-shop breakdowns are
+  absent from the source data and are therefore absent from the interface. No trend, target, delta, placeholder
+  identity, or business metric is invented.
 - Motion is limited to hover, focus, and disclosure state. Reduced-motion preferences remove non-essential
   transitions.
 - Every interactive control keeps a visible focus ring, keyboard operation, mobile reflow, and usable text at

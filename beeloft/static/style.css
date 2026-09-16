@@ -503,3 +503,104 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 @media(max-width:650px){
   .workforce-summary div,.workforce-summary div:first-child{padding:12px}
 }
+
+
+/* ==========================================================================
+   Marketplace business performance band. Same Shopeers card language; the page
+   now leads with Jubelio-sourced sales and demotes operations to a second band.
+   ========================================================================== */
+.command-center-content{display:flex;flex-direction:column;gap:30px;align-items:stretch}
+.business-grid,.operations-grid{display:grid;grid-template-columns:minmax(0,1.67fr) minmax(300px,1fr);gap:var(--gap);align-items:start}
+.business-rail{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+.band-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:0 0 14px}
+.band-heading h2{margin:0;font-size:1.1875rem;font-weight:700;letter-spacing:-.02em}
+.band-heading>div{min-width:0}
+.band-heading .hint{display:block;margin:3px 0 0}
+.band-step{
+  display:grid;place-items:center;min-width:30px;height:24px;padding:0 8px;flex:0 0 auto;
+  border-radius:var(--r-pill);background:var(--primary-soft);color:var(--primary);
+  font-size:.6875rem;font-weight:800;letter-spacing:.04em;font-variant-numeric:tabular-nums;
+}
+
+/* operational stat strip: keeps the operational numbers, visually secondary to the KPI row */
+.ops-stats{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 0;padding:0;border:0}
+.ops-stat{display:flex;align-items:baseline;gap:6px;min-width:0;padding:0;border:0;background:none;box-shadow:none}
+.ops-stat dt{color:var(--muted);font-size:.78125rem;font-weight:500}
+.ops-stat dd{margin:0;color:var(--ink);font-size:.78125rem;font-weight:700;font-variant-numeric:tabular-nums}
+.ops-stat.is-alert dd{color:var(--danger)}
+
+/* sales trend: real daily points from the latest Jubelio order batch */
+.hero-trendwrap{min-width:0}
+.trend{min-width:0}
+.trend svg{display:block;width:100%;height:auto;overflow:visible}
+.trend-grid{stroke:var(--line);stroke-width:1;stroke-dasharray:3 5}
+.trend-area{fill:url(#trend-fill);stroke:none}
+.trend-line{fill:none;stroke:var(--primary);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.trend-dot{fill:var(--surface);stroke:var(--primary);stroke-width:2.2}
+.trend-ticks{display:flex;justify-content:space-between;gap:.5rem;margin:8px 0 0;color:var(--muted);font-size:.6875rem}
+.trend-ticks span{white-space:nowrap}
+.trend-peak{margin:0 0 6px;color:var(--muted);font-size:.6875rem;font-weight:600;text-align:right}
+.trend-note{margin:6px 0 0;color:var(--muted);font-size:.75rem;text-align:center}
+
+/* order funnel occupies the reference's nested breakdown card */
+.hero-split-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.hero-split-bar.is-pending{background:var(--muted)}
+.hero-split-bar.is-processing{background:var(--warning-edge)}
+.hero-split-bar.is-completed{background:var(--primary)}
+.hero-split-bar.is-cancelled{background:var(--danger-edge)}
+
+/* marketplace comparison occupies the reference's table slot */
+.channel-panel{min-width:0}
+.table-scroll{margin:0 -20px;padding:0 20px;overflow-x:auto}
+.channel-table{font-size:.8125rem}
+.channel-table th{padding:0 10px 9px 0;border-bottom:1px solid var(--line);background:none;white-space:nowrap}
+.channel-table th:first-child{padding-left:0}
+.channel-table td{padding:12px 10px 12px 0;border-bottom:1px dashed var(--line);vertical-align:middle}
+.channel-table td:first-child{padding-left:0}
+.channel-table tbody tr:last-child td{border-bottom:0;padding-bottom:2px}
+.channel-table .is-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.channel-table th:not(:first-child){text-align:right}
+.channel-name{display:block;color:var(--ink);font-weight:650}
+.channel-flow{display:block;margin-top:2px;color:var(--muted);font-size:.6875rem}
+.channel-net{display:block;margin-top:1px;color:var(--muted);font-size:.6875rem;font-weight:500}
+.share{display:inline-flex;align-items:center;gap:7px;justify-content:flex-end}
+.share-bar{width:46px;height:6px;flex:0 0 auto;border-radius:var(--r-pill);background:var(--surface-sunken);overflow:hidden}
+.share-bar>span{display:block;height:100%;min-width:2px;border-radius:var(--r-pill);background:var(--primary)}
+.channel-panel>button:last-child{width:100%;margin-top:14px}
+
+/* top products list occupies the reference's ranked product rows */
+.rank-list{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:11px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line)}
+.rank-row:last-child{border-bottom:0;padding-bottom:2px}
+.rank-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--surface-sunken);color:var(--muted);font-size:.75rem;font-weight:800;font-variant-numeric:tabular-nums}
+.rank-row:first-child .rank-mark{background:var(--primary-soft);color:var(--primary)}
+.rank-body{min-width:0}
+.rank-name{display:block;color:var(--ink);font-size:.875rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-meta{display:block;margin-top:1px;color:var(--muted);font-size:.6875rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-figures{text-align:right;white-space:nowrap}
+.rank-figures strong{display:block;color:var(--ink);font-size:.8125rem;font-weight:700;font-variant-numeric:tabular-nums}
+.rank-figures span{display:block;color:var(--muted);font-size:.6875rem;font-variant-numeric:tabular-nums}
+
+@media(max-width:1240px){
+  .business-grid,.operations-grid{grid-template-columns:minmax(0,1.5fr) minmax(272px,1fr)}
+}
+@media(max-width:1040px){
+  .business-grid,.operations-grid{grid-template-columns:minmax(0,1.35fr) minmax(250px,1fr)}
+}
+@media(max-width:980px){
+  .command-center-content{gap:24px}
+  .business-grid,.operations-grid{grid-template-columns:minmax(0,1fr)}
+  .business-rail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .business-rail{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:650px){
+  .command-center-content{gap:20px}
+  .band-heading{gap:.75rem}
+  .band-heading h2{font-size:1.0625rem}
+  .hero-split-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .table-scroll{margin:0 -16px;padding:0 16px}
+  .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
+  .ops-stats{gap:4px 14px}
+}

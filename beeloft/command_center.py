@@ -13,6 +13,7 @@ def build_command_center(store):
     approvals = store.approvals(limit=500, status="pending")
     integrations = store.integrations()
     sales = store.jubelio_order_summary()
+    marketplace = store.jubelio_marketplace_performance()
     inventory = store.jubelio_stock_reconciliation()
     finance = store.mekari_finance_summary()
     payables = store.mekari_payables_summary()
@@ -215,6 +216,10 @@ def build_command_center(store):
         "sales": {
             "snapshot_at": sales["snapshot"]["snapshot_at"] if sales["snapshot"] else None,
             **sales["summary"],
+            # Additive marketplace business performance from the same latest order batch. Existing
+            # keys above are untouched; `marketplace` restates them with one shared definition
+            # (completed orders) plus channel, product, and daily breakdowns.
+            "marketplace": marketplace,
         },
         "finance": {
             "snapshot_at": finance["snapshot"]["snapshot_at"] if finance["snapshot"] else None,

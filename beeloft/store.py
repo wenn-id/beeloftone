@@ -843,6 +843,118 @@ class Store:
         return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
             'orders':snapshot['orders'],'quarantine':snapshot['quarantine']}
 
+    @staticmethod
+    def _jubelio_channel_key(marketplace):
+        return ' '.join(str(marketplace).split()).casefold()
+
+    @staticmethod
+    def _jubelio_order_day(ordered_at):
+        return datetime.fromisoformat(ordered_at).astimezone(timezone(timedelta(hours=7))).date().isoformat()
+
+    def jubelio_marketplace_performance(self):
+        """Marketplace business performance from the latest Jubelio order snapshot batch only.
+
+        Sales, units, and average order value all come from completed orders so the figures share one
+        definition. Channels are grouped case-insensitively. Refunds are only subtracted when the return
+        can be matched to a completed order that is present in this same order batch, so gross and net
+        always describe the same population. Reading a single batch means an order that recurs across
+        snapshot batches is never counted twice.
+        """
+        empty={'orders':0,'completed_orders':0,'pending':0,'processing':0,'completed':0,'cancelled':0,
+            'units':0,'gross_revenue':'0.00','average_order_value':'0.00','refund_amount':'0.00',
+            'net_revenue':'0.00','matched_refunds':0,'unmatched_refunds':0,
+            'unmatched_refund_amount':'0.00','marketplaces':0,'quarantined_orders':0}
+        with self.transaction() as db:
+            latest=db.execute('SELECT id FROM jubelio_order_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            if not latest:
+                return {'snapshot_at':None,'return_snapshot_at':None,'period_start':None,'period_end':None,
+                    'trend_start':None,'trend_end':None,'summary':empty,'marketplaces':[],
+                    'products':[],'daily':[]}
+            orders=self._jubelio_order_snapshot(db,latest['id'])
+            latest_return=db.execute(
+                'SELECT id FROM jubelio_return_snapshot_batches ORDER BY sequence DESC LIMIT 1').fetchone()
+            returns=self._jubelio_return_snapshot(db,latest_return['id']) if latest_return else None
+        completed=[order for order in orders['orders'] if order['status']=='completed']
+        # Refunds are aligned to completed orders in this batch; anything else is reported separately
+        # instead of being silently netted off unrelated revenue.
+        completed_ids={order['external_order_id'] for order in completed}
+        refunds={};unmatched_count=0;unmatched_minor=0
+        for item in (returns['returns'] if returns else []):
+            if item['status']!='refunded':
+                continue
+            minor=int(Decimal(item['refund_amount'])*100)
+            if item['external_order_id'] in completed_ids:
+                refunds[item['external_order_id']]=refunds.get(item['external_order_id'],0)+minor
+            else:
+                unmatched_count+=1;unmatched_minor+=minor
+        channels={};products={};days={}
+        for order in orders['orders']:
+            key=self._jubelio_channel_key(order['marketplace'])
+            channel=channels.setdefault(key,{'key':key,'labels':{},'orders':0,'completed_orders':0,
+                'pending':0,'processing':0,'completed':0,'cancelled':0,'units':0,
+                'gross_revenue_minor':0,'refund_minor':0})
+            channel['labels'][order['marketplace']]=channel['labels'].get(order['marketplace'],0)+1
+            channel['orders']+=1;channel[order['status']]+=1
+            if order['status']!='completed':
+                continue
+            minor=int(Decimal(order['gross_revenue'])*100)
+            channel['completed_orders']+=1;channel['units']+=order['total_quantity']
+            channel['gross_revenue_minor']+=minor
+            channel['refund_minor']+=refunds.get(order['external_order_id'],0)
+            stamp=self._jubelio_order_day(order['ordered_at'])
+            day=days.setdefault(stamp,{'date':stamp,'orders':0,'units':0,'gross_revenue_minor':0})
+            day['orders']+=1;day['units']+=order['total_quantity'];day['gross_revenue_minor']+=minor
+            for line in order['lines']:
+                product=products.setdefault(line['product_id'],{key2:line[key2] for key2 in
+                    ('product_id','sku','product_name','color','size')}
+                    |{'units':0,'orders':0,'gross_revenue_minor':0})
+                product['units']+=line['quantity'];product['orders']+=1
+                product['gross_revenue_minor']+=int(Decimal(line['gross_revenue'])*100)
+        gross_minor=sum(channel['gross_revenue_minor'] for channel in channels.values())
+        refund_minor=sum(channel['refund_minor'] for channel in channels.values())
+        money=lambda minor:format(Decimal(minor)/100,'.2f')
+        average=lambda minor,count:format(Decimal(minor)/100/count,'.2f') if count else '0.00'
+        # Display label for a channel: the spelling used most often, preferring mixed case on ties so
+        # 'Shopee' wins over 'SHOPEE'/'shopee'. Every candidate is a real string from the snapshot.
+        rank=lambda item:(-item[1],item[0]==item[0].upper() or item[0]==item[0].lower(),item[0])
+        marketplaces=[]
+        for channel in channels.values():
+            best=min(channel.pop('labels').items(),key=rank)[0]
+            channel_gross=channel.pop('gross_revenue_minor');channel_refund=channel.pop('refund_minor')
+            marketplaces.append(channel|{'marketplace':best,'gross_revenue':money(channel_gross),
+                'average_order_value':average(channel_gross,channel['completed_orders']),
+                'refund_amount':money(channel_refund),'net_revenue':money(channel_gross-channel_refund),
+                'contribution_percent':format(Decimal(channel_gross)*100/gross_minor,'.2f')
+                    if gross_minor else '0.00'})
+        marketplaces.sort(key=lambda row:(-int(Decimal(row['gross_revenue'])*100),-row['units'],row['key']))
+        # period_* describes what this batch actually covers (every accepted order); trend_* describes the
+        # completed-sales series in `daily`, so the chart can be labelled with its own real range.
+        covered=[self._jubelio_order_day(order['ordered_at']) for order in orders['orders']]
+        trend_days=sorted(days)
+        statuses={status:sum(order['status']==status for order in orders['orders'])
+                  for status in ('pending','processing','completed','cancelled')}
+        summary={'orders':len(orders['orders']),'completed_orders':len(completed),
+            'quarantined_orders':len(orders['quarantine']),
+            'units':sum(order['total_quantity'] for order in completed),
+            'gross_revenue':money(gross_minor),
+            'average_order_value':average(gross_minor,len(completed)),
+            'refund_amount':money(refund_minor),'net_revenue':money(gross_minor-refund_minor),
+            'matched_refunds':len(refunds),'unmatched_refunds':unmatched_count,
+            'unmatched_refund_amount':money(unmatched_minor),
+            'marketplaces':len(channels)}|statuses
+        return {'snapshot_at':orders['snapshot_at'],
+            'return_snapshot_at':returns['snapshot_at'] if returns else None,
+            'period_start':min(covered) if covered else None,
+            'period_end':max(covered) if covered else None,
+            'trend_start':trend_days[0] if trend_days else None,
+            'trend_end':trend_days[-1] if trend_days else None,
+            'summary':summary,'marketplaces':marketplaces,
+            'products':[product|{'gross_revenue':money(product.pop('gross_revenue_minor'))}
+                        for product in sorted(products.values(),key=lambda row:(-row['units'],
+                            -row['gross_revenue_minor'],row['sku'],row['product_id']))],
+            'daily':[day|{'gross_revenue':money(day.pop('gross_revenue_minor'))}
+                     for day in sorted(days.values(),key=lambda row:row['date'])]}
+
     def _jubelio_return_snapshot(self, db, batch_id, include_returns=True):
         row=db.execute('''SELECT b.*,r.status AS sync_status,r.records_read,r.records_written,
             r.external_cursor,r.error,r.reason,u.name AS actor_name FROM jubelio_return_snapshot_batches b

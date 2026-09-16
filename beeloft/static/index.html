@@ -128,11 +128,26 @@
         <dl id="command-center-summary" class="summary kpi-grid" aria-label="Ringkasan bisnis"></dl>
         <p id="command-center-message" class="state" role="status" hidden></p>
         <div id="command-center-content" class="command-center-content" hidden>
-          <div class="cc-primary">
-            <div id="command-center-hero" class="hero-panel"></div>
-            <section class="attention-panel card" aria-labelledby="attention-title"><div class="section-heading"><h2 id="attention-title">Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
-          </div>
-          <section class="snapshot-panel" aria-labelledby="snapshot-title"><div class="section-heading visually-hidden"><div><p class="eyebrow">Konteks operasional</p><h2 id="snapshot-title">Snapshot bisnis</h2></div></div><div id="command-center-snapshots" class="snapshot-grid"></div></section>
+          <section class="business-section" aria-labelledby="business-title">
+            <div class="band-heading"><div><h2 id="business-title">Performa marketplace</h2><p id="command-center-period" class="hint"></p></div><span class="band-step" aria-hidden="true">01</span></div>
+            <div class="business-grid">
+              <div class="cc-primary">
+                <div id="command-center-hero" class="hero-panel"></div>
+                <div id="command-center-channels" class="card channel-panel"></div>
+              </div>
+              <div class="business-rail">
+                <div id="command-center-contribution" class="card"></div>
+                <div id="command-center-products" class="card"></div>
+              </div>
+            </div>
+          </section>
+          <section class="operations-section" aria-labelledby="operations-title">
+            <div class="band-heading"><div><h2 id="operations-title">Keputusan operasional</h2><dl id="command-center-operations" class="ops-stats" aria-label="Ringkasan operasional"></dl></div><span class="band-step" aria-hidden="true">02</span></div>
+            <div class="operations-grid">
+              <section class="attention-panel card" aria-labelledby="attention-title"><div class="section-heading"><h2 id="attention-title">Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
+              <section class="snapshot-panel" aria-labelledby="snapshot-title"><div class="section-heading visually-hidden"><div><p class="eyebrow">Konteks operasional</p><h2 id="snapshot-title">Snapshot bisnis</h2></div></div><div id="command-center-snapshots" class="snapshot-grid"></div></section>
+            </div>
+          </section>
         </div>
       </section>
       <section id="materials-view" hidden>
