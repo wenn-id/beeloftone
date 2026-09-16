@@ -103,14 +103,26 @@ def build_command_center(store):
         change = top_quality["nonconforming_rate_change_points"]
         comparison = (f"naik {change} poin dari periode sebelumnya" if change is not None
                       and Decimal(change) > 0 else f'melewati batas {quality["warning_percent"]}%')
-        reinspection = (f' Inspeksi ulang {current_quality["reinspection_nonconforming_quantity"]} '
-                        f'dari {current_quality["reinspected_quantity"]} pcs gagal lagi '
-                        f'({current_quality["reinspection_nonconforming_rate_percent"]}%).'
-                        if current_quality["reinspection_nonconforming_quantity"] else "")
-        add("production-quality", "warning", "quality", f"Kualitas {subject} perlu perhatian",
+        # Penjelasan harus mengikuti alasan perhatian yang benar-benar menyala. Grup yang ditandai
+        # semata-mata karena kegagalan inspeksi ulang tidak boleh dijelaskan dengan angka inspeksi
+        # awal yang nol, karena itu keterangan yang salah.
+        reasons = top_quality["attention_reasons"]
+        initial = (f'Rework + reject {current_quality["nonconforming_rate_percent"]}% dari '
+                   f'{current_quality["inspected_quantity"]} pcs; {comparison}.'
+                   if current_quality["inspected_quantity"]
+                   and ({"above_warning", "worsening"} & set(reasons)) else "")
+        reinspection = ""
+        if current_quality["reinspection_nonconforming_quantity"]:
+            reinspection = (f'Inspeksi ulang {current_quality["reinspection_nonconforming_quantity"]} '
+                            f'dari {current_quality["reinspected_quantity"]} pcs gagal lagi '
+                            f'({current_quality["reinspection_nonconforming_rate_percent"]}%)')
+            reinspection += ('.' if initial
+                             else f'; melewati batas {quality["warning_percent"]}%.')
+        detail = " ".join(part for part in (initial, reinspection) if part) or (
             f'Rework + reject {current_quality["nonconforming_rate_percent"]}% dari '
-            f'{current_quality["inspected_quantity"]} pcs; {comparison}.{reinspection}',
-            "production_quality", "Buka analisis kualitas")
+            f'{current_quality["inspected_quantity"]} pcs; {comparison}.')
+        add("production-quality", "warning", "quality", f"Kualitas {subject} perlu perhatian",
+            detail, "production_quality", "Buka analisis kualitas")
     capacity_risks = (capacity_summary["overloaded_work_centers"]
                       + capacity_summary["deadline_risk_work_centers"])
     if capacity_risks:

@@ -218,6 +218,7 @@ class ReworkReinspectionTest(TestCase):
                           stuck['untraced_rework_return_quantity'],
                           stuck['rework_completable_quantity']),
                          (8, 0, 8, 8, 0))
+
         # Kedua jalur inspeksi tertutup, dan pesan selesai rework menjelaskan penyebab sebenarnya.
         self.inspect(finishing, reference='QC-STUCK', accepted=8, rework=0, reject=0,
                      inspection_date='2026-09-18', status=409)
@@ -294,6 +295,35 @@ class ReworkReinspectionTest(TestCase):
         totals = self.totals(order)
         self.assertEqual((totals['qc'], totals['warehouse']), (2, 18))
         self.assertEqual(sum(totals.values()), 100)
+
+    def test_untraced_return_does_not_block_other_records_on_the_same_line(self):
+        """Kapasitas dibatasi saldo tahap rework yang nyata, bukan riwayat sepanjang baris order.
+
+        Saldo tahap dikumpulkan per baris, jadi mengurangi total pengembalian tanpa lineage dari
+        setiap catatan QC pada baris itu akan memblokir inspeksi lain yang pcs-nya justru masih
+        benar-benar berada di rework.
+        """
+        order, finishing, first = self.setup_rework(accepted=0, rework=6)
+        with self.app.state.store.transaction(write=True) as db:
+            self.app.state.store._transfer(db, dict(line_id=first['line_id'], from_stage='rework',
+                to_stage='qc', quantity=6, reason='Pengembalian rework lama tanpa lineage'),
+                self.admin)
+        second = self.inspect(finishing, reference='QC-LATER', accepted=0, rework=14, reject=0,
+                              inspection_date='2026-09-18')
+        self.assertEqual(self.totals(order)['rework'], 14)
+        later = self.client.get('/api/final-qc-records/' + second['id']).json()
+        # Enam pcs tanpa lineage milik inspeksi lain tidak boleh memotong kapasitas inspeksi ini.
+        self.assertEqual((later['rework_remaining_quantity'],
+                          later['untraced_rework_return_quantity'],
+                          later['rework_completable_quantity']), (14, 6, 14))
+        completion = self.complete_rework(second, reference='RWK-LATER', quantity=14,
+                                         completed_date='2026-09-19')
+        self.reinspect(completion, reference='QC-LATER-RE', accepted=14, rework=0, reject=0,
+                       inspection_date='2026-09-20')
+        self.assertEqual(self.totals(order), {'planned': 70, 'cutting': 10, 'sewing': 0,
+                                              'finishing': 0, 'qc': 6, 'rework': 0, 'reject': 0,
+                                              'warehouse': 14})
+        self.assertEqual(sum(self.totals(order).values()), 100)
 
     # I7 ----------------------------------------------------------------------
 
@@ -503,16 +533,14 @@ class ReworkReinspectionTest(TestCase):
                          (1, 8, 8, 8, '100.00'))
         group = report['items'][0]
         self.assertEqual(group['status'], 'attention')
-        self.assertIn('reinspection_above_warning', group['attention_reasons'])
+        # Hanya alasan inspeksi ulang yang menyala; angka inspeksi awal tidak boleh diklaim.
+        self.assertEqual(group['attention_reasons'], ['reinspection_above_warning'])
         self.assertEqual(summary['attention_groups'], 1)
-        # Command center ikut melihat kegagalan itu.
-        centre = self.client.get('/api/command-center').json()
-        self.assertEqual(set(centre['quality']) >= {'reinspected_quantity',
-                                                    'reinspection_nonconforming_quantity',
-                                                    'reinspection_nonconforming_rate_percent'}, True)
-        card = next((row for row in centre['attention'] if row['id'] == 'production-quality'), None)
-        if card:
-            self.assertIn('Inspeksi ulang', card['detail'])
+        # Command center mengekspor angka inspeksi ulang. Isi kartu perhatiannya bergantung pada jam
+        # server, jadi diuji dengan clock yang dikunci di tests/test_management_command_center.py.
+        quality_block = self.client.get('/api/command-center').json()['quality']
+        self.assertLessEqual({'reinspected_quantity', 'reinspection_nonconforming_quantity',
+                              'reinspection_nonconforming_rate_percent'}, set(quality_block))
 
     # storage guards ----------------------------------------------------------
 

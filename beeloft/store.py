@@ -2779,17 +2779,25 @@ class Store:
         record['rework_remaining_quantity']=0 if reversal else record['rework_quantity']-completed[1]
         # Database yang dimigrasikan dari schema 54 dapat memuat perpindahan rework -> qc lama tanpa
         # catatan selesai rework, sehingga jumlah rework sebuah catatan sudah tidak lagi berada di
-        # tahap rework dan tidak dapat diselesaikan sampai perpindahan itu dikoreksi. Angka ini
-        # membuat keadaan tersebut jujur alih-alih menawarkan kapasitas yang tidak ada. Pengembalian
-        # tanpa lineage tidak dapat dibuat lagi lewat API mana pun, jadi nilainya stabil.
+        # tahap rework dan tidak dapat diselesaikan sampai perpindahan itu dikoreksi.
+        #
+        # Yang dapat dicatat sekarang dibatasi saldo tahap rework yang nyata, bukan dikurangi total
+        # pengembalian tanpa lineage sepanjang baris order. Saldo adalah batas yang persis benar:
+        # _transfer memakai angka yang sama, sehingga catatan yang pcs-nya memang masih di rework
+        # tetap mendapat kapasitas penuh walau catatan lain pada baris yang sama pernah terkena
+        # pengembalian tanpa lineage. Pada alur normal saldo tahap selalu >= sisa rework catatan ini,
+        # jadi nilainya sama dengan rework_remaining_quantity dan stabil.
+        stage=db.execute('SELECT COALESCE((SELECT quantity FROM balances WHERE line_id=? AND stage=?),0)',
+                         (record['line_id'],'rework')).fetchone()[0]
+        record['rework_completable_quantity']=min(record['rework_remaining_quantity'],stage)
+        # Angka diagnostik yang menjelaskan sebab ketika kapasitas di atas terpotong. Bersifat
+        # per baris order, dan pengembalian tanpa lineage tidak dapat dibuat lagi lewat API mana pun.
         record['untraced_rework_return_quantity']=db.execute('''SELECT COALESCE(SUM(m.quantity),0)
             FROM movements m WHERE m.line_id=? AND m.from_stage='rework' AND m.to_stage='qc'
               AND m.reversal_of IS NULL
               AND NOT EXISTS(SELECT 1 FROM movements r WHERE r.reversal_of=m.id)
               AND NOT EXISTS(SELECT 1 FROM rework_completions c WHERE c.movement_id=m.id)''',
             (record['line_id'],)).fetchone()[0]
-        record['rework_completable_quantity']=max(0,record['rework_remaining_quantity']
-                                                  -record['untraced_rework_return_quantity'])
         return record
 
     def final_qc_record(self, record_id):

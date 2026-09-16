@@ -1,10 +1,19 @@
 import sqlite3
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import TestCase
 
 from beeloft.store import Store, audit_category
 import test_production
+
+
+def jakarta_today():
+    """Kehadiran divalidasi terhadap tanggal Jakarta di server.
+
+    Memakai `date.today()` runner membuat test ini gagal setiap kali tanggal lokal runner masih
+    tertinggal satu hari dari Jakarta, yaitu pada setiap eksekusi antara 17:00 dan 24:00 UTC.
+    """
+    return datetime.now(timezone(timedelta(hours=7))).date()
 
 
 class WorkforceTest(TestCase):
@@ -18,7 +27,7 @@ class WorkforceTest(TestCase):
     def attendance(self,employee,**changes):
         options={name:changes.pop(name) for name in ('key','status_code','api_key') if name in changes}
         if 'status_code' in options: options['status']=options.pop('status_code')
-        body={'work_date':date.today().isoformat(),'expected_revision':0,'status':'present',
+        body={'work_date':jakarta_today().isoformat(),'expected_revision':0,'status':'present',
               'clock_in':'08:00','clock_out':'17:30','overtime_minutes':90,'notes':'Shift pagi',
               'reason':'Rekap harian'}
         body.update(changes)
@@ -59,7 +68,7 @@ class WorkforceTest(TestCase):
                          (1,570,90))
         self.attendance(bima,status='leave',clock_in=None,clock_out=None,overtime_minutes=0,
                         notes='Cuti tahunan')
-        report=self.client.get('/api/workforce/attendance?start_date='+date.today().isoformat()).json()
+        report=self.client.get('/api/workforce/attendance?start_date='+jakarta_today().isoformat()).json()
         self.assertEqual(report['summary'],{'records':2,'employees':2,'present':1,'leave':1,
             'absent':0,'work_minutes':570,'overtime_minutes':90})
         corrected=self.attendance(ayu,expected_revision=1,status='absent',clock_in=None,
@@ -71,12 +80,12 @@ class WorkforceTest(TestCase):
                         overtime_minutes=0,notes='Sakit',status_code=409)
         self.attendance(ayu,expected_revision=2,status='absent',clock_in=None,clock_out=None,
                         overtime_minutes=0,notes='Sakit',status_code=422)
-        invalid={'work_date':date.today().isoformat(),'expected_revision':0,'status':'present',
+        invalid={'work_date':jakarta_today().isoformat(),'expected_revision':0,'status':'present',
                  'clock_in':'17:00','clock_out':'08:00','overtime_minutes':0,
                  'notes':'','reason':'Jam terbalik'}
         self.post('/api/workforce/employees/'+bima['id']+'/attendance',invalid,status=422)
-        self.attendance(bima,work_date=(date.today()+timedelta(days=1)).isoformat(),status_code=422)
-        self.attendance(bima,work_date=(date.today()-timedelta(days=1)).isoformat(),
+        self.attendance(bima,work_date=(jakarta_today()+timedelta(days=1)).isoformat(),status_code=422)
+        self.attendance(bima,work_date=(jakarta_today()-timedelta(days=1)).isoformat(),
                         api_key=self.viewer['api_key'],status_code=403)
         self.assertEqual(self.client.get('/api/workforce/attendance?start_date=2026-01-02&end_date=2026-01-01').status_code,422)
         self.assertEqual(self.client.get('/api/workforce/attendance?employee_id=missing').status_code,404)
@@ -86,7 +95,7 @@ class WorkforceTest(TestCase):
         self.post('/api/workforce/employees/'+employee['id']+'/changes',{
             'expected_revision':1,'name':'Ayu','department':'Produksi','active':False,
             'reason':'Kontrak selesai'})
-        self.attendance(employee,work_date=(date.today()-timedelta(days=1)).isoformat(),status_code=422)
+        self.attendance(employee,work_date=(jakarta_today()-timedelta(days=1)).isoformat(),status_code=422)
         corrected=self.attendance(employee,expected_revision=1,status='leave',clock_in=None,
             clock_out=None,overtime_minutes=0,notes='Cuti',reason='Koreksi setelah nonaktif')
         self.assertEqual(corrected['revision'],2)

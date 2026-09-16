@@ -484,6 +484,8 @@ async function moreHistory(button) {
   finally { button.disabled = false; }
 }
 
+// Seluruh tanggal bisnis memakai zona operasional Jakarta, bukan zona perangkat pemakai.
+const jakartaToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date());
 const option = (value,label) => `<option value="${e(value)}">${e(label)}</option>`;
 const field = (name,label,type='text',attrs='') => `<label>${label}<input name="${name}" type="${type}" ${attrs}></label>`;
 function openDialog(title, content) {
@@ -2881,7 +2883,7 @@ async function aiInvestigationDetailDialog(investigationId) {
 
 function aiInvestigationDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Tanya Beeloft',`<form id="ai-form">
     <p class="hint">Ajukan pertanyaan tentang produksi, stok, approval, margin, atau prioritas bisnis. Analisis berjalan lokal dan hanya membaca ledger Beeloft.</p>
     <div class="actions"><button type="button" data-action="ai-investigations">Riwayat investigasi</button></div>
@@ -2999,7 +3001,7 @@ async function aiActionProposalDialog(proposalId) {
 
 function demandForecastDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Forecast demand per SKU',`<form id="forecast-form">
     <p class="hint">Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.</p>
     <div class="form-grid">
@@ -3043,7 +3045,7 @@ $('demand-forecast').onclick=demandForecastDialog;
 
 function returnInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Analisis retur per SKU',`<form id="return-insights-form">
     <p class="hint">Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.</p>
     <div class="form-grid">
@@ -3124,7 +3126,7 @@ $('return-insights').onclick=returnInsightsDialog;
 
 function sizeDemandInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Analisis demand per ukuran',`<form id="size-demand-form">
     <p class="hint">Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.</p>
     <div class="form-grid">
@@ -3176,7 +3178,7 @@ $('size-demand-insights').onclick=sizeDemandInsightsDialog;
 
 function deadStockInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Analisis dead stock',`<form id="dead-stock-form">
     <p class="hint">Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.</p>
     <div class="form-grid">
@@ -3224,7 +3226,7 @@ $('dead-stock-insights').onclick=deadStockInsightsDialog;
 
 function stockAdjustmentInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Audit adjustment stok',`<form id="stock-adjustment-insights-form">
     <p class="hint">Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.</p>
     <div class="form-grid">
@@ -3280,7 +3282,7 @@ $('stock-adjustment-insights').onclick=stockAdjustmentInsightsDialog;
 
 function supplierPerformanceInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Kinerja supplier',`<form id="supplier-performance-form">
     <p class="hint">PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.</p>
     <div class="form-grid">
@@ -3330,7 +3332,7 @@ $('supplier-performance-insights').onclick=supplierPerformanceInsightsDialog;
 
 function materialPriceInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Pergerakan harga bahan',`<form id="material-price-form">
     <p class="hint">Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.</p>
     <div class="form-grid">
@@ -3380,7 +3382,7 @@ $('material-price-insights').onclick=materialPriceInsightsDialog;
 
 function purchaseCommitmentInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form">
     <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
     <div class="form-grid">
@@ -3428,7 +3430,7 @@ $('purchase-commitment-insights').onclick=purchaseCommitmentInsightsDialog;
 
 function wipAgeingInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   const ownerOptions=(boardData?.owners||[]).map(owner=>option(owner.id,
     owner.name+(owner.active?'':' (akun nonaktif)'))).join('');
   openDialog('WIP ageing & sinyal hambatan',`<form id="wip-ageing-form">
@@ -3568,7 +3570,6 @@ async function capacityCalendarForm(workCenterId,workDate) {
 }
 
 const workforceStatusLabels={present:'Hadir',leave:'Cuti',absent:'Absen',unrecorded:'Belum dicatat'};
-const jakartaToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date());
 
 async function workforcePage(path,params={}) {
   let items=[],page;
@@ -3757,7 +3758,7 @@ async function capacityPlanDialog() {
   try{
     const [centers,products]=await Promise.all([allRows('/api/work-centers'),allRows('/api/products')]);
     if(!current())return;
-    const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const today=jakartaToday();
     const activeCenters=centers.filter(row=>row.active);
     const admin=user.role==='admin'?`<section><h3>Master kapasitas</h3><p class="hint">Admin mengelola kapasitas dalam menit. Semua perubahan disimpan sebagai revisi.</p>
       <div class="product-list">${centers.map(row=>`<div class="product-item"><div><strong>${e(row.code)} · ${e(row.name)}</strong><span>${e(labels[row.stage])} · ${n(row.daily_minutes)} menit/hari · ${row.active?'aktif':'nonaktif'} · revisi ${n(row.revision)}</span></div><button data-action="edit-work-center" data-id="${e(row.id)}">Ubah</button></div>`).join('')||'<p>Belum ada work center.</p>'}</div>
@@ -3816,7 +3817,7 @@ $('capacity-plan').onclick=capacityPlanDialog;
 
 function productionQualityInsightsDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Kualitas produksi',`<form id="production-quality-form">
     <p class="hint">Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.</p>
     <div class="form-grid">
@@ -3867,7 +3868,7 @@ $('production-quality-insights').onclick=productionQualityInsightsDialog;
 
 function replenishmentDialog() {
   if(guardPending())return;
-  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today=jakartaToday();
   openDialog('Risiko stockout & rekomendasi',`<form id="replenishment-form">
     <p class="hint">Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.</p>
     <div class="form-grid">
