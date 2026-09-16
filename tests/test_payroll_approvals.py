@@ -125,6 +125,6 @@ class PayrollApprovalsTest(TestCase):
                 DROP TABLE payroll_approval_requests; PRAGMA user_version=51;''')
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])

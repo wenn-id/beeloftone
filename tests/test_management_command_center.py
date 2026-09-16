@@ -123,7 +123,10 @@ class ManagementCommandCenterTest(TestCase):
             'as_of': '2026-10-16', 'period_start': '2026-09-17',
             'inspected_quantity': 10, 'first_pass_yield_percent': '70.00',
             'nonconforming_rate_percent': '30.00', 'rework_rate_percent': '20.00',
-            'reject_rate_percent': '10.00', 'groups': 2, 'attention_groups': 1,
+            'reject_rate_percent': '10.00', 'reinspected_quantity': 0,
+            'reinspection_nonconforming_quantity': 0,
+            'reinspection_nonconforming_rate_percent': '0.00',
+            'groups': 2, 'attention_groups': 1,
         })
         alert = next(row for row in report['attention'] if row['id'] == 'production-quality')
         self.assertEqual((alert['priority'], alert['kind'], alert['action'], alert['action_label']),

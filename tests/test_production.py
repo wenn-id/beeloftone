@@ -112,8 +112,15 @@ class ProductionTest(unittest.TestCase):
             self.move(line, source, target, 10)
         self.move(line, "qc", "rework", 2, reason="  ", status=422)
         self.move(line, "qc", "reject", 1, status=422)
-        self.move(line, "qc", "rework", 2, reason="Jahitan perlu diperbaiki")
-        self.move(line, "rework", "qc", 2)
+        rework = self.move(line, "qc", "rework", 2, reason="Jahitan perlu diperbaiki")
+        # Pengembalian rework ke QC tanpa lineage inspeksi tidak lagi diizinkan; satu-satunya
+        # jalur generik yang tersisa adalah pembalikan perpindahan aslinya.
+        self.move(line, "rework", "qc", 2, reason="Rework selesai", status=422)
+        self.assertEqual(self.detail(order)["lines"][0]["balances"]["rework"], 2)
+        self.post(f'/api/movements/{rework["id"]}/reverse', {"reason": "Rework selesai dikerjakan"})
+        self.assertEqual(self.detail(order)["lines"][0]["balances"], {
+            "planned": 0, "cutting": 0, "sewing": 0, "finishing": 0,
+            "qc": 10, "rework": 0, "reject": 0, "warehouse": 0})
         self.move(line, "qc", "reject", 1, reason="Kain sobek")
         self.move(line, "qc", "warehouse", 9)
         detail = self.detail(order)

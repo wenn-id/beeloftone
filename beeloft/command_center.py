@@ -103,9 +103,13 @@ def build_command_center(store):
         change = top_quality["nonconforming_rate_change_points"]
         comparison = (f"naik {change} poin dari periode sebelumnya" if change is not None
                       and Decimal(change) > 0 else f'melewati batas {quality["warning_percent"]}%')
+        reinspection = (f' Inspeksi ulang {current_quality["reinspection_nonconforming_quantity"]} '
+                        f'dari {current_quality["reinspected_quantity"]} pcs gagal lagi '
+                        f'({current_quality["reinspection_nonconforming_rate_percent"]}%).'
+                        if current_quality["reinspection_nonconforming_quantity"] else "")
         add("production-quality", "warning", "quality", f"Kualitas {subject} perlu perhatian",
             f'Rework + reject {current_quality["nonconforming_rate_percent"]}% dari '
-            f'{current_quality["inspected_quantity"]} pcs; {comparison}.',
+            f'{current_quality["inspected_quantity"]} pcs; {comparison}.{reinspection}',
             "production_quality", "Buka analisis kualitas")
     capacity_risks = (capacity_summary["overloaded_work_centers"]
                       + capacity_summary["deadline_risk_work_centers"])
@@ -178,6 +182,9 @@ def build_command_center(store):
             "nonconforming_rate_percent": quality_summary["nonconforming_rate_percent"],
             "rework_rate_percent": quality_summary["rework_rate_percent"],
             "reject_rate_percent": quality_summary["reject_rate_percent"],
+            "reinspected_quantity": quality_summary["reinspected_quantity"],
+            "reinspection_nonconforming_quantity": quality_summary["reinspection_nonconforming_quantity"],
+            "reinspection_nonconforming_rate_percent": quality_summary["reinspection_nonconforming_rate_percent"],
             "groups": quality_summary["groups"],
             "attention_groups": quality_summary["attention_groups"],
         },

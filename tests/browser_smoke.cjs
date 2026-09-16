@@ -379,6 +379,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_sewing.cjs');
   await runModule('./browser_finishing.cjs');
   const finalQc=await runModule('./browser_final_qc.cjs');
+  await runModule('./browser_rework_reinspection.cjs');
   await runModule('./browser_production_quality_insights.cjs',finalQc);
   const finishedGoods=await runModule('./browser_finished_goods.cjs');
   await runModule('./browser_finished_goods_scanning.cjs',finishedGoods);

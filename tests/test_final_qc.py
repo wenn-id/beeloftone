@@ -111,7 +111,10 @@ class FinalQcTest(TestCase):
         order, _, finishing=self.setup_finishing()
         record=self.inspect(finishing,accepted=0,rework=8,reject=0)
         self.post('/api/movements',dict(line_id=record['line_id'],from_stage='rework',to_stage='qc',
-                                        quantity=8,reason='Rework selesai'))
+                                        quantity=8,reason='Rework selesai'),status=422)
+        self.post('/api/final-qc-records/'+record['id']+'/rework-completions',
+                  dict(reference='RWK-BLOCK',quantity=8,completed_date='2026-09-18',
+                       reason='Rework selesai dikerjakan'))
         self.post('/api/final-qc-records/'+record['id']+'/reverse',dict(reason='Salah'),status=409)
         self.assertEqual(self.client.get('/api/final-qc-records/'+record['id']).json()['status'],'completed')
         totals=self.client.get('/api/orders/'+order['id']).json()['totals']
@@ -142,6 +145,10 @@ class FinalQcTest(TestCase):
         fresh_path=self.path.with_name('schema16.sqlite3')
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
+            db.execute('DROP TRIGGER rework_completion_blocks_final_qc_reversal')
+            db.execute('DROP TRIGGER final_qc_blocks_rework_completion_reversal')
+            db.execute('DROP TABLE rework_completion_reversals')
+            db.execute('DROP TABLE rework_completions')
             db.execute('DROP TRIGGER finished_goods_reversal_valid')
             db.execute('DROP TRIGGER marketplace_reservation_release_valid')
             db.execute('DROP TRIGGER marketplace_pick_reversal_valid')
@@ -173,5 +180,5 @@ class FinalQcTest(TestCase):
             db.execute('PRAGMA user_version=16');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM final_qc_records').fetchone()[0],0)

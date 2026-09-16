@@ -58,7 +58,9 @@ Database default: `data/beeloft.sqlite3`, relatif terhadap working directory. Bi
 - Membuat order dengan referensi unik, PIC internal, tenggat, dan beberapa SKU.
 - Melihat jumlah setiap SKU di setiap tahap, ringkasan order dan penanda terlambat.
 - Memindahkan sebagian jumlah ke tahap berikutnya; satu order bisa berada di banyak tahap sekaligus.
-- Mencatat rework/reject dengan alasan dan mengirim hasil rework kembali ke QC.
+- Mencatat rework/reject dengan alasan, mencatat **selesai rework** yang mengembalikan pcs dari rework
+  ke QC dengan menyebut inspeksi asalnya, lalu mencatat **inspeksi ulang** atas hasil rework itu
+  berulang kali sampai lolos.
 - Membalik transaksi keliru sebagai admin, dengan alasan dan hubungan ke transaksi asal.
 - Menelusuri waktu UTC, akun pencatat, SKU, tahap asal/tujuan, jumlah dan alasan dalam riwayat.
 - Menolak input ganda, saldo kurang, jumlah non-integer, tahap tidak sah dan akses di luar role.
@@ -66,8 +68,24 @@ Database default: `data/beeloft.sqlite3`, relatif terhadap working directory. Bi
 ```text
 planned -> cutting -> sewing -> finishing -> qc -> warehouse
                                             | -> reject
-                                            | -> rework -> qc
+                                            | -> rework -> selesai rework -> qc -> inspeksi ulang
 ```
+
+Perpindahan `rework -> qc` tidak lagi tersedia lewat `POST /api/movements` atau form "Catat
+perpindahan". Gunakan `POST /api/final-qc-records/{id}/rework-completions` (tombol **Catat selesai
+rework** pada rincian final QC), lalu `POST /api/rework-completions/{id}/qc-records` (tombol
+**Inspeksi ulang**). Perpindahan `rework -> qc` yang sudah tercatat sebelum aturan ini tetap terbaca di
+riwayat. Untuk mengoreksi perpindahan `qc -> rework` yang keliru, pakai pembalikan perpindahan seperti
+biasa. Barang yang tidak dapat diperbaiki tidak lagi dipindahkan langsung ke `reject`: catat selesai
+rework, lalu isi jumlah reject pada inspeksi ulang, sehingga pembuangan tetap punya catatan inspeksi.
+
+**Database yang sudah memuat pengembalian rework tanpa lineage.** Jika sebuah baris order pernah memakai
+perpindahan `rework -> qc` generik sebelum aturan ini, pcs tersebut sudah berada di QC sementara catatan
+final QC-nya masih melaporkan rework yang belum selesai. Rincian final QC menampilkan peringatan berisi
+jumlah perpindahan tanpa lineage tersebut, tombol **Catat selesai rework** disembunyikan, dan API menjawab
+409 dengan penyebab yang sama. Cara memperbaikinya: buka **Riwayat perpindahan** pada order itu, koreksi
+perpindahan `rework -> qc` lama tersebut sebagai admin (jumlah kembali ke rework), lalu catat **Catat
+selesai rework** dan **Inspeksi ulang** seperti biasa. Baris lama beserta pembaliknya tetap tersimpan.
 
 `planned` adalah target pcs yang belum masuk cutting, bukan stok kain. `warehouse` adalah penerimaan gudang internal, belum stok jual Jubelio. Saldo tahap adalah posisi sekarang, bukan jumlah kumulatif yang pernah melewati tahap itu. Status `closed_with_reject` berarti semua pcs sudah diterima gudang atau reject, bukan target barang layak jual sudah terpenuhi.
 

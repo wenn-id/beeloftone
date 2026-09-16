@@ -13,7 +13,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, PayrollApprovalDecision, PayrollApprovalRequestCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 10_000
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.83.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.84.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -869,6 +869,33 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.post('/api/final-qc-records/{record_id}/reverse', status_code=201, tags=['Final QC'])
     def reverse_final_qc_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_final_qc_record(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/final-qc-records/{record_id}/rework-completions', status_code=201, tags=['Final QC'])
+    def create_rework_completion(record_id: str, body: ReworkCompletionCreate, user: Actor, key: RequestKey):
+        return store.create_rework_completion(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/final-qc-records/{record_id}/rework-completions', tags=['Final QC'])
+    def final_qc_rework_completions(record_id: str, user: Actor, limit: Limit = 100,
+                                    before: Annotated[int | None, Query(ge=1)] = None):
+        return store.final_qc_rework_completions(record_id, limit, before)
+
+    @app.get('/api/orders/{order_id}/rework-completions', tags=['Final QC'])
+    def rework_completions(order_id: str, user: Actor, limit: Limit = 100,
+                           before: Annotated[int | None, Query(ge=1)] = None):
+        return store.rework_completions(order_id, limit, before)
+
+    @app.get('/api/rework-completions/{completion_id}', tags=['Final QC'])
+    def rework_completion(completion_id: str, user: Actor):
+        return store.rework_completion(completion_id)
+
+    @app.post('/api/rework-completions/{completion_id}/qc-records', status_code=201, tags=['Final QC'])
+    def create_rework_reinspection_record(completion_id: str, body: FinalQcRecordCreate,
+                                          user: Actor, key: RequestKey):
+        return store.create_rework_reinspection_record(completion_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/rework-completions/{completion_id}/reverse', status_code=201, tags=['Final QC'])
+    def reverse_rework_completion(completion_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_rework_completion(completion_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/final-qc-records/{record_id}/finished-goods-receipts', status_code=201, tags=['Finished Goods'])
     def create_finished_goods_receipt(record_id: str, body: FinishedGoodsReceiptCreate, user: Actor, key: RequestKey):

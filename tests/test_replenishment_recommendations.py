@@ -158,4 +158,4 @@ class ReplenishmentRecommendationsTest(TestCase):
                                                            self.product['sku'])
         self.assertEqual(actual,expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)

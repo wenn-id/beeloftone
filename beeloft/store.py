@@ -94,7 +94,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -223,6 +223,22 @@ class Store:
                 db.executescript(Path(__file__).with_name('payroll_accounting.sql').read_text(encoding='utf-8'))
             if version < 54:
                 db.executescript(Path(__file__).with_name('request_keys.sql').read_text(encoding='utf-8'))
+            if version < 55:
+                # Kolom lineage sengaja tanpa klausa REFERENCES. ALTER TABLE berjalan sebelum
+                # rework_completions dibuat, dan dengan foreign_keys=ON sebuah kolom yang menunjuk
+                # tabel induk yang belum ada akan menolak SETIAP insert ke final_qc_records, termasuk
+                # insert bernilai NULL, tanpa terdeteksi PRAGMA foreign_key_check. Integritas
+                # referensial tetap penuh: final_qc_source_valid menolak rework_completion_id yang
+                # tidak menunjuk catatan selesai rework aktif, dan kedua tabel immutable sehingga
+                # baris induk tidak dapat dihapus atau diubah.
+                columns={row['name'] for row in db.execute('PRAGMA table_info(final_qc_records)')}
+                additions={
+                    'rework_completion_id':'TEXT',
+                    'inspection_round':'INTEGER NOT NULL DEFAULT 1 CHECK(inspection_round>=1)'}
+                for name,definition in additions.items():
+                    if name not in columns:
+                        db.execute(f'ALTER TABLE final_qc_records ADD COLUMN {name} {definition}')
+                db.executescript(Path(__file__).with_name('rework_completions.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2047,11 +2063,22 @@ class Store:
                                        finishing['quantity'],'pcs','finishing-record')
                             for qc_row in db.execute('SELECT id FROM final_qc_records WHERE finishing_record_id=?',(finishing['id'],)):
                                 qc=self._final_qc_record(db,qc_row['id'])
-                                add('final_qc',qc,qc['inspected_quantity'],'pcs',qc['inspection_date'],
-                                    f"Pass {qc['accepted_quantity']}, rework {qc['rework_quantity']}, reject {qc['reject_quantity']}",
+                                round_label=('Inspeksi awal' if qc['inspection_kind']=='initial'
+                                             else f"Inspeksi ulang #{qc['inspection_round']-1} dari {qc['rework_completion_reference']}")
+                                add('final_qc' if qc['inspection_kind']=='initial' else 'final_qc_reinspection',
+                                    qc,qc['inspected_quantity'],'pcs',qc['inspection_date'],
+                                    f"{round_label}: pass {qc['accepted_quantity']}, rework {qc['rework_quantity']}, reject {qc['reject_quantity']}",
                                     'final-qc-record',qc['status'])
                                 correction('final_qc_correction',qc,qc['reversal'],qc['inspected_quantity'],
                                            'pcs','final-qc-record')
+                                for completion_row in db.execute('SELECT id FROM rework_completions WHERE final_qc_record_id=?',(qc['id'],)):
+                                    completion=self._rework_completion(db,completion_row['id'])
+                                    add('rework_completion',completion,completion['quantity'],'pcs',
+                                        completion['completed_date'],
+                                        f"Selesai rework dari {qc['reference']} kembali ke QC",
+                                        'rework-completion',completion['status'])
+                                    correction('rework_completion_correction',completion,completion['reversal'],
+                                               completion['quantity'],'pcs','rework-completion')
                                 for receipt_row in db.execute('SELECT id FROM finished_goods_receipts WHERE final_qc_record_id=?',(qc['id'],)):
                                     receipt=self._finished_goods_receipt(db,receipt_row['id'])
                                     add('finished_goods_receipt',receipt,receipt['received_quantity'],'pcs',receipt['received_date'],
@@ -2647,8 +2674,11 @@ class Store:
             JOIN users u ON u.id=r.actor_id WHERE r.record_id=?''',(record_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
         record['status']='corrected' if reversal else 'completed'
+        # Hanya inspeksi awal yang mengalokasikan jumlah finishing. Inspeksi ulang mengalokasikan
+        # jumlah dari catatan selesai rework-nya sendiri, sehingga satu pcs tidak dihitung dua kali.
         inspected=db.execute('''SELECT COALESCE(SUM(q.accepted_quantity+q.rework_quantity+q.reject_quantity),0)
-            FROM final_qc_records q WHERE q.finishing_record_id=? AND NOT EXISTS(
+            FROM final_qc_records q WHERE q.finishing_record_id=? AND q.rework_completion_id IS NULL
+              AND NOT EXISTS(
                 SELECT 1 FROM final_qc_record_reversals r WHERE r.record_id=q.id)''',(record_id,)).fetchone()[0]
         record['qc_inspected_quantity']=inspected
         record['qc_remaining_quantity']=0 if reversal else record['quantity']-inspected
@@ -2712,7 +2742,10 @@ class Store:
             b.id AS bundle_id,b.reference AS bundle_reference,b.cutting_run_id,
             r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
             source.line_id,p.sku,p.name AS product_name,p.color,p.size,batch.id AS batch_id,
-            batch.reference AS batch_reference,s.code AS material_code,u.name AS actor_name
+            batch.reference AS batch_reference,s.code AS material_code,u.name AS actor_name,
+            rc.reference AS rework_completion_reference,rc.completed_date AS rework_completion_date,
+            sq.id AS source_final_qc_record_id,sq.reference AS source_final_qc_reference,
+            sq.inspection_date AS source_inspection_date,sq.inspection_round AS source_inspection_round
             FROM final_qc_records q JOIN finishing_records f ON f.id=q.finishing_record_id
             JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
             JOIN cutting_runs r ON r.id=b.cutting_run_id JOIN orders o ON o.id=r.order_id
@@ -2721,11 +2754,14 @@ class Store:
             JOIN material_consumption c ON c.id=r.consumption_id
             JOIN material_movements i ON i.id=c.issue_id JOIN material_batches batch ON batch.id=i.batch_id
             JOIN materials s ON s.id=batch.material_id JOIN users u ON u.id=q.actor_id
+            LEFT JOIN rework_completions rc ON rc.id=q.rework_completion_id
+            LEFT JOIN final_qc_records sq ON sq.id=rc.final_qc_record_id
             WHERE q.id=?''',(record_id,)).fetchone()
         if not row:
             raise DomainError(404,'Catatan final QC tidak ditemukan.')
         record=dict(row)
         record['inspected_quantity']=record['accepted_quantity']+record['rework_quantity']+record['reject_quantity']
+        record['inspection_kind']='reinspection' if record['rework_completion_id'] else 'initial'
         reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM final_qc_record_reversals r
             JOIN users u ON u.id=r.actor_id WHERE r.record_id=?''',(record_id,)).fetchone()
         record['reversal']=dict(reversal) if reversal else None
@@ -2735,6 +2771,25 @@ class Store:
                 SELECT 1 FROM finished_goods_receipt_reversals r WHERE r.receipt_id=x.id)''',(record_id,)).fetchone()[0]
         record['warehouse_received_quantity']=received
         record['warehouse_remaining_quantity']=0 if reversal else record['accepted_quantity']-received
+        completed=db.execute('''SELECT COUNT(*),COALESCE(SUM(c.quantity),0) FROM rework_completions c
+            WHERE c.final_qc_record_id=? AND NOT EXISTS(
+                SELECT 1 FROM rework_completion_reversals r WHERE r.record_id=c.id)''',(record_id,)).fetchone()
+        record['active_rework_completion_count']=completed[0]
+        record['rework_completed_quantity']=completed[1]
+        record['rework_remaining_quantity']=0 if reversal else record['rework_quantity']-completed[1]
+        # Database yang dimigrasikan dari schema 54 dapat memuat perpindahan rework -> qc lama tanpa
+        # catatan selesai rework, sehingga jumlah rework sebuah catatan sudah tidak lagi berada di
+        # tahap rework dan tidak dapat diselesaikan sampai perpindahan itu dikoreksi. Angka ini
+        # membuat keadaan tersebut jujur alih-alih menawarkan kapasitas yang tidak ada. Pengembalian
+        # tanpa lineage tidak dapat dibuat lagi lewat API mana pun, jadi nilainya stabil.
+        record['untraced_rework_return_quantity']=db.execute('''SELECT COALESCE(SUM(m.quantity),0)
+            FROM movements m WHERE m.line_id=? AND m.from_stage='rework' AND m.to_stage='qc'
+              AND m.reversal_of IS NULL
+              AND NOT EXISTS(SELECT 1 FROM movements r WHERE r.reversal_of=m.id)
+              AND NOT EXISTS(SELECT 1 FROM rework_completions c WHERE c.movement_id=m.id)''',
+            (record['line_id'],)).fetchone()[0]
+        record['rework_completable_quantity']=max(0,record['rework_remaining_quantity']
+                                                  -record['untraced_rework_return_quantity'])
         return record
 
     def final_qc_record(self, record_id):
@@ -2753,6 +2808,27 @@ class Store:
                 (order_id,before,before,limit)).fetchall()
             return [self._final_qc_record(db,row['id']) for row in ids]
 
+    def _insert_final_qc_record(self, db, finishing_record_id, line_id, payload, actor,
+                                rework_completion_id=None, inspection_round=1):
+        movements={}
+        for field,stage in (('accepted','warehouse'),('rework','rework'),('reject','reject')):
+            quantity=payload[field+'_quantity']
+            movements[field]=None if not quantity else self._transfer(db,dict(line_id=line_id,
+                from_stage='qc',to_stage=stage,quantity=quantity,reason=payload['reason']),actor)['id']
+        record_id=str(uuid4())
+        db.execute('''INSERT INTO final_qc_records(id,reference,finishing_record_id,measurement_notes,
+            visual_notes,defect_type,responsible_source,disposition,
+            accepted_quantity,rework_quantity,reject_quantity,inspection_date,
+            accepted_movement_id,rework_movement_id,reject_movement_id,reason,actor_id,created_at,
+            rework_completion_id,inspection_round)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],finishing_record_id,
+            payload['measurement_notes'],payload['visual_notes'],payload['defect_type'],payload['responsible_source'],
+            payload['disposition'],payload['accepted_quantity'],
+            payload['rework_quantity'],payload['reject_quantity'],payload['inspection_date'],
+            movements['accepted'],movements['rework'],movements['reject'],payload['reason'],actor['id'],now(),
+            rework_completion_id,inspection_round))
+        return record_id
+
     def create_final_qc_record(self, finishing_record_id, payload, actor, key):
         def perform(db):
             source=self._finishing_record(db,finishing_record_id)
@@ -2763,23 +2839,127 @@ class Store:
                 raise DomainError(409,'Jumlah inspeksi melebihi finishing yang belum diperiksa. Muat ulang data terbaru.')
             if payload['inspection_date']<source['completed_date']:
                 raise DomainError(422,'Tanggal inspeksi tidak boleh sebelum tanggal selesai finishing.')
-            movements={}
-            for field,stage in (('accepted','warehouse'),('rework','rework'),('reject','reject')):
-                quantity=payload[field+'_quantity']
-                movements[field]=None if not quantity else self._transfer(db,dict(line_id=source['line_id'],
-                    from_stage='qc',to_stage=stage,quantity=quantity,reason=payload['reason']),actor)['id']
-            record_id=str(uuid4())
-            db.execute('''INSERT INTO final_qc_records(id,reference,finishing_record_id,measurement_notes,
-                visual_notes,defect_type,responsible_source,disposition,
-                accepted_quantity,rework_quantity,reject_quantity,inspection_date,
-                accepted_movement_id,rework_movement_id,reject_movement_id,reason,actor_id,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],finishing_record_id,
-                payload['measurement_notes'],payload['visual_notes'],payload['defect_type'],payload['responsible_source'],
-                payload['disposition'],payload['accepted_quantity'],
-                payload['rework_quantity'],payload['reject_quantity'],payload['inspection_date'],
-                movements['accepted'],movements['rework'],movements['reject'],payload['reason'],actor['id'],now()))
+            record_id=self._insert_final_qc_record(db,finishing_record_id,source['line_id'],payload,actor)
             return self._final_qc_record(db,record_id)
         return self._write(actor,('admin','operator'),key,'final-qc:'+finishing_record_id,payload,perform)
+
+    def _rework_completion(self, db, completion_id):
+        row=db.execute('''SELECT c.*,u.name AS actor_name FROM rework_completions c
+            JOIN users u ON u.id=c.actor_id WHERE c.id=?''',(completion_id,)).fetchone()
+        if not row:
+            raise DomainError(404,'Catatan selesai rework tidak ditemukan.')
+        record=dict(row)
+        source=self._final_qc_record(db,record['final_qc_record_id'])
+        for field in ('finishing_record_id','finishing_reference','job_id','sewing_reference','assignment_type',
+                      'assignee','bundle_id','bundle_reference','cutting_run_id','cutting_reference','order_id',
+                      'order_reference','line_id','sku','product_name','color','size','batch_id',
+                      'batch_reference','material_code'):
+            record[field]=source[field]
+        record['final_qc_reference']=source['reference']
+        record['final_qc_inspection_date']=source['inspection_date']
+        record['final_qc_inspection_round']=source['inspection_round']
+        record['final_qc_rework_quantity']=source['rework_quantity']
+        record['final_qc_status']=source['status']
+        record['next_inspection_round']=source['inspection_round']+1
+        reversal=db.execute('''SELECT r.*,u.name AS actor_name FROM rework_completion_reversals r
+            JOIN users u ON u.id=r.actor_id WHERE r.record_id=?''',(completion_id,)).fetchone()
+        record['reversal']=dict(reversal) if reversal else None
+        record['status']='corrected' if reversal else 'completed'
+        reinspection=db.execute('''SELECT COUNT(*),
+            COALESCE(SUM(q.accepted_quantity+q.rework_quantity+q.reject_quantity),0)
+            FROM final_qc_records q WHERE q.rework_completion_id=? AND NOT EXISTS(
+                SELECT 1 FROM final_qc_record_reversals r WHERE r.record_id=q.id)''',(completion_id,)).fetchone()
+        record['active_reinspection_count']=reinspection[0]
+        record['reinspected_quantity']=reinspection[1]
+        record['reinspection_remaining_quantity']=0 if reversal else record['quantity']-reinspection[1]
+        return record
+
+    def rework_completion(self, completion_id):
+        with self.transaction() as db:
+            return self._rework_completion(db,completion_id)
+
+    def final_qc_rework_completions(self, record_id, limit=100, before=None):
+        with self.transaction() as db:
+            self._final_qc_record(db,record_id)
+            ids=db.execute('''SELECT c.id FROM rework_completions c WHERE c.final_qc_record_id=?
+                AND (? IS NULL OR c.sequence<?) ORDER BY c.sequence DESC LIMIT ?''',
+                (record_id,before,before,limit)).fetchall()
+            return [self._rework_completion(db,row['id']) for row in ids]
+
+    def rework_completions(self, order_id, limit=100, before=None):
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM orders WHERE id=?',(order_id,)).fetchone():
+                raise DomainError(404,'Order produksi tidak ditemukan.')
+            ids=db.execute('''SELECT c.id FROM rework_completions c
+                JOIN final_qc_records q ON q.id=c.final_qc_record_id
+                JOIN finishing_records f ON f.id=q.finishing_record_id
+                JOIN sewing_jobs j ON j.id=f.job_id JOIN bundles b ON b.id=j.bundle_id
+                JOIN cutting_runs r ON r.id=b.cutting_run_id WHERE r.order_id=?
+                AND (? IS NULL OR c.sequence<?) ORDER BY c.sequence DESC LIMIT ?''',
+                (order_id,before,before,limit)).fetchall()
+            return [self._rework_completion(db,row['id']) for row in ids]
+
+    def create_rework_completion(self, final_qc_record_id, payload, actor, key):
+        def perform(db):
+            source=self._final_qc_record(db,final_qc_record_id)
+            if source['status']!='completed':
+                raise DomainError(409,'Catatan final QC harus aktif sebelum selesai rework dicatat.')
+            if not source['rework_quantity']:
+                raise DomainError(409,'Catatan final QC ini tidak menghasilkan rework.')
+            if payload['quantity']>source['rework_remaining_quantity']:
+                raise DomainError(409,'Jumlah selesai rework melebihi rework yang belum diselesaikan. Muat ulang data terbaru.')
+            if (payload['quantity']>source['rework_completable_quantity']
+                    and source['untraced_rework_return_quantity']):
+                raise DomainError(409,'Jumlah rework catatan ini sudah tidak berada di tahap rework karena '
+                                      f"ada {source['untraced_rework_return_quantity']} pcs perpindahan rework ke QC "
+                                      'tanpa catatan selesai rework. Koreksi perpindahan tersebut dari riwayat '
+                                      'perpindahan order lebih dahulu, lalu catat selesai rework kembali.')
+            if payload['completed_date']<source['inspection_date']:
+                raise DomainError(422,'Tanggal selesai rework tidak boleh sebelum tanggal inspeksi sumber.')
+            movement=self._transfer(db,dict(line_id=source['line_id'],from_stage='rework',to_stage='qc',
+                quantity=payload['quantity'],reason=payload['reason']),actor)
+            record_id=str(uuid4())
+            db.execute('''INSERT INTO rework_completions(id,reference,final_qc_record_id,quantity,
+                completed_date,movement_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?)''',(record_id,payload['reference'],final_qc_record_id,
+                payload['quantity'],payload['completed_date'],movement['id'],payload['reason'],
+                actor['id'],now()))
+            return self._rework_completion(db,record_id)
+        return self._write(actor,('admin','operator'),key,'rework-completion:'+final_qc_record_id,payload,perform)
+
+    def reverse_rework_completion(self, completion_id, payload, actor, key):
+        def perform(db):
+            record=self._rework_completion(db,completion_id)
+            if record['reversal']:
+                raise DomainError(409,'Catatan selesai rework sudah dikoreksi.')
+            if record['reinspected_quantity']:
+                raise DomainError(409,'Koreksi semua inspeksi ulang aktif sebelum mengoreksi selesai rework.')
+            original=db.execute('SELECT * FROM movements WHERE id=?',(record['movement_id'],)).fetchone()
+            if db.execute('SELECT 1 FROM movements WHERE reversal_of=?',(record['movement_id'],)).fetchone():
+                raise DomainError(409,'Perpindahan selesai rework sudah dikoreksi terpisah; periksa riwayat.')
+            self._transfer(db,dict(line_id=original['line_id'],from_stage=original['to_stage'],
+                to_stage=original['from_stage'],quantity=original['quantity'],reason=payload['reason']),
+                actor,reversal_of=record['movement_id'])
+            db.execute('''INSERT INTO rework_completion_reversals(record_id,reason,actor_id,created_at)
+                VALUES(?,?,?,?)''',(completion_id,payload['reason'],actor['id'],now()))
+            return self._rework_completion(db,completion_id)
+        return self._write(actor,('admin',),key,'rework-completion-reverse:'+completion_id,payload,perform)
+
+    def create_rework_reinspection_record(self, completion_id, payload, actor, key):
+        def perform(db):
+            source=self._rework_completion(db,completion_id)
+            if source['status']!='completed':
+                raise DomainError(409,'Catatan selesai rework harus aktif sebelum inspeksi ulang dicatat.')
+            inspected=payload['accepted_quantity']+payload['rework_quantity']+payload['reject_quantity']
+            if inspected>source['reinspection_remaining_quantity']:
+                raise DomainError(409,'Jumlah inspeksi ulang melebihi hasil rework yang belum diperiksa. Muat ulang data terbaru.')
+            if payload['inspection_date']<source['completed_date']:
+                raise DomainError(422,'Tanggal inspeksi ulang tidak boleh sebelum tanggal selesai rework.')
+            record_id=self._insert_final_qc_record(db,source['finishing_record_id'],source['line_id'],
+                payload,actor,rework_completion_id=completion_id,
+                inspection_round=source['next_inspection_round'])
+            return self._final_qc_record(db,record_id)
+        return self._write(actor,('admin','operator'),key,'final-qc-reinspection:'+completion_id,payload,perform)
 
     def reverse_final_qc_record(self, record_id, payload, actor, key):
         def perform(db):
@@ -2788,6 +2968,8 @@ class Store:
                 raise DomainError(409,'Catatan final QC sudah dikoreksi.')
             if record['warehouse_received_quantity']:
                 raise DomainError(409,'Koreksi semua penerimaan barang jadi aktif sebelum mengoreksi final QC.')
+            if record['rework_completed_quantity']:
+                raise DomainError(409,'Koreksi semua catatan selesai rework aktif sebelum mengoreksi final QC.')
             for movement_id in (record['accepted_movement_id'],record['rework_movement_id'],record['reject_movement_id']):
                 if not movement_id:
                     continue
@@ -4631,7 +4813,8 @@ class Store:
         with self.transaction() as db:
             rows=[dict(row) for row in db.execute('''SELECT q.sequence,q.id,q.reference,q.inspection_date,
                 q.accepted_quantity,q.rework_quantity,q.reject_quantity,q.defect_type,
-                q.responsible_source,q.disposition,q.created_at,f.id AS finishing_record_id,
+                q.responsible_source,q.disposition,q.created_at,q.rework_completion_id,
+                q.inspection_round,f.id AS finishing_record_id,
                 f.reference AS finishing_reference,j.assignment_type,j.assignee,
                 o.id AS order_id,o.reference AS order_reference,o.title AS order_title,
                 p.id AS product_id,p.sku,p.name AS product_name,p.color,p.size
@@ -4654,10 +4837,24 @@ class Store:
 
         def blank():
             return {'record_count':0,'inspected_quantity':0,'accepted_quantity':0,
-                    'rework_quantity':0,'reject_quantity':0,'nonconforming_quantity':0}
+                    'rework_quantity':0,'reject_quantity':0,'nonconforming_quantity':0,
+                    'reinspection_record_count':0,'reinspected_quantity':0,
+                    'reinspection_accepted_quantity':0,'reinspection_rework_quantity':0,
+                    'reinspection_reject_quantity':0,'reinspection_nonconforming_quantity':0}
 
         def add(metric,row):
             inspected=row['accepted_quantity']+row['rework_quantity']+row['reject_quantity']
+            if row['rework_completion_id']:
+                # First pass yield tetap berbasis inspeksi awal saja. Satu pcs fisik yang diperiksa
+                # ulang setelah rework tidak boleh masuk populasi accepted/inspected untuk kedua kali,
+                # sehingga hasil inspeksi ulang dilaporkan pada metrik terpisah.
+                metric['reinspection_record_count']+=1
+                metric['reinspected_quantity']+=inspected
+                metric['reinspection_accepted_quantity']+=row['accepted_quantity']
+                metric['reinspection_rework_quantity']+=row['rework_quantity']
+                metric['reinspection_reject_quantity']+=row['reject_quantity']
+                metric['reinspection_nonconforming_quantity']+=row['rework_quantity']+row['reject_quantity']
+                return
             metric['record_count']+=1;metric['inspected_quantity']+=inspected
             metric['accepted_quantity']+=row['accepted_quantity']
             metric['rework_quantity']+=row['rework_quantity']
@@ -4673,7 +4870,9 @@ class Store:
             return metric|{'first_pass_yield_percent':percent(metric['accepted_quantity'],total),
                 'nonconforming_rate_percent':percent(metric['nonconforming_quantity'],total),
                 'rework_rate_percent':percent(metric['rework_quantity'],total),
-                'reject_rate_percent':percent(metric['reject_quantity'],total)}
+                'reject_rate_percent':percent(metric['reject_quantity'],total),
+                'reinspection_nonconforming_rate_percent':percent(
+                    metric['reinspection_nonconforming_quantity'],metric['reinspected_quantity'])}
 
         groups={};overall_current=blank();overall_previous=blank()
         for row in rows:
@@ -4690,7 +4889,7 @@ class Store:
             sku=group['skus'].setdefault(row['product_id'],{'product_id':row['product_id'],'sku':row['sku'],
                 'product_name':row['product_name'],'color':row['color'],'size':row['size'],**blank()})
             add(sku,row)
-            if nonconforming:
+            if nonconforming and not row['rework_completion_id']:
                 defect=group['defect_types'].setdefault(row['defect_type'],{
                     'defect_type':row['defect_type'],'record_count':0,'nonconforming_quantity':0})
                 defect['record_count']+=1;defect['nonconforming_quantity']+=nonconforming
@@ -4701,12 +4900,14 @@ class Store:
             group['recent_records'].append({key:row[key] for key in ('id','reference','inspection_date',
                 'order_id','order_reference','order_title','finishing_record_id','finishing_reference',
                 'product_id','sku','product_name','color','size','defect_type','responsible_source',
-                'disposition','accepted_quantity','rework_quantity','reject_quantity')}|{
-                'inspected_quantity':inspected,'nonconforming_quantity':nonconforming})
+                'disposition','accepted_quantity','rework_quantity','reject_quantity',
+                'rework_completion_id','inspection_round')}|{
+                'inspected_quantity':inspected,'nonconforming_quantity':nonconforming,
+                'inspection_kind':'reinspection' if row['rework_completion_id'] else 'initial'})
 
         items=[]
         for group in groups.values():
-            if not group['current']['inspected_quantity']:
+            if not (group['current']['inspected_quantity'] or group['current']['reinspected_quantity']):
                 continue
             current=finish(group['current']);previous=finish(group['previous'])
             if previous['inspected_quantity']:
@@ -4723,6 +4924,12 @@ class Store:
                 reasons.append('above_warning')
             if trend=='worsening':
                 reasons.append('worsening')
+            # Hasil inspeksi ulang tidak boleh masuk populasi first pass yield, tetapi barang yang
+            # gagal lagi setelah rework harus tetap dapat memunculkan perhatian. Alasan ini bersifat
+            # tambahan dan memakai denominator inspeksi ulang sendiri.
+            if (current['reinspection_nonconforming_quantity'] and
+                    Decimal(current['reinspection_nonconforming_rate_percent'])>=warning_percent):
+                reasons.append('reinspection_above_warning')
             skus=[finish(value) for value in group['skus'].values()]
             skus.sort(key=lambda row:(-row['nonconforming_quantity'],
                 -Decimal(row['nonconforming_rate_percent']),row['sku'].casefold(),row['product_id']))
@@ -4747,6 +4954,8 @@ class Store:
             'previous_inspected_quantity':previous['inspected_quantity'],
             'previous_nonconforming_quantity':previous['nonconforming_quantity'],
             'previous_nonconforming_rate_percent':previous['nonconforming_rate_percent'],
+            'previous_reinspected_quantity':previous['reinspected_quantity'],
+            'previous_reinspection_nonconforming_quantity':previous['reinspection_nonconforming_quantity'],
             'nonconforming_rate_change_points':overall_change}
         return {'as_of':as_of_date.isoformat(),'window_days':window_days,
             'current_period_start':current_start.isoformat(),
@@ -4754,6 +4963,8 @@ class Store:
             'previous_period_end':previous_end.isoformat(),'warning_percent':warning_percent,
             'change_threshold':change_threshold,'query':query.strip(),'assignment_type':assignment_type,
             'status':status,'source':'active_final_qc_records','corrected_records':'excluded',
+            'first_pass_yield_basis':'initial_inspections_only',
+            'reinspections':'reported_separately',
             'total':len(scoped),'limit':limit,'offset':offset,'summary':summary,
             'items':scoped[offset:offset+limit]}
 
@@ -6820,6 +7031,8 @@ class Store:
             if db.execute('''SELECT 1 FROM final_qc_records WHERE accepted_movement_id=?
                 OR rework_movement_id=? OR reject_movement_id=?''',(movement_id,movement_id,movement_id)).fetchone():
                 raise DomainError(409,'Perpindahan berasal dari final QC. Gunakan koreksi final QC agar hasil ikut dikoreksi.')
+            if db.execute('SELECT 1 FROM rework_completions WHERE movement_id=?',(movement_id,)).fetchone():
+                raise DomainError(409,'Perpindahan berasal dari catatan selesai rework. Gunakan koreksi selesai rework agar lineage ikut dikoreksi.')
             original = db.execute("SELECT * FROM movements WHERE id=?", (movement_id,)).fetchone()
             if not original:
                 raise DomainError(404, "Perpindahan tidak ditemukan.")
@@ -6839,7 +7052,8 @@ class Store:
                 (SELECT j.job_id FROM sewing_job_results j WHERE j.completion_movement_id=m.id OR j.reject_movement_id=m.id) AS sewing_job_id,
                 (SELECT f.id FROM finishing_records f WHERE f.movement_id=m.id) AS finishing_record_id,
                 (SELECT q.id FROM final_qc_records q WHERE q.accepted_movement_id=m.id
-                    OR q.rework_movement_id=m.id OR q.reject_movement_id=m.id) AS final_qc_record_id
+                    OR q.rework_movement_id=m.id OR q.reject_movement_id=m.id) AS final_qc_record_id,
+                (SELECT c.id FROM rework_completions c WHERE c.movement_id=m.id) AS rework_completion_id
                 FROM movements m
                 JOIN order_lines l ON l.id=m.line_id JOIN users u ON u.id=m.actor_id
                 JOIN products p ON p.id=l.product_id WHERE l.order_id=? ORDER BY m.sequence LIMIT ? OFFSET ?""",

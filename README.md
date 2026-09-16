@@ -64,8 +64,12 @@ Alur pcs internal, terpisah dari stok jual Jubelio:
 ```text
 planned -> cutting -> sewing -> finishing -> qc -> warehouse
                                             | -> reject
-                                            | -> rework -> qc
+                                            | -> rework -> selesai rework -> qc -> inspeksi ulang
 ```
+
+Pengembalian `rework -> qc` selalu berupa catatan **selesai rework** yang menyebut catatan final QC
+penghasil rework tersebut, sehingga hasilnya dapat diinspeksi ulang secara sah, berulang kali, tanpa
+kehilangan jejak. First-pass yield tetap dihitung dari inspeksi awal saja.
 
 Teknologi: Python 3.12 dengan FastAPI/Starlette/uvicorn, SQLite (WAL) sebagai penyimpanan, dan
 frontend ES module tanpa build step, tanpa framework, serta tanpa dependency runtime pihak ketiga.
@@ -76,7 +80,7 @@ Server default hanya mendengarkan localhost.
 | Modul | Isi |
 |---|---|
 | Command center | Performa marketplace Jubelio, antrean keputusan, snapshot produksi/kualitas/kapasitas/people/inventori/keuangan/integrasi, read-only untuk semua role |
-| Produksi | Papan order, saldo per tahap, perpindahan dan pembalikan, kendala, cutting, bundle, sewing/makloon, finishing, final QC |
+| Produksi | Papan order, saldo per tahap, perpindahan dan pembalikan, kendala, cutting, bundle, sewing/makloon, finishing, final QC, selesai rework dan inspeksi ulang |
 | Bahan baku | Master bahan, batch, BOM, reservasi, pemakaian aktual, waste |
 | People | Roster harian, kehadiran, permintaan cuti/lembur, employee master |
 | Scan bundle / Scan barang jadi | Entry QR untuk membuka aksi dan memverifikasi pergerakan fisik |
