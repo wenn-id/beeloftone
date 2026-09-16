@@ -396,6 +396,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_material_batch_traceability.cjs',finishedGoods);
   await runModule('./browser_unified_approvals.cjs',finishedGoods);
   await runModule('./browser_workforce_approvals.cjs');
+  await runModule('./browser_cross_account_retry.cjs');
   await runModule('./browser_audit_trail.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

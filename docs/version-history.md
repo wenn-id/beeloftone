@@ -2379,3 +2379,44 @@ API: `GET /api/payroll-accounting-reconciliation`.
 
 Rencana: [Payroll accounting reconciliation plan](payroll-accounting-reconciliation-plan.md).
 Bukti: [Payroll accounting reconciliation verification](payroll-accounting-reconciliation-verification.md).
+
+
+## Stabilisasi keamanan dan transaksi (v0.83)
+
+Rilis stabilisasi tanpa fitur produk baru dan tanpa connector vendor.
+
+Dependensi Starlette dinaikkan dari `0.52.1` ke `1.6.0`, dengan batas deklaratif
+`starlette>=1.3.1,<2` dan `fastapi>=0.134,<1`. Rilis di bawah 1.3.1 terkena setidaknya satu dari
+CVE-2026-48710 (BadHost, host header meracuni `request.url.path`), CVE-2026-48818 (SSRF dan kebocoran
+NTLMv2 lewat UNC path pada `StaticFiles` di Windows), CVE-2026-48817 (metode HTTP arbitrer ke
+`HTTPEndpoint`), CVE-2026-54282 (authority poisoning), dan CVE-2026-54283 (limit `request.form()`
+diabaikan). Aplikasi ini memang memakai `StaticFiles` pada `/static`. Regresi UNC path diuji tanpa
+bergantung pada Windows dan tanpa request SMB nyata: penolakan harus terjadi sebelum `realpath`,
+`abspath`, atau `stat` dipanggil.
+
+Retry pencatatan yang belum pasti tidak lagi dapat diselesaikan oleh akun lain. Sebelumnya receipt
+idempotency memakai primary key `(actor_id, key)` dan dicari dengan `WHERE actor_id=? AND key=?`,
+sehingga tab yang masih menyimpan draft akun A dapat mengirim retry memakai session akun B, tidak
+menemukan receipt, dan menjalankan mutasi bisnis untuk kedua kalinya dengan atribusi akun B. Cookie
+session dipakai bersama seluruh tab sedangkan draft pending bersifat per tab, jadi tab lama tidak
+pernah diberi tahu bahwa akunnya sudah berganti.
+
+Sekarang satu idempotency key mengikat satu transaksi logis pada seluruh database. `Store._write()`
+mencari receipt per key, menolak 403 bila pemiliknya berbeda, tetap menolak 409 untuk payload berbeda,
+dan tetap mengembalikan respons pertama secara byte-identical untuk akun pencatat asli. Akun nonaktif
+tetap ditolak 401 lebih dahulu dan penurunan role tetap menolak replay. Atribusi audit tidak berubah:
+replay tidak menambah event, dan tidak ada event yang berpindah akun.
+
+403 dipilih, bukan 409, karena klien sudah memperlakukan 401/403 sebagai penolakan yang
+mempertahankan draft dan menampilkan tombol Masuk ulang. Sisi klien menyimpan `actor_id` di dalam
+draft pending dan memeriksa identitas server sebelum mengirim retry, tetapi penegakan invarian tetap
+di server.
+
+Migrasi 53 → 54 menjadikan `requests.key` primary key tunggal. Receipt paling awal per key
+dipertahankan sebagai pemilik, receipt duplikat historis diarsipkan immutable di
+`request_key_conflicts` beserta waktu deteksi, sehingga jejak database yang pernah terkena bug ini
+tidak hilang. Insert kedua dengan key sama kini melanggar constraint dan menjadi 409 walau pemeriksaan
+di Python suatu saat hilang.
+
+Rencana: [security transaction P1 plan](security-transaction-p1-plan.md).
+Bukti: [security transaction P1 verification](security-transaction-p1-verification.md).

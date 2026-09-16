@@ -4,10 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "beeloft-one"
-version = "0.82.0"
+version = "0.83.0"
 description = "Internal production tracking foundation for Beeloft"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "starlette>=0.46,<1", "uvicorn>=0.30,<1", "PyJWT[crypto]>=2.14,<3", "qrcode>=8,<9"]
+# starlette>=1.3.1 is a security floor, not a preference. Releases below it are affected by
+# CVE-2026-48710 (BadHost host-header path poisoning, fixed 1.0.1), CVE-2026-48818 (UNC SSRF /
+# NTLM leak in StaticFiles, fixed 1.1.0), CVE-2026-48817 (HTTPEndpoint method dispatch, 1.1.0),
+# CVE-2026-54282 (authority poisoning, 1.3.0) and CVE-2026-54283 (ignored form limits, 1.3.1).
+# fastapi>=0.134 is the first release whose own pin allows starlette 1.x at all.
+dependencies = ["fastapi>=0.134,<1", "starlette>=1.3.1,<2", "uvicorn>=0.30,<1", "PyJWT[crypto]>=2.14,<3", "qrcode>=8,<9"]
 
 [project.optional-dependencies]
 test = ["httpx>=0.27,<1"]

@@ -582,6 +582,18 @@ function clearPending(storageKey, transaction) {
     if (transaction && pending?.transaction?.key === transaction.key) sessionStorage.removeItem(storageKey);
   } catch {}
 }
+// Retry pencatatan yang belum pasti hanya boleh dikirim oleh akun pencatat aslinya. Cookie session
+// dipakai bersama seluruh tab, sedangkan draft pending bersifat per tab, jadi tab lain dapat
+// menukar session ke akun berbeda tanpa diketahui tab ini. Server menolak retry lintas akun dengan
+// 403; pemeriksaan di sini hanya mempercepat diagnosanya dan tidak menggantikan penolakan server.
+async function sameActorGuard(actorId) {
+  const identity = await api.get('/api/me').catch(() => null);
+  if (identity && identity.id !== actorId) {
+    throw Object.assign(new Error('Session browser di perangkat ini sudah berpindah ke akun lain. '
+      + 'Masuk ulang sebagai akun pencatat asli untuk menyelesaikan pencatatan yang belum pasti ini.'),
+      {status: 403});
+  }
+}
 function formDialog(title, fields, collect, path, info = '', initial = null) {
   openDialog(title, `<form id="action-form">${info ? `<p class="form-info">${e(info)}</p>` : ''}<fieldset id="form-fields"><div class="form-grid">${fields}</div></fieldset><p class="error" id="form-error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" id="reauth" hidden>Masuk ulang</button><button class="primary" id="save-form" type="submit">Simpan pencatatan</button></div></form>`);
   let transaction = initial;
@@ -594,8 +606,9 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
     const button = $('save-form'); message('form-error', '');
     try {
       if (!transaction) transaction = api.transaction(path, collect(event.currentTarget));
-      sessionStorage.setItem(storageKey, JSON.stringify({transaction, title, info}));
+      sessionStorage.setItem(storageKey, JSON.stringify({transaction, title, info, actor_id: actorId}));
       modalBusy = true; $('form-fields').disabled = true; button.disabled = true; $('reauth').disabled = true; button.textContent = 'Menyimpan…';
+      if (initial || unresolved) await sameActorGuard(actorId);
       const result = await api.save(transaction);
       clearPending(storageKey, transaction);
       if (version !== epoch || user?.id !== actorId || modalVersion !== dialogVersion) return;
@@ -2784,7 +2797,7 @@ function aiInvestigationDialog() {
     </div></details>
     <div class="form-actions"><button type="button" id="ai-reauth" hidden>Masuk ulang</button><button class="primary" id="ai-submit" type="submit">Analisis dan simpan</button></div>
   </form><p id="ai-message" class="state" role="status" hidden></p><div id="ai-results"></div>`);
-  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit'),reauth=$('ai-reauth'),storageKey=pendingKey();
+  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit'),reauth=$('ai-reauth'),storageKey=pendingKey(),actorId=user.id;
   let transaction=null;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
@@ -2804,8 +2817,8 @@ function aiInvestigationDialog() {
         for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
         transaction=api.transaction('/api/ai/investigations',raw);
         sessionStorage.setItem(storageKey,JSON.stringify({transaction,title:'Simpan investigasi AI',
-          info:'Pertanyaan dan snapshot bukti disimpan satu kali.'}));
-      }
+          info:'Pertanyaan dan snapshot bukti disimpan satu kali.',actor_id:actorId}));
+      }else await sameActorGuard(actorId);
       const report=await api.save(transaction);
       clearPending(storageKey,transaction);
       if(!current())return;
