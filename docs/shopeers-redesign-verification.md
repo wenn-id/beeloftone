@@ -103,9 +103,14 @@ The page leads with marketplace business performance and demotes operations to a
   keys and gains a single `sales.marketplace` object. Nothing was removed or renamed.
 - **Dynamic channels.** No marketplace name is hardcoded anywhere in the backend or the interface; the UI renders
   whatever channels the snapshot contains.
-- **Case-insensitive grouping.** Channels group on a whitespace-collapsed, case-folded key, so `Shopee`,
-  `shopee`, and `  SHOPEE  ` are one channel. The displayed label is the most frequent real spelling, preferring
-  mixed case on ties, so `Shopee` wins over `SHOPEE`.
+- **Case-insensitive grouping, on both summary paths.** Channels group on a whitespace-collapsed, case-folded key,
+  so `Shopee`, `shopee`, and `  SHOPEE  ` are one channel. The displayed label is the most frequent real spelling,
+  preferring mixed case on ties, so `Shopee` wins over `SHOPEE`. Both the key derivation
+  (`_jubelio_channel_key`) and the label selection (`_jubelio_channel_label`) are shared helpers, used by the new
+  `jubelio_marketplace_performance()` **and** by the pre-existing `jubelio_order_summary()`, which previously
+  grouped on the raw string and could silently split one channel across casings. Its four response fields,
+  alphabetical ordering, and batch totals are unchanged; a regression test asserts both paths return the same
+  channel grouping.
 - **One shared definition.** Sales, units, and AOV all derive from completed orders. AOV is completed gross
   revenue divided by completed order count, labelled `AOV order selesai`, and returns `0.00` rather than dividing
   by zero when nothing completed.
@@ -132,13 +137,15 @@ Additive only; no schema change, no new endpoint, no permission change.
   and returns `summary`, `marketplaces[]`, `products[]`, `daily[]`, plus snapshot and window metadata.
 - `command_center.py` — calls it once and attaches the result as `sales.marketplace`.
 
-### New Python coverage — `tests/test_jubelio_marketplace_performance.py` (11 tests)
+### New Python coverage — `tests/test_jubelio_marketplace_performance.py` (14 tests)
 
 Marketplace case-insensitive normalisation and canonical labelling; latest-batch-only aggregation; no
 double-counting when an order recurs across batches; Jakarta-day sales grouping and window metadata; top-product
 aggregation and unit ordering; aligned refund/net-sales calculation including unmatched and non-refunded returns;
 refunds against uncompleted orders; zero/empty-data behaviour; AOV excluding uncompleted orders; AOV
-zero-division; and preservation of every pre-existing `sales` field.
+zero-division; preservation of every pre-existing `sales` field; case-insensitive grouping and unchanged response
+shape in the legacy `jubelio_order_summary()`; and cross-path regression tests asserting both summary paths group
+channels identically, including when a channel has orders but nothing completed.
 
 ## Scope safeguards
 

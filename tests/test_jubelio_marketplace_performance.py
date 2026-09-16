@@ -278,3 +278,74 @@ class JubelioMarketplacePerformanceTest(TestCase):
         self.assertEqual(marketplace['daily'][0]['date'], '2026-09-13')
         self.assertEqual((marketplace['period_start'], marketplace['period_end']),
                          ('2026-09-13', '2026-09-13'))
+
+
+    def mixed_case_channel_batch(self):
+        """One snapshot where two real channels each arrive under three different spellings."""
+        self.map_product()
+        self.post('/api/integrations/jubelio/order-snapshots', self.body([
+            self.order(marketplace='Shopee', lines=[self.line(quantity=2, gross_revenue='200000')]),
+            self.order(external_order_id='order-43', external_order_reference='JUB-ORDER-0043',
+                       marketplace='shopee', lines=[self.line(quantity=1, gross_revenue='100000')]),
+            self.order(external_order_id='order-44', external_order_reference='JUB-ORDER-0044',
+                       marketplace='  SHOPEE  ', lines=[self.line(quantity=3, gross_revenue='300000')]),
+            self.order(external_order_id='order-45', external_order_reference='JUB-ORDER-0045',
+                       marketplace='Tokopedia', lines=[self.line(quantity=4, gross_revenue='400000')]),
+            self.order(external_order_id='order-46', external_order_reference='JUB-ORDER-0046',
+                       marketplace='TOKOPEDIA', status='cancelled',
+                       lines=[self.line(quantity=9, gross_revenue='900000')]),
+            self.order(external_order_id='order-47', external_order_reference='JUB-ORDER-0047',
+                       marketplace='tokopedia', lines=[self.line(quantity=1, gross_revenue='50000')]),
+        ]))
+
+    def test_legacy_order_summary_groups_channels_case_insensitively(self):
+        self.mixed_case_channel_batch()
+        report = self.client.get('/api/integrations/jubelio/order-summary').json()
+        # Three spellings each collapse to one channel with the canonical mixed-case label.
+        self.assertEqual(report['marketplaces'], [
+            {'marketplace': 'Shopee', 'orders': 3, 'units': 6, 'gross_revenue': '600000.00'},
+            {'marketplace': 'Tokopedia', 'orders': 3, 'units': 5, 'gross_revenue': '450000.00'},
+        ])
+        # The response shape is unchanged: exactly the four original keys, still sorted by channel name.
+        self.assertEqual([sorted(row) for row in report['marketplaces']],
+                         [['gross_revenue', 'marketplace', 'orders', 'units']] * 2)
+        # Batch-wide totals are untouched by the grouping change.
+        self.assertEqual((report['summary']['accepted_orders'], report['summary']['units'],
+                          report['summary']['gross_revenue']), (6, 11, '1050000.00'))
+
+    def test_both_summary_paths_produce_the_same_channel_grouping(self):
+        self.mixed_case_channel_batch()
+        legacy = self.app.state.store.jubelio_order_summary()['marketplaces']
+        modern = self.performance()['marketplaces']
+        shape = lambda rows: {row['marketplace']: (row['orders'], row['units'], row['gross_revenue'])
+                              for row in rows}
+        self.assertEqual(shape(legacy), shape(modern))
+        self.assertEqual(len(legacy), len(modern))
+        # Both resolve the same canonical labels, and neither leaks a raw spelling variant.
+        self.assertEqual({row['marketplace'] for row in legacy}, {'Shopee', 'Tokopedia'})
+        self.assertEqual({row['marketplace'] for row in modern}, {'Shopee', 'Tokopedia'})
+        # Ordering intentionally differs: legacy is alphabetical, the business view leads with revenue.
+        self.assertEqual([row['marketplace'] for row in legacy], ['Shopee', 'Tokopedia'])
+        self.assertEqual([row['marketplace'] for row in modern], ['Shopee', 'Tokopedia'])
+        self.assertEqual([row['key'] for row in modern], ['shopee', 'tokopedia'])
+
+    def test_both_summary_paths_agree_when_a_channel_has_no_completed_order(self):
+        self.map_product()
+        self.post('/api/integrations/jubelio/order-snapshots', self.body([
+            self.order(marketplace='Shopee', lines=[self.line(quantity=2, gross_revenue='200000')]),
+            self.order(external_order_id='order-43', external_order_reference='JUB-ORDER-0043',
+                       marketplace='LAZADA', status='pending',
+                       lines=[self.line(quantity=5, gross_revenue='500000')]),
+            self.order(external_order_id='order-44', external_order_reference='JUB-ORDER-0044',
+                       marketplace='lazada', status='cancelled',
+                       lines=[self.line(quantity=2, gross_revenue='200000')]),
+        ]))
+        legacy = self.app.state.store.jubelio_order_summary()['marketplaces']
+        modern = self.performance()['marketplaces']
+        shape = lambda rows: {row['marketplace']: (row['orders'], row['units'], row['gross_revenue'])
+                              for row in rows}
+        self.assertEqual(shape(legacy), shape(modern))
+        # A channel with orders but nothing completed still appears, counted but with no revenue.
+        self.assertEqual(shape(legacy)['LAZADA'], (2, 0, '0.00'))
+        # All-caps is the only spelling seen for that channel, so it is reported as-is.
+        self.assertEqual({row['marketplace'] for row in legacy}, {'Shopee', 'LAZADA'})

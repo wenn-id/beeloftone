@@ -825,16 +825,21 @@ class Store:
         statuses={status:sum(order['status']==status for order in snapshot['orders'])
                   for status in ('pending','processing','completed','cancelled')}
         completed=[order for order in snapshot['orders'] if order['status']=='completed']
+        # Channels group on the same normalised key and resolve to the same canonical display label as
+        # jubelio_marketplace_performance(), so both summary paths report one row per real channel.
         groups={}
         for order in snapshot['orders']:
-            group=groups.setdefault(order['marketplace'],{'marketplace':order['marketplace'],'orders':0,
-                'units':0,'gross_revenue_minor':0})
+            group=groups.setdefault(self._jubelio_channel_key(order['marketplace']),
+                {'labels':{},'orders':0,'units':0,'gross_revenue_minor':0})
+            group['labels'][order['marketplace']]=group['labels'].get(order['marketplace'],0)+1
             group['orders']+=1
             if order['status']=='completed':
                 group['units']+=order['total_quantity'];group['gross_revenue_minor']+=int(Decimal(order['gross_revenue'])*100)
-        marketplaces=[]
-        for group in sorted(groups.values(),key=lambda row:row['marketplace'].casefold()):
-            group['gross_revenue']=format(Decimal(group.pop('gross_revenue_minor'))/100,'.2f');marketplaces.append(group)
+        marketplaces=[{'marketplace':self._jubelio_channel_label(group['labels']),'orders':group['orders'],
+            'units':group['units'],
+            'gross_revenue':format(Decimal(group['gross_revenue_minor'])/100,'.2f')}
+            for group in groups.values()]
+        marketplaces.sort(key=lambda row:row['marketplace'].casefold())
         summary={'accepted_orders':len(snapshot['orders']),'quarantined_orders':len(snapshot['quarantine']),
             'units':sum(order['total_quantity'] for order in completed),
             'gross_revenue':format(sum((Decimal(order['gross_revenue']) for order in completed),Decimal()),'.2f')}|statuses
@@ -846,6 +851,18 @@ class Store:
     @staticmethod
     def _jubelio_channel_key(marketplace):
         return ' '.join(str(marketplace).split()).casefold()
+
+    @staticmethod
+    def _jubelio_channel_label(labels):
+        """Canonical display spelling for a channel from {spelling: count}.
+
+        The spelling seen most often wins, preferring mixed case on ties so 'Shopee' is chosen over
+        'SHOPEE' or 'shopee'. Every candidate is a real string from the snapshot; no name is invented.
+        """
+        return min(labels.items(),
+                   key=lambda item: (-item[1],
+                                     item[0] == item[0].upper() or item[0] == item[0].lower(),
+                                     item[0]))[0]
 
     @staticmethod
     def _jubelio_order_day(ordered_at):
@@ -914,12 +931,9 @@ class Store:
         refund_minor=sum(channel['refund_minor'] for channel in channels.values())
         money=lambda minor:format(Decimal(minor)/100,'.2f')
         average=lambda minor,count:format(Decimal(minor)/100/count,'.2f') if count else '0.00'
-        # Display label for a channel: the spelling used most often, preferring mixed case on ties so
-        # 'Shopee' wins over 'SHOPEE'/'shopee'. Every candidate is a real string from the snapshot.
-        rank=lambda item:(-item[1],item[0]==item[0].upper() or item[0]==item[0].lower(),item[0])
         marketplaces=[]
         for channel in channels.values():
-            best=min(channel.pop('labels').items(),key=rank)[0]
+            best=self._jubelio_channel_label(channel.pop('labels'))
             channel_gross=channel.pop('gross_revenue_minor');channel_refund=channel.pop('refund_minor')
             marketplaces.append(channel|{'marketplace':best,'gross_revenue':money(channel_gross),
                 'average_order_value':average(channel_gross,channel['completed_orders']),
