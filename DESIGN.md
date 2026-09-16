@@ -15,12 +15,16 @@ ENERGY 2 / RHYTHM 2 / MOTION 1.
 - Every geometric and chromatic value below was measured from the reference artboard (1441 x 1033 inside the
   1600 x 1200 presentation matte, i.e. a 1440px-wide application). The grey surround in the shot is Dribbble
   matting, so the application is full-bleed rather than a floating panel.
+- One value deliberately departs from that measurement: the card radius is 20px where the reference measures
+  16px, because softer corners were requested after review. Surfaces nested inside cards were raised to match
+  (breakdown panel 14px, severity and rank tiles 11-12px, sidebar call to action 18px, small marks 10px) so the
+  concentric curves stay consistent. Nothing else about the shape system changed.
 - Frame: a 256px white sidebar and a 72px white header, separated from a `#f4f5f8` content canvas by 1px
   `#ebecef` rules. The header's brand cell occupies the sidebar column so the vertical rule runs unbroken from
   the top of the viewport, exactly as in the reference.
 - Content: 32px horizontal padding, a 1120px working column, a 22px grid gap, and a 1.67fr / 1fr split between
   the decision column and the operational rail.
-- Cards: 16px radius, 1px `#ebecef` border, 18-22px padding, and a low-opacity shadow. KPI cards are 130px tall
+- Cards: 20px radius, 1px `#ebecef` border, 18-22px padding, and a low-opacity shadow. KPI cards are 130px tall
   with the label and a blue glyph on the first line, a 32px/800 figure, a semantic chip, and a 12.5px footer.
 - Colour: primary `#2d5efb` (5.11:1 on white, and white on it), `#eef3fd` for the active navigation surface, a
   `#3c5dff` 3px edge marker, and red / amber / green reserved for real semantic state and always paired with text.

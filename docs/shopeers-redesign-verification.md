@@ -31,7 +31,7 @@ Values were sampled from the reference with Pillow and read back from the runnin
 | Decision column | 687px | 687px |
 | Operational rail | 411px | 411px |
 | Grid gap | 22px | 22px |
-| Card radius | 16px | 16px |
+| Card radius | 16px | 20px — **deliberate deviation**, softer corners requested after review |
 | Navigation row | 40px, 10px radius | 40px, 10px radius |
 | Button shape | 40px pill | 40px pill |
 | Canvas | `#f4f5f8` | `#f4f5f8` |
@@ -62,6 +62,10 @@ Values were sampled from the reference with Pillow and read back from the runnin
    zero-count statuses. Confirmed the hero now mirrors the reference's headline-plus-trend composition and that
    the comparison table, contribution bars, and ranked products occupy the reference's table, bar-chart, and
    product-row slots.
+6. **Corner softening pass.** Raised the card radius from the reference's 16px to 20px on request and lifted the
+   surfaces nested inside cards to match. Verified as radius-only: the CSS diff touches nothing but
+   `border-radius` values, and a before/after render comparison found all thirteen measured layout boxes, the
+   page height, and every other computed style unchanged, with `border-radius` the single difference.
 
 ## Command Center hierarchy
 
