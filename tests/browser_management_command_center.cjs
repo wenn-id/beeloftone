@@ -70,6 +70,10 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await menu.click();await page.getByRole('button',{name:'People',exact:true}).click();
   await page.locator('dialog[open]').waitFor();await page.keyboard.press('Escape');
   await page.locator('dialog').waitFor({state:'hidden'});
+  // The dialog is hidden as soon as `open` is removed, but its `close` event — and therefore the
+  // application's focus restoration — runs in a task queued after that. Wait for the restoration
+  // instead of racing it; the assertion below is unchanged and still fails if focus never returns.
+  await page.waitForFunction(()=>document.activeElement===document.getElementById('menu-toggle'));
   assert.equal(await menu.evaluate(element=>element===document.activeElement),true);
   assert.equal(await page.locator('#command-center').getAttribute('aria-current'),'page');
   await page.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,

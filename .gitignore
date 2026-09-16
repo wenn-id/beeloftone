@@ -8,3 +8,5 @@ data/
 build/
 dist/
 docs/reference/
+node_modules/
+package-lock.json
