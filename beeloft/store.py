@@ -94,7 +94,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -221,6 +221,8 @@ class Store:
                 db.executescript(Path(__file__).with_name('payroll_approvals.sql').read_text(encoding='utf-8'))
             if version < 53:
                 db.executescript(Path(__file__).with_name('payroll_accounting.sql').read_text(encoding='utf-8'))
+            if version < 54:
+                db.executescript(Path(__file__).with_name('request_keys.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -446,18 +448,25 @@ class Store:
             current = db.execute("SELECT name,role FROM users WHERE id=? AND active=1", (actor["id"],)).fetchone()
             if not current:
                 raise DomainError(401, "Akun nonaktif.")
+            # Receipt dicari per key saja, bukan per (akun,key). Satu idempotency key mengikat satu
+            # transaksi logis pada seluruh database, sehingga pergantian akun pencatat tidak dapat
+            # membuat efek samping bisnis kedua.
+            receipt = db.execute("SELECT actor_id,fingerprint,response FROM requests WHERE key=?",
+                                 (key,)).fetchone()
+            if receipt and receipt["actor_id"] != actor["id"]:
+                raise DomainError(403, "Idempotency-Key ini milik akun lain. Masuk kembali sebagai akun "
+                                       "pencatat asli untuk mengambil hasilnya; jangan mengulang "
+                                       "transaksi ini dengan akun berbeda.")
             if current["role"] not in roles:
                 raise DomainError(403, "Role ini tidak diizinkan melakukan tindakan tersebut.")
-            receipt = db.execute("SELECT fingerprint,response FROM requests WHERE actor_id=? AND key=?",
-                                 (actor["id"], key)).fetchone()
             if receipt:
                 if receipt["fingerprint"] != fingerprint:
                     raise DomainError(409, "Idempotency-Key sudah digunakan untuk request berbeda.")
                 return json.loads(receipt["response"])
             result = perform(db)
             self._record_audit(db,dict(current)|{'id':actor['id']},key,operation,payload,result)
-            db.execute("INSERT INTO requests VALUES(?,?,?,?,?)",
-                       (actor["id"], key, fingerprint, json.dumps(result), now()))
+            db.execute("INSERT INTO requests(key,actor_id,fingerprint,response,created_at) VALUES(?,?,?,?,?)",
+                       (key, actor["id"], fingerprint, json.dumps(result), now()))
             return result
 
     def _record_audit(self, db, actor, key, operation, payload, result):

@@ -2,7 +2,7 @@
 
 Workspace operasional internal Beeloft. Satu aplikasi dan satu database lokal menyatukan performa
 marketplace, produksi, pembelian, bahan baku, gudang, kualitas, people, visibilitas keuangan,
-approval, serta analitik dan AI. Versi aplikasi 0.82.0, schema database 53.
+approval, serta analitik dan AI. Versi aplikasi 0.83.0, schema database 54.
 
 [![CI](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml/badge.svg)](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml)
 
@@ -127,7 +127,7 @@ node tests/test_client.mjs
 python tests/run_browser.py --node PATH_NODE --playwright-module PATH_MODUL_PLAYWRIGHT
 ```
 
-Suite Python berisi 354 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 372 test yang memakai database sementara serta API/CLI sungguhan; mencakup
 konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
 input tidak sah, guard bisnis, pembalikan, migrasi, dan backup. Tidak ada data bisnis nyata di dalam
 test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance
@@ -160,9 +160,13 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 
 - **Ledger append-only.** Transaksi bisnis dan keputusan approval tidak diedit atau dihapus. Koreksi
   dicatat sebagai event baru yang menunjuk transaksi asal, lengkap dengan alasan dan pelaku.
-- **Idempotency.** Setiap POST `/api/*` wajib membawa `Idempotency-Key`. Retry dengan key dan payload
-  yang sama mengembalikan respons pertama tanpa pencatatan ganda; key sama dengan payload berbeda
-  ditolak 409.
+- **Idempotency.** Setiap POST `/api/*` wajib membawa `Idempotency-Key`. Satu key mengikat satu
+  transaksi logis pada seluruh database dan hanya boleh diselesaikan oleh akun pencatat aslinya.
+  Retry dengan key dan payload yang sama mengembalikan respons pertama tanpa pencatatan ganda; key
+  sama dengan payload berbeda ditolak 409; key milik akun lain ditolak 403 tanpa mutasi.
+- **Binding aktor.** Setiap pencatatan dari dashboard menyatakan akun yang menyusunnya. Server
+  menolak 403 sebelum mutasi dijalankan bila session browser ternyata sudah berpindah ke akun lain,
+  sehingga form yang dibuka satu akun tidak dapat menghasilkan catatan milik akun lain.
 - **Revision guard.** Perubahan data bersaldo memakai revisi yang diharapkan, sehingga dua pengguna
   tidak saling menimpa secara diam-diam.
 - **Guard bisnis di database.** Konservasi jumlah, saldo tahap, alokasi bundle, stok reserved,

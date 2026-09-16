@@ -127,6 +127,6 @@ class ProductionQualityInsightsTest(TestCase):
         self.app.state.store.backup(backup);restored=Store(backup)
         self.assertEqual(restored.production_quality_insights('2026-09-23',7,status='all')['total'],1)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],53)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
