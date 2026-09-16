@@ -76,9 +76,18 @@ distribution or ratio instead.
 
 ## Scope safeguards
 
-- No Python file, API response schema, database schema, accounting rule, inventory rule, or production rule was
-  changed. `git diff` touches only `beeloft/static/index.html`, `beeloft/static/style.css`,
-  `beeloft/static/app.mjs`, `DESIGN.md`, `docs/`, and no test file.
+- **The Shopeers reconstruction commit itself modifies no test file and no backend file.** It changes no Python
+  module, API response schema, database schema, accounting rule, inventory rule, or production rule. It touches
+  only `beeloft/static/index.html`, `beeloft/static/style.css`, `beeloft/static/app.mjs`, `.gitignore`,
+  `DESIGN.md`, and `docs/`.
+- **The pull request as a whole does contain test updates**, inherited from the earlier redesign commit
+  (`169d937`) on this branch. Those updates adapted the acceptance suite to that commit's responsive
+  sidebar/navigation changes and cover `tests/test_web.py` plus eleven `tests/browser_*.cjs` modules:
+  `browser_smoke`, `browser_management_command_center`, `browser_ai_investigation`, `browser_bom`,
+  `browser_bundle_scanning`, `browser_payroll_approvals`, `browser_product_external_mappings`,
+  `browser_production_quality_insights`, `browser_reservations`, `browser_returns_adjustments`, and
+  `browser_workforce_approvals`. That commit changes no backend or business-rule file either, so the PR as a
+  whole still leaves the backend, schema, and business rules untouched.
 - `showCommandCenter()` still requests `/api/command-center` once, keeps its request/epoch/view race guards, uses
   only existing response fields, and keeps every `data-action` value, drill-down, and ordering.
 - `app.mjs` changes are limited to markup produced for presentation plus new pure render helpers
