@@ -178,8 +178,8 @@ channels identically, including when a channel has orders but nothing completed.
 
 ## Verification results
 
-- Python: `python -m unittest discover -s tests` — **351 tests passed** on the final code (340 pre-existing plus
-  11 new marketplace-performance tests).
+- Python: `python -m unittest discover -s tests` — **354 tests passed** on the final code (340 pre-existing plus
+  14 new marketplace-performance tests, including the cross-path channel-normalisation regressions).
 - Browser: the **complete Playwright acceptance suite passed end to end** on the final code, all 58 modules,
   with `assert.deepEqual(errors, [])` confirming no JavaScript errors.
 - JavaScript: `node --check` on `app.mjs` and `client.mjs`; `node tests/test_client.mjs` passed (escaping, dates,
