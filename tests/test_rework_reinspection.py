@@ -316,6 +316,20 @@ class ReworkReinspectionTest(TestCase):
         self.assertEqual((later['rework_remaining_quantity'],
                           later['untraced_rework_return_quantity'],
                           later['rework_completable_quantity']), (14, 6, 14))
+        # Predikat blokir dan peringatan UI adalah per catatan (`rework_remaining_quantity` >
+        # `rework_completable_quantity`), bukan keberadaan pengembalian tanpa lineage pada baris
+        # order. Karena itu inspeksi ini tidak diberi peringatan walau melaporkan
+        # untraced_rework_return_quantity yang sama dengan inspeksi sumbernya.
+        self.assertEqual(later['rework_remaining_quantity'], later['rework_completable_quantity'])
+        # Saldo tahap rework dikumpulkan per baris order. Setelah inspeksi kedua mengisi ulang tahap
+        # rework, catatan pertama pun tidak lagi terblokir: penyelesaiannya memang dapat dijalankan
+        # terhadap pcs yang ada. Atribusi pcs pengembalian tanpa lineage tidak dapat dipastikan, dan
+        # jumlah tetap kekal karena total seluruh penyelesaian tidak pernah melampaui saldo tahap.
+        source = self.client.get('/api/final-qc-records/' + first['id']).json()
+        self.assertEqual(source['untraced_rework_return_quantity'],
+                         later['untraced_rework_return_quantity'])
+        self.assertEqual((source['rework_remaining_quantity'],
+                          source['rework_completable_quantity']), (6, 6))
         completion = self.complete_rework(second, reference='RWK-LATER', quantity=14,
                                          completed_date='2026-09-19')
         self.reinspect(completion, reference='QC-LATER-RE', accepted=14, rework=0, reject=0,

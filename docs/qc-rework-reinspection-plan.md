@@ -163,9 +163,18 @@ An existing database may already contain a generic `rework -> qc` movement writt
 pieces are physically in QC while their Final QC record still reports outstanding rework, so neither the
 initial-inspection route nor a rework completion can consume them. The migration deliberately does **not**
 invent lineage for them, because nothing in the data says which inspection each returned piece came from.
-Instead the state is reported honestly: the Final QC payload carries
-`untraced_rework_return_quantity` and a `rework_completable_quantity` reduced by it, the UI hides
-"Catat selesai rework" and explains why, and `create_rework_completion` answers 409 naming the real cause.
+Instead the state is reported honestly. `rework_completable_quantity` is
+`min(rework_remaining_quantity, rework stage balance)` — the exact bound `_transfer` enforces — so a
+record whose pieces are gone reports zero while other records on the same line keep full capacity.
+The UI hides "Catat selesai rework" and shows the warning per record, gated on
+`rework_remaining_quantity > rework_completable_quantity`, never on the line-wide
+`untraced_rework_return_quantity`, which serves only to explain a reduced bound.
+`create_rework_completion` answers 409 naming the real cause.
+
+Because stage balances are pooled per line, a later inspection that puts fresh pieces into rework also
+lifts the block on an earlier record: its completion can genuinely run against the pieces that are
+there. The attribution of untraced pieces is unknowable, and quantity stays conserved because the sum
+of all completions can never exceed the stage balance.
 The remediation is the repository's normal correction path — an admin reverses the untraced movement from
 the order's movement history, which returns the pieces to rework, after which the proper completion and
 re-inspection are recorded. This is documented in `operations.md`.
