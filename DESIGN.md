@@ -19,6 +19,10 @@ ENERGY 2 / RHYTHM 2 / MOTION 1.
   16px, because softer corners were requested after review. Surfaces nested inside cards were raised to match
   (breakdown panel 14px, severity and rank tiles 11-12px, sidebar call to action 18px, small marks 10px) so the
   concentric curves stay consistent. Nothing else about the shape system changed.
+- The 20px primary surface radius is settled: it is the intended final direction, not a step toward anything.
+  Sidebar navigation rows (10px), chips and badges (8px), and inputs (12px) deliberately do **not** track it.
+  Their smaller radii are correct at their own scale, so the card-to-navigation ratio is intentionally not
+  preserved. Do not "harmonise" these three upward.
 - Frame: a 256px white sidebar and a 72px white header, separated from a `#f4f5f8` content canvas by 1px
   `#ebecef` rules. The header's brand cell occupies the sidebar column so the vertical rule runs unbroken from
   the top of the viewport, exactly as in the reference.
