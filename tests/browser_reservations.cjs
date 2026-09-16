@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(admin);
   const batch=(await apiGet('/api/material-batches')).find(b=>b.reference==='BATCH-UI-001');
   await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
@@ -53,7 +53,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}),'Reservation 200% overflow');
   await page.evaluate(()=>document.documentElement.style.fontSize='');await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Bahan baku',exact:true}).click();
+  await openSidebarDestination('Bahan baku');
   await page.getByText('Direservasi 5 m',{exact:false}).waitFor();
   for(const key of [operator,viewer]){
     await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);

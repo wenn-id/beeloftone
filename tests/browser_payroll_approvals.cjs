@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiGet,apiPost,work})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiGet,apiPost,work})=>{
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   const unique=Date.now();
   const payroll=(externalId,gross='3500000',updated=new Date().toISOString())=>({
@@ -20,7 +20,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,apiPost,work})=>{
   const external='PAY-REVIEW-<'+unique+'>';
   const source=(await snapshot(payroll(external))).periods[0];
   await role(operator);
-  await page.getByRole('button',{name:'Integrasi',exact:true}).click();
+  await openSidebarDestination('Integrasi');
   let dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
   const card=dialog.locator(`[data-payroll-period="${source.id}"]`).first();
@@ -51,7 +51,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,apiPost,work})=>{
   await page.setViewportSize({width:1440,height:1000});
 
   await role(viewer);
-  await page.getByRole('button',{name:'Integrasi',exact:true}).click();dialog=page.locator('dialog');
+  await openSidebarDestination('Integrasi');dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:/Ajukan.*approval/}).count(),0);
   await dialog.locator(`[data-payroll-period="${source.id}"]`).first().getByRole('button',{name:'Rincian approval',exact:true}).click();
@@ -71,7 +71,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,apiPost,work})=>{
   const staleExternal='PAY-STALE-'+unique;
   const first=(await snapshot(payroll(staleExternal))).periods[0];
   await role(operator);
-  await page.getByRole('button',{name:'Integrasi',exact:true}).click();dialog=page.locator('dialog');
+  await openSidebarDestination('Integrasi');dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
   await dialog.locator(`[data-payroll-period="${first.id}"]`).first().getByRole('button',{name:'Ajukan approval',exact:true}).click();
   await dialog.getByLabel('Alasan / catatan',{exact:true}).fill('Menunggu keputusan sebelum perubahan');

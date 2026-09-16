@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiPost,apiGet,work})=>{
+module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,apiPost,apiGet,work})=>{
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   const unique=Date.now();
   const employee=await apiPost('/api/workforce/employees',{
@@ -10,7 +10,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,apiGet,work})=>{
   const day=offset=>{const value=new Date();value.setDate(value.getDate()+offset);return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(value);};
 
   await role(operator);
-  await page.getByRole('button',{name:'People',exact:true}).click();
+  await openSidebarDestination('People');
   let dialog=page.locator('dialog');
   let fail=true;
   await page.route('**/api/workforce/requests*',async route=>{
@@ -46,7 +46,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,apiGet,work})=>{
   await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-people-approvals-mobile.png')});
 
   await role(viewer);
-  await page.getByRole('button',{name:'People',exact:true}).click();dialog=page.locator('dialog');
+  await openSidebarDestination('People');dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).count(),0);
   await dialog.locator(`[data-workforce-request="${leave.id}"]`).getByRole('button',{name:'Rincian',exact:true}).click();
@@ -64,7 +64,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,apiGet,work})=>{
   assert.equal((await apiGet('/api/workforce/attendance?employee_id='+employee.id)).total,0);
 
   await role(operator);
-  await page.getByRole('button',{name:'People',exact:true}).click();dialog=page.locator('dialog');
+  await openSidebarDestination('People');dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).click();
   await dialog.locator('select[name="employee_id"]').selectOption(employee.id);

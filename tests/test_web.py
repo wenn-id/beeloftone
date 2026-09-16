@@ -14,6 +14,11 @@ class WebTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('lang="id"', response.text)
                 self.assertIn("/static/app.mjs", response.text)
+                self.assertIn('<aside id="app-sidebar"', response.text)
+                self.assertIn('aria-label="Navigasi utama"', response.text)
+                self.assertIn('id="menu-toggle"', response.text)
+                self.assertIn('aria-controls="app-sidebar"', response.text)
+                self.assertIn('class="workspace-main"', response.text)
                 for asset in ["app.mjs", "client.mjs", "style.css"]:
                     self.assertEqual(client.get("/static/" + asset).status_code, 200)
                 self.assertEqual(client.get("/api/production-board").status_code, 401)

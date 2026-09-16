@@ -11,30 +11,147 @@
 </head>
 <body>
   <a class="skip-link" href="#main">Lewati ke konten</a>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false" width="0" height="0"><defs>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3.4 15.5a9 9 0 1 1 17.2 0"/><path d="M12 13.2 16.2 9.6"/><circle cx="12" cy="14.4" r="1.5"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3.2 21 8l-9 4.8L3 8l9-4.8Z"/><path d="M3 13.2 12 18l9-4.8"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.5 8.3v7.4L12 20.4 3.5 15.7V8.3L12 3.6l8.5 4.7Z"/><path d="M3.5 8.3 12 13l8.5-4.7M12 13v7.4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9.2" cy="8.2" r="3.3"/><path d="M2.8 20a6.4 6.4 0 0 1 12.8 0"/><path d="M16.6 5.6a3.3 3.3 0 0 1 0 5.6"/><path d="M17.6 14.6A6.4 6.4 0 0 1 21.2 20"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8.5V6.4A2.4 2.4 0 0 1 6.4 4h2.1M15.5 4h2.1A2.4 2.4 0 0 1 20 6.4v2.1M20 15.5v2.1a2.4 2.4 0 0 1-2.4 2.4h-2.1M8.5 20H6.4A2.4 2.4 0 0 1 4 17.6v-2.1"/><path d="M4 12h16"/></symbol>
+    <symbol id="i-barcode" viewBox="0 0 24 24"><path d="M3.5 6v12M7 6v12M10.5 6v8M14 6v12M17.5 6v8M20.5 6v12"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M11.7 3.2H5.4A2.2 2.2 0 0 0 3.2 5.4v6.3a2.2 2.2 0 0 0 .65 1.56l7.2 7.2a2.2 2.2 0 0 0 3.1 0l6.3-6.3a2.2 2.2 0 0 0 0-3.1l-7.2-7.2a2.2 2.2 0 0 0-1.56-.65Z"/><circle cx="8" cy="8" r="1.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 7.2V12l3.6 2.1"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h3.6L9.2 6l3.6 12 2.6-6H21"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 19.4 6.2v5.9c0 4.3-3 7.8-7.4 8.7-4.4-.9-7.4-4.4-7.4-8.7V6.2L12 3.2Z"/><path d="M9.1 11.9 11.3 14l3.9-4.2"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2.8 6.6h10.4v9.2H2.8z"/><path d="M13.2 9.9h3.9l3.3 3.2v2.7h-7.2"/><circle cx="7" cy="18.2" r="1.9"/><circle cx="16.8" cy="18.2" r="1.9"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3.2 16.8 9 11l3.9 3.9L20.8 7"/><path d="M15.2 7h5.6v5.6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M13.8 3.2H7.4A2.2 2.2 0 0 0 5.2 5.4v13.2a2.2 2.2 0 0 0 2.2 2.2h9.2a2.2 2.2 0 0 0 2.2-2.2V8.2l-5-5Z"/><path d="M13.8 3.2v5h5"/><path d="M8.8 13h6.4M8.8 16.6h4.2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3.6v16.8h16.4"/><path d="M8.2 16.6v-4.2M12.2 16.6V8M16.2 16.6v-6.4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 1 1-2.4-5.8"/><path d="M20.2 4.4v4.2H16"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M15.7 3.7l4.6 4.6a1.4 1.4 0 0 1 0 2L10 20.3a1.4 1.4 0 0 1-2 0l-4.6-4.6a1.4 1.4 0 0 1 0-2L13.7 3.7a1.4 1.4 0 0 1 2 0Z"/><path d="M6.9 11.1l2.1 2.1M10.4 7.6l2.1 2.1"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8.8 14.2 3.8 9.2l5-5"/><path d="M3.8 9.2h9.4a6.9 6.9 0 0 1 0 13.8"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3.2 6.4h17.6v4H3.2z"/><path d="M5.2 10.4v8.2a1.2 1.2 0 0 0 1.2 1.2h11.2a1.2 1.2 0 0 0 1.2-1.2v-8.2"/><path d="M10 14.2h4"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M9.2 4.4H7.4a2.2 2.2 0 0 0-2.2 2.2v12a2.2 2.2 0 0 0 2.2 2.2h9.2a2.2 2.2 0 0 0 2.2-2.2v-12a2.2 2.2 0 0 0-2.2-2.2h-1.8"/><rect x="9.2" y="2.8" width="5.6" height="3.4" rx="1.2"/><path d="M9.4 13.4l2 2 3.6-3.8"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M10.6 3.2 12.2 7.6l4.4 1.6-4.4 1.6-1.6 4.4L9 10.8 4.6 9.2 9 7.6l1.6-4.4Z"/><path d="M17.6 14.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1Z"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.2v5.6M15 3.2v5.6"/><path d="M6.2 8.8h11.6v2.4a5.8 5.8 0 0 1-11.6 0V8.8Z"/><path d="M12 17v3.8"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8.4 6.4h12.2M8.4 12h12.2M8.4 17.6h12.2"/><path d="M3.8 6.4h.02M3.8 12h.02M3.8 17.6h.02"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.4 12a8.6 8.6 0 1 0 2.6-6.1"/><path d="M3.4 4.6v5.6h5.6"/><path d="M12 8v4.4l3.2 1.9"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="6.2" rx="7.8" ry="2.9"/><path d="M4.2 6.2v5.8c0 1.6 3.5 2.9 7.8 2.9s7.8-1.3 7.8-2.9V6.2"/><path d="M4.2 12v5.8c0 1.6 3.5 2.9 7.8 2.9s7.8-1.3 7.8-2.9V12"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3.2 12.6h5l1.5 2.8h4.6l1.5-2.8h5"/><path d="M3.2 12.6 5.9 6a2.2 2.2 0 0 1 2-1.4h8.2a2.2 2.2 0 0 1 2 1.4l2.7 6.6v4.8a2.2 2.2 0 0 1-2.2 2.2H5.4a2.2 2.2 0 0 1-2.2-2.2v-4.8Z"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9.6" cy="19" r="1.6"/><circle cx="17.4" cy="19" r="1.6"/><path d="M2.8 4.2h2.4l2.4 10.1a1.6 1.6 0 0 0 1.56 1.24h8.5a1.6 1.6 0 0 0 1.56-1.26L21 8.2H6.2"/></symbol>
+    <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3.4 10.4 14.6 5.4v13.2L3.4 13.6v-3.2Z"/><path d="M7 12.6V19a1.6 1.6 0 0 0 3.2 0v-5.4"/><path d="M17.8 9.6a3.9 3.9 0 0 1 0 4.8"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.9"/><path d="M16 16l4.6 4.6"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.9"/><path d="M12 2.6v2.4M12 19v2.4M2.6 12H5M19 12h2.4M5.4 5.4l1.7 1.7M16.9 16.9l1.7 1.7M18.6 5.4l-1.7 1.7M7.1 16.9l-1.7 1.7"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.6" r="3.8"/><path d="M4.6 20.4a7.4 7.4 0 0 1 14.8 0"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3.8 7h16.4M3.8 12h16.4M3.8 17h16.4"/></symbol>
+    <symbol id="i-alert-octagon" viewBox="0 0 24 24"><path d="M8.6 3.2h6.8l5.4 5.4v6.8l-5.4 5.4H8.6l-5.4-5.4V8.6l5.4-5.4Z"/><path d="M12 8v4.6M12 16.2h.02"/></symbol>
+    <symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M10.3 4.3 2.9 17.2a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.4V14M12 17h.02"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11v5.4M12 7.9h.02"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3.2 8.4a2.6 2.6 0 0 1 2.6-2.6h12.4a1 1 0 0 1 1 1v1.6"/><path d="M3.2 8.4v9.4a2.4 2.4 0 0 0 2.4 2.4h13.2a2.4 2.4 0 0 0 2.4-2.4v-6.6a1 1 0 0 0-1-1H4.8a1.6 1.6 0 0 1-1.6-1.6Z"/><path d="M16.8 14.8h.02"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M8.4 12.3l2.5 2.5 4.7-5.1"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4.2 12h15"/><path d="M13.4 6.4 19.4 12l-6 5.6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14.2 3.6h6.2v6.2"/><path d="M20.4 3.6 11.8 12.2"/><path d="M18.2 14v4.4a2 2 0 0 1-2 2H5.8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4.4"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M14.6 5.4 8 12l6.6 6.6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9.4 12 15.4l6-6"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8.2 4.2h7.6v4.6a3.8 3.8 0 0 1-7.6 0V4.2Z"/><path d="M8.2 5.8H5.8a2.4 2.4 0 0 0 2.4 4.2"/><path d="M15.8 5.8h2.4a2.4 2.4 0 0 1-2.4 4.2"/><path d="M12 12.6v2.8"/><path d="M9.4 19.8h5.2l-.5-4.4h-4.2l-.5 4.4Z"/></symbol>
+  </defs></svg>
   <header class="masthead">
-    <a class="brand" href="#" id="brand"><span>beeloft<span class="brand-dot">.</span></span><small>ONE / PRODUKSI</small></a>
-    <div class="account"><span id="account-name"></span><button id="theme" class="quiet" type="button">Mode gelap</button><button id="logout" class="quiet" type="button" hidden>Keluar</button></div>
+    <div class="masthead-brand">
+      <button id="menu-toggle" class="quiet menu-toggle" type="button" aria-controls="app-sidebar" aria-expanded="false" hidden>Menu</button>
+      <a class="brand" href="#" id="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg></span><span class="brand-word">beeloft<span class="brand-dot">.</span></span></a>
+    </div>
+    <div class="masthead-tools">
+      <div class="top-context"><span>Workspace</span><strong>Operasional</strong></div>
+    </div>
+    <div class="account"><span id="account-name"></span><button id="theme" class="quiet" type="button">Mode gelap</button><button id="logout" class="quiet" type="button" hidden>Keluar</button><span class="avatar" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user"/></svg></span></div>
   </header>
   <main id="main" tabindex="-1" aria-busy="true">
     <section id="login-view" class="login-view" inert>
       <div class="login-intro"><p class="eyebrow">Ruang kerja produksi internal</p><h1>Setiap tahap. <br>Setiap jumlah. <br><em>Tercatat.</em></h1><p>Lacak order dari cutting hingga diterima gudang, bersama tim Beeloft.</p><div class="process-label">Cutting <span>→</span> Sewing <span>→</span> QC <span>→</span> Gudang</div></div>
       <form id="login-form" class="login-form"><h2>Masuk ke produksi</h2><p id="login-copy">Gunakan kunci akses akun yang dibuat di server Beeloft.</p><button id="sso-login" class="primary" type="button" hidden></button><p id="sso-separator" class="hint" hidden>Atau gunakan kunci akses lokal.</p><label for="access-key">Kunci akses</label><input id="access-key" type="password" required autocomplete="off" spellcheck="false"><p class="hint">Kunci ditukar satu kali menjadi sesi browser 8 jam dan tidak disimpan oleh halaman.</p><p id="login-error" class="error" role="alert" hidden></p><button class="primary" type="submit">Buka ruang produksi</button></form>
     </section>
-    <section id="workspace" hidden>
-      <div class="workspace-nav"><span>Operasional / <strong>Produksi internal</strong></span><div class="actions"><button id="command-center" class="quiet" type="button">Command center</button><button id="wip-ageing-insights" class="quiet" type="button">WIP ageing</button><button id="capacity-plan" class="quiet" type="button">Kapasitas produksi</button><button id="workforce" class="quiet" type="button">People</button><button id="production-quality-insights" class="quiet" type="button">Kualitas produksi</button><button id="scan-bundle" class="quiet" type="button">Scan bundle</button><button id="scan-finished-goods" class="quiet" type="button">Scan barang jadi</button><button id="ai-brain" class="quiet" type="button">Tanya Beeloft</button><button id="integrations" class="quiet" type="button">Integrasi</button><button id="materials" class="quiet" type="button">Bahan baku</button><button id="supplier-performance-insights" class="quiet" type="button">Kinerja supplier</button><button id="material-price-insights" class="quiet" type="button">Harga bahan</button><button id="purchase-commitment-insights" class="quiet" type="button">Komitmen PO</button><button id="demand-forecast" class="quiet" type="button">Forecast demand</button><button id="replenishment" class="quiet" type="button">Rekomendasi stok</button><button id="size-demand-insights" class="quiet" type="button">Analisis ukuran</button><button id="return-insights" class="quiet" type="button">Analisis retur</button><button id="dead-stock-insights" class="quiet" type="button">Dead stock</button><button id="stock-adjustment-insights" class="quiet" type="button">Audit adjustment</button><button id="activity" class="quiet" type="button">Laporan aktivitas</button><button id="audit-trail" class="quiet" type="button" hidden>Audit trail</button><button id="products" class="quiet" type="button">Master SKU</button><button id="backup" class="quiet" type="button" hidden>Cadangan data</button></div></div>
-      <div class="actions"><button id="approvals" class="primary" type="button">Inbox approval</button><button id="purchase-requests" type="button">Permintaan pembelian</button><button id="marketing-budgets" type="button">Budget marketing</button></div>
-      <section id="command-center-view" hidden>
-        <button id="command-center-back" class="quiet back" type="button">← Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Management command center</p><h1>Apa yang perlu diputuskan hari ini.</h1></div><div class="actions"><span id="command-center-updated" class="hint"></span><button id="command-center-refresh" type="button">Muat ulang</button></div></div>
-        <dl id="command-center-summary" class="summary" aria-label="Ringkasan bisnis"></dl>
+    <section id="workspace" class="app-shell" hidden>
+      <aside id="app-sidebar" class="app-sidebar" aria-label="Navigasi utama">
+        <nav class="sidebar-nav">
+          <div class="nav-group">
+            <button id="command-center" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-gauge"/></svg>Command center</button>
+            <button id="board-home" class="nav-item" type="button" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg>Produksi</button>
+          </div>
+          <div class="nav-group">
+            <button id="materials" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-box"/></svg>Bahan baku</button>
+            <button id="workforce" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg>People</button>
+            <button id="scan-bundle" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg>Scan bundle</button>
+            <button id="scan-finished-goods" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-barcode"/></svg>Scan barang jadi</button>
+            <button id="products" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-tag"/></svg>Master SKU</button>
+          </div>
+          <details class="nav-group nav-collapse" open>
+            <summary class="nav-summary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span>Analitik</span><svg class="icon nav-caret" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></summary>
+            <div class="nav-children">
+              <button id="wip-ageing-insights" class="nav-item" type="button">WIP ageing</button>
+              <button id="capacity-plan" class="nav-item" type="button">Kapasitas produksi</button>
+              <button id="production-quality-insights" class="nav-item" type="button">Kualitas produksi</button>
+              <button id="supplier-performance-insights" class="nav-item" type="button">Kinerja supplier</button>
+              <button id="material-price-insights" class="nav-item" type="button">Harga bahan</button>
+              <button id="purchase-commitment-insights" class="nav-item" type="button">Komitmen PO</button>
+              <button id="demand-forecast" class="nav-item" type="button">Forecast demand</button>
+              <button id="replenishment" class="nav-item" type="button">Rekomendasi stok</button>
+              <button id="size-demand-insights" class="nav-item" type="button">Analisis ukuran</button>
+              <button id="return-insights" class="nav-item" type="button">Analisis retur</button>
+              <button id="dead-stock-insights" class="nav-item" type="button">Dead stock</button>
+              <button id="stock-adjustment-insights" class="nav-item" type="button">Audit adjustment</button>
+            </div>
+          </details>
+          <div class="nav-group">
+            <button id="ai-brain" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sparkles"/></svg>Tanya Beeloft</button>
+            <button id="integrations" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plug"/></svg>Integrasi</button>
+            <button id="activity" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-list"/></svg>Laporan aktivitas</button>
+            <button id="audit-trail" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-history"/></svg>Audit trail</button>
+            <button id="backup" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-database"/></svg>Cadangan data</button>
+          </div>
+          <div class="nav-group nav-group-tail">
+            <button id="purchase-requests" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-cart"/></svg>Permintaan pembelian</button>
+            <button id="marketing-budgets" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-megaphone"/></svg>Budget marketing</button>
+          </div>
+        </nav>
+        <div class="sidebar-actions">
+          <div class="sidebar-cta">
+            <span class="sidebar-cta-mark" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-inbox"/></svg></span>
+            <p class="sidebar-cta-title">Antrean approval</p>
+            <p class="sidebar-cta-copy">Tinjau permintaan yang menunggu keputusan.</p>
+            <button id="approvals" class="primary sidebar-cta-button" type="button">Inbox approval</button>
+          </div>
+        </div>
+      </aside>
+      <div class="workspace-main">
+      <section id="command-center-view" class="command-center-view" hidden>
+        <button id="command-center-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading dashboard-heading"><div><p class="eyebrow">Management command center</p><h1>Apa yang perlu diputuskan hari ini.</h1></div><div class="actions"><span id="command-center-updated" class="hint pill-hint"></span><button id="command-center-refresh" class="primary" type="button">Muat ulang</button></div></div>
+        <dl id="command-center-summary" class="summary kpi-grid" aria-label="Ringkasan bisnis"></dl>
         <p id="command-center-message" class="state" role="status" hidden></p>
         <div id="command-center-content" class="command-center-content" hidden>
-          <section><div class="ledger-heading"><h2>Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention"></div></section>
-          <section><h2>Snapshot bisnis</h2><div id="command-center-snapshots"></div></section>
+          <section class="business-section" aria-labelledby="business-title">
+            <div class="band-heading"><div><h2 id="business-title">Performa marketplace</h2><p id="command-center-period" class="hint"></p></div><span class="band-step" aria-hidden="true">01</span></div>
+            <div class="business-grid">
+              <div class="cc-primary">
+                <div id="command-center-hero" class="hero-panel"></div>
+                <div id="command-center-channels" class="card channel-panel"></div>
+              </div>
+              <div class="business-rail">
+                <div id="command-center-contribution" class="card"></div>
+                <div id="command-center-products" class="card"></div>
+              </div>
+            </div>
+          </section>
+          <section class="operations-section" aria-labelledby="operations-title">
+            <div class="band-heading"><div><h2 id="operations-title">Keputusan operasional</h2><dl id="command-center-operations" class="ops-stats" aria-label="Ringkasan operasional"></dl></div><span class="band-step" aria-hidden="true">02</span></div>
+            <div class="operations-grid">
+              <section class="attention-panel card" aria-labelledby="attention-title"><div class="section-heading"><h2 id="attention-title">Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
+              <section class="snapshot-panel" aria-labelledby="snapshot-title"><div class="section-heading visually-hidden"><div><p class="eyebrow">Konteks operasional</p><h2 id="snapshot-title">Snapshot bisnis</h2></div></div><div id="command-center-snapshots" class="snapshot-grid"></div></section>
+            </div>
+          </section>
         </div>
       </section>
       <section id="materials-view" hidden>
-        <button id="materials-back" class="quiet back" type="button">← Papan produksi</button>
+        <button id="materials-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
         <div class="page-heading"><div><p class="eyebrow">Bahan baku · stok internal</p><h1>Bahan masuk, pemakaian tercatat.</h1></div><div class="actions"><button id="scan-material-batch" type="button">Scan batch bahan</button><button id="material-master" type="button">Master bahan</button><button id="receive-material" class="primary" type="button" hidden>Terima batch bahan</button></div></div>
         <p class="hint">Saldo adalah bahan layak pakai yang diterima, dikurangi pengeluaran ke order. Stok bebas = saldo fisik dikurangi reservasi semua order. Untuk mengalokasikan atau mengeluarkan bahan, buka order produksi.</p>
         <div class="filters"><div><label for="material-filter">Bahan</label><select id="material-filter"><option value="">Semua bahan</option></select></div><button id="materials-refresh" type="button">Muat ulang bahan</button></div>
@@ -53,7 +170,7 @@
         <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
       </section>
       <section id="activity-view" hidden>
-        <button id="activity-back" class="quiet back" type="button">← Papan produksi</button>
+        <button id="activity-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
         <div class="page-heading"><div><p class="eyebrow">Laporan aktivitas · waktu Jakarta</p><h1>Catatan produksi.</h1></div></div>
         <form id="activity-form" class="filters"><label>Dari tanggal<input id="activity-day" type="date" required></label><label>Sampai tanggal<input id="activity-end" type="date" required></label><label>Jenis aktivitas<select id="activity-kind"><option value="all">Semua aktivitas</option><option value="movement">Perpindahan barang</option><option value="reversal">Koreksi perpindahan</option><option value="issue_opened">Kendala dicatat</option><option value="issue_resolved">Kendala selesai</option><option value="order_created">Order dibuat</option><option value="order_changed">Tenggat / PIC diubah</option></select></label><button type="submit">Tampilkan aktivitas</button><button type="button" id="activity-export" disabled>Unduh CSV</button></form>
         <dl id="activity-summary" class="summary" aria-label="Ringkasan seluruh aktivitas pada rentang terpilih"></dl>
@@ -62,7 +179,8 @@
         <div id="activity-list"></div>
         <div class="pagination"><span id="activity-count" class="hint"></span><button id="activity-more" type="button" hidden>Muat aktivitas sebelumnya</button></div>
       </section>
-      <section id="detail-view" hidden><button id="back" class="quiet back" type="button">← Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
+      <section id="detail-view" hidden><button id="back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
+      </div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
   </main>

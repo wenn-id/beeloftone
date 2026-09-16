@@ -18,6 +18,7 @@ let workforceFilters = {work_date:'',status:'all',q:''};
 let exportBusy = false;
 let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
+let dialogReturnFocus = null;
 
 function theme(value) {
   document.documentElement.dataset.theme = value;
@@ -26,6 +27,26 @@ function theme(value) {
 }
 try { theme(localStorage.getItem('beeloft.theme') || 'light'); } catch { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+function sidebar(open,restoreFocus=false) {
+  document.body.classList.toggle('nav-open',open);
+  $('menu-toggle').setAttribute('aria-expanded',String(open));
+  if(!open&&restoreFocus&&!$('menu-toggle').hidden)$('menu-toggle').focus();
+}
+$('menu-toggle').onclick=()=>sidebar(!document.body.classList.contains('nav-open'));
+$('app-sidebar').onclick=event=>{
+  const button=event.target.closest('button');if(!button)return;
+  const drawerOpen=document.body.classList.contains('nav-open');sidebar(false);
+  if(drawerOpen)queueMicrotask(()=>{
+    if($('dialog').open)dialogReturnFocus=$('menu-toggle');
+    else{const heading=document.querySelector('.workspace-main>section:not([hidden]) h1');if(heading){heading.tabIndex=-1;heading.focus();}}
+  });
+};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open'))sidebar(false,true);});
+function activeNavigation(id) {
+  for(const item of $('app-sidebar').querySelectorAll('[aria-current]'))item.removeAttribute('aria-current');
+  if(id)$(id).setAttribute('aria-current','page');
+}
 
 function notify(message) {
   $('notice').textContent = message; $('notice').hidden = false;
@@ -39,6 +60,9 @@ function clearWorkspace() {
   commandCenterRequest++; $('command-center-summary').replaceChildren();
   auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
   $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
+  for(const id of ['command-center-hero','command-center-channels','command-center-contribution',
+    'command-center-products','command-center-operations'])$(id).replaceChildren();
+  $('command-center-period').textContent='';
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
@@ -46,8 +70,9 @@ function clearWorkspace() {
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; user = null; selected = null; boardData = null;
-  dialogVersion++; modalBusy = false; unresolved = false; $('dialog').close();
+  dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
+  $('menu-toggle').hidden=true;sidebar(false);
   $('account-name').textContent = ''; $('access-key').value = ''; $('order-list').replaceChildren();
   $('summary').replaceChildren(); $('detail-content').replaceChildren(); $('dialog-content').replaceChildren();
   $('notice').hidden = true; $('access-key').focus();
@@ -67,6 +92,7 @@ function enterWorkspace(me,workflow) {
   user=me;transitions=workflow.transitions;$('access-key').value='';
   $('account-name').textContent=`${me.name} · ${me.role}`;
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
+  $('menu-toggle').hidden=false;
   $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
 }
@@ -116,9 +142,10 @@ function showBoard() {
   materialsRequest++; $('materials-view').hidden = true;
   activityRequest++; $('activity-view').hidden = true;
   view = 'board'; detailRequest++; selected = null;
-  $('board-view').hidden = false; $('detail-view').hidden = true; loadBoard();
+  $('board-view').hidden = false; $('detail-view').hidden = true; activeNavigation('board-home'); loadBoard();
 }
 $('brand').onclick = event => { event.preventDefault(); if (user) showBoard(); };
+$('board-home').onclick=showBoard;
 $('back').onclick = () => { showBoard(); $('search').focus(); };
 $('refresh').onclick = () => loadBoard();
 $('issues-summary').onclick = () => { resetBoardFilters(); $('status').value = 'blocked'; loadBoard(); };
@@ -139,11 +166,116 @@ function commandSource(value) {
 function showCommandOrders(status) {
   resetBoardFilters(); $('status').value=status; showBoard();
 }
+/* Presentation helpers for the reconstructed Command Center surfaces.
+   Every value rendered here comes from the existing /api/command-center payload;
+   nothing is derived beyond counting, ratios, and scaling of real fields. */
+const svgIcon = (name, extra = '') => `<svg class="icon${extra ? ' ' + extra : ''}" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
+const decimalValue = value => {
+  const parsed = Number(String(value ?? '0').replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const percentValue = value => Math.min(100, Math.max(0, decimalValue(value)));
+function commandGauge(percent, tone, label) {
+  const ticks = 44, filled = Math.round(percentValue(percent) / 100 * ticks);
+  let marks = '';
+  for (let index = 0; index < ticks; index += 1) {
+    const angle = Math.PI - (index / (ticks - 1)) * Math.PI;
+    const inner = 74, outer = 92;
+    const x1 = (100 + inner * Math.cos(angle)).toFixed(1), y1 = (100 - inner * Math.sin(angle)).toFixed(1);
+    const x2 = (100 + outer * Math.cos(angle)).toFixed(1), y2 = (100 - outer * Math.sin(angle)).toFixed(1);
+    const state = index < filled ? `is-on ${tone}` : 'is-off';
+    marks += `<line class="gauge-tick ${state}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  return `<div class="gauge"><svg viewBox="0 0 200 108" role="img" aria-label="${e(label)}">${marks}</svg><p class="gauge-value">${n(Math.round(percentValue(percent)))}%</p><p class="gauge-note">${e(label)}</p></div>`;
+}
+function commandMeter(label, figure, ratio, note, tone) {
+  const width = Math.min(100, Math.max(0, ratio * 100));
+  return `<div class="meter"><div class="meter-top"><span class="meter-label">${e(label)}</span><span class="meter-figure">${e(figure)}</span></div>`
+    + `<div class="meter-track"><span class="meter-fill${tone ? ' ' + tone : ''}" style="width:${width.toFixed(1)}%"></span></div>`
+    + (note ? `<p class="meter-note">${e(note)}</p>` : '') + '</div>';
+}
+function commandSplit3(cells) {
+  const peak = Math.max(1, ...cells.map(cell => cell.value));
+  return '<div class="split3">' + cells.map(cell =>
+    `<div class="split3-cell"><p class="split3-value">${e(cell.display)}</p><p class="split3-label">${e(cell.label)}</p>`
+    + `<div class="split3-bar"><span style="width:${(cell.value / peak * 100).toFixed(1)}%"></span></div></div>`).join('') + '</div>';
+}
+function commandBars(rows) {
+  const peak = Math.max(1, ...rows.map(row => row.value));
+  const top = rows.reduce((best, row) => row.value > best ? row.value : best, 0);
+  let flagged = false;
+  return '<div class="barchart">' + rows.map(row => {
+    const isTop = !flagged && row.value === top && top > 0;
+    if (isTop) flagged = true;
+    return `<div class="barchart-col${isTop ? ' is-top' : ''}">${isTop ? `<span class="barchart-cap">${n(row.value)}</span>` : ''}`
+      + `<span class="barchart-bar" style="height:${Math.max(4, row.value / peak * 100).toFixed(1)}%"></span>`
+      + `<span class="barchart-label" title="${e(row.label)}">${e(row.label)}</span></div>`;
+  }).join('') + '</div>';
+}
+function commandHeroBars(rows) {
+  const peak = Math.max(1, ...rows.map(row => Math.abs(row.value)));
+  return '<div class="hero-chart">' + rows.map(row =>
+    `<div class="hero-bar"><div class="hero-bar-top"><span class="hero-bar-label">${e(row.label)}</span><span class="hero-bar-value">${e(row.display)}</span></div>`
+    + `<div class="hero-bar-track"><span class="hero-bar-fill${row.tone ? ' ' + row.tone : ''}" style="width:${(Math.abs(row.value) / peak * 100).toFixed(1)}%"></span></div></div>`).join('') + '</div>';
+}
+const commandDay = value => value
+  ? new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'))
+  : '';
+const commandRange = (start, end) => !start ? '' : start === end ? commandDay(start) : `${commandDay(start)} – ${commandDay(end)}`;
+/* Compact rupiah for headline figures only; the precise value stays available as a title. */
+function commandMoneyShort(value) {
+  const amount = decimalValue(value);
+  const [scale, suffix] = amount >= 1e12 ? [1e12,' T'] : amount >= 1e9 ? [1e9,' M']
+    : amount >= 1e6 ? [1e6,' jt'] : amount >= 1e3 ? [1e3,' rb'] : [1,''];
+  const scaled = amount / scale;
+  return 'Rp' + new Intl.NumberFormat('id-ID',{maximumFractionDigits:scale === 1 ? 0 : 1}).format(scaled) + suffix;
+}
+/* Sales trend: one point per real order date in the latest Jubelio batch. No gap filling, so a day
+   only appears when the snapshot actually contains completed orders for it. */
+function commandTrend(rows, caption) {
+  const width = 600, height = 168, top = 12, bottom = 12, side = 4;
+  const values = rows.map(row => decimalValue(row.gross_revenue));
+  const peak = Math.max(...values, 1), floor = height - bottom, plot = floor - top;
+  const step = rows.length > 1 ? (width - side * 2) / (rows.length - 1) : 0;
+  const at = index => rows.length > 1 ? side + index * step : width / 2;
+  const level = value => top + (1 - value / peak) * plot;
+  const points = values.map((value, index) => [at(index), level(value)]);
+  const line = points.map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const area = rows.length > 1
+    ? `${line} L${points[points.length-1][0].toFixed(1)} ${floor} L${points[0][0].toFixed(1)} ${floor} Z`
+    : `M${(at(0)-40).toFixed(1)} ${points[0][1].toFixed(1)} L${(at(0)+40).toFixed(1)} ${points[0][1].toFixed(1)} L${(at(0)+40).toFixed(1)} ${floor} L${(at(0)-40).toFixed(1)} ${floor} Z`;
+  const grid = [0,.25,.5,.75,1].map(ratio =>
+    `<line class="trend-grid" x1="0" y1="${(top+ratio*plot).toFixed(1)}" x2="${width}" y2="${(top+ratio*plot).toFixed(1)}"/>`).join('');
+  const dots = points.map(([x, y]) => `<circle class="trend-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/>`).join('');
+  const marks = rows.length > 2 ? [0, Math.floor((rows.length-1)/2), rows.length-1] : rows.map((_, index) => index);
+  const ticks = [...new Set(marks)].map(index =>
+    `<span>${e(commandDay(rows[index].date))}</span>`).join('');
+  return `<div class="trend"><p class="trend-peak">Puncak ${e(commandMoneyShort(String(peak)))}</p>`
+    + `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${e(caption)}">`
+    + `<defs><linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0" stop-color="var(--primary)" stop-opacity=".24"/>`
+    + `<stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>`
+    + `${grid}<path class="trend-area" d="${area}"/>`
+    + (rows.length > 1 ? `<path class="trend-line" d="${line}"/>` : '') + `${dots}</svg>`
+    + `<div class="trend-ticks">${ticks}</div><p class="trend-note">${e(caption)}</p></div>`;
+}
+const ATTENTION_DOMAINS = {production:'Produksi',people:'People',inventory:'Stok',finance:'Finance',
+  approval:'Approval',quality:'Kualitas',capacity:'Kapasitas',data_quality:'Data',integration:'Integrasi'};
+function attentionDomainRows(attention) {
+  const tally = new Map();
+  for (const row of attention) tally.set(row.kind, (tally.get(row.kind) || 0) + 1);
+  const rows = [...tally].map(([kind, value]) => ({label:ATTENTION_DOMAINS[kind] || kind, value}))
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(left.label === right.label ? left.label : right.label));
+  if (rows.length <= 7) return rows;
+  const rest = rows.slice(6).reduce((total, row) => total + row.value, 0);
+  return [...rows.slice(0, 6), {label:'Lain', value:rest}];
+}
 async function showCommandCenter() {
   if(guardPending())return;
   materialsRequest++; activityRequest++; boardRequest++; detailRequest++; selected=null;
   view='command-center'; $('materials-view').hidden=true; $('activity-view').hidden=true;
   $('board-view').hidden=true; $('detail-view').hidden=true; $('command-center-view').hidden=false;
+  activeNavigation('command-center');
   const version=epoch,request=++commandCenterRequest;
   message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');
   $('command-center-content').hidden=true;$('command-center-summary').setAttribute('aria-busy','true');
@@ -156,27 +288,112 @@ async function showCommandCenter() {
       workforce:'command-workforce',
       mekari_payables:'mekari-payables-summary',
       mekari_receivables:'mekari-receivables-summary',integrations:'integrations'};
+    const critical=report.status.critical_count,overdue=report.production.overdue_orders;
+    /* Marketplace business performance. Every figure below comes from the latest Jubelio order
+       snapshot batch, so it is labelled by that snapshot rather than by a calendar period. */
+    const market=report.sales.marketplace,stat=market.summary,live=Boolean(market.snapshot_at);
+    const refunded=decimalValue(stat.refund_amount)>0,unmatched=stat.unmatched_refunds;
+    const away='Snapshot order Jubelio belum tersedia';
     $('command-center-summary').innerHTML=[
-      ['Order aktif',report.production.active_orders,'order'],
-      ['Keputusan',report.approvals.pending_count,'menunggu'],
-      ['Exception',report.status.attention_count,'perlu perhatian'],
-      ['Laba bersih',report.finance.current?commandMoney(report.finance.current.net_profit):'—',report.finance.current?'periode terakhir':'belum ada data']
-    ].map(([label,value,unit])=>`<div><dt>${e(label)}</dt><dd>${typeof value==='number'?n(value):e(value)} <small>${e(unit)}</small></dd></div>`).join('');
+      ['Penjualan bersih',live?commandMoneyShort(stat.net_revenue):'—',live?'':'belum ada snapshot','wallet',
+        refunded?{tone:'chip-warning',icon:'undo',text:`Refund ${commandMoneyShort(stat.refund_amount)}`}
+          :{tone:'chip-success',icon:'check-circle',text:'Tanpa refund cocok'},
+        live?`${commandMoney(stat.net_revenue)} · kotor ${commandMoney(stat.gross_revenue)} dikurangi refund yang cocok`:away,
+        live?commandMoney(stat.net_revenue):''],
+      ['Total order',live?stat.orders:'—',live?'order':'belum ada snapshot','inbox',
+        live?{tone:'chip-primary',icon:'check-circle',text:`${n(stat.completed)} selesai`}:null,
+        live?`${n(stat.pending)} menunggu · ${n(stat.processing)} diproses · ${n(stat.cancelled)} batal`:away,''],
+      ['Unit terjual',live?stat.units:'—',live?'pcs':'belum ada snapshot','box',null,
+        live?`Dari ${n(stat.completed_orders)} order selesai · ${n(stat.marketplaces)} marketplace`:away,''],
+      ['AOV order selesai',live?commandMoneyShort(stat.average_order_value):'—',live?'/order':'belum ada snapshot','trend',null,
+        live?`${commandMoney(stat.average_order_value)} · kotor order selesai dibagi jumlah order selesai`:away,
+        live?commandMoney(stat.average_order_value):'']
+    ].map(([label,value,unit,glyph,chip,foot,exact])=>`<div class="kpi-card"><dt>${e(label)}${svgIcon(glyph)}</dt><dd><span class="kpi-value"${exact?` title="${e(exact)}"`:''}>${typeof value==='number'?n(value):e(value)}${unit?` <small>${e(unit)}</small>`:''}${chip?`<span class="chip ${chip.tone}">${svgIcon(chip.icon)}${e(chip.text)}</span>`:''}</span></dd><p class="kpi-foot">${e(foot)}</p></div>`).join('');
     $('command-center-summary').removeAttribute('aria-busy');
-    $('command-center-attention').innerHTML=report.attention.length?report.attention.map(row=>`<article class="command-attention ${e(row.priority)}" data-command-attention="${e(row.id)}"><p class="status-label ${row.priority==='critical'?'late':''}">${row.priority==='critical'?'Kritis':'Perlu perhatian'} · ${e(row.kind)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><button data-action="${e(action[row.action])}">${e(row.action_label)}</button></article>`).join(''):'<p class="state">Tidak ada exception aktif dari sumber yang sudah tersambung.</p>';
+    $('command-center-period').textContent=live
+      ?`Jubelio snapshot ${commandSource(market.snapshot_at).replace('Snapshot ','')}`
+        +(market.period_start?` · order ${commandRange(market.period_start,market.period_end)}`:'')
+      :'Snapshot order Jubelio belum tersedia';
+    $('command-center-operations').innerHTML=[
+      ['Order aktif',`${n(report.production.active_orders)} order`,overdue?'is-alert':''],
+      ['Keputusan',`${n(report.approvals.pending_count)} menunggu`,report.approvals.pending_count?'is-alert':''],
+      ['Exception',`${n(report.status.attention_count)} perlu perhatian`,critical?'is-alert':''],
+      ['Laba bersih',report.finance.current?commandMoney(report.finance.current.net_profit):'belum ada data','']
+    ].map(([label,value,tone])=>`<div class="ops-stat ${tone}"><dt>${e(label)}</dt><dd>${e(value)}</dd></div>`).join('');
+    const mark={critical:'alert-octagon',warning:'alert-triangle',info:'info'};
+    $('command-center-attention').innerHTML=report.attention.length
+      ?'<div class="decision-head" aria-hidden="true"><span>Level</span><span>Keputusan</span><span>Tindakan</span></div>'
+        +report.attention.map(row=>`<article class="command-attention decision-row ${e(row.priority)}" data-command-attention="${e(row.id)}"><span class="decision-mark" aria-hidden="true">${svgIcon(mark[row.priority]||'info')}</span><div class="decision-body"><div class="decision-title"><h3>${e(row.title)}</h3><p class="status-label ${row.priority==='critical'?'late':''}">${row.priority==='critical'?'Kritis':'Perlu perhatian'} · ${e(row.kind)}</p></div><p class="decision-detail">${e(row.detail)}</p></div><span class="decision-action"><button data-action="${e(action[row.action])}">${e(row.action_label)}${svgIcon('arrow-right')}</button></span></article>`).join('')
+      :'<p class="state">Tidak ada exception aktif dari sumber yang sudah tersambung.</p>';
     const finance=report.finance.current;
+    const funnel=[
+      {label:'Menunggu',value:stat.pending,tone:'is-pending'},
+      {label:'Diproses',value:stat.processing,tone:'is-processing'},
+      {label:'Selesai',value:stat.completed,tone:'is-completed'},
+      {label:'Batal',value:stat.cancelled,tone:'is-cancelled'}
+    ];
+    const funnelSpan=Math.max(1,funnel.reduce((total,cell)=>total+cell.value,0));
+    $('command-center-hero').innerHTML=`<div class="card-head"><h2>Total penjualan</h2>${svgIcon('cart','icon-lg')}</div>`
+      +`<div class="hero-body"><div class="hero-figure"><p class="hero-value" title="${live?e(commandMoney(stat.gross_revenue)):''}">${live?e(commandMoneyShort(stat.gross_revenue)):'—'}</p>`
+      +`<div class="hero-meta">${live?`<span class="chip chip-primary">${svgIcon('check-circle')}${n(stat.completed_orders)} order selesai</span>`
+          +`<span class="chip chip-neutral">${svgIcon('box')}${n(stat.units)} pcs</span>`:''}</div>`
+      +`<p class="hero-caption">${live?`Bersih ${e(commandMoney(stat.net_revenue))} setelah refund yang cocok`
+          +(unmatched?` · ${n(unmatched)} refund lain (${e(commandMoneyShort(stat.unmatched_refund_amount))}) tidak cocok dengan order di snapshot ini`:'')
+        :'Belum ada snapshot order Jubelio yang tersambung.'}</p></div>`
+      +(market.daily.length?`<div class="hero-trendwrap">${commandTrend(market.daily,
+          `Penjualan order selesai · ${commandRange(market.trend_start,market.trend_end)}`)}</div>`
+        :'<p class="state">Belum ada order selesai pada snapshot ini.</p>')
+      +'</div>'
+      +`<div class="hero-split"><div class="hero-split-grid">${funnel.map(cell=>`<div class="hero-split-cell ${e(cell.tone)}"><p class="hero-split-value">${n(cell.value)}</p><p class="hero-split-label">${e(cell.label)}</p></div>`).join('')}</div>`
+      +`<div class="hero-split-bars">${funnel.map(cell=>`<span class="hero-split-bar ${e(cell.tone)}" style="flex:${Math.max(cell.value,funnelSpan*0.03).toFixed(2)}"></span>`).join('')}</div></div>`;
+    $('command-center-channels').innerHTML=`<div class="card-head"><h3>Perbandingan performa marketplace</h3>${svgIcon('chart')}</div>`
+      +(market.marketplaces.length?`<div class="table-scroll"><table class="data-table channel-table"><thead><tr>`
+        +'<th scope="col">Marketplace</th><th scope="col">Order</th><th scope="col">Unit</th>'
+        +'<th scope="col">AOV</th><th scope="col">Kontribusi</th><th scope="col">Penjualan</th></tr></thead><tbody>'
+        +market.marketplaces.map(row=>`<tr><td><span class="channel-name">${e(row.marketplace)}</span><span class="channel-flow">${e([[row.completed,'selesai'],[row.processing,'diproses'],[row.pending,'menunggu'],[row.cancelled,'batal']].filter(([count])=>count).map(([count,word])=>`${n(count)} ${word}`).join(' · ')||'belum ada order')}</span></td>`
+          +`<td class="is-num">${n(row.orders)}</td><td class="is-num">${n(row.units)}</td>`
+          +`<td class="is-num">${e(commandMoney(row.average_order_value))}</td>`
+          +`<td class="is-num"><span class="share"><span class="share-bar"><span style="width:${Math.min(100,decimalValue(row.contribution_percent)).toFixed(1)}%"></span></span>${e(row.contribution_percent)}%</span></td>`
+          +`<td class="is-num"><strong>${e(commandMoney(row.gross_revenue))}</strong>${decimalValue(row.refund_amount)>0?`<span class="channel-net">bersih ${e(commandMoney(row.net_revenue))}</span>`:''}</td></tr>`).join('')
+        +'</tbody></table></div>'
+        :'<p class="state">Belum ada marketplace pada snapshot order Jubelio.</p>')
+      +'<button data-action="jubelio-order-summary">Buka penjualan Jubelio</button>';
+    $('command-center-contribution').innerHTML=`<div class="card-head"><h3>Kontribusi marketplace</h3>${svgIcon('plug')}</div>`
+      +(market.marketplaces.length?commandHeroBars(market.marketplaces.map((row,index)=>({
+          label:`${row.marketplace} · ${row.contribution_percent}%`,
+          display:commandMoneyShort(row.gross_revenue),
+          value:decimalValue(row.gross_revenue),
+          tone:index?'is-muted':''
+        })))+`<p class="command-source">Berdasarkan pendapatan kotor order selesai pada snapshot ini.</p>`
+        :'<p class="state">Belum ada marketplace pada snapshot order Jubelio.</p>');
+    $('command-center-products').innerHTML=`<div class="card-head"><h3>Produk terlaris</h3>${svgIcon('tag')}</div>`
+      +(market.products.length?'<ol class="rank-list">'+market.products.slice(0,5).map((row,index)=>
+          `<li class="rank-row"><span class="rank-mark">${index+1}</span><span class="rank-body"><span class="rank-name">${e(row.product_name||row.sku)}</span><span class="rank-meta">${e(row.sku)}${row.color?' · '+e(row.color):''}${row.size?' · '+e(row.size):''} · ${n(row.orders)} order</span></span>`
+          +`<span class="rank-figures"><strong>${n(row.units)} pcs</strong><span>${e(commandMoney(row.gross_revenue))}</span></span></li>`).join('')+'</ol>'
+        +`<p class="command-source">Urut berdasarkan unit terjual dari order selesai.</p>`
+        :'<p class="state">Belum ada produk terjual pada snapshot ini.</p>');
+    const wip=report.production.in_progress_quantity,rework=report.production.rework_quantity;
+    const required=report.capacity.required_minutes,available=report.capacity.available_minutes;
+    const head=(title,glyph)=>`<div class="card-head"><h3>${title}</h3>${svgIcon(glyph)}</div>`;
+    const domainRows=attentionDomainRows(report.attention);
     $('command-center-snapshots').innerHTML=`
-      <article class="command-snapshot" data-command-snapshot="production"><h3>Produksi</h3><dl class="command-values"><dt>Lewat target</dt><dd>${n(report.production.overdue_orders)} order</dd><dt>Dalam proses</dt><dd>${n(report.production.in_progress_quantity)} pcs</dd><dt>Rework</dt><dd>${n(report.production.rework_quantity)} pcs</dd></dl><button data-action="command-production-overdue">Buka papan produksi</button></article>
-      <article class="command-snapshot" data-command-snapshot="quality"><h3>Kualitas produksi</h3><dl class="command-values"><dt>Diperiksa</dt><dd>${n(report.quality.inspected_quantity)} pcs</dd><dt>Yield</dt><dd>${e(report.quality.first_pass_yield_percent)}%</dd><dt>Rework + reject</dt><dd>${e(report.quality.nonconforming_rate_percent)}%</dd><dt>Perlu perhatian</dt><dd>${n(report.quality.attention_groups)} line/vendor</dd></dl><p class="command-source">Periode ${date(report.quality.period_start)} sampai ${date(report.quality.as_of)}</p><button data-action="production-quality-insights">Buka analisis kualitas</button></article>
-      <article class="command-snapshot" data-command-snapshot="capacity"><h3>Kapasitas produksi</h3><dl class="command-values"><dt>Beban 14 hari</dt><dd>${e(minuteQty(report.capacity.required_minutes))}</dd><dt>Tersedia</dt><dd>${e(minuteQty(report.capacity.available_minutes))}</dd><dt>Perlu perhatian</dt><dd>${n(report.capacity.attention_work_centers)} work center</dd><dt>Order berisiko</dt><dd>${n(report.capacity.at_risk_orders)} order</dd></dl><p class="command-source">${report.capacity.capacity_complete?'Standar aktif lengkap':'Belum lengkap: '+n(report.capacity.coverage_gaps)+' kebutuhan tahap · '+n(report.capacity.missing_standard_quantity)+' pcs'} · sampai ${date(report.capacity.horizon_end)}</p><button data-action="capacity-plan">Buka rencana kapasitas</button></article>
-      <article class="command-snapshot" data-command-snapshot="workforce"><h3>People</h3><dl class="command-values"><dt>Karyawan aktif</dt><dd>${n(report.workforce.active_employees)} orang</dd><dt>Belum dicatat</dt><dd>${n(report.workforce.unrecorded_employees)} orang</dd><dt>Hadir / cuti / absen</dt><dd>${n(report.workforce.present)} / ${n(report.workforce.leave)} / ${n(report.workforce.absent)}</dd><dt>Lembur</dt><dd>${e(minuteQty(report.workforce.overtime_minutes))}</dd></dl><p class="command-source">Roster ${date(report.workforce.as_of)}</p><button data-action="command-workforce">Buka roster People</button></article>
-      <article class="command-snapshot" data-command-snapshot="inventory"><h3>Stok &amp; bahan</h3><dl class="command-values"><dt>SKU berisiko</dt><dd>${n(report.inventory.out_of_stock+report.inventory.at_risk)}</dd><dt>Perlu produksi</dt><dd>${n(report.inventory.recommended_production_quantity)} pcs</dd><dt>Bahan perlu dibeli</dt><dd>${n(report.inventory.materials_to_purchase)}</dd><dt>Mismatch Jubelio</dt><dd>${n(report.inventory.mismatched+report.inventory.missing_from_snapshot+report.inventory.quarantined)}</dd></dl><p class="command-source">${e(commandSource(report.inventory.snapshot_at))}</p><button data-action="replenishment">Buka rekomendasi stok</button></article>
-      <article class="command-snapshot" data-command-snapshot="sales"><h3>Penjualan Jubelio</h3><dl class="command-values"><dt>Order diterima</dt><dd>${n(report.sales.accepted_orders)}</dd><dt>Unit selesai</dt><dd>${n(report.sales.units)} pcs</dd><dt>Pendapatan kotor</dt><dd>${e(commandMoney(report.sales.gross_revenue))}</dd><dt>Karantina</dt><dd>${n(report.sales.quarantined_orders)}</dd></dl><p class="command-source">${e(commandSource(report.sales.snapshot_at))}</p><button data-action="jubelio-order-summary">Buka penjualan Jubelio</button></article>
-      <article class="command-snapshot" data-command-snapshot="finance"><h3>Keuangan Mekari</h3>${finance?`<dl class="command-values"><dt>Pendapatan bersih</dt><dd>${e(commandMoney(finance.net_revenue))}</dd><dt>Laba bersih</dt><dd>${e(commandMoney(finance.net_profit))}</dd><dt>Saldo kas</dt><dd>${e(commandMoney(finance.cash_balance))}</dd><dt>Utang outstanding</dt><dd>${e(commandMoney(report.finance.payables.outstanding))}</dd><dt>Piutang outstanding</dt><dd>${e(commandMoney(report.finance.receivables.outstanding))}</dd></dl>`:'<p class="state">Snapshot keuangan belum tersedia.</p>'}<p class="command-source">${e(commandSource(report.finance.snapshot_at))}</p><button data-action="mekari-finance-summary">Buka keuangan Mekari</button></article>
-      <article class="command-snapshot" data-command-snapshot="integrations"><h3>Integrasi</h3><dl class="command-values">${report.integrations.systems.map(row=>`<dt>${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></article>`;
+      <article class="command-snapshot snapshot-card card">${head('Antrean per domain','chart')}${domainRows.length?commandBars(domainRows)+'<p class="command-source">Jumlah exception aktif per domain operasional.</p>':'<p class="state">Belum ada exception aktif.</p>'}</article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="production">${head('Produksi','layers')}${commandMeter('Rework dari WIP',`${n(rework)} / ${n(wip)} pcs`,wip?rework/wip:0,null,rework&&wip&&rework/wip>0.05?'is-over':'')}<dl class="command-values"><dt>Lewat target</dt><dd>${n(report.production.overdue_orders)} order</dd><dt>Dalam proses</dt><dd>${n(wip)} pcs</dd><dt>Rework</dt><dd>${n(rework)} pcs</dd></dl><button data-action="command-production-overdue">Buka papan produksi</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="quality">${head('Kualitas produksi','shield')}${commandGauge(report.quality.first_pass_yield_percent,report.quality.attention_groups?'is-warn':'',`Periode ${date(report.quality.period_start)} sampai ${date(report.quality.as_of)}`)}<dl class="command-values"><dt>Diperiksa</dt><dd>${n(report.quality.inspected_quantity)} pcs</dd><dt>Yield</dt><dd>${e(report.quality.first_pass_yield_percent)}%</dd><dt>Rework + reject</dt><dd>${e(report.quality.nonconforming_rate_percent)}%</dd><dt>Perlu perhatian</dt><dd>${n(report.quality.attention_groups)} line/vendor</dd></dl><button data-action="production-quality-insights">Buka analisis kualitas</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="capacity">${head('Kapasitas produksi','activity')}${commandMeter('Beban vs kapasitas',`${e(minuteQty(required))} / ${e(minuteQty(available))}`,available?required/available:(required?1:0),null,available&&required>available?'is-over':available&&required/available>0.85?'is-tight':'')}<dl class="command-values"><dt>Beban 14 hari</dt><dd>${e(minuteQty(required))}</dd><dt>Tersedia</dt><dd>${e(minuteQty(available))}</dd><dt>Perlu perhatian</dt><dd>${n(report.capacity.attention_work_centers)} work center</dd><dt>Order berisiko</dt><dd>${n(report.capacity.at_risk_orders)} order</dd></dl><p class="command-source">${report.capacity.capacity_complete?'Standar aktif lengkap':'Belum lengkap: '+n(report.capacity.coverage_gaps)+' kebutuhan tahap · '+n(report.capacity.missing_standard_quantity)+' pcs'} · sampai ${date(report.capacity.horizon_end)}</p><button data-action="capacity-plan">Buka rencana kapasitas</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="workforce">${head('People','users')}${commandSplit3([
+        {label:'Hadir',display:n(report.workforce.present),value:report.workforce.present},
+        {label:'Cuti',display:n(report.workforce.leave),value:report.workforce.leave},
+        {label:'Absen',display:n(report.workforce.absent),value:report.workforce.absent}
+      ])}<dl class="command-values"><dt>Karyawan aktif</dt><dd>${n(report.workforce.active_employees)} orang</dd><dt>Belum dicatat</dt><dd>${n(report.workforce.unrecorded_employees)} orang</dd><dt>Lembur</dt><dd>${e(minuteQty(report.workforce.overtime_minutes))}</dd></dl><p class="command-source">Roster ${date(report.workforce.as_of)}</p><button data-action="command-workforce">Buka roster People</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="inventory">${head('Stok &amp; bahan','box')}<dl class="command-values"><dt>SKU berisiko</dt><dd>${n(report.inventory.out_of_stock+report.inventory.at_risk)}</dd><dt>Perlu produksi</dt><dd>${n(report.inventory.recommended_production_quantity)} pcs</dd><dt>Bahan perlu dibeli</dt><dd>${n(report.inventory.materials_to_purchase)}</dd><dt>Mismatch Jubelio</dt><dd>${n(report.inventory.mismatched+report.inventory.missing_from_snapshot+report.inventory.quarantined)}</dd></dl><p class="command-source">${e(commandSource(report.inventory.snapshot_at))}</p><button data-action="replenishment">Buka rekomendasi stok</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="sales">${head('Penjualan Jubelio','cart')}<dl class="command-values"><dt>Order diterima</dt><dd>${n(report.sales.accepted_orders)}</dd><dt>Unit selesai</dt><dd>${n(report.sales.units)} pcs</dd><dt>Pendapatan kotor</dt><dd>${e(commandMoney(report.sales.gross_revenue))}</dd><dt>Karantina</dt><dd>${n(report.sales.quarantined_orders)}</dd></dl><p class="command-source">${e(commandSource(report.sales.snapshot_at))}</p><button data-action="jubelio-order-summary">Buka penjualan Jubelio</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="finance">${head('Keuangan Mekari','wallet')}${finance?`<dl class="command-values"><dt>Pendapatan bersih</dt><dd>${e(commandMoney(finance.net_revenue))}</dd><dt>Laba bersih</dt><dd>${e(commandMoney(finance.net_profit))}</dd><dt>Saldo kas</dt><dd>${e(commandMoney(finance.cash_balance))}</dd><dt>Utang outstanding</dt><dd>${e(commandMoney(report.finance.payables.outstanding))}</dd><dt>Piutang outstanding</dt><dd>${e(commandMoney(report.finance.receivables.outstanding))}</dd></dl>`:'<p class="state">Snapshot keuangan belum tersedia.</p>'}<p class="command-source">${e(commandSource(report.finance.snapshot_at))}</p><button data-action="mekari-finance-summary">Buka keuangan Mekari</button></article>
+      <article class="command-snapshot snapshot-card card" data-command-snapshot="integrations">${head('Integrasi','plug')}<dl class="command-values">${report.integrations.systems.map(row=>`<dt>${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></article>
+      <article class="command-snapshot snapshot-card card ai-card">${head('Tanya Beeloft','sparkles')}<div class="ai-orb" aria-hidden="true"></div><p class="ai-copy">Susun analisis operasional dari data yang sudah tersambung, lalu tinjau usulan tindakannya.</p><button data-action="ai-brain">Buka Tanya Beeloft</button></article>`;
     message('command-center-message','');$('command-center-content').hidden=false;
     $('command-center-updated').textContent='Diperbarui '+new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(report.generated_at));
-  }catch(error){if(version===epoch&&request===commandCenterRequest){$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');$('command-center-updated').textContent='';fail(error,'command-center-message');}}
+  }catch(error){if(version===epoch&&request===commandCenterRequest){$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
 }
 $('command-center').onclick=showCommandCenter;
 $('command-center-back').onclick=showBoard;
@@ -225,7 +442,7 @@ async function openDetail(id) {
   commandCenterRequest++; $('command-center-view').hidden = true;
   materialsRequest++; $('materials-view').hidden = true;
   activityRequest++; $('activity-view').hidden = true;
-  view = 'detail'; boardRequest++; $('board-view').hidden = true; $('detail-view').hidden = false;
+  view = 'detail'; boardRequest++; $('board-view').hidden = true; $('detail-view').hidden = false; activeNavigation('board-home');
   const version = epoch, request = ++detailRequest;
   message('detail-message', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
   try {
@@ -354,6 +571,7 @@ function closeDialog() {
 }
 $('close-dialog').onclick = closeDialog;
 $('dialog').addEventListener('cancel', event => { if (modalBusy || unresolved) { event.preventDefault(); notify('Penyimpanan belum terkonfirmasi. Gunakan coba ulang.'); } else dialogVersion++; });
+$('dialog').addEventListener('close',()=>{const target=dialogReturnFocus;dialogReturnFocus=null;if(target&&!target.hidden)target.focus();});
 function pendingKey() { return 'beeloft.pending.' + user.id; }
 function readPending() {
   try { return JSON.parse(sessionStorage.getItem(pendingKey())); } catch { return null; }
@@ -805,7 +1023,7 @@ $('activity').onclick = () => {
   commandCenterRequest++; $('command-center-view').hidden = true;
   materialsRequest++; $('materials-view').hidden = true;
   view = 'activity'; boardRequest++; detailRequest++; selected = null;
-  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = false;
+  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = false; activeNavigation('activity');
   loadActivity();
 };
 $('activity-back').onclick = showBoard;
@@ -878,7 +1096,7 @@ function saveDownload(blob, filename) {
 function showMaterials() {
   commandCenterRequest++; $('command-center-view').hidden = true;
   view = 'materials'; boardRequest++; detailRequest++; activityRequest++; selected = null;
-  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = true; $('materials-view').hidden = false;
+  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = true; $('materials-view').hidden = false; activeNavigation('materials');
   $('receive-material').hidden = user.role === 'viewer';
   loadMaterials();
 }

@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,viewer,apiGet,work})=>{
+module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work})=>{
   async function role(key){
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Keluar',exact:true}).click();
@@ -10,7 +10,7 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
   const order=(await apiGet('/api/orders')).find(row=>row.reference==='DEMO-PROD-001');
   const product=order.lines[0];
   await role(admin);
-  await page.getByRole('button',{name:'Master SKU',exact:true}).click();
+  await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
   await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).waitFor();
   await page.getByText('Belum dipetakan',{exact:true}).waitFor();
@@ -44,7 +44,7 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Riwayat mapping',exact:true}).click();
   await page.getByText('CONTOH mapping master sebelum read sync',{exact:true}).waitFor();
   await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Integrasi',exact:true}).click();
+  await openSidebarDestination('Integrasi');
   const coverage=page.locator('[data-integration-system="jubelio"]');
   await coverage.getByText(/Mapping SKU: 1 dari/).waitFor();
   await page.getByRole('button',{name:'Buka Master SKU',exact:true}).click();
@@ -52,7 +52,7 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Ubah mapping',exact:true}).waitFor();
 
   await role(viewer);
-  await page.getByRole('button',{name:'Master SKU',exact:true}).click();
+  await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
   await page.getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Ubah mapping',exact:true}).count(),0);
