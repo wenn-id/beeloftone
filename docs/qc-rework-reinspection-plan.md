@@ -201,7 +201,10 @@ Two consequences are intentional rather than incidental:
   `warning_percent`, using the re-inspection denominator only, and the command centre re-exports
   `reinspected_quantity`, `reinspection_nonconforming_quantity`, and
   `reinspection_nonconforming_rate_percent` plus a sentence on the quality attention card. Existing
-  reasons, values, and thresholds are untouched.
+  reasons, values, and thresholds are untouched. Attention groups are ranked by the worse of the two
+  failure rates, so a group whose entire reworked batch failed again outranks one with a small initial
+  rate — the command centre reads the first item. For data without re-inspections the re-inspection
+  rate is `0.00`, so the existing order is unchanged.
 - **The reported population grows.** A window containing only re-inspections now produces a group whose
   initial-basis metrics are legitimately zero, rather than dropping the data. Values of existing fields do
   not change; the set of listed groups and SKUs can. Such a group is still classified `attention` when its

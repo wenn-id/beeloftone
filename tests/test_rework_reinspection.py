@@ -550,6 +550,11 @@ class ReworkReinspectionTest(TestCase):
         # Hanya alasan inspeksi ulang yang menyala; angka inspeksi awal tidak boleh diklaim.
         self.assertEqual(group['attention_reasons'], ['reinspection_above_warning'])
         self.assertEqual(summary['attention_groups'], 1)
+        # Breakdown SKU harus membawa angka inspeksi ulangnya, bukan hanya nol inspeksi awal.
+        sku = group['skus'][0]
+        self.assertEqual((sku['inspected_quantity'], sku['reinspected_quantity'],
+                          sku['reinspection_nonconforming_quantity'],
+                          sku['reinspection_nonconforming_rate_percent']), (0, 8, 8, '100.00'))
         # Command center mengekspor angka inspeksi ulang. Isi kartu perhatiannya bergantung pada jam
         # server, jadi diuji dengan clock yang dikunci di tests/test_management_command_center.py.
         quality_block = self.client.get('/api/command-center').json()['quality']

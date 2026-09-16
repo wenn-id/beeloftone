@@ -162,6 +162,9 @@ class ManagementCommandCenterTest(TestCase):
         self.assertEqual(alert['detail'],
                          'Inspeksi ulang 2 dari 2 pcs gagal lagi (100.00%); melewati batas 5%.')
         self.assertNotIn('dari 0 pcs', alert['detail'])
+        # Kartu membaca item pertama, jadi grup yang seluruh hasil rework-nya gagal harus diperingkat
+        # di atas grup dengan rate inspeksi awal kecil.
+        self.assertEqual(alert['title'], 'Kualitas Vendor <B> (vendor makloon) perlu perhatian')
 
     def test_reinspection_failures_reach_the_quality_snapshot_and_alert(self):
         """Barang yang gagal lagi setelah rework harus terlihat di snapshot manajemen.

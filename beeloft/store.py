@@ -4950,9 +4950,19 @@ class Store:
                 'nonconforming_rate_change_points':change_points,'current':current,'previous':previous,
                 'skus':skus,'defect_types':defects,'responsible_sources':sources,
                 'recent_records':group['recent_records'][:5]})
+        # Peringkat memakai tingkat kegagalan terburuk di antara inspeksi awal dan inspeksi ulang.
+        # Grup yang ditandai semata-mata karena seluruh hasil rework-nya gagal lagi harus berada di
+        # atas grup dengan rate inspeksi awal yang kecil, karena command center membaca item pertama.
+        # Untuk data tanpa inspeksi ulang rate-nya 0.00, jadi urutan lama tidak berubah.
+        def severity(metric):
+            return max(Decimal(metric['nonconforming_rate_percent']),
+                       Decimal(metric['reinspection_nonconforming_rate_percent']))
+
         items.sort(key=lambda row:(row['status']!='attention',
+            -severity(row['current']),
             -Decimal(row['current']['nonconforming_rate_percent']),
-            -row['current']['inspected_quantity'],row['assignee'].casefold(),row['assignment_type']))
+            -row['current']['inspected_quantity'],-row['current']['reinspected_quantity'],
+            row['assignee'].casefold(),row['assignment_type']))
         scoped=items if status=='all' else [row for row in items if row['status']==status]
         current=finish(overall_current);previous=finish(overall_previous)
         overall_change=(format((Decimal(current['nonconforming_rate_percent'])-
