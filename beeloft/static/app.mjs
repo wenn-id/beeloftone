@@ -10,6 +10,9 @@ const stages = ['planned','cutting','sewing','finishing','qc','warehouse'];
 let user = null, transitions = [], boardData = null, selected = null, history = [], historyOffset = 0;
 let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', modalBusy = false, unresolved = false;
 let dialogVersion = 0;
+// Satu logout dalam penerbangan pada satu waktu. Klik ganda memakai ulang promise yang sama, jadi
+// tidak ada perlombaan antara dua pencabutan session.
+let logoutRequest = null;
 let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
 let commandCenterRequest = 0;
@@ -56,7 +59,16 @@ function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
 }
+// Peringatan session dipakai ketika logout tidak terkonfirmasi. Banner ini sengaja tidak otomatis
+// hilang: selama session server belum benar-benar dicabut, statusnya harus terus terlihat. Tombol
+// coba lagi hanya ditawarkan bila mencoba keluar lagi memang langkah berikutnya yang benar; ketika
+// session sudah berpindah akun, yang dibutuhkan adalah masuk kembali, bukan mencabut session akun lain.
+function sessionWarning(text, retry = true) {
+  $('session-warning').hidden = !text; $('session-warning-text').textContent = text;
+  $('session-retry').hidden = !text || !retry;
+}
 function clearWorkspace() {
+  sessionWarning('');
   commandCenterRequest++; $('command-center-summary').replaceChildren();
   auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
   $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
@@ -77,18 +89,92 @@ function clearWorkspace() {
   $('summary').replaceChildren(); $('detail-content').replaceChildren(); $('dialog-content').replaceChildren();
   $('notice').hidden = true; $('access-key').focus();
 }
+const LOGOUT_FAILED = 'Logout belum berhasil. Session di perangkat ini masih aktif dengan akun yang '
+  + 'sama, jadi ruang kerja tetap terbuka agar statusnya tidak menyesatkan. Coba keluar lagi.';
+const LOGOUT_UNCERTAIN = 'Logout belum terkonfirmasi karena server belum dapat dihubungi. Session di '
+  + 'perangkat ini mungkin masih aktif, jadi ruang kerja tetap terbuka. Coba keluar lagi setelah koneksi pulih.';
+const logoutSwitched = identity => 'Logout belum terjadi. Session di perangkat ini sudah berpindah ke '
+  + `akun lain (${identity.name} · ${identity.role}) dan masih aktif, jadi ruang kerja akun sebelumnya `
+  + 'ditutup supaya tidak ada tampilan bercampur identitas. Masuk kembali sebagai akun pencatat untuk '
+  + 'melanjutkan; pencatatan yang belum pasti tetap tersimpan.';
+// Memeriksa siapa yang sebenarnya dipegang session browser ini. Identitasnya dipertahankan, bukan
+// direduksi menjadi boolean: ruang kerja lama hanya boleh tetap dipakai bila akunnya memang sama.
+// 'inactive' berarti session sudah tidak aktif, 'active' menyertakan identitas yang menjawab, dan
+// 'unknown' berarti statusnya belum dapat diketahui.
+async function sessionIdentity() {
+  try { return {state:'active', user: await api.get('/api/me')}; }
+  catch (error) { return {state: error.status === 401 ? 'inactive' : 'unknown'}; }
+}
+// Logout hanya menutup ruang kerja bila pencabutan session terkonfirmasi. Sebelumnya setiap
+// kegagalan ditelan dan ruang kerja selalu dibersihkan, sehingga UI menampilkan layar login biasa
+// padahal session server masih hidup dan reload membuka kembali akun sebelumnya.
+// Mengembalikan true bila logout terkonfirmasi, false bila belum.
 async function logout(revoke=true) {
+  // Session yang sudah diketahui mati (alur 401) tidak perlu dicabut lagi dan selalu boleh ditutup.
+  if (!(revoke && user)) { clearWorkspace(); return true; }
+  if (logoutRequest) return logoutRequest;
+  const actorId = user.id;
   $('main').setAttribute('aria-busy','true');$('login-view').setAttribute('inert','');
-  try{if(revoke&&user)await api.post('/api/session/logout',{});}catch{}
-  finally{clearWorkspace();$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
+  $('logout').disabled = true;$('session-retry').disabled = true;
+  logoutRequest = (async () => {
+    try {
+      const version = epoch;
+      try {
+        await api.post('/api/session/logout',{});
+      } catch (error) {
+        // 401 adalah satu-satunya kegagalan yang membuktikan session sudah tidak aktif. CSRF 403,
+        // 5xx, timeout, dan kegagalan jaringan tidak membuktikan apa pun, jadi session diperiksa
+        // langsung. Server yang sudah mencabut lalu kehilangan responsnya tetap dikenali di sini,
+        // sehingga aplikasi tidak terjebak selamanya pada error logout.
+        const probe = error.status === 401 ? {state:'inactive'} : await sessionIdentity();
+        if (version !== epoch) return true;
+        if (probe.state === 'unknown') { sessionWarning(LOGOUT_UNCERTAIN); return false; }
+        if (probe.state === 'active') {
+          // Session masih hidup, jadi logout belum terjadi. Yang menentukan boleh atau tidaknya
+          // ruang kerja dipertahankan adalah identitasnya, bukan sekadar fakta bahwa /api/me
+          // menjawab: cookie session dipakai bersama seluruh tab dan dapat sudah ditukar akun lain.
+          if (probe.user.id === actorId) { sessionWarning(LOGOUT_FAILED); return false; }
+          // Session sudah berpindah ke akun lain dan masih aktif. Mempertahankan ruang kerja akun
+          // sebelumnya akan membuat tampilan bercampur identitas: setiap pembacaan berikutnya memakai
+          // session akun baru sementara UI masih menampilkan akun lama. clearWorkspace() membuang
+          // seluruh state tampilan, menaikkan epoch sehingga respons lama tidak dapat menimpa konteks
+          // baru, dan mengosongkan api.actorId tanpa pernah menggantinya ke akun baru. sessionStorage
+          // sengaja tidak disentuh, jadi draft pending akun asli tetap dapat dipulihkan.
+          clearWorkspace();
+          sessionWarning(logoutSwitched(probe.user), false);
+          return false;
+        }
+      }
+      if (version !== epoch) return true;
+      clearWorkspace();
+      return true;
+    } finally {
+      logoutRequest = null;
+      $('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');
+      $('logout').disabled = false;$('session-retry').disabled = false;
+    }
+  })();
+  return logoutRequest;
+}
+// Tombol "Masuk ulang" hidup di dalam dialog modal, jadi banner di belakangnya tidak dapat dibaca
+// maupun ditekan. Kegagalan logout karena itu ikut dilaporkan di dalam dialog yang sedang dibuka.
+async function reauthenticate(target) {
+  if (await logout()) return;
+  // Ruang kerja dapat sudah ditutup karena session berpindah akun; dialog beserta elemen pesannya
+  // ikut hilang, dan banner pada layar login sudah menjelaskan keadaannya.
+  if ($(target)) message(target, $('session-warning-text').textContent, true);
 }
 $('logout').onclick = () => logout();
+$('session-retry').onclick = () => logout();
 $('sso-login').onclick = () => location.assign('/api/sso/login');
 function fail(error, target) {
   if (error.status === 401) { logout(false); message('login-error', 'Sesi berakhir. Masukkan kembali kunci akses yang aktif.', true); }
   else message(target, error.message, true);
 }
 function enterWorkspace(me,workflow) {
+  // Login yang berhasil menjadikan status session diketahui baik, jadi peringatan session apa pun
+  // dari percobaan logout sebelumnya tidak boleh tertinggal di layar.
+  sessionWarning('');
   user=me;api.actorId=me.id;transitions=workflow.transitions;$('access-key').value='';
   $('account-name').textContent=`${me.name} · ${me.role}`;
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
@@ -600,7 +686,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
   openDialog(title, `<form id="action-form">${info ? `<p class="form-info">${e(info)}</p>` : ''}<fieldset id="form-fields"><div class="form-grid">${fields}</div></fieldset><p class="error" id="form-error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" id="reauth" hidden>Masuk ulang</button><button class="primary" id="save-form" type="submit">Simpan pencatatan</button></div></form>`);
   let transaction = initial;
   const modalVersion = dialogVersion;
-  $('reauth').onclick = logout;
+  $('reauth').onclick = () => reauthenticate('form-error');
   if (initial) { unresolved = true; $('form-fields').disabled = true; $('save-form').textContent = 'Coba ulang penyimpanan'; }
   $('action-form').onsubmit = async event => {
     event.preventDefault(); if (modalBusy) return;
@@ -2909,7 +2995,7 @@ function aiInvestigationDialog() {
   let transaction=null;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
-  reauth.onclick=logout;
+  reauth.onclick=()=>reauthenticate('ai-message');
   $('ai-question').focus();
   document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
     $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();

@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.84.0"
+    "version": "0.85.0"
   },
   "paths": {
     "/health": {
@@ -506,6 +506,82 @@
               "title": "Offset"
             }
           },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled"
+              ],
+              "type": "string",
+              "default": "pending",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "purchase_request",
+                "purchase_order",
+                "supplier_payment",
+                "marketing_budget",
+                "production_change",
+                "workforce_leave",
+                "workforce_overtime",
+                "payroll_batch",
+                "ai_action"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/summary": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Approvals Summary",
+        "description": "Jumlah dan nominal seluruh populasi approval yang cocok dengan filter.\n\nDibaca terpisah dari daftar `/api/approvals` supaya total tidak pernah dibatasi oleh\nlimit/offset halaman. Filter status dan kind memakai populasi yang sama dengan daftar.",
+        "operationId": "approvals_summary_api_approvals_summary_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
           {
             "name": "status",
             "in": "query",

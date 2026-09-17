@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
+from decimal import Decimal, localcontext, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -34,6 +34,57 @@ AUDIT_APPROVAL_OPERATIONS = {
     'workforce-request','workforce-request-decision','payroll-approval-request',
     'payroll-approval-decision'
 }
+
+
+# Definisi approval yang dipakai bersama daftar inbox, Command Center, dan AI Brain. Sebelumnya
+# setiap konsumen menyusun sendiri arti "pending" dan menjumlahkan nominal dari halaman daftar,
+# sehingga populasi di atas limit halaman dilaporkan salah. Sumbernya sekarang satu.
+APPROVAL_KINDS = ('purchase_request','purchase_order','supplier_payment','marketing_budget',
+                  'production_change','workforce_leave','workforce_overtime','payroll_batch',
+                  'ai_action')
+
+# Status pengajuan bersumber dari event terakhir. 'submitted' di sumber berarti 'pending' di inbox;
+# approved/rejected/cancelled memakai nama yang sama. Pemetaan ini bijektif, jadi satu literal
+# status sudah cukup untuk memfilter agregat.
+APPROVAL_EVENT_STATUS = {'pending':'submitted','approved':'approved',
+                         'rejected':'rejected','cancelled':'cancelled'}
+
+# Per kind: tabel sumber (alias t), tabel event, kolom relasi event, ekspresi nominal, satuan
+# nominal, dan filter tambahan. Satuan None berarti kind itu memang tidak punya nominal: item tetap
+# dihitung pada count, tetapi tidak menambah amount. Satuan 'minor' berarti integer satuan minor,
+# 'rupiah' berarti string '.2f' (proposal AI menyimpannya di dalam JSON action_payload).
+APPROVAL_AGGREGATES = (
+    ('purchase_request','purchase_requests t','purchase_request_events','request_id',
+     't.estimated_value_minor','minor',''),
+    ('purchase_order','purchase_orders t','purchase_order_approval_events','order_id',
+     't.total_minor','minor',''),
+    ('supplier_payment','supplier_payment_requests t','supplier_payment_request_events','request_id',
+     't.amount_minor','minor',''),
+    ('marketing_budget','marketing_budget_requests t','marketing_budget_request_events','request_id',
+     't.amount_minor','minor',''),
+    ('production_change','production_change_requests t','production_change_request_events','request_id',
+     None,None,''),
+    ('workforce_leave','workforce_requests t','workforce_request_events','request_id',
+     None,None," AND t.kind='leave'"),
+    ('workforce_overtime','workforce_requests t','workforce_request_events','request_id',
+     None,None," AND t.kind='overtime'"),
+    ('payroll_batch','payroll_approval_requests t JOIN mekari_payroll_snapshot_periods p'
+     ' ON p.id=t.source_period_id','payroll_approval_request_events','request_id',
+     'p.gross_pay_minor+p.employer_contributions_minor','minor',''),
+    ('ai_action','ai_action_proposals t','ai_action_proposal_events','proposal_id',
+     "json_extract(t.action_payload,'$.estimated_value')",'rupiah',''),
+)
+
+
+def approval_amount(minor, rupiah=Decimal(0)):
+    """Format nominal approval dari akumulator satuan minor berpresisi arbitrer.
+
+    Presisi context dinaikkan sesuai besar angkanya, sehingga pembagian per 100 tetap eksak untuk
+    berapa pun jumlah baris dan presisi default Decimal tidak ikut membatasi hasilnya.
+    """
+    with localcontext() as context:
+        context.prec = len(str(abs(minor))) + len(rupiah.as_tuple().digits) + 8
+        return format(Decimal(minor) / 100 + rupiah, '.2f')
 
 
 def audit_category(operation):
@@ -6834,6 +6885,65 @@ class Store:
                             'source_status':source['status'],'stale':request['stale']}})
             items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
             return items[offset:offset+limit]
+
+    def approvals_summary(self, status='pending', kind='all'):
+        """Ringkasan seluruh populasi approval yang cocok dengan filter.
+
+        Dibaca terpisah dari `approvals()` supaya jumlah dan nominal tidak pernah bergantung pada
+        limit/offset daftar. Agregasi dilakukan di database dengan proyeksi minimal: tidak ada
+        history, context, atau detail pengajuan yang dihidrasi. Status diambil dari event terakhir
+        lewat subquery berkorelasi, jadi pengajuan dengan beberapa event tetap dihitung satu kali.
+        Semua query berjalan dalam satu transaksi baca, sehingga count dan amount selalu berasal
+        dari satu snapshot yang sama.
+        """
+        if kind != 'all' and kind not in APPROVAL_KINDS:
+            raise DomainError(422, 'Jenis approval tidak dikenal.')
+        if status != 'all' and status not in APPROVAL_EVENT_STATUS:
+            raise DomainError(422, 'Status approval tidak dikenal.')
+        requested = APPROVAL_KINDS if kind == 'all' else (kind,)
+        by_kind, total, with_amount = {}, 0, 0
+        total_minor, total_rupiah = 0, Decimal(0)
+        with self.transaction() as db:
+            for name, source, events, column, amount_expr, unit, extra in APPROVAL_AGGREGATES:
+                if name not in requested:
+                    continue
+                condition, parameters = extra, []
+                if status != 'all':
+                    condition = (f' AND (SELECT status FROM {events} WHERE {column}=t.id'
+                                 ' ORDER BY sequence DESC LIMIT 1)=?') + extra
+                    parameters.append(APPROVAL_EVENT_STATUS[status])
+                minor, rupiah, counted = 0, Decimal(0), 0
+                if amount_expr is None:
+                    count = db.execute(f'SELECT COUNT(*) AS total FROM {source}'
+                                       f' WHERE 1=1{condition}', parameters).fetchone()['total']
+                else:
+                    # Nominal tidak dijumlahkan dengan SUM() SQLite. Akumulator SUM adalah integer
+                    # 64-bit dan dapat overflow sebelum hasilnya sempat dikonversi ke Decimal: satu
+                    # periode payroll saja boleh bernilai 2e17 satuan minor, sehingga 47 pengajuan
+                    # pending sudah melewati batas 2^63-1 dan seluruh ringkasan gagal. Nilainya
+                    # karena itu diproyeksikan satu kolom per baris lalu diakumulasi secara
+                    # streaming dengan integer Python dan Decimal yang presisinya tidak terbatas.
+                    # Proyeksinya tetap minimal: tidak ada history, context, atau detail pengajuan.
+                    count = 0
+                    for item in db.execute(f'SELECT {amount_expr} AS amount FROM {source}'
+                                           f' WHERE 1=1{condition}', parameters):
+                        count += 1
+                        value = item['amount']
+                        if value is None:
+                            continue
+                        counted += 1
+                        if unit == 'minor':
+                            minor += int(value)
+                        else:
+                            rupiah += Decimal(str(value))
+                by_kind[name] = {'count': count, 'amount': approval_amount(minor, rupiah)}
+                total += count
+                total_minor += minor
+                total_rupiah += rupiah
+                with_amount += counted
+        return {'status': status, 'kind': kind, 'currency': 'IDR', 'total': total,
+                'amount': approval_amount(total_minor, total_rupiah), 'with_amount': with_amount,
+                'without_amount': total - with_amount, 'by_kind': by_kind}
 
     def production_cost(self, order_id):
         with self.transaction() as db:

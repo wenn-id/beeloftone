@@ -1,4 +1,3 @@
-from collections import Counter
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
@@ -10,7 +9,10 @@ def build_command_center(store):
     generated = datetime.now(timezone.utc)
     today = generated.astimezone(JAKARTA).date()
     production = store.production_board(limit=1)
-    approvals = store.approvals(limit=500, status="pending")
+    # Ringkasan approval dibaca sebagai agregat, bukan sebagai halaman daftar. Membaca
+    # `approvals(limit=500)` lalu menghitung len()/sum() membuat jumlah dan nominal berhenti
+    # bertambah begitu populasi pending melewati 500 item.
+    approvals = store.approvals_summary(status="pending")
     integrations = store.integrations()
     sales = store.jubelio_order_summary()
     marketplace = store.jubelio_marketplace_performance()
@@ -31,10 +33,7 @@ def build_command_center(store):
     attendance = store.attendance_records(today, today, limit=1_000_000_000)
 
     production_summary = production["summary"]
-    approval_kinds = Counter(row["kind"] for row in approvals)
-    approval_amount = sum(
-        (Decimal(row["amount"]) for row in approvals if row.get("amount")), Decimal()
-    )
+    approval_kinds = approvals["by_kind"]
     integration_attention = sum(row["attention_count"] for row in integrations["systems"])
     stock_summary = inventory["summary"]
     payable_summary = payables["summary"]
@@ -91,9 +90,9 @@ def build_command_center(store):
         add("payables-overdue", "critical", "finance", "Utang melewati jatuh tempo",
             f'{payable_summary["overdue_count"]} invoice senilai Rp{payable_summary["overdue_amount"]} overdue.',
             "mekari_payables", "Lihat utang Mekari")
-    if approvals:
+    if approvals["total"]:
         add("approvals-pending", "warning", "approval", "Keputusan menunggu",
-            f"{len(approvals)} pengajuan senilai Rp{format(approval_amount, '.2f')} ada di inbox.",
+            f'{approvals["total"]} pengajuan senilai Rp{approvals["amount"]} ada di inbox.',
             "approvals", "Buka inbox approval")
     if quality["items"]:
         top_quality = quality["items"][0]
@@ -217,9 +216,12 @@ def build_command_center(store):
         },
         "workforce": workforce,
         "approvals": {
-            "pending_count": len(approvals),
-            "pending_amount": format(approval_amount, ".2f"),
-            "by_kind": {kind: approval_kinds.get(kind, 0) for kind in (
+            "pending_count": approvals["total"],
+            "pending_amount": approvals["amount"],
+            # Additive: menjelaskan mengapa count dapat melebihi jumlah item bernominal. Cuti,
+            # lembur, dan perubahan produksi memang tidak punya nominal.
+            "pending_without_amount": approvals["without_amount"],
+            "by_kind": {kind: approval_kinds[kind]["count"] for kind in (
                 "purchase_request", "purchase_order", "supplier_payment", "marketing_budget",
                 "production_change", "ai_action")},
         },

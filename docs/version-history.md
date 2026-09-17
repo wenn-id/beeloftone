@@ -2506,3 +2506,57 @@ API: `POST`/`GET /api/final-qc-records/{id}/rework-completions`,
 
 Rencana: [QC rework reinspection plan](qc-rework-reinspection-plan.md).
 Bukti: [QC rework reinspection verification](qc-rework-reinspection-verification.md).
+
+
+## Perbaikan audit P2: kegagalan logout dan total approval (v0.85)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+Logout tidak lagi menyamarkan kegagalan sebagai layar login. Sebelumnya `logout()` menelan setiap
+kegagalan dengan `catch{}` lalu selalu memanggil `clearWorkspace()` pada blok `finally`. Cookie
+`beeloft_session` hanya dihapus pada jalur sukses dan baris `browser_sessions` tidak pernah dicabut,
+sehingga `restoreSession()` pada reload membuka kembali akun sebelumnya. Sekarang hanya 200 dan 401 yang
+diterima sebagai bukti bahwa session sudah tidak aktif; CSRF 403, 5xx, timeout, dan kegagalan jaringan
+memicu pemeriksaan langsung ke `/api/me`. Pemeriksaan itu mempertahankan identitas yang menjawab, bukan
+sekadar fakta bahwa server menjawab: cookie session dipakai bersama seluruh tab, jadi ruang kerja lama
+hanya dipertahankan bila session masih milik akun yang membukanya. Bila session sudah berpindah ke akun
+lain dan masih aktif, ruang kerja lama dibongkar supaya tidak ada tampilan bercampur identitas, dan
+peringatannya menyebut akun yang sekarang memegang session. Ruang kerja yang dipertahankan diberi banner
+`#session-warning` beserta tombol **Coba keluar lagi**, dan pesannya membedakan "logout belum berhasil
+dengan akun yang sama", "session sudah berpindah akun", dan "logout belum terkonfirmasi" tanpa pernah
+menjanjikan session sudah dicabut ketika browser offline. Server yang sudah
+mencabut lalu kehilangan responsnya tetap dikenali, jadi tidak ada jalan buntu permanen. Klik ganda
+memakai ulang satu promise dalam penerbangan; `aria-busy`, `inert`, dan `disabled` dipulihkan di seluruh
+jalur. Tombol **Masuk ulang** pada dialog transaksi pending melaporkan kegagalan ke `#form-error` atau
+`#ai-message` karena banner di belakang dialog modal tidak dapat ditekan. Draft pending, idempotency key,
+dan binding `X-Beeloft-Actor` dari perbaikan P1 tidak berubah.
+
+Total approval tidak lagi bergantung pada halaman daftar. Command Center memakai
+`store.approvals(limit=500, status="pending")` lalu menghitung `len()` dan `sum()` dari halaman itu, dan
+`brain._approvals()` melakukan hal yang sama dengan `store.approvals(500,0,'pending','all')`. Karena
+daftar diurutkan menurun, angka yang dilaporkan adalah 500 item terbaru: pada 610 pengajuan pending
+jawabannya berhenti di 500, dan pada populasi campuran nominalnya ikut salah karena item tanpa nominal
+mendorong item bernominal keluar halaman. `Store.approvals_summary(status, kind)` menjadi satu-satunya
+sumber angka ringkasan, mengagregasi di database dengan proyeksi minimal dan subquery berkorelasi pada
+event terakhir sehingga pengajuan dengan beberapa event tidak dihitung berulang. Nilai `*_minor`
+diproyeksikan lalu diakumulasi dengan integer Python, bukan dengan `SUM()` SQLite yang akumulatornya
+integer 64-bit dan dapat overflow untuk data yang masih sah menurut schema; `payroll_batch` memakai
+`gross_pay_minor + employer_contributions_minor`, dan `ai_action` menjumlahkan string `'.2f'` dari
+`action_payload` dengan `Decimal` alih-alih `CAST(... AS REAL)`. Sembilan kind inbox tercakup, item tanpa
+nominal tetap dihitung pada count tanpa menambah amount, dan seluruh query berjalan dalam satu transaksi
+baca. Kartu perhatian "Keputusan menunggu", jawaban serta facts AI intent `approvals`, dan jawaban
+overview memakai sumber yang sama. Evidence investigasi memisahkan `summary` dari `sample` dengan
+`sample_size` dan `truncated`, sehingga detail boleh terpotong tanpa membuat angka menyesatkan;
+investigasi yang sudah tersimpan tidak dihitung ulang.
+
+API: `GET /api/approvals/summary` ditambahkan dengan filter `status` dan `kind` yang sama seperti daftar.
+`GET /api/approvals` tidak berubah bentuk, pagination, urutan, maupun permission-nya, dan batas `limit`
+tetap 500. `/api/command-center` mendapat satu field additive `approvals.pending_without_amount`;
+`approvals.by_kind` tetap enam kunci seperti sebelumnya.
+
+P3 tetap di luar rilis ini: breakdown approval belum mencakup cuti, lembur, dan payroll; tanggal ekstrem
+masih dapat menghasilkan 500; dan logout dengan API key tanpa cookie masih menghasilkan 500 pada server.
+
+Rencana: [audit P2 plan](audit-p2-plan.md).
+Bukti: [audit P2 verification](audit-p2-verification.md).

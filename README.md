@@ -2,7 +2,7 @@
 
 Workspace operasional internal Beeloft. Satu aplikasi dan satu database lokal menyatukan performa
 marketplace, produksi, pembelian, bahan baku, gudang, kualitas, people, visibilitas keuangan,
-approval, serta analitik dan AI. Versi aplikasi 0.84.0, schema database 55.
+approval, serta analitik dan AI. Versi aplikasi 0.85.0, schema database 55.
 
 [![CI](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml/badge.svg)](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml)
 
@@ -193,7 +193,7 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 ## Dokumentasi
 
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
-- [Riwayat versi v0.3–v0.82](docs/version-history.md) — riwayat implementasi per milestone beserta
+- [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
 - [Desain produk dan modul](docs/design.md) — keputusan desain domain.
 - [Spesifikasi antarmuka](DESIGN.md) — sistem visual, grid, tipografi, dan aturan Command Center.

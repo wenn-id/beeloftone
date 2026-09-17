@@ -1,4 +1,3 @@
-from collections import Counter
 from decimal import Decimal
 
 
@@ -11,6 +10,12 @@ INTENT_TERMS = {
     'overview': ('ringkasan','kondisi','bisnis','prioritas','perhatian','hari ini'),
 }
 INTENT_PRIORITY = ('stockout','approvals','margin','production','overview')
+
+# Banyaknya item approval yang ditampilkan sebagai contoh pada findings dan rekomendasi. Angka
+# ringkasan tidak dibatasi oleh nilai ini.
+APPROVAL_SAMPLE = 10
+APPROVAL_SUMMARY_SOURCE = '/api/approvals/summary?status=pending'
+APPROVAL_LIST_SOURCE = '/api/approvals?status=pending'
 
 
 def _intent(question):
@@ -95,20 +100,27 @@ def _stock(store,payload,focus):
 
 
 def _approvals(store):
-    rows=store.approvals(500,0,'pending','all')
-    counts=Counter(row['kind'] for row in rows)
-    amount=sum((Decimal(row['amount']) for row in rows if row['amount'] is not None),Decimal(0))
-    answer=f"Ada {len(rows)} item menunggu keputusan dengan total nominal tercatat Rp{format(amount,'.2f')}."
-    facts=[_fact('Approval tertunda',len(rows),'item','/api/approvals?status=pending'),
-           _fact('Nominal tertunda',format(amount,'.2f'),'IDR','/api/approvals?status=pending')]
-    facts.extend(_fact('Approval '+kind.replace('_',' '),count,'item','/api/approvals?status=pending')
-                 for kind,count in sorted(counts.items()))
+    # Jumlah dan nominal berasal dari agregat seluruh populasi. Daftar dibaca terpisah dan hanya
+    # sebanyak contoh yang benar-benar ditampilkan, sehingga jawaban tidak lagi menganggap satu
+    # halaman terbatas sebagai seluruh data.
+    summary=store.approvals_summary('pending','all')
+    rows=store.approvals(APPROVAL_SAMPLE,0,'pending','all')
+    total,amount=summary['total'],summary['amount']
+    answer=f"Ada {total} item menunggu keputusan dengan total nominal tercatat Rp{amount}."
+    facts=[_fact('Approval tertunda',total,'item',APPROVAL_SUMMARY_SOURCE),
+           _fact('Nominal tertunda',amount,'IDR',APPROVAL_SUMMARY_SOURCE)]
+    facts.extend(_fact('Approval '+kind.replace('_',' '),row['count'],'item',APPROVAL_SUMMARY_SOURCE)
+                 for kind,row in sorted(summary['by_kind'].items()) if row['count'])
     findings=[{'severity':'high','title':row['reference']+' · '+row['department'],
-        'detail':row['title'],'source':'/api/approvals?status=pending',
-        'entity':{'type':row['kind'],'id':row['id']}} for row in rows[:10]]
+        'detail':row['title'],'source':APPROVAL_LIST_SOURCE,
+        'entity':{'type':row['kind'],'id':row['id']}} for row in rows]
     proposals=[_proposal('review_approval','Review '+row['reference'],row['title'],
-        '/api/approvals?status=pending',{'kind':row['kind'],'id':row['id']}) for row in rows[:10]]
-    return answer,facts,findings,proposals,{'approvals':rows}
+        APPROVAL_LIST_SOURCE,{'kind':row['kind'],'id':row['id']}) for row in rows]
+    # Evidence memisahkan ringkasan seluruh populasi dari contoh item yang ditampilkan, sehingga
+    # jawaban tetap dapat diaudit dan detail yang terpotong dinyatakan secara eksplisit.
+    evidence={'approvals':{'summary':summary,'sample':rows,'sample_size':len(rows),
+        'truncated':total>len(rows)}}
+    return answer,facts,findings,proposals,evidence
 
 
 def _production(store,focus):
