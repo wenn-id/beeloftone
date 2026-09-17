@@ -26,12 +26,11 @@ tidak dilanjutkan. Tidak ada `reset`, `force-checkout`, atau pembuangan perubaha
 `origin/main` diperiksa ulang sebelum publikasi dan masih berada pada `c77248be`, jadi baseline
 tidak bergerak dan tidak ada rebase maupun pemeriksaan kompatibilitas tambahan yang diperlukan.
 
-**SHA yang benar-benar diuji: `dcb4f73aecb35ad5eb4ede4c1dd3624ef525bc8a`** ("Pin the stockout
-projection and logout credential contracts"). Seluruh hasil pada dokumen ini berasal dari commit
-tersebut. Commit sesudahnya hanya memperbarui dokumen ini sendiri dan tidak menyentuh kode maupun
-tes, sehingga hasilnya tetap berlaku; CI pada HEAD yang dipublikasikan menjalankan ulang semuanya.
+**SHA yang benar-benar diuji: `4ef1eac9dda8e825f6801c0b946537ec32613e4c`.** Seluruh hasil pada
+dokumen ini dijalankan ulang pada commit tersebut. Commit dokumen tidak menyentuh kode maupun tes;
+CI pada HEAD yang dipublikasikan menjalankan ulang semuanya.
 
-Lima commit pada branch:
+Commit pada branch:
 
 | SHA | Subject |
 | --- | --- |
@@ -40,6 +39,7 @@ Lima commit pada branch:
 | `d681c1f` | Handle session logout without a browser cookie |
 | `64954e8` | Record the P3 audit fixes and regenerate the API contract |
 | `dcb4f73` | Pin the stockout projection and logout credential contracts |
+| `4ef1eac` | Actually exercise shift_date in the unrelated-error test |
 
 Perbandingan sebelum/sesudah memakai checkout terpisah, bukan penggantian working tree:
 
@@ -742,7 +742,56 @@ tidak dapat mengakhiri session browser akun mana pun tanpa bukti kepemilikan tok
 **5 dari 6 test ini gagal pada baseline** `c77248be`, termasuk kedua kasus pencabutan lintas akun.
 Satu yang lulus di kedua sisi adalah validitas API key, yang perilaku lama pun sudah memenuhi.
 
-## 10. Status
+## 10. Tindak lanjut komentar review pada PR #7
+
+CI pada HEAD yang dipublikasikan: **sukses**, kedua job (`Core tests`, `Browser acceptance`) —
+[run 35204619157](https://github.com/wenn-id/beeloftone/actions/runs/35204619157) pada
+`628ae9f0deb140469c79e809c646ae44d8222018`. CI hijau pada `main` atau PR #6 tidak dipakai sebagai
+bukti P3.
+
+Review otomatis: **Codex** tidak menemukan masalah ("Didn't find any major issues") pada `628ae9f0de`.
+**CodeRabbit** menyetujui (`APPROVED`) dengan satu nitpick, yang valid dan sudah diperbaiki.
+
+### 10.1 `shift_date` tidak pernah dijalankan pada tes "unrelated errors" (CodeRabbit, review `5233731544`)
+
+Temuan: pada `tests/test_date_boundaries.py`,
+
+```python
+with self.assertRaises(ZeroDivisionError):
+    shift_date(date(2026, 1, 1), 1 // 0, 'as_of')
+```
+
+`1 // 0` dievaluasi saat menyusun daftar argumen, jadi assertion-nya lulus **tanpa pernah masuk ke
+helper maupun blok `try`-nya**. Tesnya karena itu tidak membuktikan apa pun tentang cakupan
+`except OverflowError`.
+
+Diverifikasi terhadap kode, bukan diterima begitu saja — helper dibungkus lalu pemanggilannya
+dihitung:
+
+```
+calls recorded with the old 1//0 form: 0   (0 == helper never ran)
+```
+
+Perbaikannya minimal: anchor diganti objek yang `__add__`-nya melempar, sehingga kesalahannya terjadi
+**di dalam** `anchor + timedelta(days=days)` tempat penjaganya berada, dan assertion memeriksa pesan
+exception yang hanya dapat berasal dari objek itu. Dua kasus `TypeError` yang sudah ada memang sejak
+awal gagal di dalam operasi yang sama, jadi dipertahankan.
+
+```
+$ python -m unittest test_date_boundaries.ShiftDateHelperTest
+Ran 3 tests
+OK
+$ python -m unittest discover -s tests
+Ran 507 tests
+OK
+```
+
+Diperbaiki pada `4ef1eac`. Tidak ada komentar yang ditandai selesai tanpa perbaikan dan pengujiannya.
+
+Tidak ada review comment berbasis baris (`pulls/7/comments` kosong) dan tidak ada temuan review lain
+yang terbuka pada saat dokumen ini ditulis.
+
+## 11. Status
 
 **Implemented and locally verified; pending PR review and CI.**
 
