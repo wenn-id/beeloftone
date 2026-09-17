@@ -201,8 +201,10 @@ depends on a file that exists only in the working tree.
 Bumped `0.86.0` → `0.87.0`. Repository convention is unambiguous: every merged change bumps
 the minor version by one, including the audit-fix PRs (#3 → 0.83.0, #4 → 0.84.0, #6 → 0.85.0,
 #7 → 0.86.0). This release ships changed static assets, so it needs a distinguishable version.
-No schema version was touched — there is no schema version constant, the schema lives in the
-`.sql` files, and `beeloft/store.py` is unmodified.
+Database schema is unchanged; `PRAGMA user_version` remains 55; no migration was added. The
+highest version is set by `beeloft/rework_completions.sql`, `beeloft/store.py` reads it to
+drive migrations, and a freshly created database reports 55 on this branch exactly as it does
+on the baseline. No `.sql` file, `beeloft/store.py`, or `beeloft/models.py` was modified.
 
 ## Intentional exceptions
 
