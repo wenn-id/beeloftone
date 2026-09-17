@@ -518,8 +518,12 @@ async function loadBoard() {
     $('issues-summary').textContent = `${n(result.open_issues)} kendala terbuka · lihat order terkait`;
     $('issues-summary').hidden = false;
     const s = result.summary;
-    $('summary').innerHTML = [['Order aktif',s.active,'order'],['Lewat target',s.overdue,'order'],['Dalam proses',s.in_progress,'pcs'],['Perlu rework',s.rework,'pcs']]
-      .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    // Glyph mengikuti KPI card Command Center: label lalu ikon sprite di kanan, biru,
+    // dekoratif (aria-hidden) sehingga nama metrik tetap satu-satunya teks yang dibaca
+    // pembaca layar. Angka dan definisi metrik tidak berubah.
+    $('summary').innerHTML = [['Order aktif',s.active,'order','layers'],['Lewat target',s.overdue,'order','alert-triangle'],
+      ['Dalam proses',s.in_progress,'pcs','activity'],['Perlu rework',s.rework,'pcs','undo']]
+      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
     $('summary').removeAttribute('aria-busy');
     $('updated').textContent = 'Diperbarui ' + new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit'}).format(new Date());
     if (!result.orders.length) {
@@ -1172,8 +1176,9 @@ async function loadActivity(more = false) {
     if (!more) { activityQuery = {start_date:result.start_date,end_date:result.end_date,kind:query.kind,limit:50}; $('activity-day').value = result.start_date; $('activity-end').value = result.end_date; }
     activityRows.push(...result.items); activityCursor = result.next_before;
     const s = result.summary;
-    $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan'],['Gudang bersih',s.warehouse_net,'pcs'],['Kendala dicatat',s.issues_opened,'catatan'],['Kendala selesai',s.issues_resolved,'catatan']]
-      .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan','list'],['Gudang bersih',s.warehouse_net,'pcs','archive'],
+      ['Kendala dicatat',s.issues_opened,'catatan','alert-triangle'],['Kendala selesai',s.issues_resolved,'catatan','check-circle']]
+      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
     message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada rentang ini.');
     $('activity-list').innerHTML = activityRows.map(item => {
       const stamp = new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
@@ -4072,7 +4077,7 @@ async function marketingBudgetsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Budget marketing','<p class="state">Memuat pengajuan budget…</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions">${user.role!=='viewer'?'<button class="primary" data-action="new-marketing-budget">Ajukan budget</button>':''}<button id="marketing-budget-refresh">Muat ulang</button><button data-action="approvals">Inbox approval</button></div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select><div id="marketing-budget-list"></div><p id="marketing-budget-error" class="error" role="alert" hidden></p><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions">${user.role!=='viewer'?'<button class="primary" data-action="new-marketing-budget">Ajukan budget</button>':''}<button id="marketing-budget-refresh">Muat ulang</button><button data-action="approvals">Inbox approval</button></div><div class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div></div><div id="marketing-budget-list"></div><p id="marketing-budget-error" class="error" role="alert" hidden></p><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
   let before=null,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;before=null;$('marketing-budget-list').replaceChildren();}
@@ -4128,7 +4133,7 @@ async function purchaseRequestsDialog(orderId=null) {
   if (guardPending()) return;
   const version=epoch;
   openDialog(orderId ? 'PR untuk order ini' : 'Permintaan pembelian',
-    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
+    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><div class="filter-form"><div class="form-grid"><div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div></div><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
   const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null, generation=0;
   async function load(reset=false) {
@@ -4227,7 +4232,7 @@ function supplierForm() {
 async function purchaseOrdersDialog() {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Daftar PO','<p class="hint">PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.</p><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
+  openDialog('Daftar PO','<p class="hint">PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.</p><div class="filter-form"><div class="form-grid"><div><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select></div></div></div><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
   const modal=dialogVersion,current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null,generation=0;
   async function load(reset=false){
