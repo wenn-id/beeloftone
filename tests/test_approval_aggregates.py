@@ -15,7 +15,11 @@ from decimal import Decimal
 from unittest import TestCase
 
 from beeloft.store import APPROVAL_AGGREGATES, APPROVAL_KINDS
+import test_materials
+import test_po_receipts
 import test_production
+import test_purchase_orders
+import test_purchase_requests
 
 
 REASON = 'Kebutuhan anggaran kuartal empat'
@@ -646,3 +650,289 @@ class ApprovalSummaryOverflowTest(ApprovalFixture):
                                     json=question | {'question': 'Apa yang harus saya lihat sekarang?'})
         self.assertEqual(overview.status_code, 200, overview.text)
         self.assertIn(f'Rp{expected}', overview.json()['answer'])
+
+
+
+class NineKindFixture(ApprovalFixture):
+    """Fixture P3-A: pengajuan pending yang sah untuk kesembilan kind sekaligus.
+
+    Tiga kind tidak punya seed SQL langsung karena rantai FK dan trigger-nya panjang: PO wajib
+    menunjuk PR yang sudah disetujui, pembayaran supplier wajib menunjuk PO yang sudah disetujui
+    *dan* sudah menerima bahan, dan perubahan produksi wajib cocok dengan due date serta pemilik
+    order yang berlaku. Ketiganya karena itu dibuat lewat endpoint aslinya, sehingga yang terhitung
+    memang pengajuan yang sah menurut aturan aplikasi, bukan baris yang ditanam paksa.
+    """
+
+    material = test_materials.MaterialsTest.material
+    pr_payload = test_purchase_requests.PurchaseRequestTest.payload
+    pr_create = test_purchase_requests.PurchaseRequestTest.create
+    pr_decide = test_purchase_requests.PurchaseRequestTest.decide
+    new_supplier = test_purchase_orders.PurchaseOrderTest.supplier
+    submit_po = test_purchase_orders.PurchaseOrderTest.submit_po
+    approve_po = test_purchase_orders.PurchaseOrderTest.approve_po
+    receive = test_po_receipts.PurchaseReceiptTest.receive
+
+    def supplier_id(self):
+        """Satu pemasok dipakai bersama: kode pemasok unik, jadi tidak boleh dibuat dua kali."""
+        if getattr(self, 'shared_supplier', None) is None:
+            self.shared_supplier = self.new_supplier()
+        return self.shared_supplier['id']
+
+    def approved_purchase_request(self, code, reference, quantity='2'):
+        material = self.material(code=code)
+        approved = self.pr_decide(self.pr_create(self.pr_payload(material, reference=reference,
+            lines=[dict(material_id=material['id'], quantity=quantity)])), 'approved')
+        self.record('purchase_request', None, 'approved',
+                    amount=Decimal(approved['estimated_value']))
+        return material, approved
+
+    def seed_purchase_order(self, code, pr_reference, po_reference, approve=False,
+                            unit_price='10.00', quantity='2'):
+        material, approved = self.approved_purchase_request(code, pr_reference, quantity)
+        po = self.submit_po(dict(reference=po_reference, request_id=approved['id'],
+            expected_revision=approved['revision'], supplier_id=self.supplier_id(),
+            expected_date='2026-10-15', terms='Bayar setelah diterima',
+            reason='Harga disepakati',
+            prices=[dict(material_id=material['id'], unit_price=unit_price)]))
+        if approve:
+            self.approve_po(po)
+        self.record('purchase_order', None, 'approved' if approve else PENDING,
+                    amount=Decimal(po['total']))
+        return material, po
+
+    def seed_supplier_payment(self, code, pr_reference, po_reference, amount='10.00'):
+        material, po = self.seed_purchase_order(code, pr_reference, po_reference, approve=True)
+        self.receive(po, dict(material_id=material['id'], reference='BATCH-' + po_reference,
+            quantity='2', location='Rak A', received_date='2026-10-15',
+            reason='Lolos pemeriksaan'))
+        payment = self.post('/api/purchase-orders/' + po['id'] + '/payment-requests',
+            dict(reference='PAY-' + po_reference, invoice_reference='INV-' + po_reference,
+                 invoice_date='2026-10-15', due_date='2026-10-30', amount=amount,
+                 reason='Invoice sesuai penerimaan bahan'))
+        self.record('supplier_payment', None, PENDING, amount=Decimal(payment['amount']))
+        return payment
+
+    def seed_production_change(self, reference='PCR-AGG'):
+        target = self.order()
+        request = self.post('/api/orders/' + target['id'] + '/change-requests',
+            dict(reference=reference, owner_id=self.admin['id'], due_date='2099-01-01',
+                 expected_revision=target['revision'],
+                 reason='Jadwal produksi perlu disesuaikan'))
+        self.record('production_change', None, PENDING)
+        return request
+
+    def seed_every_kind(self):
+        """Tepat satu pengajuan pending untuk masing-masing dari kesembilan kind."""
+        self.seed_purchase_requests(1, amount_minor=100_000_00)
+        self.seed_purchase_order('AGG-PO-CLOTH', 'PR-AGG-PO', 'PO-AGG-PENDING')
+        self.seed_supplier_payment('AGG-PAY-CLOTH', 'PR-AGG-PAY', 'PO-AGG-PAID')
+        self.seed_marketing(1, amount_minor=250_000_00)
+        self.seed_production_change()
+        self.seed_workforce(1, kind='leave')
+        self.seed_workforce(1, kind='overtime')
+        self.seed_payroll(1, gross_minor=5_000_000_00, employer_minor=500_000_00)
+        self.seed_ai_action(1, estimated_value='500000.00')
+
+    def breakdown(self):
+        report = self.client.get('/api/command-center')
+        self.assertEqual(report.status_code, 200, report.text)
+        return report.json()['approvals']
+
+
+class CommandCenterApprovalBreakdownTest(NineKindFixture):
+    """Regresi P3-A: rincian kategori approval harus memuat seluruh kategori agregat.
+
+    Command Center sudah membaca `approvals_summary()` untuk total dan nominalnya, tetapi
+    `approvals.by_kind` masih dipangkas ke enam kategori pilihan tangan. Cuti, lembur, dan batch
+    payroll ikut dihitung pada `pending_count` namun tidak pernah muncul di rincian, sehingga
+    jumlah rincian lebih kecil daripada totalnya dan tiga departemen kehilangan visibilitas.
+    """
+
+    # Enam kategori yang sudah dilaporkan sebelum perbaikan; nilainya tidak boleh bergeser.
+    ORIGINAL = ('purchase_request', 'purchase_order', 'supplier_payment', 'marketing_budget',
+                'production_change', 'ai_action')
+    ADDED = ('workforce_leave', 'workforce_overtime', 'payroll_batch')
+
+    def test_breakdown_reports_every_kind_the_aggregate_knows(self):
+        """Kesembilan kind punya pengajuan pending yang sah, dan semuanya terlihat."""
+        self.seed_every_kind()
+        approvals = self.breakdown()
+        self.assertEqual(set(approvals['by_kind']), set(APPROVAL_KINDS))
+        self.assertEqual(approvals['by_kind'], {kind: 1 for kind in APPROVAL_KINDS})
+        self.assertEqual(approvals['pending_count'], 9)
+        # Oracle fixture, bukan agregat yang diuji.
+        truth = self.oracle()
+        self.assertEqual((approvals['pending_count'], approvals['pending_amount']),
+                         (truth['total'], truth['amount']))
+        self.assertEqual(approvals['pending_without_amount'], truth['without_amount'])
+
+    def test_breakdown_sums_to_the_pending_count_for_the_same_scope(self):
+        self.seed_every_kind()
+        self.seed_marketing(4, amount_minor=1_000_00, prefix='MKT-EXTRA')
+        self.seed_workforce(3, kind='overtime')
+        approvals = self.breakdown()
+        self.assertEqual(sum(approvals['by_kind'].values()), approvals['pending_count'])
+        self.assertEqual(approvals['pending_count'], 16)
+
+    def test_categories_without_pending_requests_stay_present_as_zero(self):
+        """Kategori kosong tetap ada supaya rincian tidak berubah bentuk antar-permintaan."""
+        self.seed_workforce(2, kind='leave')
+        approvals = self.breakdown()
+        self.assertEqual(set(approvals['by_kind']), set(APPROVAL_KINDS))
+        self.assertEqual(approvals['by_kind']['workforce_leave'], 2)
+        for kind in set(APPROVAL_KINDS) - {'workforce_leave'}:
+            self.assertEqual(approvals['by_kind'][kind], 0, kind)
+        self.assertEqual(sum(approvals['by_kind'].values()), approvals['pending_count'])
+
+    def test_empty_dataset_reports_every_category_as_zero(self):
+        approvals = self.breakdown()
+        self.assertEqual(approvals['by_kind'], {kind: 0 for kind in APPROVAL_KINDS})
+        self.assertEqual((approvals['pending_count'], approvals['pending_amount']), (0, '0.00'))
+        self.assertEqual(sum(approvals['by_kind'].values()), 0)
+
+    def test_leave_only_overtime_only_and_payroll_only_datasets_are_visible(self):
+        """Sebelum perbaikan ketiga populasi ini seluruhnya tidak terlihat pada rincian."""
+        for kind, seed in (('workforce_leave', lambda: self.seed_workforce(6, kind='leave')),
+                           ('workforce_overtime', lambda: self.seed_workforce(4, kind='overtime')),
+                           ('payroll_batch', lambda: self.seed_payroll(3, gross_minor=1_000_00))):
+            with self.subTest(kind=kind):
+                self.setUp()
+                seed()
+                approvals = self.breakdown()
+                counts = {name: value for name, value in approvals['by_kind'].items() if value}
+                self.assertEqual(list(counts), [kind])
+                self.assertEqual(counts[kind], approvals['pending_count'])
+                self.assertEqual(sum(approvals['by_kind'].values()),
+                                 approvals['pending_count'])
+
+    def test_leave_and_overtime_without_amounts_are_counted_but_add_no_nominal(self):
+        self.seed_workforce(5, kind='leave')
+        self.seed_workforce(2, kind='overtime')
+        self.seed_marketing(1, amount_minor=750_00)
+        approvals = self.breakdown()
+        self.assertEqual((approvals['by_kind']['workforce_leave'],
+                          approvals['by_kind']['workforce_overtime']), (5, 2))
+        self.assertEqual(approvals['pending_count'], 8)
+        self.assertEqual(approvals['pending_amount'], '750.00')
+        self.assertEqual(approvals['pending_without_amount'], 7)
+
+    def test_terminal_decisions_leave_the_breakdown_with_the_pending_scope(self):
+        self.seed_workforce(5, kind='leave')
+        self.seed_workforce(3, kind='overtime')
+        self.seed_payroll(2, gross_minor=1_000_00)
+        self.seed_marketing(4, amount_minor=1_000_00)
+        # Setiap tabel approval punya transisi terminal yang diizinkannya sendiri; yang diuji di
+        # sini adalah bahwa keputusan terminal apa pun mengeluarkan baris dari scope pending.
+        self.seed_workforce(6, kind='leave', status='approved')
+        self.seed_workforce(2, kind='overtime', status='rejected')
+        self.seed_payroll(3, gross_minor=1_000_00, status='approved')
+        self.seed_marketing(7, amount_minor=1_000_00, status='cancelled', prefix='MKT-CAN')
+        approvals = self.breakdown()
+        self.assertEqual({name: value for name, value in approvals['by_kind'].items() if value},
+                         {'workforce_leave': 5, 'workforce_overtime': 3, 'payroll_batch': 2,
+                          'marketing_budget': 4})
+        self.assertEqual(approvals['pending_count'], 14)
+        self.assertEqual(sum(approvals['by_kind'].values()), 14)
+        self.assertEqual(self.app.state.store.approvals_summary(status='all')['total'], 32)
+
+    def test_breakdown_stays_exact_beyond_the_old_five_hundred_row_page(self):
+        """Populasi di atas 500 tetap dilaporkan apa adanya, termasuk kategori baru."""
+        self.seed_marketing(400, amount_minor=1_000_00)
+        self.seed_workforce(150, kind='leave')
+        self.seed_workforce(60, kind='overtime')
+        self.seed_payroll(30, gross_minor=1_000_00)
+        approvals = self.breakdown()
+        self.assertEqual(approvals['pending_count'], 640)
+        self.assertGreater(approvals['pending_count'], 500)
+        self.assertEqual(approvals['by_kind'], {'marketing_budget': 400, 'workforce_leave': 150,
+            'workforce_overtime': 60, 'payroll_batch': 30, 'purchase_request': 0,
+            'purchase_order': 0, 'supplier_payment': 0, 'production_change': 0, 'ai_action': 0})
+        self.assertEqual(sum(approvals['by_kind'].values()), 640)
+        truth = self.oracle()
+        self.assertEqual((approvals['pending_count'], approvals['pending_amount']),
+                         (truth['total'], truth['amount']))
+
+    def test_the_six_original_categories_keep_their_values_and_types(self):
+        """Kontrak lama tidak boleh bergeser: kunci, nilai, dan tipenya tetap sama."""
+        self.seed_every_kind()
+        self.seed_marketing(9, amount_minor=1_000_00, prefix='MKT-KEEP')
+        self.seed_ai_action(4, estimated_value='250.00')
+        approvals = self.breakdown()
+        by_kind = approvals['by_kind']
+        self.assertEqual({kind: by_kind[kind] for kind in self.ORIGINAL},
+                         {'purchase_request': 1, 'purchase_order': 1, 'supplier_payment': 1,
+                          'marketing_budget': 10, 'production_change': 1, 'ai_action': 5})
+        for kind in APPROVAL_KINDS:
+            self.assertIsInstance(by_kind[kind], int, kind)
+            self.assertNotIsInstance(by_kind[kind], bool, kind)
+        self.assertIsInstance(approvals['pending_count'], int)
+        self.assertIsInstance(approvals['pending_amount'], str)
+        self.assertIsInstance(approvals['pending_without_amount'], int)
+
+    def test_breakdown_counts_match_the_aggregate_and_the_list_per_category(self):
+        """Rincian bersumber dari agregat yang sama, bukan definisi pending kedua."""
+        self.seed_every_kind()
+        self.seed_workforce(3, kind='leave')
+        store = self.app.state.store
+        approvals = self.breakdown()
+        summary = store.approvals_summary(status='pending')
+        for kind in APPROVAL_KINDS:
+            self.assertEqual(approvals['by_kind'][kind], summary['by_kind'][kind]['count'], kind)
+            listed = store.approvals(1_000_000, 0, 'pending', kind)
+            self.assertEqual(approvals['by_kind'][kind], len(listed), kind)
+
+    def test_amount_semantics_per_kind_are_untouched_by_the_breakdown(self):
+        """Rincian hanya melaporkan jumlah; nominal per kind tetap milik agregat."""
+        self.seed_every_kind()
+        summary = self.app.state.store.approvals_summary(status='pending')
+        self.assertEqual({kind: summary['by_kind'][kind]['amount'] for kind in APPROVAL_KINDS},
+                         {'purchase_request': '100000.00', 'purchase_order': '20.00',
+                          'supplier_payment': '10.00', 'marketing_budget': '250000.00',
+                          'production_change': '0.00', 'workforce_leave': '0.00',
+                          'workforce_overtime': '0.00', 'payroll_batch': '5500000.00',
+                          'ai_action': '500000.00'})
+        approvals = self.breakdown()
+        self.assertEqual(approvals['pending_amount'], summary['amount'])
+        self.assertEqual(approvals['pending_amount'], self.oracle()['amount'])
+
+    def test_extreme_amounts_do_not_disturb_the_added_categories(self):
+        """Nominal melewati batas integer SQLite tetap eksak dan jumlahnya tetap benar."""
+        extreme = 10**17
+        self.seed_payroll(47, gross_minor=extreme, employer_minor=extreme)
+        self.seed_workforce(4, kind='leave')
+        self.seed_workforce(2, kind='overtime')
+        approvals = self.breakdown()
+        self.assertGreater(47 * 2 * extreme, 2**63 - 1)
+        self.assertEqual(approvals['by_kind']['payroll_batch'], 47)
+        self.assertEqual((approvals['by_kind']['workforce_leave'],
+                          approvals['by_kind']['workforce_overtime']), (4, 2))
+        self.assertEqual(approvals['pending_count'], 53)
+        self.assertEqual(sum(approvals['by_kind'].values()), 53)
+        # Oracle integer murni: 47 * 2 * 10^17 satuan minor dibagi 100.
+        whole, cents = divmod(47 * 2 * extreme, 100)
+        self.assertEqual(approvals['pending_amount'], f'{whole}.{cents:02d}')
+        self.assertEqual(approvals['pending_amount'], '94000000000000000.00')
+
+    def test_approvals_list_endpoint_is_still_a_list(self):
+        """Kontrak GET /api/approvals tidak berubah menjadi object oleh perbaikan ini."""
+        self.seed_every_kind()
+        listed = self.client.get('/api/approvals?limit=500').json()
+        self.assertIsInstance(listed, list)
+        self.assertEqual(len(listed), 9)
+        self.assertEqual({row['kind'] for row in listed}, set(APPROVAL_KINDS))
+
+    def test_ai_facts_report_the_added_categories_too(self):
+        """Facts AI memetakan kategori secara mekanis; kategori baru harus ikut muncul."""
+        self.seed_workforce(4, kind='leave')
+        self.seed_workforce(2, kind='overtime')
+        self.seed_payroll(3, gross_minor=1_000_00)
+        answer = self.client.post('/api/ai/investigate', json=dict(
+            question='Apa saja yang menunggu persetujuan approval?', as_of='2026-11-15',
+            window_days=14, lead_time_days=180, review_period_days=180, safety_stock_days=90,
+            batch_multiple=12))
+        self.assertEqual(answer.status_code, 200, answer.text)
+        facts = {row['label']: row['value'] for row in answer.json()['facts']}
+        self.assertEqual(facts['Approval workforce leave'], 4)
+        self.assertEqual(facts['Approval workforce overtime'], 2)
+        self.assertEqual(facts['Approval payroll batch'], 3)
+        self.assertEqual(facts['Approval tertunda'], 9)

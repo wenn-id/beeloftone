@@ -39,7 +39,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.85.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.86.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -55,6 +55,12 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     auth_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
     def actor(request: Request, api_key=Depends(auth_header)):
+        # Prioritas kredensial dicatat, bukan hanya dipakai. X-API-Key tetap menang atas cookie
+        # seperti sebelumnya, dan `request.state.browser_session` menyimpan token session hanya bila
+        # cookie itulah yang benar-benar meng-autentikasi request ini. Logout memerlukan fakta
+        # tersebut: satu-satunya session yang boleh dicabutnya adalah session yang memberinya akses,
+        # dan jalur cookie itu sudah lewat pemeriksaan CSRF di bawah.
+        request.state.browser_session = None
         if api_key:
             resolved = store.authenticate(api_key)
         else:
@@ -63,6 +69,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                 raise DomainError(401,"Masukkan X-API-Key atau login melalui browser.")
             resolved = store.authenticate_browser_session(session,request.headers.get('X-CSRF-Token'),
                                                           request.method not in ('GET','HEAD','OPTIONS'))
+            request.state.browser_session = session
         # Binding aktor. Cookie session dipakai bersama seluruh tab pada satu origin, sedangkan akun
         # yang membuka sebuah form hanya diketahui tab tersebut. Klien menyatakan akun yang
         # dipakainya saat menyusun request, dan pernyataan itu wajib cocok dengan akun yang
@@ -165,10 +172,33 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.post('/api/session/logout', tags=['Access'])
     def close_session(request: Request, response: Response, user: Actor):
-        store.revoke_browser_session(request.cookies['beeloft_session'])
+        """Menutup session browser yang memberi akses pada request ini.
+
+        Kredensial API key tidak membawa session browser, jadi tidak ada yang dicabut dan
+        jawabannya tetap 200 `signed_out`. API key itu sendiri tidak pernah dicabut di sini.
+        """
+        # Sebelumnya endpoint ini membaca `request.cookies['beeloft_session']` langsung. Autentikasi
+        # bersama boleh lolos lewat X-API-Key tanpa cookie sama sekali, sehingga klien API key yang
+        # sah dijawab HTTP 500 oleh KeyError. Yang dicabut sekarang adalah session yang benar-benar
+        # meng-autentikasi request ini, bukan cookie apa pun yang ikut terkirim:
+        #
+        # * Cookie session hanya sampai ke sini setelah `actor()` memeriksanya beserta token CSRF,
+        #   jadi pencabutan tetap terlindung CSRF persis seperti sebelumnya dan tidak ada jalan baru
+        #   untuk melewatinya.
+        # * Cookie yang menempel pada request ber-API-key tidak pernah ter-autentikasi, jadi tidak
+        #   dicabut. Sebuah API key tidak boleh mengakhiri session browser akun mana pun tanpa bukti
+        #   kepemilikan token CSRF-nya; sebelum perbaikan, request seperti itu mencabut session akun
+        #   lain tanpa pemeriksaan apa pun.
+        #
+        # Kegagalan penyimpanan tidak ditangkap, sehingga logout yang gagal tidak pernah terlihat
+        # sebagai logout yang berhasil.
+        response.headers['Cache-Control']='no-store'
+        session=request.state.browser_session
+        if session is None:
+            return {'status':'signed_out'}
+        store.revoke_browser_session(session)
         response.delete_cookie('beeloft_session',path='/')
         response.delete_cookie('beeloft_csrf',path='/')
-        response.headers['Cache-Control']='no-store'
         return {'status':'signed_out'}
 
     @app.get("/api/me", tags=["Access"])
