@@ -417,3 +417,199 @@ class LogoutWithoutABrowserCookieTest(TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM audit_events WHERE operation "
                                         "LIKE '%logout%'").fetchone()[0], 0)
+
+
+
+class LogoutCredentialAndCookieContractTest(TestCase):
+    """Kontrak kredensial P3-C diperiksa dari header Set-Cookie dan keadaan session, bukan status.
+
+    `LogoutWithoutABrowserCookieTest` sudah menegakkan status HTTP dan jumlah session untuk seluruh
+    kombinasi kredensial. Kelas ini menutup sisanya: apa yang benar-benar dikirim pada header
+    Set-Cookie ketika sebuah cookie ikut terkirim tetapi bukan target logout, dan apakah session itu
+    masih dapat dipakai lewat autentikasi cookie sesudahnya -- termasuk untuk menulis.
+    """
+
+    setUp = production_tests.ProductionTest.setUp
+    post = production_tests.ProductionTest.post
+
+    def sessions(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            return db.execute('SELECT COUNT(*) FROM browser_sessions').fetchone()[0]
+
+    def tokens(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            return {row[0] for row in db.execute('SELECT token_hash,user_id FROM browser_sessions')}
+
+    def rows(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            return sorted(db.execute('SELECT token_hash,csrf_hash,user_id,expires_at '
+                                     'FROM browser_sessions').fetchall())
+
+    def login(self, key=None):
+        """Login browser. Header X-API-Key admin dari setUp sengaja dibiarkan menempel."""
+        response = self.client.post('/api/session',
+                                    json={'api_key': key or self.admin['api_key']})
+        self.assertEqual(response.status_code, 200, response.text)
+        return self.client.cookies.get('beeloft_csrf')
+
+    def api_key_logout(self, key=None):
+        return self.client.post('/api/session/logout',
+                                headers={'X-API-Key': key or self.admin['api_key']})
+
+    def assert_no_cookie_touched(self, response):
+        """Tidak ada Set-Cookie sama sekali: cookie yang bukan target tidak dihapus atau ditimpa."""
+        self.assertEqual(response.headers.get_list('set-cookie'), [],
+                         'logout no-op tidak boleh menyentuh cookie mana pun')
+
+    # --------------------------------------------------------- identitas sama
+    def test_same_identity_cookie_is_not_touched_and_still_authenticates(self):
+        csrf = self.login()
+        before = self.rows()
+        cookie = self.client.cookies.get('beeloft_session')
+        self.assertIsNotNone(cookie)
+
+        response = self.api_key_logout()
+        self.assertEqual((response.status_code, response.json()),
+                         (200, {'status': 'signed_out'}), response.text)
+        self.assert_no_cookie_touched(response)
+        # Session-nya utuh baris demi baris, bukan hanya jumlahnya.
+        self.assertEqual(self.rows(), before)
+        # Cookie masih dipegang klien, tidak dihapus oleh respons.
+        self.assertEqual(self.client.cookies.get('beeloft_session'), cookie)
+        self.assertIsNotNone(self.client.cookies.get('beeloft_csrf'))
+
+        # Session itu masih dapat dipakai lewat autentikasi cookie, termasuk untuk menulis.
+        self.client.headers.pop('X-API-Key', None)
+        self.assertEqual(self.client.get('/api/me').json()['id'], self.admin['id'])
+        created = self.client.post('/api/products',
+            json={'sku': 'NOOP-SAME', 'name': 'Session masih hidup', 'color': '', 'size': ''},
+            headers={'Idempotency-Key': 'noop-same-identity', 'X-CSRF-Token': csrf})
+        self.assertEqual(created.status_code, 201, created.text)
+
+        # Logout normal lewat cookie tetap menuntut CSRF, lalu mencabut session itu.
+        self.assertEqual(self.client.post('/api/session/logout').status_code, 403)
+        self.assertEqual(self.sessions(), 1)
+        revoked = self.client.post('/api/session/logout', headers={'X-CSRF-Token': csrf})
+        self.assertEqual(revoked.status_code, 200, revoked.text)
+        cleared = revoked.headers.get_list('set-cookie')
+        self.assertTrue(any(value.startswith('beeloft_session=') for value in cleared))
+        self.assertTrue(any(value.startswith('beeloft_csrf=') for value in cleared))
+        self.assertEqual(self.sessions(), 0)
+
+    # --------------------------------------------------------- identitas berbeda
+    def test_other_identity_cookie_is_not_touched_and_still_authenticates(self):
+        csrf = self.login(self.operator['api_key'])
+        before = self.rows()
+        cookie = self.client.cookies.get('beeloft_session')
+
+        # API key admin, cookie operator: kredensial API key yang menang, jadi tidak ada session
+        # yang meng-autentikasi request ini dan tidak ada yang boleh dicabut.
+        response = self.api_key_logout(self.admin['api_key'])
+        self.assertEqual((response.status_code, response.json()),
+                         (200, {'status': 'signed_out'}), response.text)
+        self.assert_no_cookie_touched(response)
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(self.client.cookies.get('beeloft_session'), cookie)
+
+        # Session operator masih hidup dan masih miliknya, lewat HTTP dengan cookie.
+        self.client.headers.pop('X-API-Key', None)
+        identity = self.client.get('/api/me')
+        self.assertEqual(identity.status_code, 200, identity.text)
+        self.assertEqual(identity.json()['id'], self.operator['id'])
+        self.assertNotEqual(identity.json()['id'], self.admin['id'])
+        # Menulis lewat cookie itu benar-benar ter-autentikasi sebagai operator: yang menolak adalah
+        # aturan role (membuat produk hanya untuk admin), bukan session maupun CSRF. Token CSRF yang
+        # salah akan dijawab 'Token keamanan browser tidak valid.' sebelum role diperiksa.
+        write = self.client.post('/api/products',
+            json={'sku': 'NOOP-OTHER', 'name': 'Session operator hidup', 'color': '', 'size': ''},
+            headers={'Idempotency-Key': 'noop-other-identity', 'X-CSRF-Token': csrf})
+        self.assertEqual(write.status_code, 403, write.text)
+        self.assertIn('Role ini tidak diizinkan', write.json()['detail'])
+        bad_csrf = self.client.post('/api/products',
+            json={'sku': 'NOOP-OTHER-2', 'name': 'Ditolak CSRF', 'color': '', 'size': ''},
+            headers={'Idempotency-Key': 'noop-other-csrf', 'X-CSRF-Token': 'salah'})
+        self.assertEqual(bad_csrf.status_code, 403)
+        self.assertIn('Token keamanan browser', bad_csrf.json()['detail'])
+
+        # Dan pemiliknya sendiri tetap dapat mengakhirinya, dengan CSRF.
+        self.assertEqual(self.client.post('/api/session/logout').status_code, 403)
+        self.assertEqual(self.client.post('/api/session/logout',
+                                          headers={'X-CSRF-Token': csrf}).status_code, 200)
+        self.assertEqual(self.sessions(), 0)
+
+    def test_repeated_no_op_logouts_beside_a_cookie_stay_harmless(self):
+        csrf = self.login(self.operator['api_key'])
+        before = self.rows()
+        for attempt in range(3):
+            with self.subTest(attempt=attempt):
+                response = self.api_key_logout(self.admin['api_key'])
+                self.assertEqual(response.status_code, 200)
+                self.assert_no_cookie_touched(response)
+                self.assertEqual(self.rows(), before)
+        self.client.headers.pop('X-API-Key', None)
+        self.assertEqual(self.client.get('/api/me').json()['id'], self.operator['id'])
+        self.assertEqual(self.client.post('/api/session/logout',
+                                          headers={'X-CSRF-Token': csrf}).status_code, 200)
+
+    # --------------------------------------------------------- API key tetap sah
+    def test_the_api_key_stays_valid_after_a_no_op_logout_that_carried_a_cookie(self):
+        self.login()
+        self.assertEqual(self.api_key_logout().status_code, 200)
+        # Tanpa cookie sama sekali, API key yang sama masih meng-autentikasi dan masih dapat menulis.
+        self.client.cookies.clear()
+        identity = self.client.get('/api/me', headers={'X-API-Key': self.admin['api_key']})
+        self.assertEqual(identity.status_code, 200, identity.text)
+        self.assertEqual(identity.json()['id'], self.admin['id'])
+        created = self.post('/api/products',
+                            {'sku': 'APIKEY-AFTER-NOOP', 'name': 'Kunci masih sah',
+                             'color': '', 'size': ''}, api_key=self.admin['api_key'])
+        self.assertEqual(created['sku'], 'APIKEY-AFTER-NOOP')
+
+    # --------------------------------------------------------- hanya session yang dipakai
+    def test_only_the_authenticating_session_is_revoked_when_several_exist(self):
+        store = self.app.state.store
+        _, other_admin, _ = store.create_browser_session(self.admin['api_key'])
+        _, operator_token, _ = store.create_browser_session(self.operator['api_key'])
+        csrf = self.login()
+        self.assertEqual(self.sessions(), 3)
+
+        # No-op lewat API key: ketiganya utuh.
+        before = self.rows()
+        noop = self.api_key_logout()
+        self.assertEqual(noop.status_code, 200)
+        self.assert_no_cookie_touched(noop)
+        self.assertEqual(self.rows(), before)
+
+        # Logout cookie: hanya session yang meng-autentikasi yang hilang.
+        self.client.headers.pop('X-API-Key', None)
+        self.assertEqual(self.client.post('/api/session/logout',
+                                          headers={'X-CSRF-Token': csrf}).status_code, 200)
+        self.assertEqual(self.sessions(), 2)
+        self.assertEqual(store.authenticate_browser_session(other_admin)['id'], self.admin['id'])
+        self.assertEqual(store.authenticate_browser_session(operator_token)['id'],
+                         self.operator['id'])
+
+    # --------------------------------------------------------- kegagalan storage
+    def test_a_storage_failure_beside_a_cookie_is_not_a_false_success(self):
+        csrf = self.login()
+        before = self.rows()
+        with self.app.state.store.transaction(write=True) as db:
+            db.execute("""CREATE TRIGGER fail_revoke_contract BEFORE DELETE ON browser_sessions
+                BEGIN SELECT RAISE(ABORT,'revoke ditolak'); END""")
+        # No-op tidak menyentuh penyimpanan sama sekali, jadi tetap 200 dan tetap tidak mencabut.
+        noop = self.api_key_logout()
+        self.assertEqual(noop.status_code, 200)
+        self.assert_no_cookie_touched(noop)
+        self.assertEqual(self.rows(), before)
+        # Logout cookie yang benar-benar mencabut harus melaporkan kegagalannya.
+        self.client.headers.pop('X-API-Key', None)
+        failed = self.client.post('/api/session/logout', headers={'X-CSRF-Token': csrf})
+        self.assertNotEqual(failed.status_code, 200, failed.text)
+        self.assertGreaterEqual(failed.status_code, 400)
+        self.assertEqual(self.rows(), before, 'session tetap hidup setelah kegagalan')
+        self.assertEqual(self.client.get('/api/me').json()['id'], self.admin['id'])
+        with self.app.state.store.transaction(write=True) as db:
+            db.execute('DROP TRIGGER fail_revoke_contract')
+        self.assertEqual(self.client.post('/api/session/logout',
+                                          headers={'X-CSRF-Token': csrf}).status_code, 200)
+        self.assertEqual(self.sessions(), 0)

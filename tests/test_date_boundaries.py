@@ -21,12 +21,15 @@ Batas aman di sini dihitung langsung dari `date.min`/`date.max` dengan `timedelt
 dengan helper yang sedang diuji, dan beberapa kasus ditulis sebagai tanggal literal.
 """
 
+import json
 import sqlite3
 from contextlib import closing
 from datetime import date, timedelta
 from unittest import TestCase
 
 import test_production
+import test_replenishment_recommendations as repl_tests
+import test_size_demand_insights as size_tests
 
 
 # Untuk setiap endpoint: parameter lebar periode, dan berapa hari dari `as_of` ke tepi periode
@@ -495,3 +498,210 @@ class ShiftDateHelperTest(TestCase):
             shift_date('2026-01-01', 7, 'as_of')
         with self.assertRaises(ZeroDivisionError):
             shift_date(date(2026, 1, 1), 1 // 0, 'as_of')
+
+
+
+class StockProjectionSemanticsTest(TestCase):
+    """Kontrak proyeksi: `projected_stockout_date is None` bukan berarti "tidak ada demand".
+
+    `projected_date()` mengembalikan None ketika tanggal habis stok jatuh di luar kalender, dan None
+    juga sudah menjadi nilai untuk SKU tanpa laju permintaan. Modul ini membuktikan kedua keadaan
+    itu tetap dapat dibedakan oleh pembacanya, karena yang menyatakan "ada demand atau tidak" adalah
+    `days_of_cover`/`forecast_daily_rate` dan `stockout_risk`/`risk_status` -- bukan proyeksinya.
+
+    Fixture-nya memakai satu shipment berdemand positif dekat ujung kalender, lalu membaca laporan
+    yang sama pada dua tanggal acuan. Keduanya punya demand, cover, dan risiko yang identik; satu-
+    satunya perbedaan adalah apakah tanggal proyeksinya masih terwakili kalender.
+    """
+
+    # Rantai helper produksi -> barang jadi -> penjualan dipakai apa adanya, bukan disalin.
+    setUp = repl_tests.ReplenishmentRecommendationsTest.setUp
+    post = repl_tests.ReplenishmentRecommendationsTest.post
+    material = repl_tests.ReplenishmentRecommendationsTest.material
+    order = repl_tests.ReplenishmentRecommendationsTest.order
+    payload = repl_tests.ReplenishmentRecommendationsTest.payload
+    create = repl_tests.ReplenishmentRecommendationsTest.create
+    decide = repl_tests.ReplenishmentRecommendationsTest.decide
+    supplier = repl_tests.ReplenishmentRecommendationsTest.supplier
+    setup_po = repl_tests.ReplenishmentRecommendationsTest.setup_po
+    issue_po = repl_tests.ReplenishmentRecommendationsTest.issue_po
+    receive = repl_tests.ReplenishmentRecommendationsTest.receive
+    setup_costed_order = repl_tests.ReplenishmentRecommendationsTest.setup_costed_order
+    setup_shipment = repl_tests.ReplenishmentRecommendationsTest.setup_shipment
+    recommendations = repl_tests.ReplenishmentRecommendationsTest.recommendations
+    add_size = size_tests.SizeDemandInsightsTest.add_size
+    size_report = size_tests.SizeDemandInsightsTest.report
+
+    # Cover 13,33 hari dari 9999-12-18 menunjuk 10000-01-01, di luar kalender. Dari 9999-12-10 ia
+    # menunjuk 9999-12-24 yang masih terwakili. Demand, stok, dan risikonya sama pada keduanya.
+    REPRESENTABLE = '9999-12-10'
+    UNREPRESENTABLE = '9999-12-18'
+    PARAMS = dict(window_days=14, lead_time_days=1, review_period_days=1, safety_stock_days=0)
+
+    def edge_shipment(self, first, shipped='9999-12-05', quantity=6):
+        """Satu penjualan berdemand positif dengan tanggal dekat ujung kalender."""
+        reservation = self.post('/api/finished-goods-receipts/' + first['receipt_id']
+                                + '/marketplace-reservations', dict(
+            reference='EDGE-RES', marketplace='Tokopedia',
+            external_order_reference='EDGE-ORDER', location='Rak margin', quantity=quantity,
+            reserved_date=shipped, reason='Permintaan dekat ujung kalender'))
+        pick = self.post('/api/marketplace-reservations/' + reservation['id'] + '/picks', dict(
+            reference='EDGE-PICK', scanned_code=reservation['sku'], quantity=quantity,
+            staging_location='Meja tepi', picked_date=shipped, reason='Pesanan tepi dipilih'))
+        pack = self.post('/api/marketplace-picks/' + pick['id'] + '/packs', dict(
+            reference='EDGE-PACK', quantity=quantity, packed_date=shipped,
+            reason='Pesanan tepi dikemas'))
+        return self.post('/api/marketplace-packs/' + pack['id'] + '/shipments', dict(
+            reference='EDGE-SHIP', quantity=quantity, carrier='JNE',
+            tracking_number='EDGE-TRACK', shipped_date=shipped, reason='Pesanan tepi dikirim'))
+
+    def product_row(self, as_of):
+        report = self.recommendations(as_of=as_of, query=self.product['sku'], **self.PARAMS)
+        self.assertEqual(len(report['product_recommendations']), 1, report)
+        return report, report['product_recommendations'][0]
+
+    def setup_demand(self):
+        _, first = self.setup_shipment()
+        self.edge_shipment(first)
+
+    # ------------------------------------------------------ demand tetap dilaporkan sebagai demand
+    def test_positive_demand_with_an_unrepresentable_projection_stays_positive_demand(self):
+        self.setup_demand()
+        _, row = self.product_row(self.UNREPRESENTABLE)
+        # Proyeksinya memang tidak terwakili.
+        self.assertIsNone(row['projected_stockout_date'])
+        # Namun demand-nya positif dan dilaporkan apa adanya.
+        self.assertEqual(row['forecast_daily_rate'], '0.3000')
+        self.assertEqual(row['recent_net_demand'], 6)
+        self.assertEqual(row['available_quantity'], 4)
+        # days_of_cover -- bukan proyeksi -- adalah penanda "ada demand atau tidak", dan tetap terisi.
+        self.assertEqual(row['days_of_cover'], '13.33')
+        self.assertIsNotNone(row['days_of_cover'])
+
+    def test_an_unrepresentable_date_is_never_read_as_no_demand_or_no_risk(self):
+        self.setup_demand()
+        report, row = self.product_row(self.UNREPRESENTABLE)
+        # Kedua status "tidak ada demand" tidak boleh dipakai untuk baris berdemand positif.
+        self.assertNotIn(row['stockout_risk'], ('no_demand', 'insufficient_history'))
+        self.assertEqual(row['stockout_risk'], 'covered')
+        # Penghitung populasi ikut membuktikannya: SKU ini dihitung sebagai kategori berdemand.
+        self.assertEqual(report['summary']['no_demand'], 0)
+        self.assertEqual(report['summary']['insufficient_history'], 0)
+        self.assertEqual(report['summary']['covered'], 1)
+        self.assertEqual(report['summary']['total_products'], 1)
+
+    def test_risk_and_quantities_follow_the_business_calculation_not_the_projection(self):
+        """Seluruh angka risiko identik pada kedua tanggal; hanya proyeksinya berbeda."""
+        self.setup_demand()
+        representable, ok = self.product_row(self.REPRESENTABLE)
+        unrepresentable, none = self.product_row(self.UNREPRESENTABLE)
+        self.assertEqual(ok['projected_stockout_date'], '9999-12-24')
+        self.assertIsNone(none['projected_stockout_date'])
+        business = ('forecast_daily_rate', 'previous_net_demand', 'recent_net_demand',
+                    'available_quantity', 'inventory_position', 'days_of_cover',
+                    'reorder_point_quantity', 'target_stock_quantity',
+                    'recommended_production_quantity', 'stockout_risk')
+        self.assertEqual({key: ok[key] for key in business},
+                         {key: none[key] for key in business})
+        self.assertEqual(representable['summary'], unrepresentable['summary'])
+
+    def test_no_date_substitution_clipping_or_window_truncation(self):
+        self.setup_demand()
+        report, row = self.product_row(self.UNREPRESENTABLE)
+        # Tanggalnya tidak diganti sentinel, tidak dipotong ke akhir kalender, dan tidak diganti
+        # tanggal lain yang tersedia di respons.
+        self.assertIsNone(row['projected_stockout_date'])
+        for substitute in ('9999-12-31', self.UNREPRESENTABLE, report['planning_horizon_end']):
+            self.assertNotEqual(row['projected_stockout_date'], substitute)
+        # Window dan horizon dilaporkan apa adanya, bukan dipangkas supaya proyeksinya "muat".
+        self.assertEqual((report['as_of'], report['window_days'], report['coverage_days']),
+                         (self.UNREPRESENTABLE, 14, 2))
+        self.assertEqual((report['lead_time_days'], report['review_period_days'],
+                          report['safety_stock_days']), (1, 1, 0))
+        self.assertEqual(report['planning_horizon_end'], '9999-12-20')
+        self.assertEqual(report['forecast'], dict(history_start='9999-11-21',
+            previous_period_end='9999-12-04', recent_period_start='9999-12-05',
+            recent_weight='0.70', previous_weight='0.30'))
+        # Sentinel pengurutan '9999-12-31' tidak boleh muncul sebagai nilai di respons.
+        self.assertNotIn('9999-12-31', json.dumps(report))
+
+    # ---------------------------------------------------- kedua arti None dalam satu respons
+    def test_size_demand_separates_no_demand_from_an_unrepresentable_date(self):
+        """Satu respons memuat kedua arti None sekaligus, dan keduanya tetap dapat dibedakan."""
+        self.setup_demand()
+        large = self.add_size()
+        report = self.size_report(as_of=self.UNREPRESENTABLE, window_days=14, lookahead_days=1,
+                                 query=large['sku'])
+        sizes = {row['size']: row for row in report['items'][0]['sizes']}
+        medium, size_large = sizes['M'], sizes['L']
+        # Keduanya melaporkan projected_stockout_date None.
+        self.assertIsNone(medium['projected_stockout_date'])
+        self.assertIsNone(size_large['projected_stockout_date'])
+        # Ukuran M: demand positif, cover terisi, risiko dari perhitungan bisnis.
+        self.assertEqual((medium['recent_net_demand'], medium['forecast_daily_rate']), (6, '0.3000'))
+        self.assertEqual(medium['days_of_cover'], '13.33')
+        self.assertEqual((medium['risk_rank'], medium['risk_status']), (1, 'later'))
+        self.assertNotEqual(medium['risk_status'], 'no_observed_demand')
+        # Ukuran L: benar-benar tanpa demand.
+        self.assertEqual((size_large['recent_net_demand'], size_large['forecast_daily_rate']),
+                         (0, '0.0000'))
+        self.assertIsNone(size_large['days_of_cover'])
+        self.assertEqual((size_large['risk_rank'], size_large['risk_status']),
+                         (None, 'no_observed_demand'))
+
+    def test_family_level_risk_survives_an_unrepresentable_first_stockout_date(self):
+        self.setup_demand()
+        large = self.add_size()
+        report = self.size_report(as_of=self.UNREPRESENTABLE, window_days=14, lookahead_days=1,
+                                 query=large['sku'])
+        family = report['items'][0]
+        # Tanggalnya hilang, tetapi keluarganya tetap dinilai berdemand dan ukurannya tetap disebut.
+        self.assertIsNone(family['first_stockout_date'])
+        self.assertEqual(family['first_stockout_sizes'], ['M'])
+        self.assertEqual(family['risk_status'], 'later')
+        self.assertNotEqual(family['risk_status'], 'no_observed_demand')
+        self.assertIsNone(report['summary']['earliest_projected_stockout_date'])
+        self.assertEqual((report['summary']['families'], report['summary']['size_variants']), (1, 2))
+        # Sentinel pengurutan tidak menjadi nilai yang dilaporkan.
+        self.assertNotIn('9999-12-31', json.dumps(report))
+
+    def test_the_same_family_reports_the_date_when_it_is_representable(self):
+        """Kontrol: pada tanggal acuan yang lebih awal, demand yang sama melaporkan tanggalnya."""
+        self.setup_demand()
+        large = self.add_size()
+        report = self.size_report(as_of=self.REPRESENTABLE, window_days=14, lookahead_days=1,
+                                 query=large['sku'])
+        family = report['items'][0]
+        sizes = {row['size']: row for row in family['sizes']}
+        self.assertEqual(sizes['M']['projected_stockout_date'], '9999-12-24')
+        self.assertEqual(sizes['M']['days_of_cover'], '13.33')
+        self.assertEqual(family['first_stockout_date'], '9999-12-24')
+        self.assertEqual(report['summary']['earliest_projected_stockout_date'], '9999-12-24')
+        # Ukuran tanpa demand tetap None pada kedua tanggal acuan.
+        self.assertIsNone(sizes['L']['days_of_cover'])
+        self.assertIsNone(sizes['L']['projected_stockout_date'])
+
+    # ------------------------------------------------------------------------ pembaca AI
+    def test_ai_findings_read_the_risk_and_cover_not_the_projection(self):
+        """Facts dan findings AI tidak pernah membaca projected_stockout_date."""
+        self.setup_demand()
+        large = self.add_size()
+        answer = self.client.post('/api/ai/investigate', json=dict(
+            question='SKU apa yang berisiko stockout?', as_of=self.UNREPRESENTABLE,
+            batch_multiple=1, **self.PARAMS))
+        self.assertEqual(answer.status_code, 200, answer.text)
+        report = answer.json()
+        titles = [row['title'] for row in report['findings']]
+        # SKU berdemand positif dengan proyeksi tak terwakili dinilai 'covered', jadi bukan temuan --
+        # dan tidak pernah dilabeli "tidak ada demand".
+        self.assertNotIn(self.product['sku'], ' '.join(titles))
+        for title in titles:
+            self.assertNotIn('tidak ada demand', title)
+        # SKU yang memang tanpa riwayat tetap dilaporkan sebagai apa adanya.
+        history = next(row for row in report['findings'] if large['sku'] in row['title'])
+        self.assertIn('riwayat demand belum cukup', history['title'])
+        self.assertIn('coverage belum tersedia', history['detail'])
+        self.assertEqual(history['severity'], 'info')
+        # Jawaban dan facts memakai penghitung risiko, bukan tanggal proyeksi.
+        self.assertIn('0 SKU berisiko stockout sebelum replenishment', report['answer'])
+        self.assertNotIn('9999', report['answer'])
