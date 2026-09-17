@@ -59,6 +59,22 @@ function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
 }
+// Menambahkan baris hasil ke daftar sekaligus membuang placeholder status yang dipasang
+// oleh shell dialog. Tanpa ini daftar berbasis cursor menampilkan "Memuat ..." di atas
+// halaman pertama selamanya, karena penambahan baris memakai beforeend dan placeholder
+// hanya tergantikan pada kondisi kosong.
+// Membersihkan placeholder "Memuat ..." di dalam dialog. Dipakai ketika pemuatan pertama
+// gagal, supaya status loading tidak terbaca bersamaan dengan pesan error dan tombol
+// coba lagi. Placeholder kosong atau berisi data tidak ikut dihapus.
+function clearDialogLoading() {
+  for (const node of $('dialog-content').querySelectorAll('.state'))
+    if (/^(Memuat|Menghitung|Menggabungkan)/.test(node.textContent.trim())) node.remove();
+}
+function appendRows(id, html) {
+  const host = $(id), first = host.firstElementChild;
+  if (first && first.classList.contains('state')) first.remove();
+  host.insertAdjacentHTML('beforeend', html);
+}
 // Peringatan session dipakai ketika logout tidak terkonfirmasi. Banner ini sengaja tidak otomatis
 // hilang: selama session server belum benar-benar dicabut, statusnya harus terus terlihat. Tombol
 // coba lagi hanya ditawarkan bila mencoba keluar lagi memang langkah berikutnya yang benar; ketika
@@ -502,8 +518,12 @@ async function loadBoard() {
     $('issues-summary').textContent = `${n(result.open_issues)} kendala terbuka · lihat order terkait`;
     $('issues-summary').hidden = false;
     const s = result.summary;
-    $('summary').innerHTML = [['Order aktif',s.active,'order'],['Lewat target',s.overdue,'order'],['Dalam proses',s.in_progress,'pcs'],['Perlu rework',s.rework,'pcs']]
-      .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    // Glyph mengikuti KPI card Command Center: label lalu ikon sprite di kanan, biru,
+    // dekoratif (aria-hidden) sehingga nama metrik tetap satu-satunya teks yang dibaca
+    // pembaca layar. Angka dan definisi metrik tidak berubah.
+    $('summary').innerHTML = [['Order aktif',s.active,'order','layers'],['Lewat target',s.overdue,'order','alert-triangle'],
+      ['Dalam proses',s.in_progress,'pcs','activity'],['Perlu rework',s.rework,'pcs','undo']]
+      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
     $('summary').removeAttribute('aria-busy');
     $('updated').textContent = 'Diperbarui ' + new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit'}).format(new Date());
     if (!result.orders.length) {
@@ -596,7 +616,7 @@ async function auditEventsDialog() {
     const users=await api.get('/api/users');
     if(!current())return;
     $('dialog-content').innerHTML=`<p class="form-info">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only dan urut dari yang terbaru.</p>
-      <form id="audit-filter"><div class="form-grid">
+      <form id="audit-filter" class="filter-form"><div class="form-grid">
         <label class="full">Cari operasi, referensi, pelaku, atau request key<input name="q" maxlength="160" value="${e(auditFilters.q)}"></label>
         <div><label for="audit-category">Kategori</label><select id="audit-category" name="category"><option value="all">Semua kategori</option>${Object.entries(auditCategories).map(([key,label])=>option(key,label)).join('')}</select></div>
         <div><label for="audit-actor">Pelaku</label><select id="audit-actor" name="actor_id"><option value="">Semua pelaku</option>${users.map(item=>option(item.id,`${item.name} · ${item.role}`)).join('')}</select></div>
@@ -840,7 +860,7 @@ async function unmapProductForm(productId) {
 async function productMappingHistoryDialog(productId) {
   if(guardPending())return;
   const version=epoch;openDialog('Riwayat mapping Jubelio','<div id="product-mapping-history"><p class="state">Memuat riwayat…</p></div><p id="product-mapping-history-error" class="error" role="alert" hidden></p><button id="product-mapping-history-more">Muat riwayat sebelumnya</button>');const modal=dialogVersion;let before=null;
-  async function load(){const button=$('product-mapping-history-more');button.disabled=true;message('product-mapping-history-error','');try{const rows=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio/history?`+new URLSearchParams({limit:20,...(before?{before}:{})}));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;if(!before)$('product-mapping-history').replaceChildren();$('product-mapping-history').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>Revisi ${n(row.revision)} · ${row.status==='mapped'?'Terhubung':'Dilepas'}</h3>${row.status==='mapped'?`<p>${e(row.external_sku)} · ${e(row.external_id)}</p>`:''}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p></article>`).join(''));if(!before&&!rows.length)$('product-mapping-history').innerHTML='<p class="state">Belum ada riwayat mapping.</p>';before=rows.at(-1)?.sequence||before;button.hidden=rows.length<20;}catch(error){if(version===epoch&&modal===dialogVersion){message('product-mapping-history-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}finally{button.disabled=false;}}
+  async function load(){const button=$('product-mapping-history-more');button.disabled=true;message('product-mapping-history-error','');try{const rows=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio/history?`+new URLSearchParams({limit:20,...(before?{before}:{})}));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;if(!before)$('product-mapping-history').replaceChildren();appendRows('product-mapping-history',rows.map(row=>`<article class="material-event"><h3>Revisi ${n(row.revision)} · ${row.status==='mapped'?'Terhubung':'Dilepas'}</h3>${row.status==='mapped'?`<p>${e(row.external_sku)} · ${e(row.external_id)}</p>`:''}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p></article>`).join(''));if(!before&&!rows.length)$('product-mapping-history').innerHTML='<p class="state">Belum ada riwayat mapping.</p>';before=rows.at(-1)?.sequence||before;button.hidden=rows.length<20;}catch(error){if(version===epoch&&modal===dialogVersion){message('product-mapping-history-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}finally{button.disabled=false;}}
   $('product-mapping-history-more').onclick=load;await load();
 }
 async function orderForm() {
@@ -1047,7 +1067,7 @@ async function orderChangesDialog() {
       const rows = await api.get(`/api/orders/${order.id}/changes?limit=100${before ? '&before=' + before : ''}`);
       if (!current()) return;
       message('changes-message', rows.length || before ? '' : 'Belum ada perubahan. Tenggat dan PIC masih sesuai saat order dibuat.');
-      $('order-change-list').insertAdjacentHTML('beforeend', rows.map(item => {
+      appendRows('order-change-list', rows.map(item => {
         const timestamp = new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
         return `<article class="issue-item"><strong>${timestamp}</strong>
           ${item.old_due_date !== item.new_due_date ? `<p>Tenggat: ${date(item.old_due_date)} → ${date(item.new_due_date)}</p>` : ''}
@@ -1098,10 +1118,10 @@ async function productionChangeRequestsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/change-requests?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('production-change-request-list').replaceChildren();
-        $('production-change-request-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>Target ${date(row.old_due_date)} → ${date(row.new_due_date)}</p><p>PIC ${e(row.old_owner_name)} → ${e(row.new_owner_name)}</p>${row.stale?'<p class="status-label late">Order sudah berubah; permintaan perlu ditolak dan diajukan ulang.</p>':''}<p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="production-change-request" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian permintaan</button></article>`).join(''));
+        appendRows('production-change-request-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>Target ${date(row.old_due_date)} → ${date(row.new_due_date)}</p><p>PIC ${e(row.old_owner_name)} → ${e(row.new_owner_name)}</p>${row.stale?'<p class="status-label late">Order sudah berubah; permintaan perlu ditolak dan diajukan ulang.</p>':''}<p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="production-change-request" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian permintaan</button></article>`).join(''));
         if(!before&&!rows.length)$('production-change-request-list').innerHTML='<p class="state">Belum ada permintaan perubahan untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat permintaan sebelumnya';
-      }catch(error){if(current()){message('production-change-request-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('production-change-request-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('production-change-request-more').onclick=load;await load();
@@ -1156,8 +1176,9 @@ async function loadActivity(more = false) {
     if (!more) { activityQuery = {start_date:result.start_date,end_date:result.end_date,kind:query.kind,limit:50}; $('activity-day').value = result.start_date; $('activity-end').value = result.end_date; }
     activityRows.push(...result.items); activityCursor = result.next_before;
     const s = result.summary;
-    $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan'],['Gudang bersih',s.warehouse_net,'pcs'],['Kendala dicatat',s.issues_opened,'catatan'],['Kendala selesai',s.issues_resolved,'catatan']]
-      .map(([label,value,unit]) => `<div><dt>${label}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan','list'],['Gudang bersih',s.warehouse_net,'pcs','archive'],
+      ['Kendala dicatat',s.issues_opened,'catatan','alert-triangle'],['Kendala selesai',s.issues_resolved,'catatan','check-circle']]
+      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
     message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada rentang ini.');
     $('activity-list').innerHTML = activityRows.map(item => {
       const stamp = new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
@@ -1258,7 +1279,7 @@ async function bomHistoryDialog(id) {
     try {
       const rows=await api.get(`/api/products/${encodeURIComponent(id)}/bom-history?`+new URLSearchParams({limit:10,...(before?{before}:{})}));
       if (!current()) return;
-      $('bom-history').insertAdjacentHTML('beforeend',rows.map(b=>`<article class="material-event"><h3>${e(b.sku)} · versi ${b.revision}</h3><p class="hint">${e(b.actor_name)} · ${date(b.created_at)}</p>${bomComponentsHTML(b.components)}<p class="reason">${e(b.reason)}</p></article>`).join(''));
+      appendRows('bom-history',rows.map(b=>`<article class="material-event"><h3>${e(b.sku)} · versi ${b.revision}</h3><p class="hint">${e(b.actor_name)} · ${date(b.created_at)}</p>${bomComponentsHTML(b.components)}<p class="reason">${e(b.reason)}</p></article>`).join(''));
       before=rows.at(-1)?.revision; button.hidden=rows.length<10;
     } catch(error) {if(current()) message('bom-history-error',error.message,true);}
     finally {if(current()) button.disabled=false;}
@@ -1315,7 +1336,7 @@ async function reservationsDialog() {
       try{
         const rows=await api.get(`/api/orders/${encodeURIComponent(order.id)}/reservation-history?`+new URLSearchParams({limit:100,...(before?{before}:{})}));
         if(!current())return;
-        $('reservation-history').insertAdjacentHTML('beforeend',rows.map(r=>`<article class="material-event"><strong>${{reserve:'Reservasi ditambah',release:'Reservasi dilepas',consume:'Dipakai oleh pengeluaran'}[r.kind]} · ${e(materialQty(r.quantity,r.unit))}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(r.created_at))}</p></article>`).join(''));
+        appendRows('reservation-history',rows.map(r=>`<article class="material-event"><strong>${{reserve:'Reservasi ditambah',release:'Reservasi dilepas',consume:'Dipakai oleh pengeluaran'}[r.kind]} · ${e(materialQty(r.quantity,r.unit))}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(r.created_at))}</p></article>`).join(''));
         before=rows.at(-1)?.sequence;button.hidden=rows.length<100;button.textContent='Muat reservasi sebelumnya';
       }catch(error){if(current())message('reservation-error',error.message,true);}finally{if(current())button.disabled=false;}
     };
@@ -1339,7 +1360,7 @@ async function cuttingRunsDialog(orderId) {
       try {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/cutting-runs?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
-        $('cutting-list').insertAdjacentHTML('beforeend',rows.map(r=>`<article class="material-event"><h3>${e(r.reference)} · ${n(r.total_output)} pcs</h3>
+        appendRows('cutting-list',rows.map(r=>`<article class="material-event"><h3>${e(r.reference)} · ${n(r.total_output)} pcs</h3>
           <p>${e(r.batch_reference)} · ${e(r.code)}</p><p>${r.reversal?'Sudah dikoreksi':'Hasil tercatat'} · ${purchaseStamp(r.created_at)}</p>
           <button data-action="cutting-run" data-id="${e(r.id)}">Rincian ${e(r.reference)}</button></article>`).join('') || (!before?'<p>Belum ada hasil cutting yang dihubungkan dengan pemakaian bahan.</p>':''));
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
@@ -1416,10 +1437,10 @@ async function bundlesDialog(orderId) {
       const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/bundles?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
       if(!current())return;
       if(!before)$('bundle-list').replaceChildren();
-      $('bundle-list').insertAdjacentHTML('beforeend',rows.map(b=>`<article class="material-event"><h3>${e(b.reference)} · ${n(b.quantity)} pcs</h3><p>${e(b.sku)} · ${e(b.size)} · ${b.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>${e(b.cutting_reference)} · ${e(b.batch_reference)}</p><p class="hint">${e(b.actor_name)} · ${purchaseStamp(b.created_at)}</p><button data-action="bundle" data-id="${e(b.id)}" aria-label="Rincian ${e(b.reference)}">Rincian bundle</button></article>`).join(''));
+      appendRows('bundle-list',rows.map(b=>`<article class="material-event"><h3>${e(b.reference)} · ${n(b.quantity)} pcs</h3><p>${e(b.sku)} · ${e(b.size)} · ${b.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>${e(b.cutting_reference)} · ${e(b.batch_reference)}</p><p class="hint">${e(b.actor_name)} · ${purchaseStamp(b.created_at)}</p><button data-action="bundle" data-id="${e(b.id)}" aria-label="Rincian ${e(b.reference)}">Rincian bundle</button></article>`).join(''));
       if(!before && !rows.length)$('bundle-list').innerHTML='<p class="state">Belum ada bundle untuk order ini. Buka hasil cutting untuk membuat bundle pertama.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
-    }catch(error){if(current()){message('bundle-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('bundle-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('bundle-more').onclick=load;await load();
@@ -1455,10 +1476,10 @@ async function bundleHandoffsDialog(bundleId) {
       if(!current())return;
       if(!before)$('bundle-handoff-list').replaceChildren();
       const status={pending:'Menunggu penerima',received:'Sudah diterima',cancelled:'Dibatalkan'};
-      $('bundle-handoff-list').insertAdjacentHTML('beforeend',rows.map(item=>`<article class="material-event"><p class="status-label ${item.status==='received'?'done':item.status==='pending'?'late':''}">${status[item.status]}</p><h3>${e(item.from_location)} → ${e(item.to_location)}</h3><p>${e(item.bundle_reference)} · ${n(item.quantity)} pcs · ${e(item.sku)} · ${e(item.size)}</p><p class="reason">${e(item.reason)}</p><p class="hint">Dikirim ${e(item.sender_name)} · ${purchaseStamp(item.created_at)}</p>${item.status==='received'?`<p class="reason">Penerimaan: ${e(item.acceptance_reason)}</p><p class="hint">Diterima ${e(item.receiver_name)} · ${purchaseStamp(item.accepted_at)}</p>`:''}${item.status==='cancelled'?`<p class="reason">Pembatalan: ${e(item.cancellation_reason)}</p><p class="hint">Dibatalkan ${e(item.cancellation_actor_name)} · ${purchaseStamp(item.cancelled_at)}</p>`:''}<div class="actions">${item.status==='pending'&&user.role!=='viewer'&&item.sender_id!==user.id?`<button data-action="accept-bundle-handoff" data-id="${e(item.id)}">Konfirmasi terima</button>`:''}${item.status==='pending'&&user.role==='admin'?`<button data-action="cancel-bundle-handoff" data-id="${e(item.id)}">Batalkan handoff</button>`:''}</div></article>`).join(''));
+      appendRows('bundle-handoff-list',rows.map(item=>`<article class="material-event"><p class="status-label ${item.status==='received'?'done':item.status==='pending'?'late':''}">${status[item.status]}</p><h3>${e(item.from_location)} → ${e(item.to_location)}</h3><p>${e(item.bundle_reference)} · ${n(item.quantity)} pcs · ${e(item.sku)} · ${e(item.size)}</p><p class="reason">${e(item.reason)}</p><p class="hint">Dikirim ${e(item.sender_name)} · ${purchaseStamp(item.created_at)}</p>${item.status==='received'?`<p class="reason">Penerimaan: ${e(item.acceptance_reason)}</p><p class="hint">Diterima ${e(item.receiver_name)} · ${purchaseStamp(item.accepted_at)}</p>`:''}${item.status==='cancelled'?`<p class="reason">Pembatalan: ${e(item.cancellation_reason)}</p><p class="hint">Dibatalkan ${e(item.cancellation_actor_name)} · ${purchaseStamp(item.cancelled_at)}</p>`:''}<div class="actions">${item.status==='pending'&&user.role!=='viewer'&&item.sender_id!==user.id?`<button data-action="accept-bundle-handoff" data-id="${e(item.id)}">Konfirmasi terima</button>`:''}${item.status==='pending'&&user.role==='admin'?`<button data-action="cancel-bundle-handoff" data-id="${e(item.id)}">Batalkan handoff</button>`:''}</div></article>`).join(''));
       if(!before&&!rows.length)$('bundle-handoff-list').innerHTML='<p class="state">Belum ada serah-terima untuk bundle ini.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat catatan sebelumnya';
-    }catch(error){if(current()){message('bundle-handoff-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('bundle-handoff-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('bundle-handoff-more').onclick=load;await load();
@@ -1537,10 +1558,10 @@ async function sewingJobsDialog(orderId) {
       if(!current())return;
       if(!before)$('sewing-list').replaceChildren();
       const status={open:'Berjalan',completed:'Selesai',corrected:'Sudah dikoreksi'};
-      $('sewing-list').insertAdjacentHTML('beforeend',rows.map(job=>`<article class="material-event"><h3>${e(job.reference)} · ${n(job.quantity_out)} pcs</h3><p>${e(job.bundle_reference)} · ${e(job.sku)} · ${e(job.size)}</p><p>${job.assignment_type==='makloon'?'Makloon':'Internal'} · ${e(job.assignee)} · ${rupiah(job.cost)}</p><p>${status[job.status]} · dikirim ${date(job.sent_date)}</p><button data-action="sewing-job" data-id="${e(job.id)}" aria-label="Rincian ${e(job.reference)}">Rincian job</button></article>`).join(''));
+      appendRows('sewing-list',rows.map(job=>`<article class="material-event"><h3>${e(job.reference)} · ${n(job.quantity_out)} pcs</h3><p>${e(job.bundle_reference)} · ${e(job.sku)} · ${e(job.size)}</p><p>${job.assignment_type==='makloon'?'Makloon':'Internal'} · ${e(job.assignee)} · ${rupiah(job.cost)}</p><p>${status[job.status]} · dikirim ${date(job.sent_date)}</p><button data-action="sewing-job" data-id="${e(job.id)}" aria-label="Rincian ${e(job.reference)}">Rincian job</button></article>`).join(''));
       if(!before && !rows.length)$('sewing-list').innerHTML='<p class="state">Belum ada job sewing untuk order ini. Buka bundle untuk mengirim pekerjaan pertama.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat job sebelumnya';
-    }catch(error){if(current()){message('sewing-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('sewing-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('sewing-more').onclick=load;await load();
@@ -1613,10 +1634,10 @@ async function finishingRecordsDialog(orderId) {
       const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/finishing-records?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
       if(!current())return;
       if(!before)$('finishing-list').replaceChildren();
-      $('finishing-list').insertAdjacentHTML('beforeend',rows.map(record=>`<article class="material-event"><h3>${e(record.reference)} · ${n(record.quantity)} pcs</h3><p>${e(record.sewing_reference)} · ${e(record.bundle_reference)} · ${e(record.sku)} · ${e(record.size)}</p><p>${record.status==='completed'?'Selesai':'Sudah dikoreksi'} · ${date(record.completed_date)}</p><button data-action="finishing-record" data-id="${e(record.id)}" aria-label="Rincian ${e(record.reference)}">Rincian finishing</button></article>`).join(''));
+      appendRows('finishing-list',rows.map(record=>`<article class="material-event"><h3>${e(record.reference)} · ${n(record.quantity)} pcs</h3><p>${e(record.sewing_reference)} · ${e(record.bundle_reference)} · ${e(record.sku)} · ${e(record.size)}</p><p>${record.status==='completed'?'Selesai':'Sudah dikoreksi'} · ${date(record.completed_date)}</p><button data-action="finishing-record" data-id="${e(record.id)}" aria-label="Rincian ${e(record.reference)}">Rincian finishing</button></article>`).join(''));
       if(!before && !rows.length)$('finishing-list').innerHTML='<p class="state">Belum ada catatan finishing untuk order ini. Buka job sewing yang sudah selesai untuk mencatat finishing.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat catatan sebelumnya';
-    }catch(error){if(current()){message('finishing-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('finishing-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('finishing-more').onclick=load;await load();
@@ -1677,10 +1698,10 @@ async function finalQcRecordsDialog(orderId) {
       const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/final-qc-records?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
       if(!current())return;
       if(!before)$('final-qc-list').replaceChildren();
-      $('final-qc-list').insertAdjacentHTML('beforeend',rows.map(record=>`<article class="material-event"><h3>${e(record.reference)} · ${n(record.inspected_quantity)} pcs</h3><p>${inspectionBadge(record)}</p><p>${e(record.finishing_reference)} · ${e(record.sku)} · ${e(record.size)}</p><p>Diterima ${n(record.accepted_quantity)} · rework ${n(record.rework_quantity)} · reject ${n(record.reject_quantity)}</p><p>${record.status==='completed'?'Selesai':'Sudah dikoreksi'} · ${date(record.inspection_date)}</p><button data-action="final-qc-record" data-id="${e(record.id)}" aria-label="Rincian ${e(record.reference)}">Rincian final QC</button></article>`).join(''));
+      appendRows('final-qc-list',rows.map(record=>`<article class="material-event"><h3>${e(record.reference)} · ${n(record.inspected_quantity)} pcs</h3><p>${inspectionBadge(record)}</p><p>${e(record.finishing_reference)} · ${e(record.sku)} · ${e(record.size)}</p><p>Diterima ${n(record.accepted_quantity)} · rework ${n(record.rework_quantity)} · reject ${n(record.reject_quantity)}</p><p>${record.status==='completed'?'Selesai':'Sudah dikoreksi'} · ${date(record.inspection_date)}</p><button data-action="final-qc-record" data-id="${e(record.id)}" aria-label="Rincian ${e(record.reference)}">Rincian final QC</button></article>`).join(''));
       if(!before && !rows.length)$('final-qc-list').innerHTML='<p class="state">Belum ada catatan final QC untuk order ini. Buka finishing yang selesai untuk mencatat inspeksi.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat inspeksi sebelumnya';
-    }catch(error){if(current()){message('final-qc-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('final-qc-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('final-qc-more').onclick=load;await load();
@@ -1739,10 +1760,10 @@ function reworkCompletionList(title, path, emptyText, retryAction, retryId) {
       const rows=await api.get(path+'?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
       if(!current())return;
       if(!before)$('rework-completion-list').replaceChildren();
-      $('rework-completion-list').insertAdjacentHTML('beforeend',rows.map(reworkCompletionRow).join(''));
+      appendRows('rework-completion-list',rows.map(reworkCompletionRow).join(''));
       if(!before && !rows.length)$('rework-completion-list').innerHTML=`<p class="state">${e(emptyText)}</p>`;
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat catatan sebelumnya';
-    }catch(error){if(current()){message('rework-completion-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()){message('rework-completion-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current())button.disabled=false;}
   };
   $('rework-completion-more').onclick=load;return load().catch(error=>{
@@ -1837,10 +1858,10 @@ async function finishedGoodsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/finished-goods-receipts?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('finished-goods-list').replaceChildren();
-        $('finished-goods-list').insertAdjacentHTML('beforeend',rows.map(receipt=>`<article class="material-event"><h3>${e(receipt.reference)} · ${n(receipt.received_quantity)} pcs</h3><p>${e(receipt.sku)} · ${e(receipt.size)} · ${e(receipt.location)}</p><p>Sellable ${n(receipt.sellable_quantity)} · hold ${n(receipt.hold_quantity)} · ${receipt.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>${date(receipt.received_date)}</p><button data-action="finished-goods-receipt" data-id="${e(receipt.id)}" aria-label="Rincian ${e(receipt.reference)}">Rincian penerimaan</button></article>`).join(''));
+        appendRows('finished-goods-list',rows.map(receipt=>`<article class="material-event"><h3>${e(receipt.reference)} · ${n(receipt.received_quantity)} pcs</h3><p>${e(receipt.sku)} · ${e(receipt.size)} · ${e(receipt.location)}</p><p>Sellable ${n(receipt.sellable_quantity)} · hold ${n(receipt.hold_quantity)} · ${receipt.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>${date(receipt.received_date)}</p><button data-action="finished-goods-receipt" data-id="${e(receipt.id)}" aria-label="Rincian ${e(receipt.reference)}">Rincian penerimaan</button></article>`).join(''));
         if(!before && !rows.length)$('finished-goods-list').innerHTML='<p class="state">Belum ada penerimaan barang jadi untuk order ini. Buka final QC dengan hasil diterima untuk mencatat penerimaan.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat penerimaan sebelumnya';
-      }catch(error){if(current()){message('finished-goods-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('finished-goods-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('finished-goods-more').onclick=load;await load();
@@ -1914,7 +1935,7 @@ async function finishedGoodsTraceabilityDialog(receiptId) {
       <div class="actions"><button data-action="finished-goods-receipt" data-id="${e(receipt.id)}">Rincian penerimaan</button><button data-action="finished-goods-traceability" data-id="${e(receipt.id)}">Muat ulang jejak</button></div>`;
     let cursor=report.next_before;
     const append=rows=>{
-      $('finished-goods-trace-events').insertAdjacentHTML('beforeend',rows.map(row=>{
+      appendRows('finished-goods-trace-events',rows.map(row=>{
         const corrected=row.event_type.endsWith('_correction');
         const label=(corrected?'Koreksi · ':'')+traceEventLabels[row.event_type.replace(/_correction$/,'')];
         return `<article class="material-event" data-trace-event="${e(row.event_type)}"><h3>${e(label)} · ${e(row.reference)}</h3>
@@ -1959,10 +1980,10 @@ async function warehouseDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/warehouse-movements?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('warehouse-list').replaceChildren();
-        $('warehouse-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(warehouseKind[row.kind])} · ${e(row.sku)}</p><p>${e(row.from_location)} (${e(warehouseStatus[row.from_status])}) → ${e(row.to_location)} (${e(warehouseStatus[row.to_status])})</p><p>${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.moved_date)}</p><button data-action="warehouse-movement" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pergerakan</button></article>`).join(''));
+        appendRows('warehouse-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(warehouseKind[row.kind])} · ${e(row.sku)}</p><p>${e(row.from_location)} (${e(warehouseStatus[row.from_status])}) → ${e(row.to_location)} (${e(warehouseStatus[row.to_status])})</p><p>${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.moved_date)}</p><button data-action="warehouse-movement" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pergerakan</button></article>`).join(''));
         if(!before && !rows.length)$('warehouse-list').innerHTML='<p class="state">Belum ada pergerakan gudang untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pergerakan sebelumnya';
-      }catch(error){if(current()){message('warehouse-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('warehouse-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('warehouse-more').onclick=load;await load();
@@ -2026,10 +2047,10 @@ async function marketplaceReservationsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-reservations?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-list').replaceChildren();
-        $('marketplace-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.location)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><p>Sudah dipick ${n(row.picked_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.reserved_date)}</p><button data-action="marketplace-reservation" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian reservasi</button></article>`).join(''));
+        appendRows('marketplace-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.location)} · ${row.status==='active'?'Reserved':'Dilepaskan'}</p><p>Sudah dipick ${n(row.picked_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.reserved_date)}</p><button data-action="marketplace-reservation" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian reservasi</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-list').innerHTML='<p class="state">Belum ada reservasi marketplace untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat reservasi sebelumnya';
-      }catch(error){if(current()){message('marketplace-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('marketplace-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('marketplace-more').onclick=load;await load();
@@ -2090,10 +2111,10 @@ async function marketplacePicksDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-picks?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-pick-list').replaceChildren();
-        $('marketplace-pick-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.location)} → ${e(row.staging_location)} · ${row.status==='active'?'Di staging':'Sudah dikoreksi'}</p><p>Packed ${n(row.packed_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.picked_date)}</p><button data-action="marketplace-pick" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pick</button></article>`).join(''));
+        appendRows('marketplace-pick-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.location)} → ${e(row.staging_location)} · ${row.status==='active'?'Di staging':'Sudah dikoreksi'}</p><p>Packed ${n(row.packed_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.picked_date)}</p><button data-action="marketplace-pick" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pick</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-pick-list').innerHTML='<p class="state">Belum ada pick marketplace untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pick sebelumnya';
-      }catch(error){if(current()){message('marketplace-pick-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('marketplace-pick-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('marketplace-pick-more').onclick=load;await load();
@@ -2150,10 +2171,10 @@ async function marketplacePacksDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-packs?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-pack-list').replaceChildren();
-        $('marketplace-pack-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.staging_location)} · ${row.status==='active'?'Packed':'Sudah dikoreksi'}</p><p>Shipped ${n(row.shipped_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.packed_date)}</p><button data-action="marketplace-pack" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pack</button></article>`).join(''));
+        appendRows('marketplace-pack-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.sku)} · ${e(row.staging_location)} · ${row.status==='active'?'Packed':'Sudah dikoreksi'}</p><p>Shipped ${n(row.shipped_quantity)} · sisa ${n(row.remaining_quantity)} pcs · ${date(row.packed_date)}</p><button data-action="marketplace-pack" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pack</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-pack-list').innerHTML='<p class="state">Belum ada pack marketplace untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pack sebelumnya';
-      }catch(error){if(current()){message('marketplace-pack-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('marketplace-pack-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('marketplace-pack-more').onclick=load;await load();
@@ -2207,10 +2228,10 @@ async function marketplaceShipmentsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-shipments?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-shipment-list').replaceChildren();
-        $('marketplace-shipment-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.carrier)} · resi ${e(row.tracking_number)}</p><p>${e(row.sku)} · ${row.status==='shipped'?'Sudah dikirim':'Sudah dikoreksi'} · retur ${n(row.returned_quantity)} pcs · ${date(row.shipped_date)}</p><p class="hint">${row.sale_settlement_id?'Settlement '+e(row.sale_settlement_reference):'Settlement penjualan belum dicatat'}</p><button data-action="marketplace-shipment" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pengiriman</button></article>`).join(''));
+        appendRows('marketplace-shipment-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(row.marketplace)} · ${e(row.external_order_reference)}</p><p>${e(row.carrier)} · resi ${e(row.tracking_number)}</p><p>${e(row.sku)} · ${row.status==='shipped'?'Sudah dikirim':'Sudah dikoreksi'} · retur ${n(row.returned_quantity)} pcs · ${date(row.shipped_date)}</p><p class="hint">${row.sale_settlement_id?'Settlement '+e(row.sale_settlement_reference):'Settlement penjualan belum dicatat'}</p><button data-action="marketplace-shipment" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian pengiriman</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-shipment-list').innerHTML='<p class="state">Belum ada pengiriman marketplace untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pengiriman sebelumnya';
-      }catch(error){if(current()){message('marketplace-shipment-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('marketplace-shipment-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('marketplace-shipment-more').onclick=load;await load();
@@ -2314,10 +2335,10 @@ async function marketplaceReturnsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/marketplace-returns?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('marketplace-return-list').replaceChildren();
-        $('marketplace-return-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(returnReason[row.return_reason])} · ${e(row.sku)}</p><p>${e(row.return_location)} · ${e(warehouseStatus[row.stock_status])} · ${row.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>Pengiriman ${e(row.shipment_reference)} · ${date(row.returned_date)}</p><button data-action="marketplace-return" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian retur</button></article>`).join(''));
+        appendRows('marketplace-return-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${n(row.quantity)} pcs</h3><p>${e(returnReason[row.return_reason])} · ${e(row.sku)}</p><p>${e(row.return_location)} · ${e(warehouseStatus[row.stock_status])} · ${row.status==='active'?'Aktif':'Sudah dikoreksi'}</p><p>Pengiriman ${e(row.shipment_reference)} · ${date(row.returned_date)}</p><button data-action="marketplace-return" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian retur</button></article>`).join(''));
         if(!before&&!rows.length)$('marketplace-return-list').innerHTML='<p class="state">Belum ada retur pelanggan untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat retur sebelumnya';
-      }catch(error){if(current()){message('marketplace-return-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('marketplace-return-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('marketplace-return-more').onclick=load;await load();
@@ -2374,10 +2395,10 @@ async function finishedGoodsAdjustmentsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/finished-goods-adjustments?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('finished-goods-adjustment-list').replaceChildren();
-        $('finished-goods-adjustment-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3><p>${e(row.sku)} · ${e(row.location)} · ${e(warehouseStatus[row.stock_status])}</p><p>Penerimaan ${e(row.receipt_reference)} · ${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.adjusted_date)}</p>${row.stock_count_id?'<p class="hint">Dibuat otomatis dari stock opname.</p>':''}<button data-action="finished-goods-adjustment" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian adjustment</button></article>`).join(''));
+        appendRows('finished-goods-adjustment-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3><p>${e(row.sku)} · ${e(row.location)} · ${e(warehouseStatus[row.stock_status])}</p><p>Penerimaan ${e(row.receipt_reference)} · ${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.adjusted_date)}</p>${row.stock_count_id?'<p class="hint">Dibuat otomatis dari stock opname.</p>':''}<button data-action="finished-goods-adjustment" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian adjustment</button></article>`).join(''));
         if(!before&&!rows.length)$('finished-goods-adjustment-list').innerHTML='<p class="state">Belum ada adjustment barang jadi untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat adjustment sebelumnya';
-      }catch(error){if(current()){message('finished-goods-adjustment-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('finished-goods-adjustment-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('finished-goods-adjustment-more').onclick=load;await load();
@@ -2434,10 +2455,10 @@ async function finishedGoodsStockCountsDialog(orderId) {
         const rows=await api.get('/api/orders/'+encodeURIComponent(orderId)+'/finished-goods-stock-counts?'+new URLSearchParams({limit:25,...(before?{before}:{})}));
         if(!current())return;
         if(!before)$('finished-goods-stock-count-list').replaceChildren();
-        $('finished-goods-stock-count-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(row.sku)}</h3><p>${e(row.location)} · ${e(warehouseStatus[row.stock_status])}</p><p>Saldo sistem ${n(row.expected_quantity)} → fisik ${n(row.counted_quantity)} pcs · selisih ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)}</p><p>${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.counted_date)}</p><button data-action="finished-goods-stock-count" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian stock opname</button></article>`).join(''));
+        appendRows('finished-goods-stock-count-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(row.sku)}</h3><p>${e(row.location)} · ${e(warehouseStatus[row.stock_status])}</p><p>Saldo sistem ${n(row.expected_quantity)} → fisik ${n(row.counted_quantity)} pcs · selisih ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)}</p><p>${row.status==='active'?'Aktif':'Sudah dikoreksi'} · ${date(row.counted_date)}</p><button data-action="finished-goods-stock-count" data-id="${e(row.id)}" aria-label="Rincian ${e(row.reference)}">Rincian stock opname</button></article>`).join(''));
         if(!before&&!rows.length)$('finished-goods-stock-count-list').innerHTML='<p class="state">Belum ada stock opname barang jadi untuk order ini.</p>';
         before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat stock opname sebelumnya';
-      }catch(error){if(current()){message('finished-goods-stock-count-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+      }catch(error){if(current()){message('finished-goods-stock-count-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
     };
     $('finished-goods-stock-count-more').onclick=load;await load();
@@ -2513,7 +2534,7 @@ async function consumptionDialog() {
         const rows=await api.get(`/api/orders/${encodeURIComponent(order.id)}/consumption-history?`+new URLSearchParams({limit:100,...(before?{before}:{})}));
         if(!current())return;
         history.push(...rows);
-        $('consumption-history').insertAdjacentHTML('beforeend',rows.map(r=>`<article class="material-event"><strong>${r.reversal_of?'Pembalikan pemakaian':'Pemakaian dicatat'}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p>Terpakai ${e(materialQty(r.used,r.unit))} · waste ${e(materialQty(r.waste,r.unit))}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${stamp(r.created_at)}${r.reversed_by?' · Sudah dibalik':''}</p><p class="hint">Pengeluaran ${e(r.issue_id)}</p>${r.cutting_run_id?`<button data-action="cutting-run" data-id="${e(r.cutting_run_id)}">Hasil cutting</button>`:''}${user.role==='admin' && !r.reversal_of && !r.reversed_by && !r.cutting_run_id?`<button data-consumption-reverse="${e(r.id)}">Koreksi pemakaian</button>`:''}</article>`).join(''));
+        appendRows('consumption-history',rows.map(r=>`<article class="material-event"><strong>${r.reversal_of?'Pembalikan pemakaian':'Pemakaian dicatat'}</strong><p>${e(r.batch_reference)} · ${e(r.code)}</p><p>Terpakai ${e(materialQty(r.used,r.unit))} · waste ${e(materialQty(r.waste,r.unit))}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${stamp(r.created_at)}${r.reversed_by?' · Sudah dibalik':''}</p><p class="hint">Pengeluaran ${e(r.issue_id)}</p>${r.cutting_run_id?`<button data-action="cutting-run" data-id="${e(r.cutting_run_id)}">Hasil cutting</button>`:''}${user.role==='admin' && !r.reversal_of && !r.reversed_by && !r.cutting_run_id?`<button data-consumption-reverse="${e(r.id)}">Koreksi pemakaian</button>`:''}</article>`).join(''));
         before=rows.at(-1)?.sequence;button.hidden=rows.length<100;button.textContent='Muat pemakaian sebelumnya';
       }catch(error){if(current())message('consumption-error',error.message,true);}finally{if(current())button.disabled=false;}
     };
@@ -2590,7 +2611,7 @@ $('integrations').onclick=integrationsDialog;
 
 async function integrationRunsDialog() {
   if(guardPending())return;
-  openDialog('Riwayat sinkronisasi',`<p class="hint">Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.</p><form id="integration-run-filter"><div class="form-grid"><label>Sistem<select name="system"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label>Status<select name="status"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="integrations">Kesehatan integrasi</button></div></form><p id="integration-run-message" class="state" role="status"></p><div id="integration-run-list"></div><button id="integration-run-more" type="button">Muat run sebelumnya</button>`);
+  openDialog('Riwayat sinkronisasi',`<p class="hint">Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.</p><form id="integration-run-filter" class="filter-form"><div class="form-grid"><label>Sistem<select name="system"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label>Status<select name="status"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="integrations">Kesehatan integrasi</button></div></form><p id="integration-run-message" class="state" role="status"></p><div id="integration-run-list"></div><button id="integration-run-more" type="button">Muat run sebelumnya</button>`);
   const version=epoch,modal=dialogVersion,form=$('integration-run-filter'),list=$('integration-run-list'),more=$('integration-run-more');
   let before=null,generation=0;
   const load=async reset=>{
@@ -2844,7 +2865,7 @@ const payrollChangedField={period_start:'awal periode',period_end:'akhir periode
 
 async function payrollPaymentReconciliationDialog() {
   if(guardPending())return;
-  openDialog('Rekonsiliasi pembayaran payroll',`<p class="hint">Menghubungkan approval Beeloft terbaru dengan status pembayaran pada snapshot Mekari terbaru. Laporan ini tidak mengirim uang atau membuat jurnal.</p><form id="payroll-payment-filter"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="awaiting_payment">Menunggu pembayaran</option><option value="paid">Sudah dibayar</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-accounting-reconciliation">Akuntansi payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-payment-message" class="state" role="status"></p><div id="payroll-payment-summary"></div><div id="payroll-payment-results"></div><button id="payroll-payment-more" type="button" hidden>Muat batch berikutnya</button>`);
+  openDialog('Rekonsiliasi pembayaran payroll',`<p class="hint">Menghubungkan approval Beeloft terbaru dengan status pembayaran pada snapshot Mekari terbaru. Laporan ini tidak mengirim uang atau membuat jurnal.</p><form id="payroll-payment-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="awaiting_payment">Menunggu pembayaran</option><option value="paid">Sudah dibayar</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-accounting-reconciliation">Akuntansi payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-payment-message" class="state" role="status"></p><div id="payroll-payment-summary"></div><div id="payroll-payment-results"></div><button id="payroll-payment-more" type="button" hidden>Muat batch berikutnya</button>`);
   const version=epoch,modal=dialogVersion,form=$('payroll-payment-filter'),results=$('payroll-payment-results'),more=$('payroll-payment-more');
   let offset=0,generation=0;
   const load=async reset=>{
@@ -2874,7 +2895,7 @@ const payrollAccountingException={payment_source_missing:'Periode tidak ada di s
 
 async function payrollAccountingReconciliationDialog() {
   if(guardPending())return;
-  openDialog('Rekonsiliasi akuntansi payroll',`<p class="hint">Mencocokkan payroll approved dan dibayar dengan metadata jurnal pada snapshot Mekari terbaru. Laporan ini hanya baca dan tidak membuat atau mem-posting jurnal.</p><form id="payroll-accounting-filter"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="waiting_payment">Menunggu pembayaran</option><option value="awaiting_posting">Menunggu posting</option><option value="posted">Sudah diposting</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll / jurnal<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-accounting-message" class="state" role="status"></p><div id="payroll-accounting-summary"></div><div id="payroll-accounting-results"></div><button id="payroll-accounting-more" type="button" hidden>Muat batch berikutnya</button>`);
+  openDialog('Rekonsiliasi akuntansi payroll',`<p class="hint">Mencocokkan payroll approved dan dibayar dengan metadata jurnal pada snapshot Mekari terbaru. Laporan ini hanya baca dan tidak membuat atau mem-posting jurnal.</p><form id="payroll-accounting-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="waiting_payment">Menunggu pembayaran</option><option value="awaiting_posting">Menunggu posting</option><option value="posted">Sudah diposting</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll / jurnal<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-accounting-message" class="state" role="status"></p><div id="payroll-accounting-summary"></div><div id="payroll-accounting-results"></div><button id="payroll-accounting-more" type="button" hidden>Muat batch berikutnya</button>`);
   const version=epoch,modal=dialogVersion,form=$('payroll-accounting-filter'),results=$('payroll-accounting-results'),more=$('payroll-accounting-more');
   let offset=0,generation=0;
   const load=async reset=>{
@@ -2936,7 +2957,7 @@ function renderAiInvestigation(report,target,source=report.source_payload) {
 
 async function aiInvestigationsDialog() {
   if(guardPending())return;
-  openDialog('Riwayat investigasi',`<form id="ai-history-filter"><div class="form-grid"><label>Cari pertanyaan<input name="q" maxlength="160"></label><label>Jenis analisis<select name="intent"><option value="all">Semua jenis</option><option value="overview">Ringkasan bisnis</option><option value="production">Kondisi produksi</option><option value="stockout">Risiko stockout</option><option value="approvals">Antrean approval</option><option value="margin">Margin kontribusi</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="ai-brain">Tanya Beeloft</button></div></form><p id="ai-history-message" class="state" role="status"></p><div id="ai-history-list"></div><button id="ai-history-more" type="button">Muat investigasi sebelumnya</button>`);
+  openDialog('Riwayat investigasi',`<form id="ai-history-filter" class="filter-form"><div class="form-grid"><label>Cari pertanyaan<input name="q" maxlength="160"></label><label>Jenis analisis<select name="intent"><option value="all">Semua jenis</option><option value="overview">Ringkasan bisnis</option><option value="production">Kondisi produksi</option><option value="stockout">Risiko stockout</option><option value="approvals">Antrean approval</option><option value="margin">Margin kontribusi</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="ai-brain">Tanya Beeloft</button></div></form><p id="ai-history-message" class="state" role="status"></p><div id="ai-history-list"></div><button id="ai-history-more" type="button">Muat investigasi sebelumnya</button>`);
   const version=epoch,modal=dialogVersion,form=$('ai-history-filter'),list=$('ai-history-list'),more=$('ai-history-more');
   let before=null;
   const load=async reset=>{
@@ -3088,7 +3109,7 @@ async function aiActionProposalDialog(proposalId) {
 function demandForecastDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Forecast demand per SKU',`<form id="forecast-form">
+  openDialog('Forecast demand per SKU',`<form id="forecast-form" class="filter-form">
     <p class="hint">Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3132,7 +3153,7 @@ $('demand-forecast').onclick=demandForecastDialog;
 function returnInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Analisis retur per SKU',`<form id="return-insights-form">
+  openDialog('Analisis retur per SKU',`<form id="return-insights-form" class="filter-form">
     <p class="hint">Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3159,7 +3180,7 @@ function returnInsightsDialog() {
       message('return-insights-message','');
       if(!offset)$('return-insights-summary').innerHTML=`<p class="form-info">Periode ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.shipped_quantity)} pcs dikirim · ${n(report.summary.returned_quantity)} pcs kembali · rate retur ${e(report.summary.return_rate)}%</p><dl class="requirement-values"><div><dt>Sizing</dt><dd>${n(report.summary.sizing_quantity)} pcs</dd></div><div><dt>Halaman produk</dt><dd>${n(report.summary.product_page_quantity)} pcs</dd></div><div><dt>Defect</dt><dd>${n(report.summary.defect_quantity)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(report.summary.other_quantity)} pcs</dd></div></dl><p class="hint">Sizing = terlalu kecil atau besar. Halaman produk = barang atau warna tidak sesuai. Rate memakai jumlah retur dibagi jumlah yang dikirim dalam kohort.</p>`;
       const html=report.items.map(row=>`<article class="material-event" data-return-insight-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${e(row.marketplace)}</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Dikirim</dt><dd>${n(row.shipped_quantity)} pcs</dd></div><div><dt>Diretur</dt><dd>${n(row.returned_quantity)} pcs</dd></div><div><dt>Rate retur</dt><dd><strong>${e(row.return_rate)}%</strong></dd></div><div><dt>Terlalu kecil</dt><dd>${n(row.reason_quantities.too_small)} pcs</dd></div><div><dt>Terlalu besar</dt><dd>${n(row.reason_quantities.too_big)} pcs</dd></div><div><dt>Barang tidak sesuai</dt><dd>${n(row.reason_quantities.wrong_item)} pcs</dd></div><div><dt>Warna tidak sesuai</dt><dd>${n(row.reason_quantities.color_mismatch)} pcs</dd></div><div><dt>Defect</dt><dd>${n(row.reason_quantities.defect)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(row.reason_quantities.other)} pcs</dd></div></dl><p class="hint">${n(row.shipment_count)} shipment${row.latest_returned_date?' · retur terakhir '+date(row.latest_returned_date):' · belum ada retur pada kohort'}</p></article>`).join('');
-      $('return-insights-results').insertAdjacentHTML('beforeend',html);
+      appendRows('return-insights-results',html);
       if(!offset&&!report.items.length)$('return-insights-results').innerHTML='<p class="state">Tidak ada shipment yang cocok dengan filter pada periode ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
     }catch(error){
@@ -3213,7 +3234,7 @@ $('return-insights').onclick=returnInsightsDialog;
 function sizeDemandInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Analisis demand per ukuran',`<form id="size-demand-form">
+  openDialog('Analisis demand per ukuran',`<form id="size-demand-form" class="filter-form">
     <p class="hint">Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.</p>
     <div class="form-grid">
       ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
@@ -3246,7 +3267,7 @@ function sizeDemandInsightsDialog() {
         const sizes=family.sizes.map(row=>`<div data-size-demand-sku="${e(row.sku)}"><dt>${e(row.size)} · ${e(row.sku)}</dt><dd>Stok tersedia ${n(row.available_quantity)} pcs · demand lama ${n(row.previous_net_demand)} pcs · demand terbaru ${n(row.recent_net_demand)} pcs${row.days_of_cover===null?' · days of cover belum tersedia':' · '+n(Number(row.days_of_cover))+' hari'+(row.projected_stockout_date?' · estimasi '+date(row.projected_stockout_date):'')}${row.consistent_demand_leader?' · pemimpin demand konsisten':''}</dd></div>`).join('');
         return `<article class="material-event" data-size-demand-family="${e(family.name)}"><h3>${e(family.name)}${family.color?' · '+e(family.color):''}</h3><p class="status-label ${family.risk_status==='out_of_stock'||family.risk_status==='within_lookahead'?'late':'done'}">${e(statuses[family.risk_status])}</p>${first?`<p><strong>Risiko habis lebih dulu: ${e(first)}</strong>${family.first_stockout_date?' · '+date(family.first_stockout_date):''}</p>`:''}${consistent?`<p>Pemimpin demand konsisten: ${e(consistent)}</p>`:''}<dl class="requirement-values">${sizes}</dl></article>`;
       }).join('');
-      $('size-demand-results').insertAdjacentHTML('beforeend',html);
+      appendRows('size-demand-results',html);
       if(!offset&&!report.items.length)$('size-demand-results').innerHTML='<p class="state">Belum ada keluarga produk dengan minimal dua ukuran yang cocok dengan filter.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat keluarga berikutnya';
     }catch(error){
@@ -3265,7 +3286,7 @@ $('size-demand-insights').onclick=sizeDemandInsightsDialog;
 function deadStockInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Analisis dead stock',`<form id="dead-stock-form">
+  openDialog('Analisis dead stock',`<form id="dead-stock-form" class="filter-form">
     <p class="hint">Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.</p>
     <div class="form-grid">
       ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
@@ -3294,7 +3315,7 @@ function deadStockInsightsDialog() {
       if(!offset)$('dead-stock-summary').innerHTML=`<p class="form-info">Periode demand ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.dead_stock_candidates)} kandidat · ${n(report.summary.dead_stock_quantity)} pcs tersedia · ${n(report.summary.aging_no_sales_products)} SKU masih terlalu baru untuk disebut dead stock</p><p class="hint">Filter marketplace hanya membatasi demand. Stok dan umur lot memakai posisi inventori internal saat laporan dimuat. Nilai rupiah belum dihitung karena valuasi stok per lot belum tersedia.</p>`;
       const statuses={dead_stock_candidate:'Kandidat dead stock',aging_no_sales:'Stok baru tanpa penjualan',moving:'Masih bergerak'};
       const html=report.items.map(row=>`<article class="material-event" data-dead-stock-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${n(row.available_quantity)} pcs tersedia</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><p class="status-label ${row.status==='dead_stock_candidate'?'late':'done'}">${e(statuses[row.status])}</p><dl class="requirement-values"><div><dt>Umur lot tertua</dt><dd>${n(row.oldest_stock_age_days)} hari</dd></div><div><dt>Demand neto periode</dt><dd>${n(row.recent_net_demand)} pcs</dd></div><div><dt>Shipment / retur</dt><dd>${n(row.recent_shipped_quantity)} / ${n(row.recent_returned_quantity)} pcs</dd></div><div><dt>Rate demand</dt><dd>${n(Number(row.recent_daily_rate))} pcs/hari</dd></div><div><dt>Days of cover</dt><dd>${row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'}</dd></div><div><dt>Lot aktif</dt><dd>${n(row.active_lot_count)}</dd></div></dl><p class="hint">${row.oldest_available_receipt_date?'Lot tersedia sejak '+date(row.oldest_available_receipt_date):'Tanggal lot belum tersedia'}${row.newest_available_receipt_date&&row.newest_available_receipt_date!==row.oldest_available_receipt_date?' · lot terbaru '+date(row.newest_available_receipt_date):''}<br>${row.last_net_sale_date?'Penjualan neto terakhir '+date(row.last_net_sale_date)+' · '+n(row.days_since_last_net_sale)+' hari lalu':'Belum ada penjualan neto aktif sampai tanggal laporan.'}</p></article>`).join('');
-      $('dead-stock-results').insertAdjacentHTML('beforeend',html);
+      appendRows('dead-stock-results',html);
       if(!offset&&!report.items.length)$('dead-stock-results').innerHTML='<p class="state">Tidak ada SKU yang cocok dengan status dan filter ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
     }catch(error){
@@ -3313,7 +3334,7 @@ $('dead-stock-insights').onclick=deadStockInsightsDialog;
 function stockAdjustmentInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Audit adjustment stok',`<form id="stock-adjustment-insights-form">
+  openDialog('Audit adjustment stok',`<form id="stock-adjustment-insights-form" class="filter-form">
     <p class="hint">Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3350,7 +3371,7 @@ function stockAdjustmentInsightsDialog() {
       const sources={manual:'Manual',stock_count:'Stock opname'};
       const flags={large_quantity:'Jumlah melewati ambang',large_receipt_share:'Porsi penerimaan melewati ambang',repeated_bucket:'Berulang pada SKU dan bucket yang sama',corrected_record:'Catatan sudah dikoreksi'};
       const html=report.items.map(row=>`<article class="material-event" data-stock-adjustment-insight="${e(row.id)}"><p class="status-label ${row.classification==='high'?'late':row.classification==='normal'?'done':''}">${e(classes[row.classification])}</p><h3>${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3><p>${e(row.sku)} · ${e(row.product_name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Porsi penerimaan</dt><dd>${e(row.receipt_share_percent)}%</dd></div><div><dt>Pengulangan bucket</dt><dd>${n(row.bucket_adjustment_count)} catatan</dd></div><div><dt>Volume bucket</dt><dd>${n(row.bucket_absolute_quantity)} pcs</dd></div><div><dt>Sumber</dt><dd>${e(sources[row.source])}</dd></div><div><dt>Status catatan</dt><dd>${row.record_status==='active'?'Aktif':'Sudah dikoreksi'}</dd></div><div><dt>Tanggal</dt><dd>${date(row.adjusted_date)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flags[flag]).join(' · ')):'Tidak melewati ambang audit.'}</p><p class="hint">${e(row.location)} · ${e(warehouseStatus[row.stock_status])}<br>Penerimaan ${e(row.receipt_reference)} · order ${e(row.order_reference)} · dicatat ${e(row.actor_name)}</p><button data-action="finished-goods-adjustment" data-id="${e(row.id)}">Buka adjustment</button></article>`).join('');
-      $('stock-adjustment-insights-results').insertAdjacentHTML('beforeend',html);
+      appendRows('stock-adjustment-insights-results',html);
       if(!offset&&!report.items.length)$('stock-adjustment-insights-results').innerHTML='<p class="state">Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat adjustment berikutnya';
     }catch(error){
@@ -3369,7 +3390,7 @@ $('stock-adjustment-insights').onclick=stockAdjustmentInsightsDialog;
 function supplierPerformanceInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Kinerja supplier',`<form id="supplier-performance-form">
+  openDialog('Kinerja supplier',`<form id="supplier-performance-form" class="filter-form">
     <p class="hint">PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3400,7 +3421,7 @@ function supplierPerformanceInsightsDialog() {
       const quantityList=rows=>rows.map(unit=>`${n(Number(unit.quantity))} ${e(unit.unit)}`).join(' · ')||'Belum ada';
       const delay=row=>row.first_arrival_delay_days===null?'Belum ada kedatangan aktif':row.first_arrival_delay_days>0?`${n(row.first_arrival_delay_days)} hari terlambat`:row.first_arrival_delay_days<0?`${n(Math.abs(row.first_arrival_delay_days))} hari lebih awal`:'Tepat pada tanggal perkiraan';
       const html=report.items.map(row=>`<article class="material-event" data-supplier-performance="${e(row.supplier_id)}"><p class="status-label ${row.status==='attention'?'late':'done'}">${row.status==='attention'?'Perlu perhatian':'Sehat'}</p><h3>${e(row.supplier_code)} · ${e(row.supplier_name)}</h3><dl class="requirement-values"><div><dt>PO periode</dt><dd>${n(row.purchase_order_count)}</dd></div><div><dt>Tepat waktu</dt><dd>${n(row.on_time_first_arrivals)}</dd></div><div><dt>Terlambat datang</dt><dd>${n(row.late_first_arrivals)}</dd></div><div><dt>Terlambat tanpa kedatangan</dt><dd>${n(row.overdue_no_arrival)}</dd></div><div><dt>Belum lengkap lewat jadwal</dt><dd>${n(row.overdue_incomplete_purchase_orders)}</dd></div><div><dt>Kekurangan saat ditutup</dt><dd>${n(row.closed_shortfall_purchase_orders)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flagLabels[flag]).join(' · ')):'Tidak ada sinyal yang memerlukan perhatian.'}</p><p class="hint">Dipesan ${quantityList(row.ordered_by_unit)}<br>Diterima layak pakai ${quantityList(row.received_by_unit)}</p>${row.quality_by_unit.map(unit=>`<article class="material-event"><strong>QC ${e(unit.unit)} · ${n(unit.intake_count)} kedatangan</strong><p>Datang ${n(Number(unit.arrived))} · layak ${n(Number(unit.accepted))} · reject ${n(Number(unit.rejected))} · hold ${n(Number(unit.held))}</p><p class="hint">Usable ${e(unit.usable_rate)}% · reject ${e(unit.reject_rate)}%</p></article>`).join('')||'<p class="hint">Belum ada kedatangan melalui QC pada PO periode ini.</p>'}<h4>PO dalam periode</h4>${row.purchase_orders.map(po=>`<article class="material-event"><strong>${e(po.reference)} · ${e(fulfillment[po.fulfillment])}</strong><p>Perkiraan ${date(po.expected_date)} · ${e(delay(po))}</p><button data-action="purchase-order" data-id="${e(po.id)}">Buka PO</button></article>`).join('')}</article>`).join('');
-      $('supplier-performance-results').insertAdjacentHTML('beforeend',html);
+      appendRows('supplier-performance-results',html);
       if(!offset&&!report.items.length)$('supplier-performance-results').innerHTML='<p class="state">Tidak ada supplier yang cocok dengan status dan filter periode ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat supplier berikutnya';
     }catch(error){
@@ -3419,7 +3440,7 @@ $('supplier-performance-insights').onclick=supplierPerformanceInsightsDialog;
 function materialPriceInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Pergerakan harga bahan',`<form id="material-price-form">
+  openDialog('Pergerakan harga bahan',`<form id="material-price-form" class="filter-form">
     <p class="hint">Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3450,7 +3471,7 @@ function materialPriceInsightsDialog() {
       const signedPrice=value=>`${Number(value)>0?'+':Number(value)<0?'-':''}${price(value.replace('-',''))}`;
       const movement=row=>row.status==='single_observation'?'Belum dapat dibandingkan':`${signedPrice(row.price_change)} · ${Number(row.price_change_percent)>0?'+':''}${e(row.price_change_percent)}%`;
       const html=report.items.map(row=>`<article class="material-event" data-material-price="${e(row.material_id)}:${e(row.supplier_id)}"><p class="status-label ${row.status==='increased'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.material_code)} · ${e(row.material_name)}</h3><p>${e(row.supplier_code)} · ${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Harga awal</dt><dd>${e(price(row.earliest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Harga terbaru</dt><dd>${e(price(row.latest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Perubahan</dt><dd>${movement(row)}</dd></div><div><dt>Harga minimum</dt><dd>${e(price(row.minimum_unit_price))}</dd></div><div><dt>Harga maksimum</dt><dd>${e(price(row.maximum_unit_price))}</dd></div><div><dt>Harga rata-rata</dt><dd>${e(price(row.average_unit_price))}</dd></div></dl><p class="hint">${n(row.observation_count)} harga PO · awal ${date(row.earliest_recorded_date)} · terbaru ${date(row.latest_recorded_date)}</p><h4>Riwayat harga PO</h4>${row.history.map(po=>`<article class="material-event"><strong>${e(po.purchase_order_reference)} · ${e(price(po.unit_price))} / ${e(row.unit)}</strong><p>Dicatat ${date(po.recorded_date)} · perkiraan datang ${date(po.expected_date)}</p><button data-action="purchase-order" data-id="${e(po.purchase_order_id)}">Buka PO</button></article>`).join('')}</article>`).join('');
-      $('material-price-results').insertAdjacentHTML('beforeend',html);
+      appendRows('material-price-results',html);
       if(!offset&&!report.items.length)$('material-price-results').innerHTML='<p class="state">Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat harga berikutnya';
     }catch(error){
@@ -3469,7 +3490,7 @@ $('material-price-insights').onclick=materialPriceInsightsDialog;
 function purchaseCommitmentInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form">
+  openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form" class="filter-form">
     <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
     <div class="form-grid">
       ${field('as_of','Hitung umur per tanggal','date',`required value="${today}"`)}
@@ -3498,7 +3519,7 @@ function purchaseCommitmentInsightsDialog() {
       const labels={overdue:'Terlambat',due_soon:'Segera jatuh tempo',scheduled:'Terjadwal',fulfilled:'Diterima lengkap, belum ditutup'};
       const schedule=row=>row.status==='overdue'?`${n(row.overdue_days)} hari terlambat`:row.status==='fulfilled'?'Komitmen penerimaan selesai':`Perkiraan datang ${date(row.expected_date)}`;
       const html=report.items.map(row=>`<article class="material-event" data-purchase-commitment="${e(row.purchase_order_id)}"><p class="status-label ${row.status==='overdue'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.purchase_order_reference)} · ${e(row.supplier_code)}</h3><p>${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Nilai PO</dt><dd>${e(rupiah(row.purchase_order_value))}</dd></div><div><dt>Diterima layak pakai</dt><dd>${e(rupiah(row.usable_received_value))}</dd></div><div><dt>Komitmen terbuka</dt><dd><strong>${e(rupiah(row.open_commitment_value))}</strong></dd></div><div><dt>Payment menunggu approval</dt><dd>${e(rupiah(row.payment_pending))}</dd></div><div><dt>Payment approved</dt><dd>${e(rupiah(row.payment_approved))}</dd></div><div><dt>Belum diajukan payment</dt><dd>${e(rupiah(row.payment_unrequested))}</dd></div></dl><p>${e(schedule(row))}</p><p class="hint">PO dicatat ${date(row.created_date)} · PR ${e(row.purchase_request_reference)}</p><h4>Rincian bahan</h4>${row.lines.map(line=>`<article class="material-event"><strong>${e(line.code)} · ${e(line.name)}</strong><p>Dipesan ${e(materialQty(line.ordered_quantity,line.unit))} · diterima layak ${e(materialQty(line.usable_received_quantity,line.unit))} · terbuka ${e(materialQty(line.open_quantity,line.unit))}</p><p class="hint">${e(rupiah(line.unit_price))}/${e(line.unit)} · komitmen ${e(rupiah(line.open_commitment_value))}</p></article>`).join('')}<button data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button></article>`).join('');
-      $('purchase-commitment-results').insertAdjacentHTML('beforeend',html);
+      appendRows('purchase-commitment-results',html);
       if(!offset&&!report.items.length)$('purchase-commitment-results').innerHTML='<p class="state">Tidak ada komitmen PO yang cocok dengan status dan filter ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat PO berikutnya';
     }catch(error){
@@ -3519,7 +3540,7 @@ function wipAgeingInsightsDialog() {
   const today=jakartaToday();
   const ownerOptions=(boardData?.owners||[]).map(owner=>option(owner.id,
     owner.name+(owner.active?'':' (akun nonaktif)'))).join('');
-  openDialog('WIP ageing & sinyal hambatan',`<form id="wip-ageing-form">
+  openDialog('WIP ageing & sinyal hambatan',`<form id="wip-ageing-form" class="filter-form">
     <p class="hint">Umur dihitung sejak movement produksi terakhir per order, atau sejak order dibuat bila belum pernah bergerak. Posisi tahap memakai saldo ledger saat ini.</p>
     <div class="form-grid">
       ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
@@ -3561,7 +3582,7 @@ function wipAgeingInsightsDialog() {
         const late=row.overdue_days?` · ${n(row.overdue_days)} hari lewat tenggat`:'';
         return `<article class="material-event" data-wip-ageing="${e(row.order_id)}"><div class="issue-heading"><h3>${e(row.reference)} · ${e(row.title)}</h3><div>${flags}</div></div><p>${e(row.owner_name)} · tenggat ${date(row.due_date)}</p><dl class="requirement-values"><div><dt>Aktif</dt><dd>${n(row.active_quantity)} pcs</dd></div><div><dt>Belum cutting</dt><dd>${n(row.planned_quantity)} pcs</dd></div><div><dt>Dalam proses</dt><dd>${n(row.in_process_quantity)} pcs</dd></div><div><dt>Tanpa movement</dt><dd><strong>${n(row.inactive_days)} hari</strong></dd></div><div><dt>Kendala terbuka</dt><dd>${n(row.open_issue_count)}</dd></div><div><dt>Rework</dt><dd>${n(row.rework_quantity)} pcs</dd></div></dl><p><strong>Posisi:</strong> ${positions}</p><p class="hint">Aktivitas produksi terakhir ${date(row.latest_activity_date)} · ${e(row.activity_basis==='order_created'?'belum ada movement':'movement terakhir')}${after}${late}</p><h4>SKU</h4>${products}${blockers}<button data-action="detail" data-id="${e(row.order_id)}">Buka order</button></article>`;
       }).join('');
-      $('wip-ageing-results').insertAdjacentHTML('beforeend',html);
+      appendRows('wip-ageing-results',html);
       if(!offset&&!report.items.length)$('wip-ageing-results').innerHTML='<p class="state">Tidak ada order aktif yang cocok dengan status dan filter ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat order berikutnya';
     }catch(error){
@@ -3674,7 +3695,7 @@ async function workforceDialog() {
   const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   $('dialog-content').innerHTML=`<div class="workforce-screen">
     <div class="workforce-heading"><div><p class="eyebrow">Roster harian</p><p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan.</p></div><div class="actions"><button data-action="workforce-requests" type="button">Permintaan cuti / lembur</button><button data-action="employee-master" type="button">Daftar karyawan</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div>
-    <form id="workforce-filter"><div class="form-grid">
+    <form id="workforce-filter" class="filter-form"><div class="form-grid">
       ${field('work_date','Tanggal','date',`required max="${jakartaToday()}" value="${e(workforceFilters.work_date)}"`)}
       <label>Status<select name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
       <label class="full">Cari kode, nama, atau departemen<input name="q" type="search" maxlength="160" value="${e(workforceFilters.q)}"></label>
@@ -3788,7 +3809,7 @@ async function workforceRequestsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Permintaan cuti dan lembur','<p class="state">Memuat permintaan People…</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Approval memberi izin; kehadiran aktual tetap dicatat terpisah.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role!=='viewer'?'<button class="primary" data-action="new-workforce-request" type="button">Ajukan permintaan</button>':''}<button data-action="approvals" type="button">Inbox approval</button></div></div><form id="workforce-request-filter"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis<select name="kind"><option value="all">Semua jenis</option><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label><label class="full">Cari referensi, karyawan, atau departemen<input name="q" type="search" maxlength="160"></label></div><div class="form-actions"><button class="primary" type="submit">Tampilkan permintaan</button></div></form><p id="workforce-request-message" class="state" role="status"></p><dl id="workforce-request-summary" class="workforce-summary" hidden></dl><div id="workforce-request-list"></div></div>`;
+  $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Approval memberi izin; kehadiran aktual tetap dicatat terpisah.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role!=='viewer'?'<button class="primary" data-action="new-workforce-request" type="button">Ajukan permintaan</button>':''}<button data-action="approvals" type="button">Inbox approval</button></div></div><form id="workforce-request-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis<select name="kind"><option value="all">Semua jenis</option><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label><label class="full">Cari referensi, karyawan, atau departemen<input name="q" type="search" maxlength="160"></label></div><div class="form-actions"><button class="primary" type="submit">Tampilkan permintaan</button></div></form><p id="workforce-request-message" class="state" role="status"></p><dl id="workforce-request-summary" class="workforce-summary" hidden></dl><div id="workforce-request-list"></div></div>`;
   const form=$('workforce-request-filter');let generation=0;
   const load=async()=>{
     const gen=++generation;message('workforce-request-message','Memuat permintaan People…');$('workforce-request-summary').hidden=true;$('workforce-request-list').replaceChildren();
@@ -3849,13 +3870,13 @@ async function capacityPlanDialog() {
     const admin=user.role==='admin'?`<section><h3>Master kapasitas</h3><p class="hint">Admin mengelola kapasitas dalam menit. Semua perubahan disimpan sebagai revisi.</p>
       <div class="product-list">${centers.map(row=>`<div class="product-item"><div><strong>${e(row.code)} · ${e(row.name)}</strong><span>${e(labels[row.stage])} · ${n(row.daily_minutes)} menit/hari · ${row.active?'aktif':'nonaktif'} · revisi ${n(row.revision)}</span></div><button data-action="edit-work-center" data-id="${e(row.id)}">Ubah</button></div>`).join('')||'<p>Belum ada work center.</p>'}</div>
       <div class="actions"><button data-action="new-work-center">Tambah work center</button></div>
-      <div class="form-grid"><label>SKU untuk standar<select id="capacity-standard-product">${products.map(row=>option(row.id,`${row.sku} · ${row.name}`)).join('')}</select></label>
-      <label>Tahap standar<select id="capacity-standard-stage">${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
-      <div class="form-actions"><button id="capacity-standard-open" type="button" ${products.length?'':'disabled'}>Atur standar waktu</button></div>
-      <label>Work center kalender<select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
-      ${field('capacity_calendar_date','Tanggal override','date',`id="capacity-calendar-date" value="${today}"`)}
+      <div class="filter-form"><div class="form-grid"><label>SKU untuk standar<select id="capacity-standard-product">${products.map(row=>option(row.id,`${row.sku} · ${row.name}`)).join('')}</select></label>
+      <label>Tahap standar<select id="capacity-standard-stage">${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label></div>
+      <div class="form-actions"><button id="capacity-standard-open" type="button" ${products.length?'':'disabled'}>Atur standar waktu</button></div></div>
+      <div class="filter-form"><div class="form-grid"><label>Work center kalender<select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
+      ${field('capacity_calendar_date','Tanggal override','date',`id="capacity-calendar-date" value="${today}"`)}</div>
       <div class="form-actions"><button id="capacity-calendar-open" type="button" ${activeCenters.length?'':'disabled'}>Atur kapasitas tanggal</button></div></div></section>`:'';
-    $('dialog-content').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
+    $('dialog-content').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form" class="filter-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
       ${field('as_of','Mulai per tanggal','date',`required value="${today}"`)}
       ${field('horizon_days','Horizon kalender (hari)','number','required min="1" max="90" step="1" value="14"')}
       ${field('warning_percent','Peringatan utilisasi (%)','number','required min="1" max="100" step="1" value="80"')}
@@ -3890,7 +3911,7 @@ async function capacityPlanDialog() {
           const calendar=row.days.map(day=>`${date(day.date)} ${n(day.available_minutes)} menit${day.source==='override'?' (override)':''}`).join(' · ');
           return `<article class="material-event" data-capacity-center="${e(row.id)}"><div class="issue-heading"><h3>${e(row.code)} · ${e(row.name)}</h3><span class="status-label ${attention?'late':'done'}">${e(statusLabels[row.status])}</span></div><p>${e(labels[row.stage])} · utilisasi ${utilization}</p><dl class="requirement-values"><div><dt>Beban</dt><dd>${e(minuteQty(row.required_minutes))}</dd></div><div><dt>Tersedia</dt><dd>${e(minuteQty(row.available_minutes))}</dd></div><div><dt>Sisa</dt><dd>${e(minuteQty(row.remaining_minutes))}</dd></div><div><dt>Overload</dt><dd>${e(minuteQty(row.overload_minutes))}</dd></div><div><dt>Order</dt><dd>${n(row.order_count)}</dd></div><div><dt>Berisiko</dt><dd>${n(row.at_risk_order_count)}</dd></div></dl><p class="hint">Kalender: ${calendar}</p>${orders||'<p class="state">Tidak ada beban order pada horizon ini.</p>'}</article>`;
         }).join('');
-        $('capacity-plan-results').insertAdjacentHTML('beforeend',html);
+        appendRows('capacity-plan-results',html);
         if(!offset&&!report.items.length)$('capacity-plan-results').innerHTML='<p class="state">Tidak ada work center yang cocok dengan status dan filter ini.</p>';
         offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat work center berikutnya';
       }catch(error){if(current()&&gen===generation){message('capacity-plan-message',error.message,true);$('capacity-plan-message').insertAdjacentHTML('beforeend','<br><button id="capacity-plan-retry" type="button">Coba lagi</button>');$('capacity-plan-retry').onclick=()=>load();}}
@@ -3904,7 +3925,7 @@ $('capacity-plan').onclick=capacityPlanDialog;
 function productionQualityInsightsDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Kualitas produksi',`<form id="production-quality-form">
+  openDialog('Kualitas produksi',`<form id="production-quality-form" class="filter-form">
     <p class="hint">Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3942,7 +3963,7 @@ function productionQualityInsightsDialog() {
         const records=row.recent_records.map(item=>`<article class="material-event"><strong>${e(item.reference)} · ${e(item.order_reference)}</strong><p>${inspectionBadge(item)}</p><p>${date(item.inspection_date)} · ${e(item.sku)} · diterima ${n(item.accepted_quantity)}, rework ${n(item.rework_quantity)}, reject ${n(item.reject_quantity)}</p><p>${e(item.defect_type||'Tanpa jenis defect')} · ${e(item.responsible_source||'Sumber belum diisi')}</p><button data-action="final-qc-record" data-id="${e(item.id)}">Buka final QC ${e(item.reference)}</button></article>`).join('');
         return `<article class="material-event" data-production-quality="${e(row.assignment_type)}-${e(row.assignee)}"><div class="issue-heading"><h3>${e(row.assignee)}</h3><span class="status-label ${attention?'late':'done'}">${attention?'Perlu perhatian':'Sehat'}</span></div><p>${e(assignmentLabels[row.assignment_type])} · tren <strong>${e(trendLabels[row.trend])}</strong> · ${delta(row.nonconforming_rate_change_points)}</p><dl class="requirement-values"><div><dt>Diperiksa</dt><dd>${n(c.inspected_quantity)} pcs</dd></div><div><dt>Yield</dt><dd>${e(c.first_pass_yield_percent)}%</dd></div><div><dt>Rework + reject</dt><dd>${e(c.nonconforming_rate_percent)}%</dd></div><div><dt>Rework</dt><dd>${e(c.rework_rate_percent)}%</dd></div><div><dt>Reject</dt><dd>${e(c.reject_rate_percent)}%</dd></div><div><dt>Periode lalu</dt><dd>${e(p.nonconforming_rate_percent)}%</dd></div><div><dt>Inspeksi ulang</dt><dd>${n(c.reinspected_quantity)} pcs</dd></div></dl><h4>Jenis defect</h4><ul>${defects}</ul><h4>Sumber penanggung jawab</h4><ul>${sources}</ul><h4>SKU periode ini</h4>${skus}<h4>Final QC terbaru</h4>${records}</article>`;
       }).join('');
-      $('production-quality-results').insertAdjacentHTML('beforeend',html);
+      appendRows('production-quality-results',html);
       if(!offset&&!report.items.length)$('production-quality-results').innerHTML='<p class="state">Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.</p>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat penanggung jawab berikutnya';
     }catch(error){if(current()&&gen===generation){message('production-quality-message',error.message,true);$('production-quality-message').insertAdjacentHTML('beforeend','<br><button id="production-quality-retry" type="button">Coba lagi</button>');$('production-quality-retry').onclick=()=>load();}}
@@ -3955,7 +3976,7 @@ $('production-quality-insights').onclick=productionQualityInsightsDialog;
 function replenishmentDialog() {
   if(guardPending())return;
   const today=jakartaToday();
-  openDialog('Risiko stockout & rekomendasi',`<form id="replenishment-form">
+  openDialog('Risiko stockout & rekomendasi',`<form id="replenishment-form" class="filter-form">
     <p class="hint">Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.</p>
     <div class="form-grid">
       ${field('as_of','Forecast sampai tanggal','date',`required value="${today}"`)}
@@ -4034,7 +4055,7 @@ async function approvalsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="payroll_batch">People · batch payroll</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="actions"><button id="approval-refresh">Muat ulang inbox</button><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="payroll_batch">People · batch payroll</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="form-actions"><button id="approval-refresh">Muat ulang inbox</button></div></div><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
@@ -4042,10 +4063,10 @@ async function approvalsDialog() {
     try{
       const rows=await api.get('/api/approvals?'+new URLSearchParams({limit:25,offset,status:$('approval-status').value,kind:$('approval-kind').value}));
       if(!current()||gen!==generation)return;
-      $('approval-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
+      appendRows('approval-list',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
       if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
-    }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
   $('approval-status').onchange=$('approval-kind').onchange=$('approval-refresh').onclick=()=>load(true);
@@ -4056,7 +4077,7 @@ async function marketingBudgetsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Budget marketing','<p class="state">Memuat pengajuan budget…</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions">${user.role!=='viewer'?'<button class="primary" data-action="new-marketing-budget">Ajukan budget</button>':''}<button id="marketing-budget-refresh">Muat ulang</button><button data-action="approvals">Inbox approval</button></div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select><div id="marketing-budget-list"></div><p id="marketing-budget-error" class="error" role="alert" hidden></p><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+  $('dialog-content').innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions">${user.role!=='viewer'?'<button class="primary" data-action="new-marketing-budget">Ajukan budget</button>':''}<button id="marketing-budget-refresh">Muat ulang</button><button data-action="approvals">Inbox approval</button></div><div class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div></div><div id="marketing-budget-list"></div><p id="marketing-budget-error" class="error" role="alert" hidden></p><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
   let before=null,generation=0;
   const load=async(reset=false)=>{
     if(reset){generation++;before=null;$('marketing-budget-list').replaceChildren();}
@@ -4064,10 +4085,10 @@ async function marketingBudgetsDialog() {
     try{
       const rows=await api.get('/api/marketing-budget-requests?'+new URLSearchParams({limit:25,status:$('marketing-budget-status').value,...(before?{before}:{})}));
       if(!current()||gen!==generation)return;
-      $('marketing-budget-list').insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.campaign_name)} · ${e(row.channel)}</p><p>${date(row.start_date)}–${date(row.end_date)} · <strong>${e(rupiah(row.amount))}</strong></p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button></article>`).join(''));
+      appendRows('marketing-budget-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.campaign_name)} · ${e(row.channel)}</p><p>${date(row.start_date)}–${date(row.end_date)} · <strong>${e(rupiah(row.amount))}</strong></p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button></article>`).join(''));
       if(!before&&!rows.length)$('marketing-budget-list').innerHTML='<p class="state">Belum ada pengajuan budget yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pengajuan berikutnya';
-    }catch(error){if(current()&&gen===generation){message('marketing-budget-error',error.message,true);button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()&&gen===generation){message('marketing-budget-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
   $('marketing-budget-status').onchange=$('marketing-budget-refresh').onclick=()=>load(true);
@@ -4112,7 +4133,7 @@ async function purchaseRequestsDialog(orderId=null) {
   if (guardPending()) return;
   const version=epoch;
   openDialog(orderId ? 'PR untuk order ini' : 'Permintaan pembelian',
-    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
+    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><div class="filter-form"><div class="form-grid"><div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div></div><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
   const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null, generation=0;
   async function load(reset=false) {
@@ -4121,10 +4142,10 @@ async function purchaseRequestsDialog(orderId=null) {
     try {
       const rows=await api.get('/api/purchase-requests?'+new URLSearchParams({limit:25,status:$('pr-status').value,...(orderId?{order_id:orderId}:{}),...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
-      $('pr-list').insertAdjacentHTML('beforeend', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
+      appendRows('pr-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
       if(!before && !rows.length)$('pr-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
-    }catch(error){if(current() && gen===generation){message('pr-error',error.message,true);button.hidden=false;button.textContent='Coba muat PR lagi';}}
+    }catch(error){if(current() && gen===generation){message('pr-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba muat PR lagi';}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
   $('pr-status').onchange=$('pr-refresh').onclick=()=>load(true);
@@ -4211,7 +4232,7 @@ function supplierForm() {
 async function purchaseOrdersDialog() {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Daftar PO','<p class="hint">PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.</p><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
+  openDialog('Daftar PO','<p class="hint">PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.</p><div class="filter-form"><div class="form-grid"><div><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select></div></div></div><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
   const modal=dialogVersion,current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null,generation=0;
   async function load(reset=false){
@@ -4220,10 +4241,10 @@ async function purchaseOrdersDialog() {
     try{
       const rows=await api.get('/api/purchase-orders?'+new URLSearchParams({limit:25,status:$('po-status').value,...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
-      $('po-list').insertAdjacentHTML('beforeend',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${poStatus[p.status]}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><p>${fulfillmentLabel[p.fulfillment]}${p.lines.some(l=>l.held!=='0.000')?' · Menunggu QC':''}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
+      appendRows('po-list',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${poStatus[p.status]}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><p>${fulfillmentLabel[p.fulfillment]}${p.lines.some(l=>l.held!=='0.000')?' · Menunggu QC':''}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
       if(!before && !rows.length)$('po-list').innerHTML='<p class="state">Belum ada PO yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
-    }catch(error){if(current() && gen===generation){message('po-error',error.message,true);button.hidden=false;}}
+    }catch(error){if(current() && gen===generation){message('po-error',error.message,true);clearDialogLoading();button.hidden=false;}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
   $('po-status').onchange=$('po-refresh').onclick=()=>load(true);$('po-more').onclick=()=>load();await load();
@@ -4602,7 +4623,7 @@ async function materialBatchTraceabilityDialog(batchId) {
       <div class="actions"><button data-action="material-batch" data-id="${e(batch.id)}">Riwayat stok bahan</button><button data-action="material-batch-traceability" data-id="${e(batch.id)}">Muat ulang jejak</button></div>`;
     let cursor=report.next_before;
     const append=rows=>{
-      $('material-trace-events').insertAdjacentHTML('beforeend',rows.map(row=>{
+      appendRows('material-trace-events',rows.map(row=>{
         const corrected=row.event_type.endsWith('_correction');
         const base=row.event_type.replace(/_correction$/,'');
         const label=(corrected?'Koreksi · ':'')+(materialTraceLabels[base]||materialTraceLabels[row.event_type]);
