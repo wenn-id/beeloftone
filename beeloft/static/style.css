@@ -613,3 +613,343 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
   .ops-stats{gap:4px 14px}
 }
+
+
+/* ==========================================================================
+   Shared surfaces for the operational sections.
+
+   The Command Center above owns the visual system. Every other section builds
+   its screens from a handful of vocabulary classes (material-event, form-info,
+   requirement-values, product-item, history-item, workforce-*, sku-block) that
+   predate that system and still rendered as flat rules on the canvas. This block
+   re-expresses those same classes in the Command Center language — one surface
+   token set, one radius ladder, one type scale — so no section needs a private
+   design system and no markup needs to change to inherit it.
+
+   Radius follows DESIGN.md's concentric rule: a top-level surface is --r-card
+   (20px), a surface nested inside one steps down to 14px, and small marks stay
+   at their own scale. Nothing here raises chips, inputs, or navigation rows.
+   ========================================================================== */
+
+/* ---------- dialog chrome: same heading rhythm as a page heading ---------- */
+.dialog-heading{
+  align-items:flex-start;gap:1rem;margin:-2px 0 18px;padding-bottom:14px;
+  border-bottom:1px solid var(--line);
+}
+.dialog-heading h2{font-size:1.25rem;font-weight:700;letter-spacing:-.02em}
+.dialog-heading .quiet{flex:0 0 auto}
+#dialog-content{min-width:0}
+#dialog-content>h3,.dialog-section-title{
+  margin:22px 0 12px;color:var(--ink);font-size:1rem;font-weight:650;letter-spacing:-.01em;
+}
+#dialog-content>h3:first-child{margin-top:0}
+#dialog-content>p.hint{margin:0 0 var(--gap)}
+#dialog-content>.eyebrow{margin-bottom:.35rem}
+
+/* ---------- info / notice panels ---------- */
+.form-info{
+  margin:0 0 var(--gap);padding:13px 16px;
+  border:1px solid var(--line);border-radius:14px;
+  background:var(--surface-subtle);color:var(--ink-2);
+  font-size:.8125rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
+}
+.form-info strong{color:var(--ink);font-weight:650}
+.inline-alert{
+  margin:0 0 var(--gap);padding:11px 14px;
+  border:1px solid var(--line);border-left:3px solid var(--edge);border-radius:12px;
+  background:var(--surface-subtle);color:var(--ink-2);font-size:.8125rem;line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.inline-alert.is-danger{border-color:var(--danger-edge);border-left-color:var(--danger-edge);background:var(--danger-bg);color:var(--danger)}
+.inline-alert.is-warning{border-color:var(--warning-edge);border-left-color:var(--warning-edge);background:var(--warning-bg);color:var(--warning)}
+.inline-alert.is-success{border-color:var(--success-edge);border-left-color:var(--success-edge);background:var(--success-bg);color:var(--success)}
+.inline-alert.is-info{border-color:var(--primary-edge);border-left-color:var(--primary-edge);background:var(--primary-soft);color:var(--primary)}
+
+/* The board's open-issue shortcut is an alert, not a control: it read as a
+   stretched pill because it is a <button>. */
+.issues-summary{
+  min-height:0;padding:12px 16px;border-radius:14px;
+  border-left:3px solid var(--danger-edge);font-size:.8125rem;font-weight:650;
+}
+
+/* ---------- list rows: one card language for every record list ---------- */
+.material-event,.audit-event,.issue-item,.product-item,.workforce-row{
+  min-width:0;padding:16px 18px;margin:0 0 10px;
+  border:1px solid var(--line);border-radius:var(--r-card);
+  background:var(--surface);box-shadow:var(--shadow-sm);
+  overflow-wrap:anywhere;
+}
+.material-event:last-child,.audit-event:last-child,.issue-item:last-child,
+.product-item:last-child,.workforce-row:last-child{margin-bottom:0}
+.material-event>h3,.material-event>h4,.audit-event h3,.issue-item h3,.workforce-row h3{
+  margin:0 0 6px;color:var(--ink);font-size:.9375rem;font-weight:650;letter-spacing:-.01em;
+}
+.material-event>strong,.audit-event>strong,.product-item strong{
+  display:block;margin-bottom:4px;color:var(--ink);font-size:.9375rem;font-weight:650;
+}
+/* Several surfaces emit their status chip as a <p class="status-label">, so the body-copy
+   rule excludes chips and badges — otherwise it would out-specify their own type scale
+   and neutral tone. */
+.material-event p:not(.status-label):not(.badge),.audit-event p:not(.status-label):not(.badge),
+.issue-item p:not(.status-label):not(.badge),.workforce-row p:not(.status-label):not(.badge){
+  margin:4px 0;color:var(--ink-2);font-size:.8125rem;line-height:1.5;
+}
+.material-event>p.status-label,.audit-event>p.status-label,
+.issue-item>p.status-label,.workforce-row>p.status-label{margin:0 0 8px}
+.material-event .hint,.audit-event .hint,.issue-item .hint,.workforce-row .hint,
+.product-item .hint{color:var(--muted);font-size:.75rem}
+.material-event .reason,.issue-item .reason,.workforce-row .reason{
+  color:var(--muted);font-size:.8125rem;white-space:pre-wrap;
+}
+.material-event>button,.material-event>.actions,.audit-event>button,
+.issue-item>button,.workforce-row-actions{margin-top:12px}
+.material-event>button,.audit-event>button,.issue-item>button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+
+/* A surface nested inside a surface steps the radius down and sinks its ground,
+   the same relationship the dashboard's breakdown panel has to its hero card. */
+.material-event .material-event,.material-event .product-item{
+  border-radius:14px;background:var(--surface-subtle);box-shadow:none;padding:13px 15px;
+}
+.material-event .material-event .material-event{
+  border-radius:11px;background:var(--surface-sunken);
+}
+
+/* ---------- label / value metric lists ---------- */
+.requirement-values{
+  display:grid;gap:0;margin:10px 0 0;padding:10px 0 0;border-top:1px dashed var(--line);
+}
+.requirement-values>div{
+  display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
+  padding:4px 0;min-width:0;flex-wrap:wrap;
+}
+.requirement-values dt{color:var(--muted);font-size:.8125rem;min-width:0;overflow-wrap:anywhere}
+.requirement-values dd{
+  margin:0;color:var(--ink);font-size:.8125rem;font-weight:650;
+  font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere;
+}
+.requirement-values dd small{display:block;color:var(--muted);font-size:.6875rem;font-weight:500}
+.material-event>.requirement-values:first-child{margin-top:0;padding-top:0;border-top:0}
+
+/* ---------- list containers ---------- */
+.product-list{max-height:min(420px,52dvh);overflow:auto;margin:0 0 var(--gap);padding:1px}
+.product-item{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.product-item>div{min-width:0}
+.workforce-master{max-height:min(460px,58dvh)}
+
+/* ---------- history / timeline ---------- */
+.history-section{margin-top:26px}
+.history-heading{margin-bottom:12px}
+.history-heading h2{margin:0}
+.history-item{
+  gap:1rem 1.2rem;padding:14px 16px;margin-bottom:8px;
+  border:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:14px;
+  background:var(--surface);align-items:start;
+}
+.history-item:last-child{margin-bottom:0}
+.history-item time{
+  color:var(--muted);font-size:.75rem;font-variant-numeric:tabular-nums;line-height:1.5;
+}
+.history-item strong{color:var(--ink);font-size:.875rem;font-weight:650}
+.history-item p{margin:3px 0;font-size:.8125rem}
+.history-item .hint{color:var(--muted);font-size:.75rem}
+.history-item .reason{color:var(--muted);font-size:.8125rem}
+.history-item>button{min-height:34px;padding:.3rem .8rem;font-size:.78125rem}
+.activity-item .order-title{font-size:.875rem;font-weight:650}
+
+/* ---------- order detail ---------- */
+.detail-top{gap:1rem 1.5rem;align-items:flex-end}
+.detail-meta{
+  gap:0;margin:0 0 var(--gap);padding:0;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  border:1px solid var(--line);border-radius:var(--r-card);
+  background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.detail-meta>div{padding:14px 18px;border-right:1px solid var(--line);min-width:0}
+.detail-meta>div:last-child{border-right:0}
+/* Scoped to the label span only: the value slot can itself contain a span — the order
+   status is a status-label chip — which must keep its own inline-flex chip shape. */
+.detail-meta>div>span:first-child{display:block;color:var(--muted);font-size:.75rem}
+.detail-meta strong{
+  display:block;margin-top:3px;color:var(--ink);font-size:.9375rem;font-weight:650;
+  overflow-wrap:anywhere;
+}
+.order-settings{gap:8px;margin:0 0 var(--gap)}
+.stages{
+  gap:0;margin:0 0 12px;border:1px solid var(--line);background:var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+.stage{padding:14px 16px;border-right:1px solid var(--line);min-width:0}
+.stage small{color:var(--muted);font-size:.75rem}
+.stage strong{
+  display:block;margin-top:2px;color:var(--ink);font-size:1.375rem;font-weight:750;
+  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+}
+.stage-number{
+  margin-right:.4rem;color:var(--muted);font-size:.6875rem;font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.exceptions{
+  gap:8px 18px;margin:0 0 var(--gap);color:var(--muted);font-size:.8125rem;
+  align-items:center;
+}
+.exceptions strong{color:var(--ink);font-weight:650}
+.sku-block{padding:18px 20px;margin:0 0 12px}
+.sku-block:last-of-type{margin-bottom:0}
+.sku-heading h3{margin:0;font-size:.9375rem;font-weight:650}
+.sku-heading .reference{margin-bottom:2px}
+.sku-balances{
+  gap:8px 18px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);
+  font-size:.8125rem;
+}
+.sku-balances strong{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+.issue-heading{gap:8px 12px;margin-bottom:6px}
+.issue-heading h3{margin:0}
+.issue-resolution{
+  margin-top:12px;padding:10px 14px;border:0;border-left:3px solid var(--success-edge);
+  border-radius:12px;background:var(--success-bg);
+}
+.issue-resolution p{color:var(--success)}
+
+/* ---------- compact stat strips (People roster, request summaries) ---------- */
+.workforce-summary{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;
+  margin:0 0 var(--gap);border:0;
+}
+.workforce-summary>div{
+  padding:13px 15px;border:1px solid var(--line);border-right:1px solid var(--line);
+  border-radius:14px;background:var(--surface);min-width:0;
+}
+.workforce-summary>div:last-child{border-right:1px solid var(--line)}
+.workforce-summary dt{color:var(--muted);font-size:.75rem;overflow-wrap:anywhere}
+.workforce-summary dd{
+  margin:3px 0 0;color:var(--ink);font-size:1.25rem;font-weight:750;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+
+/* ---------- People screens ---------- */
+.workforce-heading{align-items:flex-start;gap:1rem;margin-bottom:var(--gap)}
+.workforce-heading>div{min-width:0}
+.workforce-heading p{margin-bottom:0}
+.workforce-heading .hint{margin-top:2px}
+.workforce-row{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,auto);gap:1rem 1.25rem;
+  align-items:center;
+}
+.workforce-row h3{margin-bottom:4px}
+.workforce-row .reference{margin-bottom:2px}
+.workforce-row-actions{margin-top:0;gap:8px}
+.workforce-row-actions button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+
+/* ---------- filter toolbars inside dialogs ---------- */
+.filter-form{
+  margin:0 0 var(--gap);padding:16px;
+  border:1px solid var(--line);border-radius:var(--r-card);
+  background:var(--surface);box-shadow:var(--shadow-sm);
+}
+.filter-form>.hint:first-child{margin:0 0 12px}
+.filter-form .form-grid{gap:12px}
+.filter-form .form-actions{margin-top:14px;padding-top:0;border-top:0}
+.filter-form>.form-info{margin-bottom:12px}
+
+/* ---------- forms ---------- */
+.form-grid{gap:14px}
+label>input,label>select,label>textarea{margin-top:6px}
+.form-actions{
+  gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);
+}
+.check-field{
+  gap:.7rem;min-height:40px;padding:.5rem .8rem;
+  border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);
+}
+.line-input,.bom-line{
+  gap:10px;margin:0 0 12px;padding:13px 15px;
+  border:1px solid var(--line);border-radius:14px;background:var(--surface-subtle);
+}
+.line-input>button,.bom-line button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+
+/* ---------- AI surfaces ---------- */
+.ai-prompts{gap:8px;margin:0 0 var(--gap)}
+.ai-prompts button{min-height:34px;padding:.3rem .8rem;font-size:.78125rem}
+.ai-assumptions{
+  margin:0 0 var(--gap);padding:13px 16px;
+  border:1px solid var(--line);border-radius:14px;background:var(--surface-subtle);
+}
+.ai-assumptions summary{
+  color:var(--ink);font-size:.8125rem;font-weight:650;cursor:pointer;list-style:none;
+}
+.ai-assumptions summary::-webkit-details-marker{display:none}
+.ai-assumptions .form-grid{margin-top:14px}
+.ai-answer{
+  margin:0 0 var(--gap);padding:18px 20px;
+  border:1px solid var(--line);border-top:3px solid var(--primary);border-radius:var(--r-card);
+  background:var(--surface);box-shadow:var(--shadow-sm);overflow-wrap:anywhere;
+}
+.ai-answer .eyebrow{margin-bottom:.25rem}
+.ai-answer h3{margin-bottom:.35rem}
+.ai-answer p{color:var(--ink-2);font-size:.8125rem;line-height:1.55}
+.ai-answer p:last-child{margin-bottom:0}
+
+/* ---------- raw payload viewer ---------- */
+.audit-json{
+  margin:0 0 var(--gap);padding:14px 16px;
+  border:1px solid var(--line);border-radius:14px;background:var(--surface-sunken);
+  color:var(--ink-2);font:.75rem/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;
+  max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+}
+
+/* ---------- materials page ---------- */
+.material-balance{
+  display:block;margin-top:2px;color:var(--ink);font-size:1.375rem;font-weight:750;
+  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+}
+
+/* ---------- login ---------- */
+.login-form{padding:26px 28px}
+.login-form h2{font-size:1.25rem;font-weight:700}
+.login-form>p{color:var(--muted);font-size:.8125rem}
+
+/* ---------- responsive ---------- */
+@media(max-width:980px){
+  .detail-meta{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+}
+@media(max-width:650px){
+  .dialog-heading{margin-bottom:14px;padding-bottom:12px}
+  .dialog-heading h2{font-size:1.0625rem}
+  .material-event,.audit-event,.issue-item,.product-item,.workforce-row{padding:14px 15px}
+  .material-event .material-event,.material-event .product-item{padding:12px 13px}
+  .detail-meta{grid-template-columns:minmax(0,1fr)}
+  .detail-meta>div{border-right:0;border-bottom:1px solid var(--line)}
+  .detail-meta>div:last-child{border-bottom:0}
+  .stage{padding:12px 14px}
+  .stage strong{font-size:1.1875rem}
+  .workforce-summary{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}
+  .workforce-row{grid-template-columns:minmax(0,1fr)}
+  .workforce-row-actions{justify-content:flex-start}
+  .workforce-row-actions button{flex:1 1 auto}
+  .history-item{grid-template-columns:minmax(0,1fr);gap:4px;padding:13px 15px}
+  .history-item>button{justify-self:start;margin-top:8px}
+  .filter-form{padding:13px}
+  .sku-block{padding:15px 16px}
+  .login-form{padding:18px 20px}
+}
+
+
+/* ---------- action hierarchy inside dense toolbars ----------
+   A .quiet control is borderless by design, which works for the isolated back link
+   and the dialog close. Inside a toolbar of pills it read as stray text between
+   buttons, so a low-emphasis control keeps an edge while staying clearly lighter
+   than a default button and lighter still than .primary. */
+.actions>.quiet,.order-settings>.quiet{
+  border-color:var(--line);background:var(--surface-subtle);color:var(--ink-2);
+}
+.actions>.quiet:hover,.order-settings>.quiet:hover{
+  border-color:var(--line-strong);background:var(--surface-sunken);color:var(--ink);
+}
+/* Corrections reverse a posted record, so they are marked as such rather than sitting
+   in the same visual class as the navigation buttons beside them. */
+.history-action,.history-action.quiet{
+  border-color:var(--danger-edge);background:var(--danger-bg);color:var(--danger);
+}
+.history-action:hover,.history-action.quiet:hover{
+  border-color:var(--danger);background:var(--danger-bg);color:var(--danger);
+}
