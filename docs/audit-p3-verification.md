@@ -23,6 +23,24 @@ disebutkan pada penugasan.
 Branch kerja `fix/audit-p3-approval-breakdown-date-logout` dibuat dari SHA tersebut. Branch PR #6
 tidak dilanjutkan. Tidak ada `reset`, `force-checkout`, atau pembuangan perubahan lokal.
 
+`origin/main` diperiksa ulang sebelum publikasi dan masih berada pada `c77248be`, jadi baseline
+tidak bergerak dan tidak ada rebase maupun pemeriksaan kompatibilitas tambahan yang diperlukan.
+
+**SHA yang benar-benar diuji: `dcb4f73aecb35ad5eb4ede4c1dd3624ef525bc8a`** ("Pin the stockout
+projection and logout credential contracts"). Seluruh hasil pada dokumen ini berasal dari commit
+tersebut. Commit sesudahnya hanya memperbarui dokumen ini sendiri dan tidak menyentuh kode maupun
+tes, sehingga hasilnya tetap berlaku; CI pada HEAD yang dipublikasikan menjalankan ulang semuanya.
+
+Lima commit pada branch:
+
+| SHA | Subject |
+| --- | --- |
+| `445b7b3` | Complete the approval category breakdown |
+| `d20b24f` | Validate date arithmetic boundaries |
+| `d681c1f` | Handle session logout without a browser cookie |
+| `64954e8` | Record the P3 audit fixes and regenerate the API contract |
+| `dcb4f73` | Pin the stockout projection and logout credential contracts |
+
 Perbandingan sebelum/sesudah memakai checkout terpisah, bukan penggantian working tree:
 
 ```
@@ -59,15 +77,19 @@ OK
 
 ## Ringkasan hasil
 
+Status keseluruhan: **Implemented and locally verified; pending PR review and CI.**
+
 | Temuan | Status | Bukti utama |
 | --- | --- | --- |
 | P3-A | **FIXED** | `by_kind` memuat kesembilan kategori; `sum(by_kind.values()) == pending_count`; 11/14 test baru gagal pada baseline |
 | P3-B | **FIXED** | 15 jalur yang tadinya 500 kini 422 berpesan; batas aman tetap 200; 14/28 test baru dan modul browser baru gagal pada baseline |
 | P3-C | **FIXED** | Logout API key tanpa cookie 200 no-op; pencabutan lintas akun tanpa CSRF dihentikan; 10/18 test baru gagal pada baseline |
+| Kontrak A (semantik `None` proyeksi) | **TERBUKTI, tanpa perubahan kode** | Demand, cover, dan risiko identik pada dua tanggal acuan; hanya proyeksinya berbeda; 7/8 test gagal pada baseline ([bagian 8](#8-kontrak-a-semantik-none-pada-proyeksi-habis-stok)) |
+| Kontrak B (kredensial dan cookie logout) | **TERBUKTI, tanpa perubahan kode** | `Set-Cookie` kosong pada jalur no-op; `rows()` tabel session tidak berubah; session tetap dipakai lewat cookie; 5/6 test gagal pada baseline ([bagian 9](#9-kontrak-b-api-key-logout-sebagai-no-op)) |
 
 | Perintah | Hasil |
 | --- | --- |
-| `python -m unittest discover -s tests` | **Ran 493 tests — OK** (baseline 433, +60) |
+| `python -m unittest discover -s tests` | **Ran 507 tests — OK** (baseline 433, +74) |
 | `python -m pip check` | No broken requirements found |
 | `python -m compileall -q beeloft` | OK |
 | `node --check beeloft/static/app.mjs` | OK |
@@ -265,7 +287,8 @@ Pesan menyebut parameter yang bersangkutan per endpoint, misalnya `as_of dan ina
 
 ### Cakupan test
 
-`tests/test_date_boundaries.py` — **28 test, OK**:
+`tests/test_date_boundaries.py` — **36 test, OK** (28 di bawah ini, ditambah 8 test kontrak proyeksi
+pada [bagian 8](#8-kontrak-a-semantik-none-pada-proyeksi-habis-stok)):
 
 | Test | Yang ditegakkan |
 | --- | --- |
@@ -444,7 +467,8 @@ FAIL: test_an_api_key_never_revokes_another_accounts_session
 | `test_the_actor_binding_header_still_applies_to_logout` | `X-Beeloft-Actor` yang salah tetap 403 |
 | `test_logout_needs_no_idempotency_key` | Jumlah baris `requests` dan `audit_events` tidak berubah |
 
-Delapan test P2 lama pada berkas yang sama tetap lulus; totalnya **26 test, OK**.
+Delapan test P2 lama pada berkas yang sama tetap lulus. Bersama 6 test kontrak kredensial pada
+[bagian 9](#9-kontrak-b-api-key-logout-sebagai-no-op), berkas ini berisi **32 test, OK**.
 
 ### Tes baru gagal pada baseline
 
@@ -565,8 +589,19 @@ Dataset demo tidak punya approval pending, jadi angka P3-A pada smoke test adala
 
 * **Windows tidak diuji.** `start.ps1` tidak dijalankan; sandbox ini Linux. Klaim kompatibilitas
   Windows tidak dibuat.
-* **CI belum dijalankan pada HEAD baru** saat dokumen ini ditulis. Statusnya dilaporkan setelah
-  branch dipush; sampai itu terjadi, hanya hasil lokal di atas yang berlaku.
+* **CI dijalankan pada HEAD yang dipublikasikan, bukan pada `main` atau PR #6.** CI hijau dari
+  keduanya tidak dipakai sebagai bukti P3. Statusnya dilaporkan pada PR; sampai CI selesai, hanya
+  hasil lokal di atas yang berlaku, dan status pekerjaan ini adalah *implemented and locally
+  verified; pending PR review and CI* — bukan "audit ditutup".
+* **Satu konsumen hipotetis pada Kontrak A belum tertutup:** pembaca yang mengambil
+  `projected_stockout_date` sendirian tanpa `days_of_cover`/`stockout_risk` tidak dapat membedakan
+  "di luar kalender" dari "tanpa demand". Tidak ada pembaca seperti itu di repo ini dan tesnya
+  mengunci pasangan field tersebut, tetapi konsumen baru di masa depan perlu memakai pasangannya
+  atau menuntut metadata alasan additive.
+* **Kontrak A pada sisi UI diverifikasi dengan pembacaan kode, bukan dengan tes browser.**
+  `app.mjs:3246/3247/3988` mengunci kalimatnya pada `days_of_cover===null`, bukan pada proyeksinya;
+  membangun stok bertanggal 9999 di dalam dataset demo browser tidak dilakukan. Invarian datanya
+  ditegakkan pada level HTTP.
 * **Playwright dipasang tanpa dependency sistem.** `npx playwright install --with-deps chromium`
   gagal karena image ini bukan Ubuntu (`apt-get: command not found`), jadi hanya biner Chromium yang
   dipasang. Suite-nya berjalan dan lulus, tetapi bukan konfigurasi yang identik dengan job `browser`
@@ -591,10 +626,138 @@ Dataset demo tidak punya approval pending, jadi angka P3-A pada smoke test adala
   tidak berarti aplikasinya bebas bug; hanya berarti kedelapan temuan itu punya perbaikan beserta
   regresinya.
 
-## 8. Status
+## 8. Kontrak A: semantik None pada proyeksi habis stok
+
+`projected_date()` mengembalikan `None` ketika tanggal habis stok jatuh di luar kalender, dan `None`
+juga sudah lebih dulu menjadi nilai untuk SKU tanpa laju permintaan. Pertanyaannya: apakah kedua
+keadaan itu masih dapat dibedakan oleh pembacanya?
+
+**Jawabannya ya, dan kontraknya sudah benar sebelum pemeriksaan ini — tidak ada perubahan kode.**
+Yang menyatakan "ada demand atau tidak" bukan tanggal proyeksinya, melainkan
+`days_of_cover`/`forecast_daily_rate` bersama `stockout_risk` (replenishment) atau `risk_status`
+(size demand).
+
+### Pembaca field ini
+
+| Pembaca | Yang dibacanya | Kesimpulan |
+| --- | --- | --- |
+| `store.py:5404-5434` `replenishment_recommendations` | `risk` dihitung dari `available`, `cover`, `reorder_point`; `cover_days` terisi setiap kali `rate` bukan nol. Cabang tanpa rate menetapkan `cover_days=stockout=None` **dan** `risk='no_demand'/'insufficient_history'` | Dua keadaan itu berbeda pada `days_of_cover` dan `stockout_risk` |
+| `store.py:4256-4290` `size_demand_insights` | `risk_rank` dan `risk_status` dihitung dari `cover`, bukan dari `projected`; baris tanpa rate tetap `risk_status='no_observed_demand'` dan `days_of_cover=None` | Sama |
+| `store.py:4301-4316` agregasi keluarga | `first_stockout_date` = min proyeksi yang ada; `earliest_projected_stockout_date` = min lintas keluarga | Melaporkan "tanggal terwakili paling awal", bukan mengubah status |
+| `store.py:4307` pengurutan keluarga | `row['first_stockout_date'] or '9999-12-31'` | **Hanya kunci pengurutan**, tidak pernah menjadi nilai di respons — ditegakkan oleh tes |
+| `brain.py:74-82` findings AI | `stockout_risk` dan `days_of_cover` saja | **Tidak pernah membaca `projected_stockout_date`** |
+| `app.mjs:3246` baris ukuran | `row.days_of_cover===null ? ' · days of cover belum tersedia' : ' · N hari' + (row.projected_stockout_date ? ' · estimasi <tanggal>' : '')` | Kalimat "belum tersedia" dikunci pada `days_of_cover`, bukan pada proyeksi |
+| `app.mjs:3247` kartu keluarga | Label status dari `family.risk_status`; tanggal hanya ditambahkan bila ada | Status tidak bergantung proyeksi |
+| `app.mjs:3988` kartu replenishment | Judul dari `risks[row.stockout_risk]`; sel "Days of cover" dikunci pada `days_of_cover===null`; "estimasi stockout" hanya bila ada | Sama |
+
+### Bukti eksperimen terkontrol
+
+`tests/test_date_boundaries.py::StockProjectionSemanticsTest` — **8 test, OK**. Fixture-nya satu
+penjualan berdemand positif bertanggal `9999-12-05`, dibaca pada dua tanggal acuan dengan parameter
+identik (`window_days=14, lead_time_days=1, review_period_days=1, safety_stock_days=0`). Cover
+13,33 hari dari `9999-12-18` menunjuk `10000-01-01`; dari `9999-12-10` menunjuk `9999-12-24`.
+
+| Field | `as_of=9999-12-10` | `as_of=9999-12-18` |
+| --- | --- | --- |
+| `forecast_daily_rate` | `0.3000` | `0.3000` |
+| `recent_net_demand` | 6 | 6 |
+| `available_quantity` | 4 | 4 |
+| `days_of_cover` | `13.33` | `13.33` |
+| `reorder_point_quantity` / `target_stock_quantity` | 1 / 1 | 1 / 1 |
+| `stockout_risk` | `covered` | `covered` |
+| `summary` | identik | identik |
+| **`projected_stockout_date`** | **`9999-12-24`** | **`null`** |
+
+Yang ditegakkan:
+
+* **Demand positif tetap dilaporkan positif.** `forecast_daily_rate='0.3000'`, `recent_net_demand=6`,
+  dan `days_of_cover='13.33'` tetap terisi ketika proyeksinya `None`.
+* **Angka dan status risiko mengikuti perhitungan bisnis.** Sepuluh field bisnis dibandingkan
+  langsung antara kedua tanggal dan seluruhnya sama; hanya proyeksinya berbeda.
+* **Tidak ditafsirkan sebagai "tidak ada demand" atau "tidak ada risiko".**
+  `stockout_risk not in ('no_demand','insufficient_history')`, dan penghitung populasi menegaskannya:
+  `summary['no_demand']==0`, `summary['insufficient_history']==0`, `summary['covered']==1`.
+* **Tidak ada penggantian, clipping, atau pemangkasan window.** Proyeksinya bukan `'9999-12-31'`,
+  bukan `as_of`, bukan `planning_horizon_end`; `window_days=14`, `coverage_days=2`,
+  `planning_horizon_end='9999-12-20'`, dan periode forecast (`history_start='9999-11-21'`,
+  `previous_period_end='9999-12-04'`, `recent_period_start='9999-12-05'`) dilaporkan apa adanya.
+  `'9999-12-31'` tidak muncul sama sekali pada respons yang diserialisasi.
+
+Satu respons size demand memuat **kedua arti `None` sekaligus**, dan keduanya tetap terpisah:
+
+| Ukuran | `recent_net_demand` | `forecast_daily_rate` | `days_of_cover` | `projected_stockout_date` | `risk_rank` | `risk_status` |
+| --- | --- | --- | --- | --- | --- | --- |
+| M | 6 | `0.3000` | `13.33` | `null` | 1 | `later` |
+| L | 0 | `0.0000` | `null` | `null` | `null` | `no_observed_demand` |
+
+Pada level keluarga, `first_stockout_date` menjadi `null` sementara `risk_status` tetap `later` dan
+`first_stockout_sizes` tetap `['M']` — keluarganya tidak berubah menjadi "tanpa demand". Kontrolnya
+pada `as_of=9999-12-10` melaporkan `9999-12-24` untuk demand yang sama.
+
+Pembacaan AI diuji langsung: SKU berdemand positif dengan proyeksi tak terwakili dinilai `covered`
+sehingga bukan temuan, dan **tidak pernah** dilabeli `'tidak ada demand pada window'`; SKU yang
+memang tanpa riwayat tetap dilaporkan sebagai `'riwayat demand belum cukup'` dengan
+`'coverage belum tersedia'`. Jawaban AI tidak memuat string `'9999'` sama sekali.
+
+**7 dari 8 test ini gagal pada baseline** `c77248be` (di sana permintaannya HTTP 500). Satu yang
+lulus di kedua sisi adalah kontrol tanggal terwakili.
+
+### Sisa ambiguitas
+
+Tidak ada yang terlihat pada konsumen, jadi tidak ada metadata alasan yang ditambahkan. Perlu
+dicatat jujur: sebuah konsumen yang membaca `projected_stockout_date` **sendirian**, tanpa
+`days_of_cover` atau `stockout_risk`, tidak dapat membedakan kedua keadaan. Tidak ada konsumen
+seperti itu di repo ini — ketiga pembaca (store, brain, app.mjs) selalu membaca pasangannya, dan tes
+di atas mengunci pasangan tersebut. Bila kelak ada konsumen baru yang membaca proyeksinya sendirian,
+metadata alasan additive (misalnya `projected_stockout_status`) menjadi pilihan yang tepat.
+
+## 9. Kontrak B: API-key logout sebagai no-op
+
+`LogoutWithoutABrowserCookieTest` (18 test) sudah menegakkan status HTTP dan jumlah session untuk
+setiap kombinasi kredensial. `LogoutCredentialAndCookieContractTest` (**6 test, OK**) menutup apa
+yang tidak dapat dibuktikan oleh status 200 saja: header `Set-Cookie` dan keadaan session yang
+sebenarnya, dibaca baris demi baris dari tabel `browser_sessions`
+(`token_hash, csrf_hash, user_id, expires_at`).
+
+| Yang harus terbukti | Test | Bukti |
+| --- | --- | --- |
+| Session yang tidak mengautentikasi request tidak dicabut | `test_same_identity_cookie_is_not_touched_and_still_authenticates`, `test_other_identity_cookie_is_not_touched_and_still_authenticates` | `rows()` sebelum == sesudah, bukan hanya `COUNT(*)` |
+| Respons tidak menghapus atau menimpa cookie yang bukan target | keduanya, lewat `assert_no_cookie_touched()` | `response.headers.get_list('set-cookie') == []`, dan cookie klien masih bernilai sama |
+| Session tersebut tetap bisa dipakai lewat autentikasi cookie | keduanya | `/api/me` lewat cookie menjawab identitas pemiliknya; identitas sama juga berhasil menulis (201) dengan CSRF |
+| API key tetap valid setelah no-op | `test_the_api_key_stays_valid_after_a_no_op_logout_that_carried_a_cookie` | Cookie dibersihkan, lalu `/api/me` dan satu penulisan berhasil dengan API key yang sama |
+| Logout normal lewat cookie tetap butuh CSRF dan mencabut session yang sesuai | `test_same_identity_...`, `test_other_identity_...` | Tanpa CSRF → 403 dan session masih 1; dengan CSRF → 200, `Set-Cookie` menghapus `beeloft_session` dan `beeloft_csrf`, session menjadi 0 |
+| Hanya session yang mengautentikasi yang dicabut | `test_only_the_authenticating_session_is_revoked_when_several_exist` | Tiga session: no-op menyisakan ketiganya; logout cookie menyisakan dua, keduanya masih milik akun aslinya |
+| Kegagalan storage bukan sukses palsu | `test_a_storage_failure_beside_a_cookie_is_not_a_false_success` | Trigger `RAISE(ABORT)` pada `DELETE`: no-op tetap 200 tanpa menyentuh penyimpanan; logout cookie menjawab ≥400, `rows()` tidak berubah, session masih dapat dipakai; setelah trigger dibuang logout berhasil |
+| Berulang tetap aman | `test_repeated_no_op_logouts_beside_a_cookie_stay_harmless` | Tiga panggilan, `rows()` tidak berubah, session masih dipakai sesudahnya |
+
+Pada kasus identitas berbeda, penulisan lewat cookie operator dijawab `403 "Role ini tidak
+diizinkan..."` — aturan role, bukan session atau CSRF. Perbedaannya dibuktikan berdampingan: token
+CSRF yang salah pada request yang sama dijawab `403 "Token keamanan browser tidak valid."` lebih
+dulu, sebelum role diperiksa. Jadi 403 pertama memang membuktikan session dan CSRF-nya lolos.
+
+**Prioritas kredensial, dinyatakan eksplisit:** `X-API-Key` menang atas cookie (tidak berubah dari
+baseline), dan logout hanya mencabut session yang memberinya akses. Konsekuensinya sebuah API key
+tidak dapat mengakhiri session browser akun mana pun tanpa bukti kepemilikan token CSRF-nya.
+
+**5 dari 6 test ini gagal pada baseline** `c77248be`, termasuk kedua kasus pencabutan lintas akun.
+Satu yang lulus di kedua sisi adalah validitas API key, yang perilaku lama pun sudah memenuhi.
+
+## 10. Status
+
+**Implemented and locally verified; pending PR review and CI.**
+
+Ini bukan pernyataan bahwa audit sudah ditutup. Ketiga temuan P3 punya perbaikan beserta regresi yang
+menguncinya dan seluruh tes lokal hijau, tetapi review dan CI pada HEAD yang dipublikasikan belum
+selesai. Ditanganinya delapan temuan audit juga tidak berarti aplikasinya bebas bug.
 
 | Temuan | Status | Ringkas bukti |
 | --- | --- | --- |
 | P3-A: breakdown approval belum memasukkan cuti, lembur, dan payroll | **FIXED** | `by_kind` diturunkan dari `APPROVAL_KINDS`; kesembilan kategori hadir; `sum(by_kind.values()) == pending_count`; enam nilai lama tidak bergeser; 14 test baru, 11 di antaranya gagal pada baseline |
 | P3-B: tanggal ekstrem yang lolos validasi menyebabkan HTTP 500 | **FIXED** | 15 jalur (12 endpoint laporan + 3 endpoint AI) berubah dari 500 menjadi 422 berpesan; batas aman tetap 200; loop hari `capacity_plan` diperbaiki; tanggal normal tidak berubah; 28 test (14 gagal pada baseline) + 1 modul browser yang gagal pada baseline |
 | P3-C: logout dengan API key tanpa cookie menyebabkan HTTP 500 | **FIXED** | 200 no-op tanpa mencabut API key; pencabutan session lintas akun tanpa CSRF dihentikan; 18 test baru, 10 di antaranya gagal pada baseline |
+| Kontrak A: semantik `None` pada proyeksi habis stok | **TERBUKTI, tanpa perubahan kode** | `days_of_cover` dan `stockout_risk`/`risk_status` yang membedakan, bukan proyeksinya; sentinel `'9999-12-31'` tidak pernah dilaporkan; 8 test, 7 gagal pada baseline |
+| Kontrak B: kredensial dan cookie pada logout | **TERBUKTI, tanpa perubahan kode** | Tidak ada `Set-Cookie` pada jalur no-op; baris session utuh; session tetap dipakai lewat cookie termasuk untuk menulis; 6 test, 5 gagal pada baseline |
+
+Dicatat terpisah, tidak dikerjakan pada task ini: default `as_of` investigasi AI memakai
+`date.today()` proses alih-alih `jakarta_today()`, dan CI belum menjalankan `python -m build` beserta
+smoke test paket.
