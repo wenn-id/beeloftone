@@ -145,8 +145,9 @@ Final QC and finished-goods events.
 
 ## Generic `rework -> qc` movement
 
-`("rework", "qc")` is removed from `models.TRANSITIONS`, so `POST /api/movements` now answers 422 for that
-route and `GET /api/stages` no longer advertises it. All new rework returns must go through
+Both `("qc", "rework")` and `("rework", "qc")` are removed from `models.TRANSITIONS`, so
+`POST /api/movements` now answers 422 for either route and `GET /api/stages` advertises neither. New
+rework decisions must be recorded through Final QC, and all new rework returns must go through
 `POST /api/final-qc-records/{id}/rework-completions`. Reversals do not consult `TRANSITIONS`, so correcting
 an existing `qc -> rework` movement still works. Historical `rework -> qc` rows stay readable in
 `GET /api/orders/{id}/movements`, the activity report, and traceability; nothing is deleted or rewritten.
@@ -165,7 +166,8 @@ initial-inspection route nor a rework completion can consume them. The migration
 invent lineage for them, because nothing in the data says which inspection each returned piece came from.
 Instead the state is reported honestly. `rework_completable_quantity` is
 `min(rework_remaining_quantity, rework stage balance)` — the exact bound `_transfer` enforces — so a
-record whose pieces are gone reports zero while other records on the same line keep full capacity.
+line with no remaining `rework` balance reports zero. Because that balance is pooled per line, a record
+can still show capacity from pieces that cannot be attributed to that record.
 The UI hides "Catat selesai rework" and shows the warning per record, gated on
 `rework_remaining_quantity > rework_completable_quantity`, never on the line-wide
 `untraced_rework_return_quantity`, which serves only to explain a reduced bound.

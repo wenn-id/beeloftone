@@ -117,11 +117,12 @@ awal, dan command center melaporkan angka inspeksi ulangnya. Jendela seperti itu
 ke daftar — nilai field lama tidak berubah, tetapi populasi grup dan SKU dapat bertambah, dan itu memang
 disengaja agar datanya tidak hilang.
 
-## Perpindahan `rework -> qc` generik
+## Perpindahan rework generik
 
-`("rework","qc")` dihapus dari `models.TRANSITIONS`. `POST /api/movements` menjawab 422 untuk rute itu,
-`GET /api/stages` tidak lagi mengiklankannya, dan form "Catat perpindahan" tidak lagi menawarkan rework
-sebagai tahap asal. Pengembalian rework baru hanya melalui
+`("qc","rework")` dan `("rework","qc")` dihapus dari `models.TRANSITIONS`. `POST /api/movements`
+menjawab 422 untuk kedua rute, `GET /api/stages` tidak lagi mengiklankannya, dan form "Catat
+perpindahan" tidak menawarkan keputusan rework tanpa lineage. Keputusan rework baru harus dicatat
+melalui Final QC, sedangkan pengembaliannya hanya melalui
 `POST /api/final-qc-records/{id}/rework-completions`. Pembalikan tidak memakai `TRANSITIONS`, sehingga
 koreksi perpindahan `qc -> rework` yang sudah ada tetap berjalan; `test_production.py` sekarang
 menegaskan keduanya.

@@ -71,7 +71,7 @@ def main():
                 lines=[{"product_id": product["id"], "quantity": 500}]).model_dump(mode="json"), actor, "demo-order")
             for index, (source, target, quantity) in enumerate([
                 ("planned", "cutting", 400), ("cutting", "sewing", 300), ("sewing", "finishing", 150),
-                ("finishing", "qc", 100), ("qc", "warehouse", 80), ("qc", "rework", 20)]):
+                ("finishing", "qc", 100), ("qc", "warehouse", 80)]):
                 store.move(MovementCreate(line_id=order["lines"][0]["id"], from_stage=source, to_stage=target,
                     quantity=quantity, reason="Contoh jahitan perlu diperbaiki" if target == "rework" else "Data contoh").model_dump(), actor, f"demo-move-{index}")
             result = {"notice": "DATA CONTOH. Simpan API key; hanya ditampilkan saat dibuat.",

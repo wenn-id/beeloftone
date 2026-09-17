@@ -2465,10 +2465,11 @@ memblokir koreksi final QC sumbernya, inspeksi ulang aktif memblokir koreksi sel
 perpindahan milik catatan selesai rework tidak dapat dibalik terpisah. Tidak ada baris ledger yang
 diubah atau dihapus; koreksi hanya menambah baris pembalik.
 
-`("rework","qc")` dihapus dari `TRANSITIONS`, sehingga `POST /api/movements` menolak 422, `GET
-/api/stages` tidak lagi mengiklankannya, dan form "Catat perpindahan" tidak menawarkan rework sebagai
-tahap asal. Pembalikan tidak memakai `TRANSITIONS`, jadi koreksi perpindahan `qc -> rework` yang sudah
-ada tetap berjalan. Baris `rework -> qc` historis tetap terbaca lengkap dengan lineage kosong.
+`("qc","rework")` dan `("rework","qc")` dihapus dari `TRANSITIONS`, sehingga `POST /api/movements`
+menolak 422, `GET /api/stages` tidak lagi mengiklankannya, dan form "Catat perpindahan" tidak menawarkan
+keputusan atau pengembalian rework tanpa lineage. Keputusan baru dicatat melalui Final QC. Pembalikan
+tidak memakai `TRANSITIONS`, jadi koreksi perpindahan `qc -> rework` yang sudah ada tetap berjalan.
+Baris `rework -> qc` historis tetap terbaca lengkap dengan lineage kosong.
 
 `production_quality_insights` mempertahankan arti `first_pass_yield_percent` dengan populasi inspeksi
 awal saja, karena satu pcs fisik tidak boleh masuk populasi `accepted / inspected` dua kali. Seluruh
