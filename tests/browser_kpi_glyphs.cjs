@@ -4,7 +4,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-module.exports = async ({page, openSidebarDestination, apiGet, work}) => {
+module.exports = async ({page, login, openSidebarDestination, admin, apiGet, work}) => {
   const shots = process.env.BEELOFT_QA_SCREENSHOTS || work;
 
   async function closeDialog() {
@@ -45,6 +45,12 @@ module.exports = async ({page, openSidebarDestination, apiGet, work}) => {
     });
   }, selector);
 
+  // State the acting account: the board summary is visible to every role, but pinning it
+  // keeps the comparison against /api/production-board deterministic.
+  await page.setViewportSize({width: 1440, height: 900});
+  await closeDialog();
+  await page.getByRole('button', {name: 'Keluar', exact: true}).click();
+  await login(admin);
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();

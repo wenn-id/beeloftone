@@ -21,10 +21,28 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   const noPageOverflow = () => page.evaluate(() =>
     document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
-  // Pin the desktop viewport so the layout assertions do not inherit whatever the
-  // previously executed module left behind.
+  // Earlier modules add orders, so the demo order is not necessarily on the first page.
+  // Reach it the way a user would: search for it, then open it.
+  async function openDemoOrder() {
+    await closeDialog();
+    await openSidebarDestination('Produksi');
+    await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
+    await page.locator('#search').fill('DEMO-PROD-001');
+    await page.getByRole('button', {name: 'Cari order', exact: true}).click();
+    const row = page.getByRole('button', {name: /DEMO-PROD-001/}).first();
+    await row.waitFor();
+    await row.click();
+    await page.locator('#detail-content h1').waitFor();
+  }
+
+  // Pin the desktop viewport and the acting account so the assertions do not inherit
+  // whatever the previously executed module left behind. Several checks below cover
+  // admin-only sections, so this module states the role it needs.
   await page.setViewportSize({width: 1440, height: 900});
   await page.evaluate(() => {document.documentElement.style.fontSize = '';});
+  await closeDialog();
+  await page.getByRole('button', {name: 'Keluar', exact: true}).click();
+  await login(admin);
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
@@ -74,8 +92,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.equal(boardShell.pagination, true);
 
   // ---- status chips must shrink-wrap, never stretch to fill their slot ---------------
-  await page.getByRole('button', {name: /DEMO-PROD-001/}).first().click();
-  await page.locator('#detail-content h1').waitFor();
+  await openDemoOrder();
   const chip = await page.evaluate(() => {
     const node = document.querySelector('.detail-meta .status-label');
     const slot = node.parentElement;
@@ -176,9 +193,13 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.ok(afterLoad.rows > 0 || afterLoad.emptyState.length > 0,
     'a resolved list shows either rows or an explicit empty state');
 
-  // Empty: a filter that matches nothing states so, and is not mistaken for loading.
-  await page.locator('#approval-kind').selectOption('payroll_batch');
-  await page.locator('#approval-status').selectOption('rejected');
+  // Empty: a result set with nothing in it says so, and is not phrased as loading. The
+  // response is forced rather than filtered, so the assertion does not depend on whatever
+  // approvals earlier modules happen to have created.
+  await page.unroute('**/api/approvals?**');
+  await page.route('**/api/approvals?**', route =>
+    route.fulfill({status: 200, contentType: 'application/json', body: '[]'}));
+  await page.getByRole('button', {name: 'Muat ulang inbox', exact: true}).click();
   await page.waitForFunction(() => {
     const host = document.getElementById('approval-list');
     return host && !host.querySelector('.material-event')
@@ -362,8 +383,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   // ---- viewer: the same surfaces, without the mutation controls ----------------------
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
   await login(viewer);
-  await page.getByRole('button', {name: /DEMO-PROD-001/}).first().click();
-  await page.locator('#detail-content h1').waitFor();
+  await openDemoOrder();
   const readOnly = await page.evaluate(() => {
     const labels = [...document.querySelectorAll('#detail-content button')]
       .map(b => b.textContent.trim());
