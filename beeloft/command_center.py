@@ -1,6 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
+from beeloft.store import APPROVAL_KINDS
+
 
 JAKARTA = timezone(timedelta(hours=7))
 
@@ -221,9 +223,15 @@ def build_command_center(store):
             # Additive: menjelaskan mengapa count dapat melebihi jumlah item bernominal. Cuti,
             # lembur, dan perubahan produksi memang tidak punya nominal.
             "pending_without_amount": approvals["without_amount"],
-            "by_kind": {kind: approval_kinds[kind]["count"] for kind in (
-                "purchase_request", "purchase_order", "supplier_payment", "marketing_budget",
-                "production_change", "ai_action")},
+            # Breakdown menurunkan seluruh kategori yang dikenal agregat, bukan enam kategori yang
+            # dipilih tangan. Daftar tetap sebelumnya menghilangkan cuti, lembur, dan batch payroll
+            # dari rincian sementara `pending_count` tetap menghitungnya, sehingga jumlah rincian
+            # lebih kecil daripada totalnya dan tiga kategori itu tidak pernah terlihat. Sumbernya
+            # tetap `approvals_summary()` yang sama, jadi tidak ada definisi pending kedua dan
+            # nominal per kategori tidak disentuh: rincian ini memang hanya melaporkan jumlah.
+            # Kategori tanpa pengajuan pending tetap hadir bernilai 0 karena agregat selalu
+            # mengisi setiap kind, sehingga sum(by_kind.values()) == pending_count.
+            "by_kind": {kind: approval_kinds[kind]["count"] for kind in APPROVAL_KINDS},
         },
         "inventory": {
             "snapshot_at": inventory["snapshot"]["snapshot_at"] if inventory["snapshot"] else None,
