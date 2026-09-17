@@ -10,6 +10,9 @@ const stages = ['planned','cutting','sewing','finishing','qc','warehouse'];
 let user = null, transitions = [], boardData = null, selected = null, history = [], historyOffset = 0;
 let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', modalBusy = false, unresolved = false;
 let dialogVersion = 0;
+// Satu logout dalam penerbangan pada satu waktu. Klik ganda memakai ulang promise yang sama, jadi
+// tidak ada perlombaan antara dua pencabutan session.
+let logoutRequest = null;
 let issues = [], issuesMore = false;
 let activityRequest = 0, activityCursor = null, activityRows = [], activityQuery = null;
 let commandCenterRequest = 0;
@@ -56,7 +59,13 @@ function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
 }
+// Peringatan session dipakai ketika logout tidak terkonfirmasi. Banner ini sengaja tidak otomatis
+// hilang: selama session server belum benar-benar dicabut, statusnya harus terus terlihat.
+function sessionWarning(text) {
+  $('session-warning').hidden = !text; $('session-warning-text').textContent = text;
+}
 function clearWorkspace() {
+  sessionWarning('');
   commandCenterRequest++; $('command-center-summary').replaceChildren();
   auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
   $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
@@ -77,12 +86,60 @@ function clearWorkspace() {
   $('summary').replaceChildren(); $('detail-content').replaceChildren(); $('dialog-content').replaceChildren();
   $('notice').hidden = true; $('access-key').focus();
 }
+const LOGOUT_FAILED = 'Logout belum berhasil. Session di perangkat ini masih aktif, jadi ruang kerja '
+  + 'tetap terbuka agar statusnya tidak menyesatkan. Coba keluar lagi.';
+const LOGOUT_UNCERTAIN = 'Logout belum terkonfirmasi karena server belum dapat dihubungi. Session di '
+  + 'perangkat ini mungkin masih aktif, jadi ruang kerja tetap terbuka. Coba keluar lagi setelah koneksi pulih.';
+// Memastikan apakah browser ini masih memegang session aktif. Dipakai ketika hasil pencabutan tidak
+// dapat dipastikan. 401 berarti session sudah tidak aktif, 200 berarti masih aktif, dan hasil lain
+// berarti statusnya belum dapat diketahui.
+async function sessionStillActive() {
+  try { await api.get('/api/me'); return true; }
+  catch (error) { return error.status === 401 ? false : null; }
+}
+// Logout hanya menutup ruang kerja bila pencabutan session terkonfirmasi. Sebelumnya setiap
+// kegagalan ditelan dan ruang kerja selalu dibersihkan, sehingga UI menampilkan layar login biasa
+// padahal session server masih hidup dan reload membuka kembali akun sebelumnya.
+// Mengembalikan true bila logout terkonfirmasi, false bila belum.
 async function logout(revoke=true) {
+  // Session yang sudah diketahui mati (alur 401) tidak perlu dicabut lagi dan selalu boleh ditutup.
+  if (!(revoke && user)) { clearWorkspace(); return true; }
+  if (logoutRequest) return logoutRequest;
   $('main').setAttribute('aria-busy','true');$('login-view').setAttribute('inert','');
-  try{if(revoke&&user)await api.post('/api/session/logout',{});}catch{}
-  finally{clearWorkspace();$('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');}
+  $('logout').disabled = true;$('session-retry').disabled = true;
+  logoutRequest = (async () => {
+    try {
+      const version = epoch;
+      try {
+        await api.post('/api/session/logout',{});
+      } catch (error) {
+        // 401 adalah satu-satunya kegagalan yang membuktikan session sudah tidak aktif. CSRF 403,
+        // 5xx, timeout, dan kegagalan jaringan tidak membuktikan apa pun, jadi status session
+        // diperiksa langsung. Server yang sudah mencabut lalu kehilangan responsnya tetap dikenali
+        // di sini, sehingga aplikasi tidak terjebak selamanya pada error logout.
+        const active = error.status === 401 ? false : await sessionStillActive();
+        if (version !== epoch) return true;
+        if (active !== false) { sessionWarning(active ? LOGOUT_FAILED : LOGOUT_UNCERTAIN); return false; }
+      }
+      if (version !== epoch) return true;
+      clearWorkspace();
+      return true;
+    } finally {
+      logoutRequest = null;
+      $('login-view').removeAttribute('inert');$('main').removeAttribute('aria-busy');
+      $('logout').disabled = false;$('session-retry').disabled = false;
+    }
+  })();
+  return logoutRequest;
+}
+// Tombol "Masuk ulang" hidup di dalam dialog modal, jadi banner di belakangnya tidak dapat dibaca
+// maupun ditekan. Kegagalan logout karena itu ikut dilaporkan di dalam dialog yang sedang dibuka.
+async function reauthenticate(target) {
+  if (await logout()) return;
+  message(target, $('session-warning-text').textContent, true);
 }
 $('logout').onclick = () => logout();
+$('session-retry').onclick = () => logout();
 $('sso-login').onclick = () => location.assign('/api/sso/login');
 function fail(error, target) {
   if (error.status === 401) { logout(false); message('login-error', 'Sesi berakhir. Masukkan kembali kunci akses yang aktif.', true); }
@@ -600,7 +657,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
   openDialog(title, `<form id="action-form">${info ? `<p class="form-info">${e(info)}</p>` : ''}<fieldset id="form-fields"><div class="form-grid">${fields}</div></fieldset><p class="error" id="form-error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" id="reauth" hidden>Masuk ulang</button><button class="primary" id="save-form" type="submit">Simpan pencatatan</button></div></form>`);
   let transaction = initial;
   const modalVersion = dialogVersion;
-  $('reauth').onclick = logout;
+  $('reauth').onclick = () => reauthenticate('form-error');
   if (initial) { unresolved = true; $('form-fields').disabled = true; $('save-form').textContent = 'Coba ulang penyimpanan'; }
   $('action-form').onsubmit = async event => {
     event.preventDefault(); if (modalBusy) return;
@@ -2909,7 +2966,7 @@ function aiInvestigationDialog() {
   let transaction=null;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
-  reauth.onclick=logout;
+  reauth.onclick=()=>reauthenticate('ai-message');
   $('ai-question').focus();
   document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
     $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();
