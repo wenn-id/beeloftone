@@ -490,14 +490,28 @@ class ShiftDateHelperTest(TestCase):
                 self.assertIn('0001-01-01 sampai 9999-12-31', caught.exception.message)
 
     def test_the_helper_does_not_swallow_unrelated_errors(self):
-        """Hanya OverflowError yang ditangani; bug lain tetap muncul sebagai bug."""
+        """Hanya OverflowError yang ditangani; bug lain tetap muncul sebagai bug.
+
+        Kesalahan harus terjadi *di dalam* `anchor + timedelta(days=days)`, bukan saat menyiapkan
+        argumennya, supaya yang diuji benar-benar blok `try` milik helper.
+        """
         from beeloft.store import shift_date
+
+        class Exploding:
+            """Anchor yang gagal tepat pada operasi tanggalnya, bukan karena overflow."""
+
+            def __add__(self, other):
+                raise ZeroDivisionError('bukan OverflowError')
+
+        with self.assertRaises(ZeroDivisionError) as caught:
+            shift_date(Exploding(), 7, 'as_of')
+        # Pesannya hanya dapat berasal dari dalam blok try, jadi helper-nya memang dijalankan.
+        self.assertEqual(str(caught.exception), 'bukan OverflowError')
+        # Kesalahan tipe pada kedua argumen juga muncul dari operasi yang sama.
         with self.assertRaises(TypeError):
             shift_date(date(2026, 1, 1), 'tujuh', 'as_of')
         with self.assertRaises(TypeError):
             shift_date('2026-01-01', 7, 'as_of')
-        with self.assertRaises(ZeroDivisionError):
-            shift_date(date(2026, 1, 1), 1 // 0, 'as_of')
 
 
 
