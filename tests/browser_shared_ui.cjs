@@ -42,7 +42,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.evaluate(() => {document.documentElement.style.fontSize = '';});
   await closeDialog();
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
-  await login(admin);
+  // login() resets the viewport to 1440x1000 unless told not to; keep 1440x900 so the dialog-fit assertion uses the requested height.
+  await login(admin, {resetViewport: false});
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
@@ -382,7 +383,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
 
   // ---- viewer: the same surfaces, without the mutation controls ----------------------
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
-  await login(viewer);
+  await login(viewer, {resetViewport: false});
   await openDemoOrder();
   const readOnly = await page.evaluate(() => {
     const labels = [...document.querySelectorAll('#detail-content button')]
@@ -404,6 +405,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.screenshot({path: path.join(shots, 'shared-ui-order-detail-viewer.png')});
 
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
+  // Hand the suite back its default viewport and the admin account.
   await login(admin);
   console.log('Shared UI browser QA PASS: radius ladder, page heading, KPI cards, filter '
     + 'toolbars, list/pagination, dialog chrome, metric lists, distinguishable '

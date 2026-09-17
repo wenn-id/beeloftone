@@ -42,14 +42,15 @@ hierarchy, overflow and wrapping, dialog behaviour, and focus affordance where i
 | E. People and approval | 10 | 8 | 2 | — |
 | F. Analitik | 12 | 11 | 1 | — |
 | G. AI, integrasi, utilities | 14 | 14 | 0 | 1 viewer panel |
-| **Total** | **78** | **68** | **10** | **1 mode** |
+| **Total** | **78** | **69** | **9** | **1 mode** |
 
 Capture result for the final run: 467 images, 0 failures, 0 page errors, 1 correctly skipped
 panel (`Cadangan data` has no viewer rendering because the nav entry is admin-only).
 
 ## Defects found by looking at the render, and fixed
 
-Ten surfaces changed as a result of the review rather than the plan. The first two were
+Nine surfaces changed as a result of the review rather than the plan, carrying ten distinct
+defects — the board alone accounted for three. The first two were
 introduced by this branch's own CSS and caught only by measuring the rendered result — the
 class was present and "looked" applied in the source.
 
@@ -118,7 +119,7 @@ rail on desktop. Asserted mechanically in `tests/browser_shared_ui.cjs`.
 | Duplicate design tokens still active | None. One `:root` and one `:root[data-theme=dark]`. |
 | Dead legacy overrides | Removed; the four tokens nothing referenced are gone. |
 | `!important` added | None. The 10 occurrences are pre-existing (`[hidden]` and the print block). |
-| Excessive specificity | The new layer is class-anchored; the only type selectors are `label>input|select|textarea`. |
+| Excessive specificity | The new layer is class-anchored; the only type selectors are `label>input`, `label>select` and `label>textarea`. |
 | Accidental global selectors | None reaching the dialog, scanner or print path. |
 | Print-label regression | `bundle-label` CSS and markup and the `@media print` block are byte-identical to `main`. |
 | Dialog regression | Dialog radius 20px, ruled heading, fits viewport, no sideways scroll — asserted. |

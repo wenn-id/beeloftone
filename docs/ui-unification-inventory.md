@@ -159,15 +159,16 @@ All twelve share one dialog recipe: filter form, summary paragraph, result rows,
 
 | Status | Count |
 | --- | --- |
-| PASS | 68 |
-| FIXED | 10 |
+| PASS | 69 |
+| FIXED | 9 |
 | EXCEPTION | 0 at surface level (one field-level exception, below) |
 | **Total surfaces** | **78** |
 
 FIXED surfaces: 2 (board), 3 (order detail), 5 (activity), 13 (bundle handoffs), 40
 (purchase requests), 41 (purchase orders), 48 (approvals), 49 (marketing budget), 54
-(capacity plan) — plus the two mobile/layering defects on the board that also affected the
-Command Center KPI row below 650px.
+(capacity plan). The board fix also covered two mobile/layering defects that additionally
+affected the Command Center KPI row below 650px; those are defects on surface 2, not extra
+surfaces, so they are not counted separately.
 
 ## Not-applicable and exception notes
 

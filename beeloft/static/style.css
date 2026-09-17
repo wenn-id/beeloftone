@@ -874,10 +874,12 @@ label>input,label>select,label>textarea{margin-top:6px}
   margin:0 0 var(--gap);padding:13px 16px;
   border:1px solid var(--line);border-radius:14px;background:var(--surface-subtle);
 }
+/* The native disclosure marker is kept. The sidebar hides it because its markup supplies an
+   explicit .nav-caret from the sprite; this summary has no such element, so hiding the
+   marker would leave the collapsed section looking like ordinary text. */
 .ai-assumptions summary{
-  color:var(--ink);font-size:.8125rem;font-weight:650;cursor:pointer;list-style:none;
+  color:var(--ink);font-size:.8125rem;font-weight:650;cursor:pointer;
 }
-.ai-assumptions summary::-webkit-details-marker{display:none}
 .ai-assumptions .form-grid{margin-top:14px}
 .ai-answer{
   margin:0 0 var(--gap);padding:18px 20px;

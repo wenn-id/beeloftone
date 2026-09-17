@@ -50,7 +50,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   await page.setViewportSize({width: 1440, height: 900});
   await closeDialog();
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
-  await login(admin);
+  // login() resets the viewport to 1440x1000 unless told not to; keep 1440x900 so the desktop assertions and screenshots use the requested height.
+  await login(admin, {resetViewport: false});
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
