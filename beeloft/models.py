@@ -10,9 +10,12 @@ Stage = Literal["planned", "cutting", "sewing", "finishing", "qc", "rework", "re
 Role = Literal["admin", "operator", "viewer"]
 CapacityStage = Literal["cutting", "sewing", "finishing", "qc", "rework"]
 STAGES = ("planned", "cutting", "sewing", "finishing", "qc", "rework", "reject", "warehouse")
+# Perpindahan generik yang menyentuh keputusan rework sengaja tidak ada di sini. QC hanya boleh
+# mengirim pcs ke rework melalui catatan Final QC, lalu pengembaliannya ke QC hanya boleh melalui
+# POST /api/final-qc-records/{id}/rework-completions. Dengan begitu kedua arah menyimpan lineage
+# inspeksi asalnya. Pembalikan tidak memakai TRANSITIONS, sehingga koreksi data lama tetap berjalan.
 TRANSITIONS = {("planned", "cutting"), ("cutting", "sewing"), ("sewing", "finishing"),
-               ("finishing", "qc"), ("qc", "warehouse"), ("qc", "rework"),
-               ("qc", "reject"), ("rework", "qc")}
+               ("finishing", "qc"), ("qc", "warehouse"), ("qc", "reject")}
 
 
 class Input(BaseModel):
@@ -1031,6 +1034,12 @@ class FinalQcRecordCreate(ReversalCreate):
         if self.accepted_quantity + self.rework_quantity + self.reject_quantity < 1:
             raise ValueError('Isi setidaknya satu hasil QC dengan jumlah lebih dari nol.')
         return self
+
+
+class ReworkCompletionCreate(ReversalCreate):
+    reference: Text
+    quantity: Quantity
+    completed_date: date
 
 
 class FinishedGoodsReceiptCreate(ReversalCreate):

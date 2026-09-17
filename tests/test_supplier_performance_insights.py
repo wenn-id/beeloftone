@@ -85,4 +85,4 @@ class SupplierPerformanceInsightsTest(TestCase):
         self.assertEqual(Store(backup).supplier_performance_insights('2026-10-20',7,
             status='all')['items'][0]['supplier_id'],po['supplier_id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)

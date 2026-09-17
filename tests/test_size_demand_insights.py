@@ -99,4 +99,4 @@ class SizeDemandInsightsTest(TestCase):
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).size_demand_insights(date(2026,11,15),14,30,'luna-blue-l'),expected)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)

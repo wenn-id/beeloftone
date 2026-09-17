@@ -123,7 +123,10 @@ class ManagementCommandCenterTest(TestCase):
             'as_of': '2026-10-16', 'period_start': '2026-09-17',
             'inspected_quantity': 10, 'first_pass_yield_percent': '70.00',
             'nonconforming_rate_percent': '30.00', 'rework_rate_percent': '20.00',
-            'reject_rate_percent': '10.00', 'groups': 2, 'attention_groups': 1,
+            'reject_rate_percent': '10.00', 'reinspected_quantity': 0,
+            'reinspection_nonconforming_quantity': 0,
+            'reinspection_nonconforming_rate_percent': '0.00',
+            'groups': 2, 'attention_groups': 1,
         })
         alert = next(row for row in report['attention'] if row['id'] == 'production-quality')
         self.assertEqual((alert['priority'], alert['kind'], alert['action'], alert['action_label']),
@@ -131,6 +134,73 @@ class ManagementCommandCenterTest(TestCase):
         self.assertEqual(alert['title'], 'Kualitas Vendor <B> (vendor makloon) perlu perhatian')
         self.assertEqual(alert['detail'],
                          'Rework + reject 60.00% dari 5 pcs; naik 60.00 poin dari periode sebelumnya.')
+
+    def test_reinspection_only_alert_does_not_claim_a_zero_initial_rate(self):
+        """Grup yang ditandai semata-mata karena inspeksi ulang harus dijelaskan apa adanya.
+
+        Menyebut "Rework + reject 0.00% dari 0 pcs melewati batas" adalah keterangan yang salah.
+        """
+        _, records = self.setup_quality()
+        source = records['vendor_current']
+        completion = self.post('/api/final-qc-records/' + source['id'] + '/rework-completions', {
+            'reference': 'CC-RWK-ONLY', 'quantity': 2, 'completed_date': '2026-11-10',
+            'reason': 'Rework vendor selesai'})
+        self.post('/api/rework-completions/' + completion['id'] + '/qc-records', {
+            'reference': 'CC-QC-RE-ONLY', 'measurement_notes': 'Ukuran diperiksa ulang',
+            'visual_notes': 'Visual diperiksa ulang', 'defect_type': 'Jahitan loncat',
+            'responsible_source': 'Vendor <B>', 'disposition': 'Reject setelah rework gagal',
+            'accepted_quantity': 0, 'rework_quantity': 0, 'reject_quantity': 2,
+            'inspection_date': '2026-11-11', 'reason': 'Inspeksi ulang gagal'})
+        # Jendela 30 hari yang hanya memuat inspeksi ulang, tanpa inspeksi awal sama sekali.
+        with patch('beeloft.command_center.datetime') as clock:
+            clock.now.return_value = datetime(2026, 11, 20, 5, tzinfo=timezone.utc)
+            report = self.client.get('/api/command-center').json()
+        self.assertEqual((report['quality']['inspected_quantity'],
+                          report['quality']['reinspected_quantity'],
+                          report['quality']['reinspection_nonconforming_quantity']), (0, 2, 2))
+        alert = next(row for row in report['attention'] if row['id'] == 'production-quality')
+        self.assertEqual(alert['detail'],
+                         'Inspeksi ulang 2 dari 2 pcs gagal lagi (100.00%); melewati batas 5%.')
+        self.assertNotIn('dari 0 pcs', alert['detail'])
+        # Kartu membaca item pertama, jadi grup yang seluruh hasil rework-nya gagal harus diperingkat
+        # di atas grup dengan rate inspeksi awal kecil.
+        self.assertEqual(alert['title'], 'Kualitas Vendor <B> (vendor makloon) perlu perhatian')
+
+    def test_reinspection_failures_reach_the_quality_snapshot_and_alert(self):
+        """Barang yang gagal lagi setelah rework harus terlihat di snapshot manajemen.
+
+        First pass yield tetap berbasis inspeksi awal, jadi angka inspeksi ulang dilaporkan terpisah
+        dan menambah satu kalimat pada kartu perhatian kualitas.
+        """
+        _, records = self.setup_quality()
+        source = records['vendor_current']
+        completion = self.post('/api/final-qc-records/' + source['id'] + '/rework-completions', {
+            'reference': 'CC-RWK-1', 'quantity': 2, 'completed_date': '2026-09-18',
+            'reason': 'Rework vendor selesai'})
+        self.post('/api/rework-completions/' + completion['id'] + '/qc-records', {
+            'reference': 'CC-QC-RE-1', 'measurement_notes': 'Ukuran diperiksa ulang',
+            'visual_notes': 'Visual diperiksa ulang', 'defect_type': 'Jahitan loncat',
+            'responsible_source': 'Vendor <B>', 'disposition': 'Reject setelah rework gagal',
+            'accepted_quantity': 0, 'rework_quantity': 0, 'reject_quantity': 2,
+            'inspection_date': '2026-09-19', 'reason': 'Inspeksi ulang gagal'})
+        with patch('beeloft.command_center.datetime') as clock:
+            clock.now.return_value = datetime(2026, 10, 16, 5, tzinfo=timezone.utc)
+            report = self.client.get('/api/command-center').json()
+        # Metrik inspeksi awal tidak bergeser sedikit pun.
+        self.assertEqual((report['quality']['inspected_quantity'],
+                          report['quality']['first_pass_yield_percent'],
+                          report['quality']['nonconforming_rate_percent'],
+                          report['quality']['rework_rate_percent'],
+                          report['quality']['reject_rate_percent']),
+                         (10, '70.00', '30.00', '20.00', '10.00'))
+        self.assertEqual((report['quality']['reinspected_quantity'],
+                          report['quality']['reinspection_nonconforming_quantity'],
+                          report['quality']['reinspection_nonconforming_rate_percent']),
+                         (2, 2, '100.00'))
+        alert = next(row for row in report['attention'] if row['id'] == 'production-quality')
+        self.assertEqual(alert['detail'],
+                         'Rework + reject 60.00% dari 5 pcs; naik 60.00 poin dari periode sebelumnya.'
+                         ' Inspeksi ulang 2 dari 2 pcs gagal lagi (100.00%).')
 
     def test_capacity_risk_and_coverage_alerts_use_fourteen_day_plan(self):
         with patch('beeloft.store.now', return_value='2026-10-01T02:00:00+00:00'):

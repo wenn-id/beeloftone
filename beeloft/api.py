@@ -1,7 +1,7 @@
 import sqlite3
 import secrets
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -13,7 +13,7 @@ from fastapi.security import APIKeyHeader
 from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, PayrollApprovalDecision, PayrollApprovalRequestCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
@@ -24,10 +24,22 @@ from beeloft.reports import activity_csv
 
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
 MAX_EXPORT_ROWS = 10_000
+JAKARTA = timezone(timedelta(hours=7))
+
+
+def jakarta_today():
+    """Tanggal berjalan menurut zona operasional Jakarta.
+
+    Seluruh tanggal bisnis pada domain ini dihitung di Jakarta: validasi kehadiran, filter audit,
+    tanggal pencatatan PO pada material price insights, dan command center. Memakai `date.today()`
+    milik proses membuat `as_of` default tertinggal satu hari setiap kali server berjalan antara
+    17:00 dan 24:00 UTC, sehingga catatan yang baru dibuat jatuh di luar jendela laporannya sendiri.
+    """
+    return datetime.now(JAKARTA).date()
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.83.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.84.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -495,7 +507,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                            department: Annotated[str, Query(max_length=160)] = '',
                            q: Annotated[str, Query(max_length=160)] = '',
                            limit: Limit = 100, offset: Offset = 0):
-        start=start_date or end_date or date.today();end=end_date or start
+        start=start_date or end_date or jakarta_today();end=end_date or start
         return store.attendance_records(start,end,status,employee_id,department,q,limit,offset)
 
     @app.post('/api/workforce/employees/{employee_id}/attendance', status_code=201, tags=['People'])
@@ -559,7 +571,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/work-centers/{work_center_id}/calendar', tags=['Production Capacity'])
     def capacity_calendar(work_center_id: str, user: Actor, start_date: date | None = None,
                           end_date: date | None = None):
-        start=start_date or date.today();return store.capacity_calendar(work_center_id,start,end_date or start)
+        start=start_date or jakarta_today();return store.capacity_calendar(work_center_id,start,end_date or start)
 
     @app.post('/api/work-centers/{work_center_id}/calendar', status_code=201,
               tags=['Production Capacity'])
@@ -870,6 +882,33 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def reverse_final_qc_record(record_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_final_qc_record(record_id, body.model_dump(mode='json'), user, key)
 
+    @app.post('/api/final-qc-records/{record_id}/rework-completions', status_code=201, tags=['Final QC'])
+    def create_rework_completion(record_id: str, body: ReworkCompletionCreate, user: Actor, key: RequestKey):
+        return store.create_rework_completion(record_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/final-qc-records/{record_id}/rework-completions', tags=['Final QC'])
+    def final_qc_rework_completions(record_id: str, user: Actor, limit: Limit = 100,
+                                    before: Annotated[int | None, Query(ge=1)] = None):
+        return store.final_qc_rework_completions(record_id, limit, before)
+
+    @app.get('/api/orders/{order_id}/rework-completions', tags=['Final QC'])
+    def rework_completions(order_id: str, user: Actor, limit: Limit = 100,
+                           before: Annotated[int | None, Query(ge=1)] = None):
+        return store.rework_completions(order_id, limit, before)
+
+    @app.get('/api/rework-completions/{completion_id}', tags=['Final QC'])
+    def rework_completion(completion_id: str, user: Actor):
+        return store.rework_completion(completion_id)
+
+    @app.post('/api/rework-completions/{completion_id}/qc-records', status_code=201, tags=['Final QC'])
+    def create_rework_reinspection_record(completion_id: str, body: FinalQcRecordCreate,
+                                          user: Actor, key: RequestKey):
+        return store.create_rework_reinspection_record(completion_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/rework-completions/{completion_id}/reverse', status_code=201, tags=['Final QC'])
+    def reverse_rework_completion(completion_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
+        return store.reverse_rework_completion(completion_id, body.model_dump(mode='json'), user, key)
+
     @app.post('/api/final-qc-records/{record_id}/finished-goods-receipts', status_code=201, tags=['Finished Goods'])
     def create_finished_goods_receipt(record_id: str, body: FinishedGoodsReceiptCreate, user: Actor, key: RequestKey):
         return store.create_finished_goods_receipt(record_id, body.model_dump(mode='json'), user, key)
@@ -1032,7 +1071,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                         query: Annotated[str, Query(max_length=160)] = '',
                         marketplace: Annotated[str, Query(max_length=160)] = '',
                         limit: Limit = 100, offset: Offset = 0):
-        return store.demand_forecast(as_of or date.today(), window_days, horizon_days,
+        return store.demand_forecast(as_of or jakarta_today(), window_days, horizon_days,
                                      query, marketplace, limit, offset)
 
     @app.get('/api/return-insights', tags=['Economics'])
@@ -1041,7 +1080,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                         query: Annotated[str, Query(max_length=160)] = '',
                         marketplace: Annotated[str, Query(max_length=160)] = '',
                         limit: Limit = 100, offset: Offset = 0):
-        return store.return_insights(as_of or date.today(), window_days, query, marketplace, limit, offset)
+        return store.return_insights(as_of or jakarta_today(), window_days, query, marketplace, limit, offset)
 
     @app.get('/api/size-demand-insights', tags=['Economics'])
     def size_demand_insights(user: Actor, as_of: date | None = None,
@@ -1050,7 +1089,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                              query: Annotated[str, Query(max_length=160)] = '',
                              marketplace: Annotated[str, Query(max_length=160)] = '',
                              limit: Limit = 100, offset: Offset = 0):
-        return store.size_demand_insights(as_of or date.today(), window_days, lookahead_days,
+        return store.size_demand_insights(as_of or jakarta_today(), window_days, lookahead_days,
                                           query, marketplace, limit, offset)
 
     @app.get('/api/dead-stock-insights', tags=['Economics'])
@@ -1061,7 +1100,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                             status: Literal['all','dead_stock_candidate','aging_no_sales','moving'] =
                                 'dead_stock_candidate',
                             limit: Limit = 100, offset: Offset = 0):
-        return store.dead_stock_insights(as_of or date.today(), inactivity_days, query,
+        return store.dead_stock_insights(as_of or jakarta_today(), inactivity_days, query,
                                          marketplace, status, limit, offset)
 
     @app.get('/api/stock-adjustment-insights', tags=['Economics'])
@@ -1077,7 +1116,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                   record_status: Literal['all','active','corrected'] = 'all',
                                   classification: Literal['flagged','high','review','normal','all'] = 'flagged',
                                   limit: Limit = 100, offset: Offset = 0):
-        return store.stock_adjustment_insights(as_of or date.today(),window_days,quantity_threshold,
+        return store.stock_adjustment_insights(as_of or jakarta_today(),window_days,quantity_threshold,
             percentage_threshold,repeat_threshold,query,location,stock_status,source,record_status,
             classification,limit,offset)
 
@@ -1087,7 +1126,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                       query: Annotated[str, Query(max_length=160)] = '',
                                       status: Literal['all','attention','healthy'] = 'attention',
                                       limit: Limit = 100, offset: Offset = 0):
-        return store.supplier_performance_insights(as_of or date.today(),window_days,query,status,
+        return store.supplier_performance_insights(as_of or jakarta_today(),window_days,query,status,
                                                    limit,offset)
 
     @app.get('/api/material-price-insights', tags=['Economics'])
@@ -1097,7 +1136,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                 status: Literal['all','changed','increased','decreased','stable',
                                                 'single_observation'] = 'changed',
                                 limit: Limit = 100, offset: Offset = 0):
-        return store.material_price_insights(as_of or date.today(),window_days,query,status,
+        return store.material_price_insights(as_of or jakarta_today(),window_days,query,status,
                                              limit,offset)
 
     @app.get('/api/purchase-commitment-insights', tags=['Economics'])
@@ -1107,7 +1146,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                      status: Literal['all','open','overdue','due_soon','scheduled',
                                                      'fulfilled'] = 'open',
                                      limit: Limit = 100, offset: Offset = 0):
-        return store.purchase_commitment_insights(as_of or date.today(),due_soon_days,query,status,
+        return store.purchase_commitment_insights(as_of or jakarta_today(),due_soon_days,query,status,
                                                   limit,offset)
 
     @app.get('/api/wip-ageing-insights', tags=['Production'])
@@ -1119,7 +1158,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                             status: Literal['all','attention','stalled','overdue','blocked','rework','moving'] =
                                 'attention',
                             limit: Limit = 100, offset: Offset = 0):
-        return store.wip_ageing_insights(as_of or date.today(),idle_days,query,owner_id,stage,
+        return store.wip_ageing_insights(as_of or jakarta_today(),idle_days,query,owner_id,stage,
                                          status,limit,offset)
 
     @app.get('/api/capacity-plan', tags=['Production Capacity'])
@@ -1131,7 +1170,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                       status: Literal['all','attention','overloaded','deadline_risk','near_capacity',
                                       'available','idle'] = 'attention',
                       limit: Limit = 100, offset: Offset = 0):
-        return store.capacity_plan(as_of or date.today(),horizon_days,warning_percent,
+        return store.capacity_plan(as_of or jakarta_today(),horizon_days,warning_percent,
                                    work_center_id,stage,status,limit,offset)
 
     @app.get('/api/production-quality-insights', tags=['Production','Quality'])
@@ -1143,7 +1182,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                     assignment_type: Literal['all','internal','makloon'] = 'all',
                                     status: Literal['all','attention','healthy'] = 'attention',
                                     limit: Limit = 100, offset: Offset = 0):
-        return store.production_quality_insights(as_of or date.today(),window_days,
+        return store.production_quality_insights(as_of or jakarta_today(),window_days,
             warning_percent,change_threshold,query,assignment_type,status,limit,offset)
 
     @app.get('/api/replenishment-recommendations', tags=['Economics'])
@@ -1156,7 +1195,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                       query: Annotated[str, Query(max_length=160)] = '',
                                       marketplace: Annotated[str, Query(max_length=160)] = '',
                                       limit: Limit = 100, offset: Offset = 0):
-        return store.replenishment_recommendations(as_of or date.today(), window_days,
+        return store.replenishment_recommendations(as_of or jakarta_today(), window_days,
             lead_time_days, review_period_days, safety_stock_days, batch_multiple,
             query, marketplace, limit, offset)
 

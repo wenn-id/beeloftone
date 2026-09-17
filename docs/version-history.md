@@ -2433,3 +2433,76 @@ di Python suatu saat hilang.
 
 Rencana: [security transaction P1 plan](security-transaction-p1-plan.md).
 Bukti: [security transaction P1 verification](security-transaction-p1-verification.md).
+
+
+## Selesai rework dan inspeksi ulang final QC (v0.84)
+
+Temuan audit P1: pcs yang dikirim final QC ke rework dapat dikembalikan ke QC, tetapi tidak dapat
+diinspeksi ulang secara sah. Pengembaliannya hanya berupa perpindahan generik `rework -> qc` tanpa
+lineage, sedangkan alokasi final QC dihitung terhadap `finishing_records.quantity` yang sudah habis
+dipakai inspeksi awal. Inspeksi kedua atas pcs yang secara fisik berada di QC selalu ditolak 409 oleh
+guard Python maupun trigger `final_qc_source_valid`, sehingga pcs itu terjebak permanen.
+
+Perbaikan tidak melonggarkan `qc_remaining_quantity`. Entitas immutable baru `rework_completions`
+mencatat setiap pengembalian rework ke QC beserta catatan final QC penghasil rework tersebut, dan
+memiliki satu perpindahan `rework -> qc` sendiri. `final_qc_records` mendapat `rework_completion_id`
+(NULL untuk inspeksi awal) dan `inspection_round`, sehingga sebuah catatan final QC menyatakan dirinya
+inspeksi awal dari finishing atau inspeksi ulang dari catatan selesai rework tertentu.
+`finishing_record_id` tetap ada pada inspeksi ulang, jadi seluruh join lineage yang sudah dipakai
+hydrator final QC, trigger SKU barang jadi, biaya produksi, margin kontribusi, dan enam file `.sql`
+lain tidak berubah.
+
+Alokasi kini punya denominator yang benar di setiap lapis: inspeksi awal hanya boleh memakai jumlah
+finishing yang belum diperiksa dan inspeksi ulang tidak memakainya lagi; selesai rework tidak boleh
+melebihi rework aktif dari catatan sumbernya; inspeksi ulang tidak boleh melebihi jumlah yang
+dikembalikan catatan selesai rework-nya. Tidak ada batas satu siklus, sehingga rantai QC1 → selesai
+rework → QC2 → selesai rework → QC3 legal. Accepted dari inspeksi ulang diterima menjadi barang jadi
+lewat endpoint dan aturan yang sama seperti inspeksi awal. Tanggal selesai rework tidak boleh mendahului
+inspeksi sumbernya dan tanggal inspeksi ulang tidak boleh mendahului selesai rework-nya.
+
+Koreksi dibongkar dari hilir ke hulu, ditegakkan ganda oleh trigger dan Python: selesai rework aktif
+memblokir koreksi final QC sumbernya, inspeksi ulang aktif memblokir koreksi selesai rework-nya, dan
+perpindahan milik catatan selesai rework tidak dapat dibalik terpisah. Tidak ada baris ledger yang
+diubah atau dihapus; koreksi hanya menambah baris pembalik.
+
+`("qc","rework")` dan `("rework","qc")` dihapus dari `TRANSITIONS`, sehingga `POST /api/movements`
+menolak 422, `GET /api/stages` tidak lagi mengiklankannya, dan form "Catat perpindahan" tidak menawarkan
+keputusan atau pengembalian rework tanpa lineage. Keputusan baru dicatat melalui Final QC. Pembalikan
+tidak memakai `TRANSITIONS`, jadi koreksi perpindahan `qc -> rework` yang sudah ada tetap berjalan.
+Baris `rework -> qc` historis tetap terbaca lengkap dengan lineage kosong.
+
+`production_quality_insights` mempertahankan arti `first_pass_yield_percent` dengan populasi inspeksi
+awal saja, karena satu pcs fisik tidak boleh masuk populasi `accepted / inspected` dua kali. Seluruh
+field lama, breakdown defect/sumber/SKU, dan field `previous_*` tidak berubah nilainya. Hasil inspeksi
+ulang ditambahkan sebagai `reinspection_record_count`, `reinspected_quantity`,
+`reinspection_accepted_quantity`, `reinspection_rework_quantity`, `reinspection_reject_quantity`,
+`reinspection_nonconforming_quantity`, dan `reinspection_nonconforming_rate_percent`, dengan kontrak
+`first_pass_yield_basis: "initial_inspections_only"`. Agar barang yang gagal lagi setelah rework tidak
+terlihat sehat, ditambahkan alasan perhatian `reinspection_above_warning` yang memakai denominator
+inspeksi ulang sendiri, dan command center mengekspor angka inspeksi ulang beserta satu kalimat pada
+kartu perhatian kualitas.
+
+Database schema 54 dapat memuat perpindahan `rework -> qc` lama tanpa lineage. Migrasi tidak menebak
+inspeksi sumbernya. Keadaan itu dilaporkan apa adanya lewat `untraced_rework_return_quantity` dan
+`rework_completable_quantity`, tombol selesai rework disembunyikan dengan penjelasan, dan API menjawab
+409 yang menunjuk riwayat perpindahan order. Remediasinya adalah koreksi perpindahan lama oleh admin,
+setelah itu selesai rework dan inspeksi ulang tercatat normal.
+
+Dashboard tidak lagi memakai "Catat perpindahan" untuk alur ini. Dari final QC dengan rework tersisa
+tersedia **Catat selesai rework**, lalu dari catatan selesai rework tersedia **Inspeksi ulang**.
+Riwayat final QC membedakan **Inspeksi awal**, **Inspeksi ulang #1**, **Inspeksi ulang #2**, dan
+tampilan rincian menautkan catatan selesai rework serta inspeksi sebelumnya. Tampilan order mendapat
+tombol **Selesai rework**, dan baris yang sisa saldonya berada di rework diarahkan ke alur ini alih-alih
+ke pembalikan. Viewer tetap read-only. Barang yang tidak dapat diperbaiki dibuang dengan mencatat selesai
+rework lalu mengisi jumlah reject pada inspeksi ulang, sehingga pembuangan punya catatan inspeksi.
+
+Migrasi 54 → 55 menambahkan `rework_completions`, `rework_completion_reversals`, dua kolom pada
+`final_qc_records`, empat trigger invarian, empat trigger immutability, dan penulisan ulang
+`final_qc_source_valid` agar memvalidasi kedua jenis inspeksi.
+
+API: `POST`/`GET /api/final-qc-records/{id}/rework-completions`,
+`GET /api/orders/{id}/rework-completions`, `GET /api/rework-completions/{id}`,
+`POST /api/rework-completions/{id}/qc-records`, `POST /api/rework-completions/{id}/reverse`.
+
+Rencana: [QC rework reinspection plan](qc-rework-reinspection-plan.md).
+Bukti: [QC rework reinspection verification](qc-rework-reinspection-verification.md).

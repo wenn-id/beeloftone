@@ -104,7 +104,7 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.detail(order)["lines"][0]["balances"]["planned"], 100)
         self.assertEqual(self.client.get(f'/api/orders/{order["id"]}/movements').json(), [])
 
-    def test_qc_rework_and_reject_preserve_counts_and_close_order(self):
+    def test_generic_qc_dispositions_require_final_qc_and_close_order(self):
         order = self.order(10)
         line = order["lines"][0]["id"]
         for source, target in [("planned", "cutting"), ("cutting", "sewing"),
@@ -112,8 +112,15 @@ class ProductionTest(unittest.TestCase):
             self.move(line, source, target, 10)
         self.move(line, "qc", "rework", 2, reason="  ", status=422)
         self.move(line, "qc", "reject", 1, status=422)
-        self.move(line, "qc", "rework", 2, reason="Jahitan perlu diperbaiki")
-        self.move(line, "rework", "qc", 2)
+        # Keputusan rework dan pengembaliannya sama-sama harus memiliki lineage Final QC.
+        self.move(line, "qc", "rework", 2, reason="Jahitan perlu diperbaiki", status=422)
+        self.move(line, "rework", "qc", 2, reason="Rework selesai", status=422)
+        transitions = self.client.get('/api/stages').json()['transitions']
+        self.assertNotIn(['qc', 'rework'], transitions)
+        self.assertNotIn(['rework', 'qc'], transitions)
+        self.assertEqual(self.detail(order)["lines"][0]["balances"], {
+            "planned": 0, "cutting": 0, "sewing": 0, "finishing": 0,
+            "qc": 10, "rework": 0, "reject": 0, "warehouse": 0})
         self.move(line, "qc", "reject", 1, reason="Kain sobek")
         self.move(line, "qc", "warehouse", 9)
         detail = self.detail(order)

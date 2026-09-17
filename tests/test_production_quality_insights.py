@@ -63,15 +63,22 @@ class ProductionQualityInsightsTest(TestCase):
         self.assertEqual(report['summary'],{
             'record_count':2,'inspected_quantity':10,'accepted_quantity':7,
             'rework_quantity':2,'reject_quantity':1,'nonconforming_quantity':3,
+            'reinspection_record_count':0,'reinspected_quantity':0,
+            'reinspection_accepted_quantity':0,'reinspection_rework_quantity':0,
+            'reinspection_reject_quantity':0,'reinspection_nonconforming_quantity':0,
             'first_pass_yield_percent':'70.00','nonconforming_rate_percent':'30.00',
-            'rework_rate_percent':'20.00','reject_rate_percent':'10.00','groups':2,
+            'rework_rate_percent':'20.00','reject_rate_percent':'10.00',
+            'reinspection_nonconforming_rate_percent':'0.00','groups':2,
             'attention_groups':1,'previous_inspected_quantity':10,
             'previous_nonconforming_quantity':1,'previous_nonconforming_rate_percent':'10.00',
+            'previous_reinspected_quantity':0,'previous_reinspection_nonconforming_quantity':0,
             'nonconforming_rate_change_points':'20.00'})
         self.assertEqual((report['current_period_start'],report['previous_period_start'],
-                          report['previous_period_end'],report['source'],report['corrected_records']),
+                          report['previous_period_end'],report['source'],report['corrected_records'],
+                          report['first_pass_yield_basis'],report['reinspections']),
                          ('2026-09-17','2026-09-10','2026-09-16',
-                          'active_final_qc_records','excluded'))
+                          'active_final_qc_records','excluded',
+                          'initial_inspections_only','reported_separately'))
         vendor=report['items'][0]
         self.assertEqual((vendor['assignee'],vendor['assignment_type'],vendor['status'],
                           vendor['trend'],vendor['nonconforming_rate_change_points']),
@@ -127,6 +134,6 @@ class ProductionQualityInsightsTest(TestCase):
         self.app.state.store.backup(backup);restored=Store(backup)
         self.assertEqual(restored.production_quality_insights('2026-09-23',7,status='all')['total'],1)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],54)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
