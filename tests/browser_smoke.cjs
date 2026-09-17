@@ -403,6 +403,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_logout_failure.cjs');
   await runModule('./browser_ai_investigation_logout.cjs');
   await runModule('./browser_audit_trail.cjs');
+  await runModule('./browser_kpi_glyphs.cjs');
+  await runModule('./browser_shared_ui.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');
