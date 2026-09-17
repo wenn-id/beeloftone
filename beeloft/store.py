@@ -87,6 +87,43 @@ def approval_amount(minor, rupiah=Decimal(0)):
         return format(Decimal(minor) / 100 + rupiah, '.2f')
 
 
+def shift_date(anchor, days, parameters):
+    """Geser `anchor` sejumlah `days` hari, atau tolak 422 bila hasilnya tidak ada di kalender.
+
+    `datetime.date` hanya mewakili 0001-01-01 sampai 9999-12-31. Setiap laporan menurunkan batas
+    periodenya dari tanggal acuan dikurangi/ditambah lebar periode, dan kombinasi yang masing-masing
+    parameternya lolos validasi masih dapat menunjuk ke luar rentang itu: `as_of=0001-01-01` dengan
+    `window_days` terkecil yang diizinkan sekalipun sudah meminta tanggal tahun nol. `timedelta`
+    menjawabnya dengan OverflowError, dan tanpa pemeriksaan ini kegagalan tersebut sampai ke klien
+    sebagai HTTP 500.
+
+    Yang ditolak adalah kombinasinya, bukan tanggalnya sendiri: tidak ada batas tahun buatan, jadi
+    tanggal ekstrem tetap sah selama seluruh periode yang dibutuhkan laporan dapat diwakili. Hanya
+    OverflowError yang ditangkap dan hanya di sekitar satu operasi tanggal, sehingga kesalahan
+    perhitungan lain -- termasuk perhitungan nominal -- tetap muncul sebagai bug.
+    """
+    try:
+        return anchor + timedelta(days=days)
+    except OverflowError:
+        raise DomainError(422, f'Kombinasi {parameters} menunjuk tanggal di luar kalender yang '
+                               'terwakili (0001-01-01 sampai 9999-12-31). Sesuaikan parameter '
+                               'tersebut lalu muat ulang laporannya.') from None
+
+
+def projected_date(anchor, days):
+    """Proyeksi tanggal dari data, atau None bila proyeksinya melampaui kalender.
+
+    Berbeda dari `shift_date`, jarak hari di sini berasal dari data (stok dibagi laju permintaan),
+    bukan dari parameter permintaan. Stok besar dengan laju sangat kecil memproyeksikan ribuan tahun
+    ke depan, dan permintaannya tetap sah, jadi jawabannya bukan 422 melainkan "tidak ada tanggal
+    habis stok yang terwakili" -- nilai None yang sama seperti produk tanpa laju permintaan.
+    """
+    try:
+        return (anchor + timedelta(days=days)).isoformat()
+    except OverflowError:
+        return None
+
+
 def audit_category(operation):
     root=operation.split(':',1)[0]
     if root in AUDIT_APPROVAL_OPERATIONS:
@@ -4043,9 +4080,9 @@ class Store:
     def demand_forecast(self, as_of, window_days=28, horizon_days=30, query='', marketplace='',
                         limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        recent_start=as_of_date-timedelta(days=window_days-1)
-        previous_end=recent_start-timedelta(days=1)
-        previous_start=previous_end-timedelta(days=window_days-1)
+        recent_start=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
+        previous_end=shift_date(recent_start,-1,'as_of dan window_days')
+        previous_start=shift_date(previous_end,-(window_days-1),'as_of dan window_days')
         with self.transaction() as db:
             term=query.strip().casefold()
             products=[dict(row) for row in db.execute('''SELECT id,sku,name,color,size FROM products
@@ -4118,7 +4155,7 @@ class Store:
 
     def return_insights(self, as_of, window_days=90, query='', marketplace='', limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        start_date=as_of_date-timedelta(days=window_days-1)
+        start_date=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
         params={'as_of':as_of_date.isoformat(),'start':start_date.isoformat(),
                 'query':query.strip().casefold(),'marketplace':marketplace.strip()}
         with self.transaction() as db:
@@ -4220,8 +4257,8 @@ class Store:
                 cover=Decimal(available)/rate if rate else None
                 if cover is not None:
                     covers.append(cover)
-                    projected=(as_of_date+timedelta(days=int(cover.to_integral_value(
-                        rounding=ROUND_CEILING)))).isoformat()
+                    projected=projected_date(as_of_date,int(cover.to_integral_value(
+                        rounding=ROUND_CEILING)))
                 else:
                     projected=None
                 previous_rank=previous_ranks.get(row['previous_net_demand'])
@@ -4287,7 +4324,7 @@ class Store:
     def dead_stock_insights(self, as_of, inactivity_days=90, query='', marketplace='',
                             status='dead_stock_candidate', limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        period_start=as_of_date-timedelta(days=inactivity_days-1)
+        period_start=shift_date(as_of_date,-(inactivity_days-1),'as_of dan inactivity_days')
         with self.transaction() as db:
             lots=[dict(row) for row in db.execute('''WITH sellable AS (
                 SELECT receipt_id,SUM(quantity) AS quantity FROM finished_goods_stock_ledger
@@ -4397,7 +4434,7 @@ class Store:
                                   stock_status='all', source='all', record_status='all',
                                   classification='flagged', limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        period_start=as_of_date-timedelta(days=window_days-1)
+        period_start=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
         with self.transaction() as db:
             records=[dict(row) for row in db.execute('''SELECT a.id,a.sequence,a.reference,a.receipt_id,
                 a.location,a.stock_status,a.quantity_delta,a.adjusted_date,a.reason,a.stock_count_id,
@@ -4491,7 +4528,7 @@ class Store:
     def supplier_performance_insights(self, as_of, window_days=90, query='', status='attention',
                                       limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        period_start=as_of_date-timedelta(days=window_days-1)
+        period_start=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
         with self.transaction() as db:
             purchase_orders=[]
             for order_id, in db.execute('SELECT id FROM purchase_orders ORDER BY sequence'):
@@ -4600,7 +4637,7 @@ class Store:
     def material_price_insights(self, as_of, window_days=90, query='', status='changed',
                                 limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        period_start=as_of_date-timedelta(days=window_days-1)
+        period_start=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
         observations=[]
         with self.transaction() as db:
             for order_id, in db.execute('SELECT id FROM purchase_orders ORDER BY sequence'):
@@ -4676,7 +4713,7 @@ class Store:
     def purchase_commitment_insights(self, as_of, due_soon_days=7, query='', status='open',
                                      limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        due_soon_end=as_of_date+timedelta(days=due_soon_days)
+        due_soon_end=shift_date(as_of_date,due_soon_days,'as_of dan due_soon_days')
         items=[]
         with self.transaction() as db:
             order_ids=[row[0] for row in db.execute('SELECT id FROM purchase_orders ORDER BY sequence')]
@@ -4864,9 +4901,9 @@ class Store:
                                     change_threshold=1, query='', assignment_type='all',
                                     status='attention', limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        current_start=as_of_date-timedelta(days=window_days-1)
-        previous_end=current_start-timedelta(days=1)
-        previous_start=previous_end-timedelta(days=window_days-1)
+        current_start=shift_date(as_of_date,-(window_days-1),'as_of dan window_days')
+        previous_end=shift_date(current_start,-1,'as_of dan window_days')
+        previous_start=shift_date(previous_end,-(window_days-1),'as_of dan window_days')
         params={'previous_start':previous_start.isoformat(),'as_of':as_of_date.isoformat(),
                 'query':query.strip().casefold(),'assignment_type':assignment_type}
         with self.transaction() as db:
@@ -5185,7 +5222,7 @@ class Store:
     def capacity_plan(self,as_of,horizon_days=14,warning_percent=80,work_center_id='',stage='all',
                       status='attention',limit=100,offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
-        horizon_end=as_of_date+timedelta(days=horizon_days-1)
+        horizon_end=shift_date(as_of_date,horizon_days-1,'as_of dan horizon_days')
         main_route=('cutting','sewing','finishing','qc')
         remaining={'planned':main_route,'cutting':main_route,'sewing':main_route[1:],
             'finishing':main_route[2:],'qc':main_route[3:],'rework':('rework','qc')}
@@ -5261,8 +5298,14 @@ class Store:
                         product['quantity']+=quantity;product['required_milli']+=required_milli
             items=[]
             for center in centers:
-                days=[];cursor=as_of_date
-                while cursor<=horizon_end:
+                days=[]
+                # Hari horizon dilangkahi lewat ordinal. Bentuk `while cursor<=horizon_end` yang
+                # diakhiri `cursor+=timedelta(days=1)` selalu menambah sekali lagi setelah hari
+                # terakhir diproses, jadi horizon yang berakhir tepat pada 9999-12-31 keluar dari
+                # kalender hanya untuk mengevaluasi syarat berhenti. Rentang ordinal berhenti tanpa
+                # pernah menghitung tanggal di luar horizon, dan urutan harinya tidak berubah.
+                for ordinal in range(as_of_date.toordinal(),horizon_end.toordinal()+1):
+                    cursor=date.fromordinal(ordinal)
                     override=overrides.get((center['id'],cursor.isoformat()))
                     available=override['available_minutes'] if override else (
                         center['daily_minutes'] if cursor.weekday()<5 else 0)
@@ -5270,7 +5313,6 @@ class Store:
                         'source':'override' if override else ('weekday_default' if cursor.weekday()<5 else 'weekend'),
                         'revision':override['revision'] if override else 0,
                         'reason':override['reason'] if override else ''})
-                    cursor+=timedelta(days=1)
                 available_minutes=sum(row['available_minutes'] for row in days)
                 order_rows=sorted(workload[center['id']].values(),
                                   key=lambda row:(row['due_date'],row['order_reference'],row['order_id']))
@@ -5335,7 +5377,8 @@ class Store:
                                       query='', marketplace='', limit=100, offset=0):
         as_of_date=as_of if isinstance(as_of,date) else date.fromisoformat(as_of)
         coverage_days=lead_time_days+review_period_days+safety_stock_days
-        planning_horizon_end=as_of_date+timedelta(days=coverage_days)
+        planning_horizon_end=shift_date(as_of_date,coverage_days,
+            'as_of dengan lead_time_days, review_period_days, dan safety_stock_days')
         forecast=self.demand_forecast(as_of_date,window_days,coverage_days,query,marketplace,
                                       1_000_000_000,0)
         inventory={row['product_id']:row for row in self.finished_goods_inventory(1_000_000_000,0)}
@@ -5363,8 +5406,8 @@ class Store:
                 if rate:
                     cover=Decimal(available)/rate
                     cover_days=format(cover.quantize(Decimal('.01'),rounding=ROUND_HALF_UP),'.2f')
-                    stockout=(as_of_date+timedelta(days=int(cover.to_integral_value(
-                        rounding=ROUND_CEILING)))).isoformat()
+                    stockout=projected_date(as_of_date,int(cover.to_integral_value(
+                        rounding=ROUND_CEILING)))
                     reorder_point=int((rate*(lead_time_days+safety_stock_days)).to_integral_value(
                         rounding=ROUND_CEILING))
                     target=int((rate*coverage_days).to_integral_value(rounding=ROUND_CEILING))

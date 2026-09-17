@@ -61,3 +61,22 @@ const {formatMaterialQuantity} = await import('../beeloft/static/client.mjs');
 assert.equal(formatMaterialQuantity('1000000000000000.125','m'),'1.000.000.000.000.000,125 m');
 assert.equal(formatMaterialQuantity('-0.125','kg'),'-0,125 kg');
 assert.equal(formatMaterialQuantity('10.000','pcs'),'10 pcs');
+
+
+// P3-B: penolakan batas tanggal harus sampai ke layar sebagai pesannya sendiri. Investigasi yang
+// disimpan adalah transaksi ber-Idempotency-Key, jadi 500 dulu ditandai `uncertain` dan UI
+// menawarkan "coba ulang penyimpanan" untuk permintaan yang tidak akan pernah berhasil. 422
+// membawa pesan Bahasa Indonesia yang menyebut parameternya dan tidak pernah uncertain.
+const outOfRange = 'Kombinasi as_of dan window_days menunjuk tanggal di luar kalender yang terwakili (0001-01-01 sampai 9999-12-31). Sesuaikan parameter tersebut lalu muat ulang laporannya.';
+const refused = new Api(async () => new Response(JSON.stringify({detail: outOfRange}), {status: 422}));
+await assert.rejects(refused.get('/api/production-quality-insights?as_of=0001-01-01'),
+  error => error.status === 422 && error.uncertain === false && error.message === outOfRange);
+await assert.rejects(refused.save(refused.transaction('/api/ai/investigations', {as_of: '0001-01-01'})),
+  error => error.status === 422 && error.uncertain === false && error.message === outOfRange);
+assert.equal(outOfRange.includes('as_of'), true);
+assert.equal(outOfRange.includes('window_days'), true);
+// Kontras: hanya 5xx pada transaksi yang boleh membuat hasilnya tidak pasti.
+const broken = new Api(async () => new Response(JSON.stringify({detail: 'Internal Server Error'}), {status: 500}));
+await assert.rejects(broken.save(broken.transaction('/api/ai/investigations', {as_of: '0001-01-01'})),
+  error => error.status === 500 && error.uncertain === true);
+console.log('Date boundary client checks PASS: 422 detail reaches the UI and never looks uncertain.');

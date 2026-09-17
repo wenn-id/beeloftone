@@ -373,6 +373,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_payroll_accounting_reconciliation.cjs');
   await runModule('./browser_management_command_center.cjs');
   await runModule('./browser_ai_investigation.cjs');
+  await runModule('./browser_date_boundaries.cjs');
   await runModule('./browser_cutting.cjs');
   const bundling=await runModule('./browser_bundles.cjs');
   await runModule('./browser_bundle_scanning.cjs',bundling);
