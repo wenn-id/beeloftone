@@ -36,6 +36,48 @@ AUDIT_APPROVAL_OPERATIONS = {
 }
 
 
+# Definisi approval yang dipakai bersama daftar inbox, Command Center, dan AI Brain. Sebelumnya
+# setiap konsumen menyusun sendiri arti "pending" dan menjumlahkan nominal dari halaman daftar,
+# sehingga populasi di atas limit halaman dilaporkan salah. Sumbernya sekarang satu.
+APPROVAL_KINDS = ('purchase_request','purchase_order','supplier_payment','marketing_budget',
+                  'production_change','workforce_leave','workforce_overtime','payroll_batch',
+                  'ai_action')
+
+# Status pengajuan bersumber dari event terakhir. 'submitted' di sumber berarti 'pending' di inbox;
+# approved/rejected/cancelled memakai nama yang sama. Pemetaan ini bijektif, jadi satu literal
+# status sudah cukup untuk memfilter agregat.
+APPROVAL_EVENT_STATUS = {'pending':'submitted','approved':'approved',
+                         'rejected':'rejected','cancelled':'cancelled'}
+
+# Per kind: tabel sumber (alias t), tabel event, kolom relasi event, ekspresi nominal dalam satuan
+# minor, dan filter tambahan. Nominal None berarti kind itu memang tidak punya nominal: item tetap
+# dihitung pada count, tetapi tidak menambah amount.
+APPROVAL_AGGREGATES = (
+    ('purchase_request','purchase_requests t','purchase_request_events','request_id',
+     't.estimated_value_minor',''),
+    ('purchase_order','purchase_orders t','purchase_order_approval_events','order_id',
+     't.total_minor',''),
+    ('supplier_payment','supplier_payment_requests t','supplier_payment_request_events','request_id',
+     't.amount_minor',''),
+    ('marketing_budget','marketing_budget_requests t','marketing_budget_request_events','request_id',
+     't.amount_minor',''),
+    ('production_change','production_change_requests t','production_change_request_events','request_id',
+     None,''),
+    ('workforce_leave','workforce_requests t','workforce_request_events','request_id',
+     None," AND t.kind='leave'"),
+    ('workforce_overtime','workforce_requests t','workforce_request_events','request_id',
+     None," AND t.kind='overtime'"),
+    ('payroll_batch','payroll_approval_requests t JOIN mekari_payroll_snapshot_periods p'
+     ' ON p.id=t.source_period_id','payroll_approval_request_events','request_id',
+     'p.gross_pay_minor+p.employer_contributions_minor',''),
+    # Proposal AI menyimpan nominalnya sebagai string '.2f' di dalam JSON action_payload, bukan
+    # kolom *_minor. Nilainya diproyeksikan apa adanya lalu dijumlahkan dengan Decimal supaya
+    # tidak ada pembulatan uang lewat REAL; proyeksinya tetap satu kolom kecil per baris.
+    ('ai_action','ai_action_proposals t','ai_action_proposal_events','proposal_id',
+     "json_extract(t.action_payload,'$.estimated_value')",''),
+)
+
+
 def audit_category(operation):
     root=operation.split(':',1)[0]
     if root in AUDIT_APPROVAL_OPERATIONS:
@@ -6834,6 +6876,57 @@ class Store:
                             'source_status':source['status'],'stale':request['stale']}})
             items.sort(key=lambda row:(row["created_at"],row["kind"],row["id"]), reverse=True)
             return items[offset:offset+limit]
+
+    def approvals_summary(self, status='pending', kind='all'):
+        """Ringkasan seluruh populasi approval yang cocok dengan filter.
+
+        Dibaca terpisah dari `approvals()` supaya jumlah dan nominal tidak pernah bergantung pada
+        limit/offset daftar. Agregasi dilakukan di database dengan proyeksi minimal: tidak ada
+        history, context, atau detail pengajuan yang dihidrasi. Status diambil dari event terakhir
+        lewat subquery berkorelasi, jadi pengajuan dengan beberapa event tetap dihitung satu kali.
+        Semua query berjalan dalam satu transaksi baca, sehingga count dan amount selalu berasal
+        dari satu snapshot yang sama.
+        """
+        if kind != 'all' and kind not in APPROVAL_KINDS:
+            raise DomainError(422, 'Jenis approval tidak dikenal.')
+        if status != 'all' and status not in APPROVAL_EVENT_STATUS:
+            raise DomainError(422, 'Status approval tidak dikenal.')
+        requested = APPROVAL_KINDS if kind == 'all' else (kind,)
+        by_kind, total, total_amount, with_amount = {}, 0, Decimal(0), 0
+        with self.transaction() as db:
+            for name, source, events, column, amount_column, extra in APPROVAL_AGGREGATES:
+                if name not in requested:
+                    continue
+                condition, parameters = extra, []
+                if status != 'all':
+                    condition = (f' AND (SELECT status FROM {events} WHERE {column}=t.id'
+                                 ' ORDER BY sequence DESC LIMIT 1)=?') + extra
+                    parameters.append(APPROVAL_EVENT_STATUS[status])
+                if amount_column is None:
+                    row = db.execute(f'SELECT COUNT(*) AS total FROM {source}'
+                                     f' WHERE 1=1{condition}', parameters).fetchone()
+                    count, amount, counted = row['total'], Decimal(0), 0
+                elif name == 'ai_action':
+                    values = [item['amount'] for item in db.execute(
+                        f'SELECT {amount_column} AS amount FROM {source}'
+                        f' WHERE 1=1{condition}', parameters)]
+                    present = [Decimal(str(value)) for value in values if value is not None]
+                    count, amount, counted = len(values), sum(present, Decimal(0)), len(present)
+                else:
+                    row = db.execute(
+                        f'SELECT COUNT(*) AS total,COALESCE(SUM({amount_column}),0) AS amount_minor,'
+                        f'COUNT({amount_column}) AS with_amount FROM {source}'
+                        f' WHERE 1=1{condition}', parameters).fetchone()
+                    count = row['total']
+                    amount = Decimal(row['amount_minor']) / 100
+                    counted = row['with_amount']
+                by_kind[name] = {'count': count, 'amount': format(amount, '.2f')}
+                total += count
+                total_amount += amount
+                with_amount += counted
+        return {'status': status, 'kind': kind, 'currency': 'IDR', 'total': total,
+                'amount': format(total_amount, '.2f'), 'with_amount': with_amount,
+                'without_amount': total - with_amount, 'by_kind': by_kind}
 
     def production_cost(self, order_id):
         with self.transaction() as db:

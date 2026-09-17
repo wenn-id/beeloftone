@@ -39,7 +39,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.84.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.85.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -76,6 +76,12 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return resolved
 
     Actor = Annotated[dict, Depends(actor)]
+    # Daftar dan ringkasan approval harus menerima filter yang sama persis, jadi kedua literal
+    # ini dipakai bersama oleh /api/approvals dan /api/approvals/summary.
+    ApprovalStatus = Literal['all','pending','approved','rejected','cancelled']
+    ApprovalKind = Literal['all','purchase_request','purchase_order','supplier_payment',
+                           'marketing_budget','production_change','workforce_leave',
+                           'workforce_overtime','payroll_batch','ai_action']
     RequestKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
     Limit = Annotated[int, Query(ge=1, le=500)]
     Offset = Annotated[int, Query(ge=0)]
@@ -197,9 +203,18 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get("/api/approvals", tags=["Approvals"])
     def approvals(user: Actor, limit: Limit = 100, offset: Offset = 0,
-                  status: Literal['all','pending','approved','rejected','cancelled'] = 'pending',
-                  kind: Literal['all','purchase_request','purchase_order','supplier_payment','marketing_budget','production_change','workforce_leave','workforce_overtime','payroll_batch','ai_action'] = 'all'):
+                  status: ApprovalStatus = 'pending', kind: ApprovalKind = 'all'):
         return store.approvals(limit, offset, status, kind)
+
+    @app.get('/api/approvals/summary', tags=['Approvals'])
+    def approvals_summary(user: Actor, status: ApprovalStatus = 'pending',
+                          kind: ApprovalKind = 'all'):
+        """Jumlah dan nominal seluruh populasi approval yang cocok dengan filter.
+
+        Dibaca terpisah dari daftar `/api/approvals` supaya total tidak pernah dibatasi oleh
+        limit/offset halaman. Filter status dan kind memakai populasi yang sama dengan daftar.
+        """
+        return store.approvals_summary(status, kind)
 
     @app.get('/api/ai/action-proposals', tags=['AI Brain','Approvals'])
     def ai_action_proposals(user: Actor, limit: Limit = 100,
