@@ -4940,7 +4940,9 @@ class Store:
                 reasons.append('reinspection_above_warning')
             skus=[finish(value) for value in group['skus'].values()]
             skus.sort(key=lambda row:(-row['nonconforming_quantity'],
-                -Decimal(row['nonconforming_rate_percent']),row['sku'].casefold(),row['product_id']))
+                -max(Decimal(row['nonconforming_rate_percent']),
+                     Decimal(row['reinspection_nonconforming_rate_percent'])),
+                -row['reinspected_quantity'],row['sku'].casefold(),row['product_id']))
             defects=list(group['defect_types'].values());defects.sort(
                 key=lambda row:(-row['nonconforming_quantity'],row['defect_type'].casefold()))
             sources=list(group['responsible_sources'].values());sources.sort(
