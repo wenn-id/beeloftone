@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from unittest import TestCase
 
+from beeloft.store import APPROVAL_AGGREGATES, APPROVAL_KINDS
 import test_production
 
 
@@ -492,3 +493,156 @@ class ApprovalSummaryApiTest(ApprovalFixture):
         self.assertEqual(self.client.get('/api/approvals?limit=501').status_code, 422)
         self.assertEqual(self.client.get('/api/approvals',
                          headers={'X-API-Key': self.viewer['api_key']}).status_code, 200)
+
+
+
+class ApprovalSummaryOverflowTest(ApprovalFixture):
+    """Regresi review Codex: SUM() SQLite dapat overflow sebelum dikonversi ke Decimal.
+
+    Schema mengizinkan `gross_pay_minor` dan `employer_contributions_minor` masing-masing sampai
+    100000000000000000 satuan minor, jadi satu periode payroll boleh bernilai 2e17. Akumulator SUM
+    SQLite adalah integer 64-bit dengan batas 2^63-1 = 9223372036854775807, sehingga 47 pengajuan
+    pending sudah melewatinya dan seluruh ringkasan gagal dengan "integer overflow".
+
+    Nilai di sini ekstrem tetapi sah menurut schema. Ini pengujian batas aritmetika, bukan klaim
+    bahwa ada database produksi yang pernah memuat angka sebesar itu.
+    """
+
+    EXTREME = 10**17  # batas atas yang diizinkan schema untuk kedua kolom payroll
+
+    def payroll_oracle(self, count):
+        """Oracle integer murni, tidak memakai fungsi agregat maupun Decimal yang diuji."""
+        whole, cents = divmod(count * 2 * self.EXTREME, 100)
+        return f'{whole}.{cents:02d}'
+
+    def test_forty_six_payroll_approvals_stay_below_the_sqlite_limit(self):
+        self.seed_payroll(46, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        summary = self.assert_summary_matches_oracle()
+        self.assertEqual((summary['total'], summary['amount']), (46, '92000000000000000.00'))
+        self.assertEqual(summary['amount'], self.payroll_oracle(46))
+        self.assertLess(46 * 2 * self.EXTREME, 2**63 - 1)
+
+    def test_forty_seven_payroll_approvals_cross_the_limit_and_stay_exact(self):
+        """Populasi tepat di ambang overflow; sebelum perbaikan seluruh ringkasan gagal."""
+        self.assertGreater(47 * 2 * self.EXTREME, 2**63 - 1)
+        self.seed_payroll(47, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        summary = self.assert_summary_matches_oracle()
+        self.assertEqual((summary['total'], summary['amount']), (47, '94000000000000000.00'))
+        self.assertEqual(summary['amount'], self.payroll_oracle(47))
+        self.assertEqual(summary['by_kind']['payroll_batch'],
+                         {'count': 47, 'amount': '94000000000000000.00'})
+        self.assertEqual((summary['with_amount'], summary['without_amount']), (47, 0))
+        # Silang-uji terhadap jalur hidrasi lama yang memang selalu menjumlahkan di Python.
+        self.assert_list_agrees_with_summary()
+
+    def test_amount_stays_exact_far_beyond_the_sqlite_limit(self):
+        """Kelipatan jauh di atas ambang tidak boleh dibulatkan oleh presisi Decimal default."""
+        self.seed_payroll(150, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        summary = self.assert_summary_matches_oracle()
+        self.assertEqual((summary['total'], summary['amount']),
+                         (150, '300000000000000000.00'))
+        self.assertEqual(summary['amount'], self.payroll_oracle(150))
+        self.assertGreater(150 * 2 * self.EXTREME, 3 * (2**63 - 1))
+
+    def test_extreme_amounts_mix_with_cents_zero_and_missing_amounts(self):
+        """Nominal ekstrem, sen kecil, nol, dan tanpa nominal harus berjumlah eksak bersama."""
+        self.seed_payroll(47, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        self.seed_payroll(2, gross_minor=0, employer_minor=0)          # nominal nol
+        self.seed_marketing(1, amount_minor=1)                         # 0.01
+        self.seed_marketing(1, amount_minor=99)                        # 0.99
+        self.seed_workforce(3, kind='leave')                           # tanpa nominal
+        self.seed_ai_action(1, estimated_value='0.33')                 # nominal desimal JSON
+        summary = self.assert_summary_matches_oracle()
+        self.assertEqual(summary['total'], 55)
+        self.assertEqual(summary['without_amount'], 3)
+        # 94000000000000000.00 + 0.00 + 0.01 + 0.99 + 0.33
+        self.assertEqual(summary['amount'], '94000000000000001.33')
+        self.assert_list_agrees_with_summary()
+
+    def test_status_and_kind_filters_stay_exact_at_extreme_amounts(self):
+        self.seed_payroll(47, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        self.seed_payroll(5, gross_minor=self.EXTREME, employer_minor=self.EXTREME,
+                          status='approved')
+        self.seed_marketing(3, amount_minor=2_500_00)
+        for status in ('pending', 'approved', 'rejected', 'cancelled', 'all'):
+            self.assert_summary_matches_oracle(status=status)
+        for kind in ('all', 'payroll_batch', 'marketing_budget', 'purchase_request'):
+            self.assert_summary_matches_oracle(kind=kind)
+            self.assert_list_agrees_with_summary(kind=kind)
+        pending = self.app.state.store.approvals_summary(kind='payroll_batch')
+        self.assertEqual(pending['amount'], '94000000000000000.00')
+        every = self.app.state.store.approvals_summary(status='all', kind='payroll_batch')
+        self.assertEqual((every['total'], every['amount']), (52, self.payroll_oracle(52)))
+
+    def executed_sql(self, run):
+        """Rekam setiap statement yang benar-benar dieksekusi SQLite selama `run()`."""
+        store = self.app.state.store
+        statements, original = [], store.connect
+
+        def connect():
+            db = original()
+            db.set_trace_callback(statements.append)
+            return db
+
+        store.connect = connect
+        try:
+            run()
+        finally:
+            store.connect = original
+        return statements
+
+    def test_no_amount_branch_delegates_summation_to_sqlite(self):
+        """Perbaikan berlaku untuk seluruh cabang nominal, bukan pengecualian khusus payroll.
+
+        Diperiksa dari statement yang benar-benar dieksekusi, bukan dari teks sumbernya.
+        """
+        self.seed_payroll(2, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        self.seed_marketing(2, amount_minor=1_000_00)
+        self.seed_purchase_requests(2, amount_minor=1_000_00)
+        self.seed_ai_action(1, estimated_value='10.00')
+        store = self.app.state.store
+        statements = self.executed_sql(lambda: [store.approvals_summary(status=status, kind=kind)
+                                                for status in ('pending', 'all')
+                                                for kind in ('all',) + APPROVAL_KINDS])
+        self.assertTrue(statements)
+        aggregates = [sql for sql in statements if 'FROM' in sql.upper()]
+        self.assertTrue(aggregates)
+        for sql in aggregates:
+            upper = sql.upper()
+            for forbidden in ('SUM(', 'TOTAL(', 'AVG(', 'CAST(', 'REAL'):
+                self.assertNotIn(forbidden, upper, sql)
+        # Setiap kind bernominal memakai satuan yang dideklarasikan, bukan cabang khusus per nama.
+        self.assertEqual({row[0]: row[5] for row in APPROVAL_AGGREGATES}, {
+            'purchase_request': 'minor', 'purchase_order': 'minor', 'supplier_payment': 'minor',
+            'marketing_budget': 'minor', 'production_change': None, 'workforce_leave': None,
+            'workforce_overtime': None, 'payroll_batch': 'minor', 'ai_action': 'rupiah'})
+
+    def test_consumers_report_extreme_totals_without_failing(self):
+        """Command Center, AI approvals, dan overview harus eksak dan tidak 500."""
+        self.seed_payroll(47, gross_minor=self.EXTREME, employer_minor=self.EXTREME)
+        expected = self.payroll_oracle(47)
+
+        endpoint = self.client.get('/api/approvals/summary')
+        self.assertEqual(endpoint.status_code, 200, endpoint.text)
+        self.assertEqual((endpoint.json()['total'], endpoint.json()['amount']), (47, expected))
+
+        report = self.client.get('/api/command-center')
+        self.assertEqual(report.status_code, 200, report.text)
+        approvals = report.json()['approvals']
+        self.assertEqual((approvals['pending_count'], approvals['pending_amount']), (47, expected))
+        card = next(row for row in report.json()['attention'] if row['id'] == 'approvals-pending')
+        self.assertEqual(card['detail'], f'47 pengajuan senilai Rp{expected} ada di inbox.')
+
+        question = dict(question='Antrean approval apa yang menunggu keputusan?', as_of='2026-11-15',
+                        window_days=14, lead_time_days=180, review_period_days=180,
+                        safety_stock_days=90, batch_multiple=12)
+        answer = self.client.post('/api/ai/investigate', json=question)
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()['answer'],
+                         f'Ada 47 item menunggu keputusan dengan total nominal tercatat Rp{expected}.')
+        self.assertEqual(answer.json()['evidence']['approvals']['summary']['amount'], expected)
+
+        overview = self.client.post('/api/ai/investigate',
+                                    json=question | {'question': 'Apa yang harus saya lihat sekarang?'})
+        self.assertEqual(overview.status_code, 200, overview.text)
+        self.assertIn(f'Rp{expected}', overview.json()['answer'])
