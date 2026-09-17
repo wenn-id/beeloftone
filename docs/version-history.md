@@ -2518,9 +2518,14 @@ kegagalan dengan `catch{}` lalu selalu memanggil `clearWorkspace()` pada blok `f
 `beeloft_session` hanya dihapus pada jalur sukses dan baris `browser_sessions` tidak pernah dicabut,
 sehingga `restoreSession()` pada reload membuka kembali akun sebelumnya. Sekarang hanya 200 dan 401 yang
 diterima sebagai bukti bahwa session sudah tidak aktif; CSRF 403, 5xx, timeout, dan kegagalan jaringan
-memicu pemeriksaan langsung ke `/api/me`. Ruang kerja dipertahankan dengan banner `#session-warning`
-beserta tombol **Coba keluar lagi**, dan pesannya membedakan "logout belum berhasil" dari "logout belum
-terkonfirmasi" tanpa pernah menjanjikan session sudah dicabut ketika browser offline. Server yang sudah
+memicu pemeriksaan langsung ke `/api/me`. Pemeriksaan itu mempertahankan identitas yang menjawab, bukan
+sekadar fakta bahwa server menjawab: cookie session dipakai bersama seluruh tab, jadi ruang kerja lama
+hanya dipertahankan bila session masih milik akun yang membukanya. Bila session sudah berpindah ke akun
+lain dan masih aktif, ruang kerja lama dibongkar supaya tidak ada tampilan bercampur identitas, dan
+peringatannya menyebut akun yang sekarang memegang session. Ruang kerja yang dipertahankan diberi banner
+`#session-warning` beserta tombol **Coba keluar lagi**, dan pesannya membedakan "logout belum berhasil
+dengan akun yang sama", "session sudah berpindah akun", dan "logout belum terkonfirmasi" tanpa pernah
+menjanjikan session sudah dicabut ketika browser offline. Server yang sudah
 mencabut lalu kehilangan responsnya tetap dikenali, jadi tidak ada jalan buntu permanen. Klik ganda
 memakai ulang satu promise dalam penerbangan; `aria-busy`, `inert`, dan `disabled` dipulihkan di seluruh
 jalur. Tombol **Masuk ulang** pada dialog transaksi pending melaporkan kegagalan ke `#form-error` atau
@@ -2534,8 +2539,9 @@ daftar diurutkan menurun, angka yang dilaporkan adalah 500 item terbaru: pada 61
 jawabannya berhenti di 500, dan pada populasi campuran nominalnya ikut salah karena item tanpa nominal
 mendorong item bernominal keluar halaman. `Store.approvals_summary(status, kind)` menjadi satu-satunya
 sumber angka ringkasan, mengagregasi di database dengan proyeksi minimal dan subquery berkorelasi pada
-event terakhir sehingga pengajuan dengan beberapa event tidak dihitung berulang. Uang dijumlahkan atas
-kolom `*_minor` bertipe INTEGER lalu dinormalkan lewat `Decimal`; `payroll_batch` memakai
+event terakhir sehingga pengajuan dengan beberapa event tidak dihitung berulang. Nilai `*_minor`
+diproyeksikan lalu diakumulasi dengan integer Python, bukan dengan `SUM()` SQLite yang akumulatornya
+integer 64-bit dan dapat overflow untuk data yang masih sah menurut schema; `payroll_batch` memakai
 `gross_pay_minor + employer_contributions_minor`, dan `ai_action` menjumlahkan string `'.2f'` dari
 `action_payload` dengan `Decimal` alih-alih `CAST(... AS REAL)`. Sembilan kind inbox tercakup, item tanpa
 nominal tetap dihitung pada count tanpa menambah amount, dan seluruh query berjalan dalam satu transaksi

@@ -31,7 +31,7 @@ disentuh.
 
 | Pemeriksaan | Hasil |
 |---|---|
-| `python -m unittest discover -s tests` | `Ran 424 tests` — **OK**. Sebelumnya 389; 35 test baru. |
+| `python -m unittest discover -s tests` | `Ran 433 tests` — **OK**. Sebelumnya 389; 44 test baru. |
 | `python -m pip check` | `No broken requirements found` |
 | `python -m compileall -q beeloft` | bersih |
 | `node --check beeloft/static/app.mjs` | bersih |
@@ -254,16 +254,21 @@ serta `test_ai_investigation.py` yang menuntut `facts['Approval tertunda'] == 1`
 
 ### Biaya pembacaan
 
-Agregasi berproyeksi minimal juga lebih murah daripada menghidrasi satu halaman. Pada populasi 1.350
-pending (1.200 marketing budget dan 150 cuti):
+Agregasi berproyeksi minimal juga lebih murah daripada menghidrasi satu halaman. Diukur ulang
+**setelah** perbaikan overflow bagian 6.1, jadi angka ini sudah mencerminkan akumulasi streaming di
+Python. Populasi 1.350 pending (1.200 marketing budget dan 150 cuti), waktu terbaik dari tujuh
+pengulangan:
 
 ```
-approvals(500) page   : 0.0247s, 500 baris terhidrasi
-approvals_summary()   : 0.0056s, total=1350 amount=1200000.00
-agregat lebih cepat   : 4.4x
+populasi pending    : 1350 item, 1200000.00
+approvals(500) page : 0.0236s (500 baris terhidrasi)
+approvals_summary() : 0.0060s (total=1350 amount=1200000.00)
+rasio               : 3.9x lebih cepat
 ```
 
-Angka lama juga salah; angka baru benar dan dibaca lebih cepat.
+Angka lama juga salah; angka baru benar dan tetap dibaca lebih cepat. Sebelum perbaikan overflow,
+ringkasan yang sama terukur 0,0056 s dengan `SUM()` SQLite, jadi akumulasi di Python menambah sekitar
+0,4 ms pada populasi ini — biaya yang dibayar untuk ketepatan yang dapat dibuktikan.
 
 ### Kompatibilitas evidence AI
 
@@ -420,7 +425,145 @@ dijalankan dari `.p2-verify/sdistsmoke`: import dari `site-packages`, 58 file `.
 `Store.approvals_summary` tersedia, CLI `demo` menghasilkan tiga akun, dan `SMOKE TEST WHEEL: OK`
 dengan `openapi version=0.85.0 paths=221 summary_path=True`.
 
-## 6. Batas dan bagian yang belum terverifikasi
+## 6. Tindak lanjut komentar review pada PR #6
+
+Dua komentar review masuk pada `44d5579` setelah CI hijau. Keduanya diperlakukan sebagai hipotesis
+dan diverifikasi terhadap kode terlebih dahulu; keduanya terbukti valid dan diperbaiki.
+
+### 6.1 Overflow integer pada `approvals_summary()` (Codex, `discussion_r4033521297`)
+
+**Verifikasi.** `SUM()` SQLite bekerja pada integer 64-bit dengan batas `2**63-1 =
+9223372036854775807`. Schema mengizinkan `mekari_payroll_snapshot_periods.gross_pay_minor` dan
+`employer_contributions_minor` masing-masing sampai `100000000000000000`, jadi satu periode payroll
+boleh menyumbang `2e17` satuan minor. 46 pengajuan menghasilkan `9.2e18` (masih di bawah batas) dan
+47 pengajuan menghasilkan `9.4e18` (di atas batas). Nilai ini ekstrem tetapi sah menurut schema;
+tidak ada klaim bahwa database produksi mana pun pernah memuatnya.
+
+**Reproduksi sebelum perbaikan**, pada database disposable dengan
+`gross_pay_minor = employer_contributions_minor = 100000000000000000`:
+
+```
+=== 46 pending payroll ===
+  oracle fixture            : {'total': 46, 'amount': '92000000000000000.00'}
+  store.approvals_summary   : total=46 amount=92000000000000000.00
+  GET /api/approvals/summary: HTTP 200
+  GET /api/command-center   : HTTP 200
+  brain approvals           : Ada 46 item menunggu keputusan dengan total nominal tercatat Rp92000000000000000.00.
+
+=== 47 pending payroll ===
+  oracle fixture            : {'total': 47, 'amount': '94000000000000000.00'}
+  store.approvals_summary   : OperationalError: integer overflow
+  GET /api/approvals/summary: OperationalError: integer overflow
+  GET /api/command-center   : OperationalError: integer overflow
+  brain approvals           : OperationalError: integer overflow
+```
+
+`sqlite3.OperationalError` yang pesannya bukan `locked`/`busy` diteruskan kembali oleh handler di
+`beeloft/api.py:102-107`, jadi ketiga endpoint tersebut menjadi 500.
+
+**Perbaikan.** Tidak ada cabang nominal yang lagi menyerahkan penjumlahan kepada SQLite. Nilainya
+diproyeksikan satu kolom per baris lalu diakumulasi secara streaming: integer Python untuk kolom
+`*_minor`, dan `Decimal` untuk `ai_action` yang menyimpan string `'.2f'` di dalam JSON. Satuan tiap
+kind kini dideklarasikan pada `APPROVAL_AGGREGATES` (`'minor'`, `'rupiah'`, atau `None`), sehingga
+tidak ada pengecualian ad hoc per nama kind. Pemformatan akhir memakai `approval_amount()` yang
+menaikkan presisi context sesuai besar angkanya, jadi hasilnya eksak untuk berapa pun jumlah baris
+dan presisi default `Decimal` tidak ikut membatasi. Tidak ada FLOAT, REAL, `TOTAL()`, `CAST()`,
+maupun pembulatan nominal, dan batas nominal bisnis pada schema tidak diturunkan. Proyeksinya tetap
+minimal: tidak ada history, context, atau detail pengajuan. `count`, `amount`, `with_amount`,
+`without_amount`, dan `by_kind` tetap berasal dari satu transaksi baca.
+
+**Hasil setelah perbaikan**, populasi dan perintah yang sama:
+
+```
+=== 47 pending payroll ===
+  store.approvals_summary   : total=47 amount=94000000000000000.00
+  GET /api/approvals/summary: HTTP 200
+  GET /api/command-center   : HTTP 200
+  brain approvals           : Ada 47 item menunggu keputusan dengan total nominal tercatat Rp94000000000000000.00.
+```
+
+`tests/test_approval_aggregates.py::ApprovalSummaryOverflowTest`, 7 test, semuanya lulus:
+
+| Test | Yang dibuktikan |
+|---|---|
+| `test_forty_six_payroll_approvals_stay_below_the_sqlite_limit` | batas bawah `46 × 2e17 < 2**63-1` tetap benar |
+| `test_forty_seven_payroll_approvals_cross_the_limit_and_stay_exact` | `47` menghasilkan `94000000000000000.00`, `by_kind`, `with_amount`, dan silang-uji terhadap jalur hidrasi lama |
+| `test_amount_stays_exact_far_beyond_the_sqlite_limit` | 150 pengajuan (`3 ×` batas) menghasilkan `300000000000000000.00` tanpa pembulatan |
+| `test_extreme_amounts_mix_with_cents_zero_and_missing_amounts` | nominal ekstrem bercampur `0.01`, `0.99`, nol, JSON `0.33`, dan item tanpa nominal → `94000000000000001.33` |
+| `test_status_and_kind_filters_stay_exact_at_extreme_amounts` | filter `status` dan `kind` tetap eksak, termasuk `status=all` pada 52 pengajuan |
+| `test_no_amount_branch_delegates_summation_to_sqlite` | statement yang **benar-benar dieksekusi** (via `set_trace_callback`) tidak memuat `SUM(`, `TOTAL(`, `AVG(`, `CAST(`, atau `REAL`; satuan sembilan kind dikunci eksplisit |
+| `test_consumers_report_extreme_totals_without_failing` | `/api/approvals/summary`, Command Center beserta kartu perhatiannya, jawaban AI approvals, dan overview semuanya 200 dan eksak |
+
+Nilai yang diharapkan berasal dari oracle integer murni (`divmod(count * 2 * 10**17, 100)`), bukan
+dari fungsi agregat yang diuji. Dijalankan terhadap `beeloft/store.py` versi `44d5579`, 6 dari 7 test
+ini gagal: 5 dengan `sqlite3.OperationalError: integer overflow` dan 1 karena pelacakan SQL mendeteksi
+`SUM(`. Regresi populasi di atas 500 dan seluruh 22 test P2-B sebelumnya tetap lulus.
+
+### 6.2 Identitas `/api/me` dibuang pada logout gagal (CodeRabbit, `discussion_r4033581136`)
+
+**Verifikasi.** `sessionStillActive()` mereduksi respons `/api/me` menjadi `true` tanpa melihat
+identitasnya. Cookie session dipakai bersama seluruh tab, jadi ketika tab lain menukar session ke
+akun B dan logout gagal sebelum pencabutan, `logout()` mempertahankan `user`, `api.actorId`, dan
+seluruh ruang kerja akun A sementara setiap pembacaan berikutnya memakai session akun B. Pencatatan
+memang tetap ditolak binding aktor server (P1), tetapi UI-nya bercampur identitas dan masih dapat
+dipakai.
+
+**Reproduksi sebelum perbaikan.** Skenario 11 pada `tests/browser_logout_failure.cjs` dijalankan
+terhadap `beeloft/static/app.mjs` versi `44d5579`: ruang kerja akun lama tidak pernah ditutup.
+
+```
+BASELINE_EXIT=1
+locator.waitFor: Timeout 30000ms exceeded.
+  - waiting for getByLabel('Kunci akses', { exact: true }) to be visible
+    63 × locator resolved to hidden <input required="" id="access-key" type="password" …/>
+  at tests/browser_logout_failure.cjs:259
+```
+
+**Perbaikan.** `sessionStillActive()` diganti `sessionIdentity()` yang mempertahankan identitasnya dan
+mengembalikan `{state:'active', user}`, `{state:'inactive'}`, atau `{state:'unknown'}`. `logout()`
+membedakan empat keadaan:
+
+| Keadaan | Keputusan UI |
+|---|---|
+| `inactive` (401) | logout terkonfirmasi, ruang kerja ditutup |
+| `unknown` (5xx, timeout, jaringan mati) | belum terkonfirmasi, ruang kerja dipertahankan dengan peringatan |
+| `active` dan `user.id` **sama** | logout gagal, ruang kerja dipertahankan dengan peringatan |
+| `active` dan `user.id` **berbeda** | ruang kerja lama dibongkar, peringatan menjelaskan perpindahan akun |
+
+Pada keadaan terakhir `clearWorkspace()` membuang seluruh state tampilan, menaikkan `epoch` sehingga
+respons asynchronous lama tidak dapat menimpa konteks baru, dan mengosongkan `api.actorId` tanpa
+pernah menggantinya ke akun B. `sessionStorage` sengaja tidak disentuh, jadi draft pending akun A
+beserta `transaction.key`-nya tetap dapat dipulihkan. Banner yang tampil menyebut akun yang sekarang
+memegang session, menyatakan session itu **masih aktif**, dan tidak pernah mengaku logout berhasil.
+Tombol "Coba keluar lagi" tidak ditawarkan pada keadaan ini karena mencabut session akun lain bukan
+langkah berikutnya yang benar; `sessionWarning(text, retry)` yang menyembunyikannya. `reauthenticate()`
+kini memeriksa keberadaan elemen pesan sebelum menulisinya, sebab dialog akun lama sudah ikut ditutup.
+`enterWorkspace()` membersihkan banner supaya peringatan lama tidak tertinggal setelah login berhasil.
+
+**Cakupan browser.** `tests/browser_logout_failure.cjs` menjadi 11 skenario dan
+`tests/browser_ai_investigation_logout.cjs` menjadi tiga fase; keduanya terdaftar pada
+`tests/browser_smoke.cjs` dan benar-benar dijalankan runner.
+
+| Skenario | Permukaan | Yang diverifikasi |
+|---|---|---|
+| Logout gagal, akun **sama** | form transaksi (skenario 10) | `#form-error` memuat "Logout belum berhasil", dialog tetap terbuka, layar login tidak muncul, `/api/me` 200 dan `id` sama dengan pembuka ruang kerja, banner menyebut "akun yang sama", draft dan `transaction.key` utuh, tidak ada mutasi tambahan |
+| Logout gagal, akun **sama** | dialog AI (fase 1) | idem, dengan pesan di `#ai-message` dan `#dialog[open]` tetap 1 |
+| Logout gagal, akun **berbeda** | form transaksi (skenario 11) | `#workspace` tersembunyi, `#dialog[open]` 0, `#logout` tersembunyi, `#account-name` kosong, `#order-list` kosong, banner memuat "berpindah ke akun lain", nama akun B, dan "masih aktif" tanpa klaim keluar, `#session-retry` tersembunyi, `/api/me` 200 dengan `id` akun B |
+| Logout gagal, akun **berbeda** | dialog AI (fase 2) | idem, ditambah draft akun asli beserta `transaction.key` tetap utuh setelah ruang kerja dibongkar |
+| Session sudah revoked / respons revoke hilang / offline | form transaksi (skenario 7, 8, 6) | tetap seperti sebelumnya: 401 menyelesaikan alur, `route.fetch()` lalu `abort` dikenali lewat `/api/me` 401, jaringan mati menghasilkan "belum terkonfirmasi" |
+| Pemulihan draft dan replay | keduanya | akun asli masuk kembali, dialog "Konfirmasi pencatatan sebelumnya" muncul, replay memakai `transaction.key` yang sama, hasilnya tepat satu movement / satu investigasi dengan tepat satu event audit, draft dibersihkan |
+
+Assertion existing yang mengharapkan ruang kerja tetap dipertahankan setelah pergantian akun sudah
+disesuaikan dengan kontrak identitas yang benar. Tidak ada pemeriksaan draft, status server, maupun
+jumlah audit yang dihapus; keduanya justru ditambah.
+
+**Bukti sisi server.** `tests/test_session_logout.py::SessionIdentityAfterSwitchTest`, 2 test, lulus:
+`/api/me` benar-benar menjawab identitas pengganti (`id`, `name`, `role` lengkap) setelah session
+ditukar, login baru tidak mencabut session sebelumnya, logout yang gagal karena CSRF tidak mencabut
+session siapa pun, dan pencatatan di bawah session yang sudah berganti tetap ditolak 403 tanpa mutasi
+maupun receipt idempotency — binding aktor P1 tidak melemah.
+
+## 7. Batas dan bagian yang belum terverifikasi
 
 * **Windows belum diuji.** `start.ps1` dan perilaku pada Windows tidak dijalankan; sandbox ini Linux.
   Perubahan P2 tidak menyentuh path filesystem maupun `StaticFiles`, jadi risikonya rendah, tetapi
@@ -431,18 +574,24 @@ dengan `openapi version=0.85.0 paths=221 summary_path=True`.
 * **`--with-deps` Playwright gagal** karena image sandbox tidak memakai `apt-get`. Chromium dipasang
   tanpa dependensi OS tambahan dan seluruh 65 modul berjalan, jadi ini keterbatasan environment, bukan
   kegagalan aplikasi.
-* **`ai_action` menjumlahkan nominal di Python.** Delapan kind lain dijumlahkan di SQL atas kolom
-  INTEGER. `ai_action` memproyeksikan satu kolom JSON per baris yang cocok lalu menjumlahkannya dengan
-  `Decimal`. Ini pilihan sadar demi ketepatan uang; pada populasi proposal AI yang sangat besar biayanya
-  tumbuh linear terhadap jumlah proposal, bukan konstan.
+* **Seluruh nominal ringkasan approval dijumlahkan di Python.** Setelah perbaikan overflow, tidak ada
+  cabang yang memakai `SUM()` SQLite. Biaya pembacaannya karena itu tumbuh linear terhadap jumlah
+  pengajuan yang cocok filter, bukan konstan. Proyeksinya tetap satu kolom kecil per baris tanpa
+  hidrasi, dan pada 1.350 pengajuan pending terukur 0,0060 s — sekitar 0,4 ms lebih lambat daripada
+  `SUM()` SQLite, tetapi eksak. Populasi yang jauh lebih besar belum diukur.
+* **Agregat lain di luar ringkasan approval tidak disentuh.** `beeloft/store.py` masih memakai
+  `SUM(... amount_minor ...)` pada dua baris guard komitmen supplier payment (kolomnya dibatasi 1e14,
+  jadi ambangnya jauh lebih tinggi). Itu di luar scope P2 dan di luar komentar review.
 * **P3 tetap terbuka**: breakdown `by_kind` masih enam kunci, tanggal ekstrem masih dapat menghasilkan
   500, dan logout dengan API key tanpa cookie masih menghasilkan 500 pada server. Yang berubah untuk
   temuan terakhir hanyalah bahwa 500 dari endpoint logout kini dilaporkan apa adanya kepada pengguna,
   bukan disamarkan sebagai layar login.
 
-## 7. Status
+## 8. Status
 
 | Temuan | Status | Alasan |
 |---|---|---|
-| P2-A — logout gagal tetap menampilkan layar login | **FIXED** | Ruang kerja hanya ditutup bila pencabutan terkonfirmasi. Gagal dan belum terkonfirmasi dibedakan, keduanya mempertahankan ruang kerja dengan peringatan Bahasa Indonesia dan tombol coba lagi. Diverifikasi di Chromium terhadap status session server yang sebenarnya untuk 10 skenario pada jalur biasa dan 5 tahap pada jalur dialog AI modal; kedua modul gagal pada baseline. |
+| P2-A — logout gagal tetap menampilkan layar login | **FIXED** | Ruang kerja hanya ditutup bila pencabutan terkonfirmasi, dan hanya dipertahankan bila identitas session masih akun yang sama. Empat keadaan dibedakan: terkonfirmasi, gagal akun sama, berpindah akun, dan belum diketahui. Diverifikasi di Chromium terhadap identitas dan status session server yang sebenarnya untuk 11 skenario pada jalur biasa dan tiga fase pada jalur dialog AI modal; kedua modul gagal pada baseline maupun pada `44d5579`. |
 | P2-B — total approval salah di atas 500 item | **FIXED** | Ringkasan dibaca sebagai agregat database berproyeksi minimal, terpisah dari daftar, mencakup sembilan kind, dengan uang eksak dan satu snapshot pembacaan. Command Center, kartu perhatian, jawaban AI, overview, dan evidence memakai sumber yang sama. Diverifikasi pada 0, 1, 499, 500, 501, 640, 810, 1.050, dan 1.350 item terhadap dua oracle independen, dan kompatibilitas snapshot lama ditegakkan terpisah. |
+| Review Codex — overflow integer pada agregat | **FIXED** | Tidak ada cabang nominal yang menyerahkan penjumlahan kepada SQLite; akumulasi streaming dengan integer Python dan `Decimal`, terbukti eksak pada 46, 47, dan 150 pengajuan payroll bernominal maksimum schema. |
+| Review CodeRabbit — identitas dibuang pada logout gagal | **FIXED** | `sessionIdentity()` mempertahankan identitas `/api/me`; ruang kerja lama hanya dipertahankan bila `id`-nya cocok, dan dibongkar dengan penjelasan bila session sudah berpindah akun. Draft akun asli beserta `transaction.key` tetap utuh dan replay tetap satu kali. |

@@ -85,24 +85,29 @@ aman, dan logout satu perangkat tidak menyentuh session perangkat lain.
 ### Bentuk perbaikan
 
 `logout()` sekarang mengembalikan boolean dan hanya memanggil `clearWorkspace()` ketika pencabutan
-terkonfirmasi. Pemeriksaan status memakai helper kecil:
+terkonfirmasi. Pemeriksaannya mempertahankan identitas, bukan sekadar fakta bahwa `/api/me` menjawab,
+karena cookie session dipakai bersama seluruh tab dan dapat sudah ditukar akun lain:
 
 ```js
-async function sessionStillActive() {
-  try { await api.get('/api/me'); return true; }
-  catch (error) { return error.status === 401 ? false : null; }
+async function sessionIdentity() {
+  try { return {state:'active', user: await api.get('/api/me')}; }
+  catch (error) { return {state: error.status === 401 ? 'inactive' : 'unknown'}; }
 }
 ```
 
-`true` berarti masih aktif, `false` berarti sudah mati, `null` berarti belum dapat diketahui. Hanya
-`false` yang mengizinkan penutupan ruang kerja.
+Hanya `inactive` yang mengizinkan penutupan ruang kerja sebagai logout yang berhasil. Pada `active`,
+yang menentukan langkah berikutnya adalah `user.id`: bila cocok dengan akun yang membuka ruang kerja,
+ruang kerja dipertahankan dengan peringatan; bila berbeda, ruang kerja lama dibongkar karena
+tampilannya akan bercampur identitas.
 
-Perubahan UI dipilih yang paling kecil dan konsisten dengan aplikasi: ruang kerja **dipertahankan**,
-lalu satu banner `#session-warning` (`role="alert"`) muncul di dalam `<main>` bersama tombol
-**Coba keluar lagi**. Banner memakai token `--warning`, `--warning-bg`, dan `--warning-edge` yang sudah
-ada. Banner sengaja tidak otomatis hilang: selama session server belum dicabut, statusnya harus terus
-terlihat. Pesannya dibedakan antara gagal dan belum terkonfirmasi, dan tidak pernah menyatakan pengguna
-sudah keluar.
+Perubahan UI dipilih yang paling kecil dan konsisten dengan aplikasi: satu banner `#session-warning`
+(`role="alert"`) di dalam `<main>` bersama tombol **Coba keluar lagi**. Banner memakai token
+`--warning`, `--warning-bg`, dan `--warning-edge` yang sudah ada, sengaja tidak otomatis hilang, dan
+dibersihkan `clearWorkspace()` serta `enterWorkspace()` sehingga tidak pernah tertinggal setelah status
+session kembali diketahui. Pesannya membedakan tiga keadaan — gagal dengan akun yang sama, session
+sudah berpindah akun, dan belum terkonfirmasi — dan tidak pernah menyatakan pengguna sudah keluar.
+Tombol coba lagi disembunyikan pada keadaan berpindah akun, sebab mencabut session akun lain bukan
+langkah berikutnya yang benar.
 
 Tombol **Masuk ulang** pada dialog transaksi pending hidup di dalam `<dialog>` modal, sehingga banner di
 belakangnya tidak dapat dibaca maupun ditekan. Karena itu kedua tombol tersebut (`#reauth` dan
@@ -171,8 +176,10 @@ di atas pembacaan daftar yang dipaginasi.
 2. Satu pengajuan dihitung satu kali. Status berasal dari event terakhir yang sah; `submitted` di sumber
    berarti `pending` di inbox; `approved`, `rejected`, dan `cancelled` bukan pending.
 3. Item tanpa nominal tetap dihitung pada count, tetapi tidak menambah amount.
-4. Uang dihitung eksak: penjumlahan dilakukan pada kolom `*_minor` bertipe INTEGER di SQL, lalu
-   dinormalkan lewat `Decimal`. Tidak ada float dan tidak ada `SUM` berbasis REAL.
+4. Uang dihitung eksak dan tidak pernah bergantung pada batas integer database: nilai `*_minor`
+   diproyeksikan lalu diakumulasi dengan integer Python, dan hasilnya dinormalkan lewat `Decimal`.
+   Tidak ada float, tidak ada `SUM`/`TOTAL` berbasis REAL, dan tidak ada `SUM` integer 64-bit yang
+   dapat overflow.
 5. Count dan amount dalam satu ringkasan berasal dari satu snapshot pembacaan database.
 6. Seluruh sembilan kind yang didukung inbox tercakup.
 
@@ -191,13 +198,16 @@ Agregasi dilakukan di database dengan proyeksi minimal. Tidak ada `history`, `co
 pengajuan yang dihidrasi:
 
 ```sql
-SELECT COUNT(*)                       AS total,
-       COALESCE(SUM(<amount_minor>),0) AS amount_minor,
-       COUNT(<amount_minor>)           AS with_amount
+SELECT <ekspresi_nominal> AS amount
 FROM <sumber> t
 WHERE 1=1 AND (SELECT status FROM <events> WHERE <kolom>=t.id
                ORDER BY sequence DESC LIMIT 1)=?
 ```
+
+Barisnya diiterasi secara streaming, lalu `count`, `with_amount`, dan akumulator nominal dihitung di
+Python. Kind yang memang tidak punya nominal cukup memakai `SELECT COUNT(*)`. Penjumlahan sengaja
+tidak diserahkan kepada `SUM()` SQLite: akumulatornya integer 64-bit dan dapat overflow untuk data
+yang masih sah menurut schema — rinciannya di bagian 6.1 dokumen bukti.
 
 Subquery berkorelasi pada event terakhir adalah pola yang sudah dipakai `purchase_requests()` dan
 `marketing_budget_requests()`. Pola ini penting: seluruh tabel event bersifat append-only, sehingga
