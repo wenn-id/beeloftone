@@ -36,7 +36,12 @@ class WipAgeingInsightsTest(TestCase):
             for source,target in [('planned','cutting'),('cutting','sewing'),
                                   ('sewing','finishing'),('finishing','qc')]:
                 self.move(rework_line,source,target,5)
-            self.move(rework_line,'qc','rework',5,reason='Jahitan perlu diperbaiki')
+            # Fixture historis: versi sebelum Final QC memiliki perpindahan generik QC -> rework.
+            # Insight tetap harus dapat membaca ledger lama meski endpoint baru menolak rute ini.
+            with self.app.state.store.transaction() as db:
+                self.app.state.store._transfer(db, {
+                    'line_id':rework_line,'from_stage':'qc','to_stage':'rework','quantity':5,
+                    'reason':'Jahitan perlu diperbaiki'}, self.admin)
 
         route='/api/wip-ageing-insights?as_of=2026-10-20&idle_days=7'
         report=self.client.get(route).json()

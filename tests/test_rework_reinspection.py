@@ -426,10 +426,14 @@ class ReworkReinspectionTest(TestCase):
         self.complete_rework(record, api_key=self.viewer['api_key'], status=403)
         self.complete_rework(record, quantity=0, status=422)
         self.complete_rework(record, quantity=True, status=422)
-        # Perpindahan rework -> qc tanpa lineage tidak lagi diizinkan lewat endpoint generik.
+        # Kedua arah rework tanpa lineage tidak lagi diizinkan lewat endpoint generik.
+        self.post('/api/movements', dict(line_id=record['line_id'], from_stage='qc',
+                                        to_stage='rework', quantity=1, reason='Perlu diperbaiki'),
+                  status=422)
         self.post('/api/movements', dict(line_id=record['line_id'], from_stage='rework',
                                         to_stage='qc', quantity=8, reason='Rework selesai'),
                   status=422)
+        self.assertNotIn(['qc', 'rework'], self.client.get('/api/stages').json()['transitions'])
         self.assertNotIn(['rework', 'qc'], self.client.get('/api/stages').json()['transitions'])
         self.assertEqual(self.totals(order)['rework'], 8)
         completion = self.complete_rework(record, api_key=self.operator['api_key'])
