@@ -400,6 +400,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_cross_account_retry.cjs');
   await runModule('./browser_stale_session_first_submit.cjs');
   await runModule('./browser_logout_failure.cjs');
+  await runModule('./browser_ai_investigation_logout.cjs');
   await runModule('./browser_audit_trail.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();
