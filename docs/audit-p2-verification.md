@@ -19,21 +19,26 @@ paksa ke commit lama dan tidak ada perubahan lokal yang dibuang.
 
 Python 3.12.13 pada venv bersih (`.venv`, sudah tercakup `.gitignore`), Node.js 22.23.2,
 Playwright 1.63.0 dengan Chromium 153.0.8010.12, Linux. Seluruh perintah dijalankan dari akar
-repositori. Semua reproduksi dan pengujian memakai database sementara sekali pakai
-(`tempfile.TemporaryDirectory` pada test, dan `tests/run_browser.py` membangun demo database sendiri).
-Tidak ada database bisnis atau produksi yang disentuh.
+repositori, kecuali smoke test paket yang sengaja dijalankan dari luar source checkout. Build tool
+(`build==1.6.1`) dipasang pada venv tersendiri sehingga dependensi aplikasi tidak tersentuh.
+
+Semua reproduksi dan pengujian memakai database sementara sekali pakai
+(`tempfile.TemporaryDirectory` pada test, `tests/run_browser.py` membangun demo database sendiri, dan
+smoke test paket memakai `disposable.sqlite3` miliknya). Tidak ada database bisnis atau produksi yang
+disentuh.
 
 ## Ringkasan hasil
 
 | Pemeriksaan | Hasil |
 |---|---|
-| `python -m unittest discover -s tests` | `Ran 417 tests` — **OK**. Sebelumnya 389; 28 test baru. |
+| `python -m unittest discover -s tests` | `Ran 424 tests` — **OK**. Sebelumnya 389; 35 test baru. |
 | `python -m pip check` | `No broken requirements found` |
 | `python -m compileall -q beeloft` | bersih |
 | `node --check beeloft/static/app.mjs` | bersih |
 | `node --check beeloft/static/client.mjs` | bersih |
 | `node tests/test_client.mjs` | `Client checks PASS` + `CSV client checks PASS` |
-| `python tests/run_browser.py --node node --playwright-module playwright --channel chromium` | 64 modul acceptance **PASS**, `assert.deepEqual(errors,[])` bersih. Sebelumnya 63; 1 modul baru. |
+| `python tests/run_browser.py --node node --playwright-module playwright --channel chromium` | 65 modul acceptance **PASS**, `assert.deepEqual(errors,[])` bersih. Sebelumnya 63; 2 modul baru. |
+| `python -m build` lalu install wheel dan sdist ke venv bersih | **OK**. Lihat bagian 5. |
 
 Channel yang dipakai adalah `chromium`, sama seperti CI. Playwright dipasang dengan
 `npm install --no-save playwright@1.63.0` lalu `npx playwright install chromium`; `--with-deps` gagal
@@ -109,6 +114,41 @@ Test ini menegakkan tabel keputusan yang dipakai klien. Yang paling penting:
 `test_csrf_rejection_is_not_evidence_that_the_session_ended` membuktikan 403 meninggalkan session yang
 masih dapat membaca `/api/me` **dan** masih dapat menulis produk baru — jadi memperlakukan 403 sebagai
 logout sukses memang salah.
+
+### Jalur investigasi AI di balik dialog modal
+
+Dialog "Tanya Beeloft" adalah `<dialog>` modal, sehingga banner `#session-warning` di belakangnya
+terlihat tetapi tidak dapat dijangkau maupun ditekan. `tests/browser_ai_investigation_logout.cjs`
+menguji rangkaian terburuk yang benar-benar mungkin terjadi, seluruhnya lulus di Chromium:
+
+```
+AI investigation logout browser QA PASS: an uncertain investigation survives a cross-account 403
+and a failed logout, the failure is reported inside the AI dialog instead of behind the modal,
+transaction.key is preserved, and the original account replays exactly once with no duplicate
+investigation or audit event.
+```
+
+| Tahap | Cara membuatnya | Yang diverifikasi |
+|---|---|---|
+| Penyimpanan investigasi belum pasti | `await route.fetch()` lalu `route.abort('failed')` pada `POST /api/ai/investigations` | server sudah commit satu investigasi, `#ai-message` menyebut "belum terkonfirmasi", draft tersimpan pada `beeloft.pending.<operator id>`, `transaction.key` sama dengan `Idempotency-Key` yang dikirim, tepat satu event audit |
+| Perlu "Masuk ulang" | session bersama ditukar ke akun admin, lalu retry diklik | `#ai-reauth` muncul, `#ai-message` cocok `/akun lain/`, tidak ada POST kedua, investigasi tetap satu |
+| Logout gagal sebelum revoke | `route.fulfill({status:503})` pada logout | `#ai-message` memuat "Logout belum berhasil" dan **terlihat di dalam dialog** (`#dialog[open]` tetap 1), layar login tidak muncul, `/api/me` → 200, tombol "Masuk ulang" masih dapat dipakai, draft dan `transaction.key` tidak berubah, investigasi tetap satu |
+| Logout berhasil lalu akun asli masuk lagi | `unroute` lalu klik "Masuk ulang" | `/api/me` → 401, draft tetap ada melewati logout, dialog "Konfirmasi pencatatan sebelumnya" muncul setelah login |
+| Replay | klik "Coba ulang penyimpanan" | POST kedua memakai `transaction.key` yang sama, investigasi tetap **satu** dengan `id` yang sama, event audit untuk key itu tetap **satu** (tidak ada efek samping bisnis kedua), draft dibersihkan, snapshot memuat `evidence.approvals.summary` |
+
+Dijalankan terhadap `beeloft/static/app.mjs` versi baseline `14150c6`, modul ini gagal pada tahap
+logout gagal:
+
+```
+BASELINE_EXIT=1
+locator.waitFor: Timeout 30000ms exceeded.
+  at module.exports (tests/browser_ai_investigation_logout.cjs:91)
+```
+
+Baris 91 adalah `await page.locator('#ai-message').filter({hasText:'Logout belum berhasil'}).waitFor();`
+Baseline tidak pernah memberi tahu pengguna: `logout()` menelan 503 lalu langsung menampilkan layar
+login. Ini menutup keterbatasan yang sebelumnya dicatat, yaitu bahwa jalur `#ai-message` belum diuji
+terpisah di browser.
 
 ---
 
@@ -225,6 +265,37 @@ agregat lebih cepat   : 4.4x
 
 Angka lama juga salah; angka baru benar dan dibaca lebih cepat.
 
+### Kompatibilitas evidence AI
+
+Pemisahan `summary` dari `sample` mengubah bentuk `evidence['approvals']` dari list mentah menjadi
+dict. `tests/test_ai_evidence_compatibility.py`, 7 test, semuanya lulus:
+
+| Test | Yang dibuktikan |
+|---|---|
+| `test_historical_snapshot_is_returned_verbatim_and_never_recomputed` | snapshot berformat lama dikembalikan apa adanya — `answer`, `facts`, `findings`, `recommendations`, `limitations`, dan `evidence['approvals']` yang masih berupa **list** — walaupun populasi nyata sudah 520 item; baris `result_snapshot` di database tidak tersentuh |
+| `test_historical_snapshot_still_lists_and_accepts_feedback` | `GET /api/ai/investigations`, filter `intent` dan `q`, serta `POST .../feedback` tetap berfungsi pada snapshot lama, dan feedback tidak menulis ulang snapshot |
+| `test_new_investigation_does_not_disturb_the_historical_one` | investigasi baru berformat dict hidup berdampingan dengan yang lama pada satu database, tanpa mengubahnya |
+| `test_saved_snapshot_carries_the_aggregate_behind_answer_and_facts` | ringkasan tersimpan sama dengan kebenaran fixture; `answer` dan kedua facts benar-benar dibangun darinya; facts merujuk `/api/approvals/summary`; `sum(by_kind.count) == total` dan `sum(by_kind.amount) == amount` pada snapshot yang sama |
+| `test_truncated_sample_is_explained_and_never_read_as_the_total` | `truncated` menyala, `sample_size == len(sample) < summary.total`, facts memakai 530 bukan 10, findings dan recommendations sepanjang sampel, dan sumber sampel jujur menyebut daftar |
+| `test_untruncated_sample_reports_the_whole_population_as_the_sample` | pada populasi kecil `truncated` mati dan `sample_size == total` |
+| `test_overview_evidence_keeps_its_existing_key_shape` | kunci `evidence` overview tetap `{production_board, approvals, replenishment}`, dan kunci di dalam `approvals` serta `summary` dikunci secara eksplisit agar tidak berubah diam-diam |
+
+Dua fakta yang membuat perubahan bentuk ini aman:
+
+* **Tidak ada pembaca `evidence` selain brain.** `grep -n evidence beeloft/static/app.mjs` tidak
+  menghasilkan satu baris pun, jadi frontend tidak pernah membaca evidence. Di backend, `evidence` hanya
+  dibangun `brain._approvals()` dan disimpan; `store._ai_investigation()` mengembalikan snapshot verbatim.
+* **`create_ai_action_proposal` membaca `recommendations`, bukan `evidence`.** Fingerprint rekomendasi
+  yang dibandingkan diambil dari `stored_report['recommendations']`. Konten rekomendasi intent
+  `approvals` tidak berubah sama sekali (sampel 10 teratas dan `source` yang sama), jadi jalur proposal
+  tersambung tetap seperti sebelumnya — dibuktikan oleh
+  `test_ai_investigation_memory.test_linked_action_requires_the_saved_recommendation_to_match`
+  yang tetap lulus.
+
+Dijalankan terhadap modul backend versi baseline `14150c6`, 5 dari 7 test ini gagal (semuanya yang
+menguji format baru), sedangkan 2 test kompatibilitas historis lulus di kedua sisi — memang itu
+perannya: menjaga agar format lama terus terbaca, bukan mereproduksi bug.
+
 ---
 
 ## 3. Regresi P1
@@ -239,13 +310,16 @@ Semua dijalankan ulang dan lulus.
 | `tests/browser_cross_account_retry.cjs` | `Cross-account retry browser QA PASS` |
 | `tests/browser_stale_session_first_submit.cjs` | `Stale session first submit browser QA PASS` |
 | `tests/browser_rework_reinspection.cjs` | PASS (dalam suite acceptance) |
+| `tests/test_ai_investigation_memory.py` | OK, termasuk `test_linked_action_requires_the_saved_recommendation_to_match` |
 
-Ketiga file test Python di atas dijalankan bersama: `Ran 33 tests in 18.752s — OK`.
+Ketiga file test Python pertama dijalankan bersama: `Ran 33 tests in 18.593s — OK`.
 
 Perlindungan yang secara khusus dijaga oleh perbaikan P2-A:
 
-* `clearWorkspace()` tetap tidak menyentuh `sessionStorage`; skenario 10 modul browser membuktikan draft
-  bertahan melewati logout yang gagal **dan** logout yang berhasil, dengan `transaction.key` yang sama.
+* `clearWorkspace()` tetap tidak menyentuh `sessionStorage`; skenario 10 pada
+  `browser_logout_failure.cjs` dan seluruh rangkaian `browser_ai_investigation_logout.cjs` membuktikan
+  draft bertahan melewati logout yang gagal **dan** logout yang berhasil, dengan `transaction.key` yang
+  sama, serta replay yang tidak menambah event audit.
 * `client.mjs` tidak diubah; `node tests/test_client.mjs` tetap menegakkan bahwa logout tidak membawa
   `X-Beeloft-Actor`.
 * `starlette==1.6.0` tidak berubah pada `requirements.txt` dan terpasang di venv pengujian.
@@ -269,22 +343,94 @@ Perlindungan yang secara khusus dijaga oleh perbaikan P2-A:
   satu bagian baru pada `docs/version-history.md`. Kenaikan ini karena kontrak API bertambah; tidak ada
   bump lain.
 
-## 5. Batas dan bagian yang belum terverifikasi
+## 5. Build paket
+
+Konfigurasi build ada pada `pyproject.toml`: `requires = ["setuptools>=69"]` dengan backend
+`setuptools.build_meta`, `[tool.setuptools.packages.find] include = ["beeloft*"]`, dan
+`[tool.setuptools.package-data] beeloft = ["*.sql", "static/*"]`. Tidak ada `MANIFEST.in`.
+
+Build tool dipasang pada venv terpisah, jadi tidak ada dependensi aplikasi yang diubah;
+`requirements.txt` dan `pyproject.toml` tetap seperti aslinya (`git status --porcelain` kosong setelah
+build). `dist/` dan `build/` sudah tercakup `.gitignore`.
+
+```
+python -m venv .p2-verify/buildenv && .p2-verify/buildenv/bin/pip install build   # build==1.6.1
+.p2-verify/buildenv/bin/python -m build --outdir dist .
+  -> Successfully built beeloft_one-0.85.0.tar.gz and beeloft_one-0.85.0-py3-none-any.whl
+```
+
+Isi artefak diperiksa langsung, bukan diasumsikan:
+
+| Artefak | Ukuran | `*.sql` | Aset static |
+|---|---|---|---|
+| `beeloft_one-0.85.0-py3-none-any.whl` | 307.523 B | 58 | `app.mjs`, `client.mjs`, `index.html`, `style.css` |
+| `beeloft_one-0.85.0.tar.gz` | 419.931 B | 58 | idem, di bawah `beeloft_one-0.85.0/beeloft/static/` |
+
+Repositori memuat 58 file `.sql` dan 4 aset static, jadi keduanya lengkap. Wheel memuat 10 modul `.py`.
+
+### Smoke test wheel pada venv bersih di luar source checkout
+
+Wheel dipasang ke `.p2-verify/wheelenv` (venv baru, hanya dependensi runtime dari metadata paket), dan
+seluruh perintah dijalankan dari `.p2-verify/smoke`, yaitu **di luar** source checkout, sehingga
+`import beeloft` pasti menyelesaikan ke `site-packages`.
+
+```
+beeloft di    : .p2-verify/wheelenv/lib64/python3.12/site-packages/beeloft
+file .sql     : 58
+aset static   : ['app.mjs', 'client.mjs', 'index.html', 'style.css']
+APPROVAL_KINDS: 9 kind | approvals_summary: True | aggregates: 9
+banner #session-warning ikut terpaket: OK
+dependensi    : beeloft-one==0.85.0 fastapi==0.141.1 starlette==1.6.0 uvicorn==0.53.0 PyJWT==2.14.0 qrcode==8.2
+```
+
+CLI dijalankan terhadap **database disposable** milik smoke test, bukan database bisnis:
+
+```
+python -m beeloft --db .p2-verify/smoke/disposable.sqlite3 demo
+  -> users ['admin','operator','viewer'], order 41423ba2-…
+python -m beeloft --db … user --name "QA Build" --role viewer      -> akun + API key sekali tampil
+python -m beeloft --db … backup .p2-verify/smoke/backup.sqlite3    -> backup dapat dibuka
+     backup user_version: 55 | integrity_check: ok | foreign_key_check: clean
+```
+
+Startup server dan aset utama, lewat `python -m beeloft … serve` sebagai subprocess yang dimatikan lagi:
+
+```
+startup     : OK
+200       15B application/json         /health
+200    23967B text/html                /
+200    23967B text/html                /static/index.html
+200   570261B text/javascript          /static/app.mjs
+200     3532B text/javascript          /static/client.mjs
+200    58633B text/css                 /static/style.css
+200   257865B application/json         /openapi.json
+aset memuat perbaikan P2-A: OK          (index.html memuat #session-warning dan "Coba keluar lagi";
+                                         app.mjs memuat sessionStillActive dan reauthenticate)
+200 /api/approvals/summary -> total=0 amount=0.00 by_kind=9 kind
+200 /api/command-center    -> pending_count=0 pending_amount=0.00 pending_without_amount=0
+200 /api/approvals         -> list=True
+openapi     : version=0.85.0 paths=221 summary_path=True
+SMOKE TEST WHEEL: OK
+```
+
+### Smoke test sdist pada venv bersih kedua
+
+sdist dipasang ke `.p2-verify/sdistenv` (build ulang dari sumber oleh pip) dan smoke test yang sama
+dijalankan dari `.p2-verify/sdistsmoke`: import dari `site-packages`, 58 file `.sql`, empat aset static,
+`Store.approvals_summary` tersedia, CLI `demo` menghasilkan tiga akun, dan `SMOKE TEST WHEEL: OK`
+dengan `openapi version=0.85.0 paths=221 summary_path=True`.
+
+## 6. Batas dan bagian yang belum terverifikasi
 
 * **Windows belum diuji.** `start.ps1` dan perilaku pada Windows tidak dijalankan; sandbox ini Linux.
   Perubahan P2 tidak menyentuh path filesystem maupun `StaticFiles`, jadi risikonya rendah, tetapi
   pernyataannya tetap: belum diuji.
-* **Build paket belum dijalankan.** Repositori tidak memuat prosedur build paket
-  (tidak ada target `build` pada `pyproject.toml` selain metadata, dan CI tidak menjalankan `python -m
-  build`). Yang dijalankan adalah pemasangan editable `pip install --no-deps -e .` dan
-  `python -m compileall -q beeloft`, keduanya bersih.
+* **Build paket tidak dijalankan CI.** `.github/workflows/ci.yml` tidak memuat langkah `python -m build`.
+  Build dan smoke test di bagian 5 dijalankan manual di sandbox ini; artinya regresi packaging tidak
+  akan tertangkap otomatis oleh CI.
 * **`--with-deps` Playwright gagal** karena image sandbox tidak memakai `apt-get`. Chromium dipasang
-  tanpa dependensi OS tambahan dan seluruh 64 modul berjalan, jadi ini keterbatasan environment, bukan
+  tanpa dependensi OS tambahan dan seluruh 65 modul berjalan, jadi ini keterbatasan environment, bukan
   kegagalan aplikasi.
-* **Banner di belakang dialog modal.** Ketika `<dialog>` terbuka, banner `#session-warning` terlihat
-  tetapi tidak dapat ditekan. Itulah sebabnya kegagalan logout juga dilaporkan ke `#form-error` dan
-  `#ai-message`. Skenario 10 menguji jalur `#form-error`; jalur `#ai-message` memakai helper
-  `reauthenticate` yang sama tetapi tidak diuji terpisah di browser.
 * **`ai_action` menjumlahkan nominal di Python.** Delapan kind lain dijumlahkan di SQL atas kolom
   INTEGER. `ai_action` memproyeksikan satu kolom JSON per baris yang cocok lalu menjumlahkannya dengan
   `Decimal`. Ini pilihan sadar demi ketepatan uang; pada populasi proposal AI yang sangat besar biayanya
@@ -294,9 +440,9 @@ Perlindungan yang secara khusus dijaga oleh perbaikan P2-A:
   temuan terakhir hanyalah bahwa 500 dari endpoint logout kini dilaporkan apa adanya kepada pengguna,
   bukan disamarkan sebagai layar login.
 
-## 6. Status
+## 7. Status
 
 | Temuan | Status | Alasan |
 |---|---|---|
-| P2-A — logout gagal tetap menampilkan layar login | **FIXED** | Ruang kerja hanya ditutup bila pencabutan terkonfirmasi. Gagal dan belum terkonfirmasi dibedakan, keduanya mempertahankan ruang kerja dengan peringatan Bahasa Indonesia dan tombol coba lagi. Diverifikasi di Chromium terhadap status session server yang sebenarnya untuk 10 skenario, dan modul yang sama gagal pada baseline. |
-| P2-B — total approval salah di atas 500 item | **FIXED** | Ringkasan dibaca sebagai agregat database berproyeksi minimal, terpisah dari daftar, mencakup sembilan kind, dengan uang eksak dan satu snapshot pembacaan. Command Center, kartu perhatian, jawaban AI, overview, dan evidence memakai sumber yang sama. Diverifikasi pada 0, 1, 499, 500, 501, 640, 810, 1.050, dan 1.350 item terhadap dua oracle independen. |
+| P2-A — logout gagal tetap menampilkan layar login | **FIXED** | Ruang kerja hanya ditutup bila pencabutan terkonfirmasi. Gagal dan belum terkonfirmasi dibedakan, keduanya mempertahankan ruang kerja dengan peringatan Bahasa Indonesia dan tombol coba lagi. Diverifikasi di Chromium terhadap status session server yang sebenarnya untuk 10 skenario pada jalur biasa dan 5 tahap pada jalur dialog AI modal; kedua modul gagal pada baseline. |
+| P2-B — total approval salah di atas 500 item | **FIXED** | Ringkasan dibaca sebagai agregat database berproyeksi minimal, terpisah dari daftar, mencakup sembilan kind, dengan uang eksak dan satu snapshot pembacaan. Command Center, kartu perhatian, jawaban AI, overview, dan evidence memakai sumber yang sama. Diverifikasi pada 0, 1, 499, 500, 501, 640, 810, 1.050, dan 1.350 item terhadap dua oracle independen, dan kompatibilitas snapshot lama ditegakkan terpisah. |
