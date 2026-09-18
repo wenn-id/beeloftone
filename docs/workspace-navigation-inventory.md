@@ -92,7 +92,11 @@ calls `openDialog()`; ACTION = entry performs one operation with no browse state
 - Async: `commandCenterRequest` counter; `view !== 'command-center'` early return
 - State: explicit loading message, `aria-busy` on summary, `command-center-message`
   status region, refresh button
-- Child dialogs: none primary; attention items navigate to the board
+- Child dialogs: delegated destinations `replenishment`, `approvals`,
+  `jubelio-stock-reconciliation`, `production-quality-insights`, `capacity-plan`,
+  `command-workforce`, `mekari-payables-summary`, `mekari-receivables-summary`,
+  and `integrations` open dialogs; only `production_overdue` and
+  `production_issues` navigate to the board
 - Target: keep as page — **EXISTING_PAGE**
 
 #### `board-home` — Produksi
