@@ -25,6 +25,42 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
       .filter(section => !section.hidden).map(section => section.id));
   const noOverflow = () => page.evaluate(() =>
     document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+  const overflowReport = () => page.evaluate(() => {
+    const root = document.documentElement;
+    const selector = node => {
+      let value = node.tagName.toLowerCase();
+      if (node.id) value += `#${node.id}`;
+      if (node.classList.length) value += `.${[...node.classList].join('.')}`;
+      return value;
+    };
+    const clippedBy = node => {
+      for (let ancestor = node.parentElement; ancestor && ancestor !== document.body;
+           ancestor = ancestor.parentElement) {
+        const overflow = getComputedStyle(ancestor).overflowX;
+        if (overflow === 'auto' || overflow === 'hidden' || overflow === 'scroll')
+          return selector(ancestor);
+      }
+      return null;
+    };
+    const offenders = [...document.querySelectorAll('html, body, #masthead, .app-shell, .workspace-main, #command-center-view, #command-center-view *')]
+      .map(node => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return {
+          selector: selector(node),
+          left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width),
+          clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+          minWidth: style.minWidth, whiteSpace: style.whiteSpace, overflowX: style.overflowX,
+          clippedBy: clippedBy(node)
+        };
+      })
+      .filter(item => item.right > root.clientWidth + 0.5 || item.left < -0.5 || item.scrollWidth > item.clientWidth + 1);
+    return {
+      viewportWidth: root.clientWidth,
+      documentScrollWidth: root.scrollWidth,
+      offenders: offenders.slice(0, 40)
+    };
+  });
 
   // One visible page, one aria-current, no global dialog — for every destination,
   // including the internal order-detail section that shares the board's nav item.
@@ -105,9 +141,30 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   for (const destination of destinations) {
     await openSidebarDestination(destination.name);
     await page.getByRole('heading', {name: destination.heading, exact: true}).waitFor();
-    assert.equal(await noOverflow(), true, `no horizontal overflow on ${destination.name} at 320px / 200% text`);
+    const fits = await noOverflow();
+    assert.equal(fits, true, `no horizontal overflow on ${destination.name} at 320px / 200% text\n${JSON.stringify(await overflowReport(), null, 2)}`);
     assert.deepEqual(await visibleSections(), [destination.section]);
   }
+  const responsiveMatrix = [
+    [320, 100], [320, 200], [390, 200], [768, 200], [1440, 200]
+  ];
+  const setTheme = async expected => {
+    if (await page.locator('html').getAttribute('data-theme') !== expected)
+      await page.locator('#theme').click();
+    assert.equal(await page.locator('html').getAttribute('data-theme'), expected);
+  };
+  for (const colorScheme of ['light', 'dark']) {
+    await setTheme(colorScheme);
+    for (const [width, textScale] of responsiveMatrix) {
+      await page.setViewportSize({width, height: 900});
+      await page.evaluate(scale => document.documentElement.style.fontSize = `${scale}%`, textScale);
+      await openSidebarDestination('Command center');
+      await page.getByRole('heading', {name: destinations[0].heading, exact: true}).waitFor();
+      const fits = await noOverflow();
+      assert.equal(fits, true, `no horizontal overflow on Command center at ${width}px / ${textScale}% text / ${colorScheme}\n${JSON.stringify(await overflowReport(), null, 2)}`);
+    }
+  }
+  await setTheme('light');
   await page.evaluate(() => document.documentElement.style.fontSize = '');
   await page.setViewportSize({width: 1440, height: 1000});
 

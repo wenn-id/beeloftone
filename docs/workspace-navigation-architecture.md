@@ -17,10 +17,12 @@ A primary sidebar destination establishes context in the main workspace. A modal
 is reserved for one focused secondary task: create, edit, review, confirmation,
 or record detail.
 
-No primary sidebar click may use the global `<dialog id="dialog">` as its main
-screen. A dialog answers one question — *what record is being created, edited,
-reviewed, confirmed, scanned, or inspected* — and never hosts an entire roster,
-report, queue, master-data surface, or dashboard.
+Integrated workspace-page destinations do not use the global `<dialog id="dialog">`
+as their primary screen. A dialog answers one question — *what record is being
+created, edited, reviewed, confirmed, scanned, or inspected* — and never hosts
+an entire roster, report, queue, master-data surface, or dashboard. The final
+program target remains zero primary destinations using a legacy dialog as their
+main screen after later milestones migrate the remaining legacy destinations.
 
 ## 2. Activation path
 
@@ -70,7 +72,7 @@ activation paths.
 | Mobile drawer | Drawer closes after selecting a destination; focus moves to the new page heading. | `activateWorkspace()` + sidebar delegation |
 | Async safety | A late response from the previous page cannot repaint the current page. | `invalidate()` + per-renderer `epoch`/counter checks |
 | Transaction safety | Navigation does not silently discard unresolved writes or pending retry state. | `guardPending()`, `modalBusy`, `unresolved`, `sessionStorage` drafts |
-| Dialog discipline | Primary navigation never opens the global dialog as the main screen. | Architecture regression `browser_navigation_foundation.cjs` |
+| Dialog discipline | Integrated workspace-page destinations do not open the global dialog as their primary screen. | Architecture regression `browser_navigation_foundation.cjs` |
 
 ### 3.1 Mobile drawer and focus
 

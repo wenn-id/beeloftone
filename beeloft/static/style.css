@@ -509,6 +509,19 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 /* Dense metric strips must survive 200% text zoom in narrow dialogs: long single-word
    labels are allowed to break rather than force horizontal overflow. */
 .workforce-summary dt,.workforce-summary dd,.summary dt,.command-values dt{overflow-wrap:anywhere}
+/* Command center strips carry unbreakable rupiah tokens and nowrap hints inside
+   space-between flex rows. Without min-width:0 the rows size to their min-content,
+   which fits exactly at 320px/200% on some platforms and overflows on others whose
+   default font metrics run wider; the tokens must break instead of forcing a
+   document-level scrollbar. */
+#command-center-view .page-heading>*,#command-center-view .section-heading>*,
+#command-center-view .band-heading>*,#command-center-view .hero-bar-top>*,
+#command-center-view .ops-stat dd,#command-center-view .kpi-card dd,
+#command-center-view .rank-figures,#command-center-view .hero-bar-value{min-width:0}
+#command-center-view .section-heading .hint,#command-center-view .ops-stat dd,
+#command-center-view .kpi-value .chip,#command-center-view .hero-bar-value,
+#command-center-view .rank-figures,#command-center-view .channel-name,
+#command-center-view .channel-net{overflow-wrap:anywhere}
 @media(max-width:650px){
   .workforce-summary div,.workforce-summary div:first-child{padding:12px}
 }

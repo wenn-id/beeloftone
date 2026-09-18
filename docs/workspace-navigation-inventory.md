@@ -396,9 +396,9 @@ entries, 4 existing pages, 22 legacy dialogs, 1 action-only entry pending a
 Milestone F decision, 0 intentional dialogs among primary destinations. No
 feature has been migrated. No code outside this document has been changed.
 
-## 8. Milestone A delta — navigation foundation merged
+## 8. Milestone A delta — navigation foundation implemented (pending merge)
 
-Milestone A (`refactor/workspace-navigation-foundation`) introduced the single
+Milestone A (`refactor/workspace-navigation-foundation`) introduces the single
 activation path and did not migrate any feature. Migration counts are unchanged:
 4 EXISTING_PAGE, 22 LEGACY_DIALOG, 1 NEEDS_VERIFICATION, 0 MIGRATED_PAGE.
 
