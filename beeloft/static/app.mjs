@@ -881,6 +881,8 @@ function showProducts() {
 }
 async function loadProducts() {
   const version = epoch, request = ++productsRequest;
+  const search = $('products-search'), clear = $('products-clear');
+  search.disabled = true; clear.disabled = true;
   message('products-message','Memuat daftar SKU…'); $('product-list').replaceChildren();
   try {
     const [products,mappings] = await Promise.all([allRows('/api/products'),allRows('/api/product-external-mappings',{system:'jubelio'})]);
@@ -888,6 +890,7 @@ async function loadProducts() {
     const byProduct=new Map(mappings.map(row=>[row.product_id,row]));
     productsCache=products.map(product=>({...product,mapping:byProduct.get(product.id)}));
     paintProducts();
+    search.disabled = false; clear.disabled = false;
   } catch (error) { if (version === epoch && request === productsRequest && view === 'products') {
     message('products-message',error.message,true);
     $('products-message').insertAdjacentHTML('beforeend','<br><button id="products-retry" type="button">Coba lagi</button>');

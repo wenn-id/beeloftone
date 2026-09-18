@@ -130,14 +130,19 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
   await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
   await productsStarted;
+  assert.equal(await page.locator('#products-search').isDisabled(),true);
+  assert.equal(await page.locator('#products-clear').isDisabled(),true);
   // The delayed /api/products response belongs to the Master SKU page the user
-  // has already left; it must not repaint the board nor the order-form draft.
+  // has already left; it must not repaint the board nor re-enable its controls.
   await page.getByRole('button',{name:'Produksi',exact:true}).click();
   await page.getByRole('button',{name:'Buat order produksi',exact:true}).click();
   await page.getByLabel('Nama order',{exact:true}).fill('Draft must survive delayed response');
   releaseProducts(); await productsFinished;
   await page.waitForTimeout(100);
   assert.equal(await page.getByLabel('Nama order',{exact:true}).inputValue(),'Draft must survive delayed response');
+  assert.equal(await page.locator('#products-search').isDisabled(),true);
+  assert.equal(await page.locator('#products-clear').isDisabled(),true);
+  await page.unroute('**/api/products?*');
   await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
   await page.screenshot({path:path.join(work,'dashboard-desktop.png'),fullPage:true});
   await page.getByLabel('Cari order atau SKU').fill('not-found');
@@ -149,6 +154,9 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
 
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
   await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('#product-list .product-item').length > 0);
+  assert.equal(await page.locator('#products-search').isDisabled(),false);
+  assert.equal(await page.locator('#products-clear').isDisabled(),false);
   await page.getByRole('button',{name:'Tambah SKU',exact:true}).click();
   const unique = Date.now();
   await page.getByLabel('Kode SKU',{exact:true}).fill('DEMO-UI-'+unique);
@@ -159,6 +167,20 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.locator('dialog').waitFor({state:'hidden'});
   // Saving from the focused child dialog refreshes the parent page, not a modal.
   await page.getByText('DEMO-UI-'+unique).waitFor();
+  let failProducts = true, signalProductsFailure;
+  const productsFailed = new Promise(resolve => signalProductsFailure = resolve);
+  await page.route('**/api/products?*',async route => {
+    if (failProducts) {
+      failProducts = false;
+      await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Simulasi daftar SKU gagal'})}); signalProductsFailure();
+    } else await route.continue();
+  });
+  await page.getByRole('button',{name:'Muat ulang',exact:true}).click();
+  await productsFailed;
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#products-search').isDisabled(),true);
+  assert.equal(await page.locator('#products-clear').isDisabled(),true);
+  await page.unroute('**/api/products?*');
   await page.getByRole('button',{name:'Produksi',exact:true}).click();
   await page.getByRole('button',{name:'Buat order produksi',exact:true}).click();
   await page.getByLabel('Referensi order',{exact:true}).fill('DEMO-UI-ORDER-'+unique);
