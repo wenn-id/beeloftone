@@ -42,10 +42,8 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
       }
       return null;
     };
-    const active = document.querySelector('.workspace-main > section:not([hidden])');
-    const nodes = [document.documentElement, document.body, document.getElementById('masthead'),
-      document.querySelector('.app-shell'), document.querySelector('.workspace-main'), active,
-      ...(active ? active.querySelectorAll('*') : [])].filter(Boolean);
+    const nodes = [document.documentElement, document.body,
+      ...document.body.querySelectorAll('*')].filter(node => node.getClientRects().length);
     const offenders = nodes.map(node => {
         const rect = node.getBoundingClientRect();
         const style = getComputedStyle(node);
@@ -149,7 +147,7 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     assert.deepEqual(await visibleSections(), [destination.section]);
   }
   const responsiveMatrix = [
-    [320, 100], [320, 200], [390, 200], [768, 200], [1440, 200]
+    [320, 100], [320, 200], [390, 200], [651, 200], [700, 200], [768, 200], [980, 200], [1440, 200]
   ];
   const setTheme = async expected => {
     if (await page.locator('html').getAttribute('data-theme') !== expected)
