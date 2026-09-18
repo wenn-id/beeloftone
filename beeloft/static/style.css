@@ -481,6 +481,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .summary dd{font-size:1.75rem}
   .page-heading{flex-direction:column;align-items:flex-start;gap:12px}
   .page-heading .actions{width:100%;justify-content:flex-start}
+  #command-center-view .dashboard-heading>div:first-child{width:100%;max-width:none}
   .pill-hint{height:36px;font-size:.75rem}
   .card,.attention-panel,.hero-panel{padding:16px}
   .command-snapshot.snapshot-card{padding:16px}
