@@ -465,7 +465,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 @media(max-width:650px){
   :root{--pad-x:16px;--gap:14px}
   .masthead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:0;padding:10px 12px}
-  .masthead-brand{flex:1 1 auto;padding:0;gap:10px}
+  .masthead-brand{flex:1 1 auto;min-width:0;flex-wrap:wrap;row-gap:6px;padding:0;gap:10px}
   .brand,.masthead-brand .brand{flex-direction:row;align-items:center;gap:9px}
   .brand>span.brand-word{font-size:1.125rem}
   .brand-mark{width:24px;height:24px}
@@ -665,8 +665,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 .inline-alert.is-success{border-color:var(--success-edge);border-left-color:var(--success-edge);background:var(--success-bg);color:var(--success)}
 .inline-alert.is-info{border-color:var(--primary-edge);border-left-color:var(--primary-edge);background:var(--primary-soft);color:var(--primary)}
 
-/* The board's open-issue shortcut is an alert, not a control: it read as a
-   stretched pill because it is a <button>. */
+/* The issue shortcut keeps its native button semantics within an inline status surface. */
 .issues-summary{
   min-height:0;padding:12px 16px;border-radius:14px;
   border-left:3px solid var(--danger-edge);font-size:.8125rem;font-weight:650;
@@ -954,4 +953,101 @@ label>input,label>select,label>textarea{margin-top:6px}
 }
 .history-action:hover,.history-action.quiet:hover{
   border-color:var(--danger);background:var(--danger-bg);color:var(--danger);
+}
+
+/* Production is the bounded operational working surface; other workspaces keep their composition. */
+#board-view{max-width:1360px;margin-inline:auto;container-type:inline-size;--muted:var(--ink-2)}
+#board-view .page-heading{align-items:center;flex-wrap:wrap;gap:12px 24px;margin-bottom:20px}
+#board-view h1{font-size:1.875rem;line-height:1.2;overflow-wrap:anywhere}
+#board-view .page-heading>div{min-width:0}
+#board-view .page-heading .actions{margin-left:auto}
+#board-view #summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+#board-view #summary>div{min-height:108px;padding:18px 24px 16px 18px;gap:14px}
+#board-view #summary dt{font-size:.8125rem;font-weight:600;gap:18px;line-height:1.4}
+/* The tile surrounds the existing 18px glyph without changing its shared scale or alignment. */
+#board-view #summary dt .icon{background:var(--primary-soft);box-shadow:0 0 0 7px var(--primary-soft);border-radius:4px}
+#board-view #summary dd{font-size:2rem;line-height:1.1;overflow-wrap:anywhere}
+#board-view #summary dd small{display:inline-block;margin-left:.2rem;font-size:.75rem}
+#board-view #summary .production-wip{background:var(--primary-soft);border-color:var(--primary-edge)}
+#board-view #summary .production-wip dt .icon{background:var(--surface);box-shadow:0 0 0 7px var(--surface)}
+#board-view .issues-summary{
+  width:auto;max-width:100%;min-height:44px;margin:0 0 20px;padding:10px 14px;
+  border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);
+  color:var(--ink-2);box-shadow:none;font-size:.8125rem;font-weight:500;gap:10px;
+}
+#board-view .issues-summary>.icon{color:var(--success)}
+#board-view .issues-summary strong{font-weight:650;font-variant-numeric:tabular-nums}
+#board-view .issues-summary:hover{background:var(--surface-subtle);border-color:var(--edge)}
+#board-view .issues-summary.has-issues{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-edge)}
+#board-view .issues-summary.has-issues>.icon{color:var(--warning)}
+#board-view .issues-summary.has-issues:hover{border-color:var(--warning)}
+#board-view .issue-link{font-weight:500}
+#board-view .ledger-heading{gap:8px 16px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px}
+#board-view .ledger-heading h2{margin:0;font-size:1.125rem}
+#board-view #updated{font-size:.75rem}
+#board-view .production-work{min-width:0;border:1px solid var(--line-strong);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
+#board-view #search-form{
+  grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;
+  padding:18px;margin:0;border-color:transparent;border-bottom-color:var(--line);
+  background:transparent;box-shadow:none;
+}
+#board-view #search-form .search-field{grid-column:1/4}
+#board-view #search-form label{font-size:.75rem;color:var(--ink-2)}
+#board-view #search-form .search-field{font-size:.8125rem;color:var(--ink);font-weight:650}
+#board-view #search-form label:last-of-type{grid-column:auto}
+#board-view #search-form input,#board-view #search-form select{margin-top:5px}
+#board-view input:focus-visible,#board-view select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#board-view #search-form .production-search{background:var(--primary-soft);border-color:var(--primary-soft);color:var(--primary);box-shadow:none}
+#board-view #search-form .production-search:hover{border-color:var(--primary)}
+#board-view #reset-board{font-size:.75rem;font-weight:500}
+#board-view #production-filter-hint{margin:0;padding:12px 18px;font-size:.75rem}
+#board-view #board-message{margin:0 18px 16px;padding:24px 16px;background:var(--surface-subtle);border-radius:12px}
+#board-view #board-message.error{background:var(--danger-bg);color:var(--danger)}
+#board-view .order-grid{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,.9fr);gap:18px}
+#board-view .table-head{margin:0;border:0;border-block:1px solid var(--line);border-radius:0;padding:12px 18px;font-size:.6875rem;letter-spacing:.035em;color:var(--ink-2)}
+#board-view .table-head>.status-cell{display:block;grid-column:auto}
+#board-view .order-row{margin:0;padding:16px 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;font-size:.8125rem}
+#board-view .order-row:hover,#board-view .order-row:focus-within{background:var(--surface-subtle)}
+#board-view .order-title{font-size:.875rem;line-height:1.4;min-height:44px;border-radius:4px}
+#board-view .reference{font-size:.6875rem;font-weight:600;letter-spacing:.02em;margin-bottom:4px}
+#board-view .cell>.hint{display:block;font-size:.75rem;margin-top:4px}
+#board-view .progress-note{font-size:.75rem;font-variant-numeric:tabular-nums;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
+#board-view .progress-note strong{margin-left:auto;color:var(--ink);font-weight:700}
+#board-view .order-row>.status-cell{grid-column:auto;padding:0;display:flex;align-items:flex-start;flex-direction:column;gap:6px}
+#board-view .pagination{margin:0;padding:14px 18px;flex-wrap:wrap}
+#board-view .pagination .hint{font-size:.75rem;font-variant-numeric:tabular-nums}
+@container (max-width:48rem){
+  #board-view #summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #board-view .table-head{display:none}
+  #board-view .order-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px}
+  #board-view .order-row>.cell:first-child,#board-view .order-row>.progress-cell{grid-column:1/-1}
+  #board-view .cell-label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:3px}
+  #board-view .order-row>.status-cell{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}
+}
+@container (max-width:30rem){
+  #board-view h1{font-size:1.625rem}
+  #board-view .page-heading{align-items:flex-start;gap:14px;margin-bottom:16px}
+  #board-view .page-heading .actions{width:100%;margin-left:0}
+  #board-view #summary{gap:10px}
+  #board-view #summary>div{padding:16px 20px 14px 14px;gap:16px;min-height:0}
+  #board-view #summary dt{font-size:.75rem;gap:12px}
+  #board-view #summary dd{font-size:1.875rem}
+  #board-view .issues-summary{margin-bottom:18px}
+  #board-view #search-form{grid-template-columns:minmax(0,1fr);padding:14px;gap:12px}
+  #board-view #search-form .search-field,#board-view #reset-board{grid-column:auto}
+  #board-view #search-form .production-search{justify-self:start;width:auto}
+  #board-view #search-form label{display:grid;grid-template-columns:6rem minmax(0,1fr);gap:8px;align-items:center}
+  #board-view #search-form .search-field{display:block}
+  #board-view #search-form select{margin:0}
+  #board-view #production-filter-hint{padding:12px 14px}
+  #board-view .order-row{padding:16px 14px}
+  #board-view .pagination{padding:14px;gap:10px}
+  #board-view .pagination .actions{flex-wrap:wrap}
+  #board-view button{min-height:44px}
+}
+@container (max-width:19rem){
+  #board-view #summary{grid-template-columns:minmax(0,1fr)}
+  #board-view #search-form label{display:block}
+  #board-view #search-form select{margin-top:5px}
+  #board-view .order-row{grid-template-columns:minmax(0,1fr)}
 }
