@@ -79,7 +79,41 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'command-center-mobile.png'),fullPage:true});
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth));
+  const responsiveOverflow = await page.evaluate(() => {
+    const root = document.documentElement;
+    const selector = node => {
+      let value = node.tagName.toLowerCase();
+      if (node.id) value += `#${node.id}`;
+      if (node.classList.length) value += `.${[...node.classList].join('.')}`;
+      return value;
+    };
+    const clippedBy = node => {
+      for (let ancestor = node.parentElement; ancestor && ancestor !== document.body;
+           ancestor = ancestor.parentElement) {
+        const overflow = getComputedStyle(ancestor).overflowX;
+        if (overflow === 'auto' || overflow === 'hidden' || overflow === 'scroll')
+          return selector(ancestor);
+      }
+      return null;
+    };
+    const offenders = [...document.querySelectorAll('html, body, #masthead, .app-shell, .workspace-main, #command-center-view, #command-center-view *')]
+      .map(node => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return {
+          selector: selector(node),
+          left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width),
+          clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+          minWidth: style.minWidth, whiteSpace: style.whiteSpace, overflowX: style.overflowX,
+          clippedBy: clippedBy(node)
+        };
+      })
+      .filter(item => item.right > root.clientWidth + 0.5 || item.left < -0.5 || item.scrollWidth > item.clientWidth + 1);
+    return {viewportWidth: root.clientWidth, documentScrollWidth: root.scrollWidth,
+      offenders: offenders.slice(0, 40)};
+  });
+  assert.equal(responsiveOverflow.documentScrollWidth <= responsiveOverflow.viewportWidth, true,
+    `no horizontal overflow at 390px / 200% text\n${JSON.stringify(responsiveOverflow, null, 2)}`);
   await page.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'command-center-200-text.png'),fullPage:true});
   await page.evaluate(()=>document.documentElement.style.fontSize='');

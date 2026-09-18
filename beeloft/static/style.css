@@ -443,8 +443,9 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .command-center-content{grid-template-columns:minmax(0,1.35fr) minmax(250px,1fr)}
 }
 @media(max-width:980px){
-  .masthead{grid-template-columns:auto minmax(0,1fr) auto;min-height:64px}
+  .masthead{display:flex;flex-wrap:wrap;justify-content:space-between;min-height:64px}
   .masthead-brand{padding:0 14px;border-right:0}
+  .account{max-width:100%;flex-wrap:wrap;margin-left:auto}
   .menu-toggle:not([hidden]){display:inline-flex;min-height:38px;padding:.3rem .75rem}
   .masthead-tools{display:none}
   .app-shell{grid-template-columns:minmax(0,1fr)}
@@ -481,6 +482,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .summary dd{font-size:1.75rem}
   .page-heading{flex-direction:column;align-items:flex-start;gap:12px}
   .page-heading .actions{width:100%;justify-content:flex-start}
+  .workspace-main .page-heading>div:first-child{width:100%;max-width:none}
   .pill-hint{height:36px;font-size:.75rem}
   .card,.attention-panel,.hero-panel{padding:16px}
   .command-snapshot.snapshot-card{padding:16px}
@@ -509,6 +511,21 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 /* Dense metric strips must survive 200% text zoom in narrow dialogs: long single-word
    labels are allowed to break rather than force horizontal overflow. */
 .workforce-summary dt,.workforce-summary dd,.summary dt,.command-values dt{overflow-wrap:anywhere}
+/* Command center strips carry unbreakable rupiah tokens and nowrap hints inside
+   space-between flex rows. Without min-width:0 the rows size to their min-content,
+   which fits exactly at 320px/200% on some platforms and overflows on others whose
+   default font metrics run wider; the tokens must break instead of forcing a
+   document-level scrollbar. */
+#command-center-view .page-heading>*,#command-center-view .section-heading>*,
+#command-center-view .band-heading>*,#command-center-view .hero-bar-top>*,
+#command-center-view .ops-stat dd,#command-center-view .kpi-card dd,
+#command-center-view .rank-figures,#command-center-view .hero-bar-value{min-width:0}
+#command-center-view .section-heading .hint,#command-center-view .ops-stat dd,
+#command-center-view .kpi-value .chip,#command-center-view .hero-bar-value,
+#command-center-view .rank-figures,#command-center-view .channel-name,
+#command-center-view .channel-net{overflow-wrap:anywhere}
+#command-center-view .hero-bar-value,#command-center-view .rank-figures{white-space:normal}
+.workspace-main h1{overflow-wrap:anywhere}
 @media(max-width:650px){
   .workforce-summary div,.workforce-summary div:first-child{padding:12px}
 }
@@ -608,8 +625,8 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .command-center-content{gap:20px}
   .band-heading{gap:.75rem}
   .band-heading h2{font-size:1.0625rem}
-  .hero-split-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .table-scroll{margin:0 -16px;padding:0 16px}
+  .hero-split-grid{grid-template-columns:minmax(0,1fr)}
+  .table-scroll{margin:0;padding:0}
   .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
   .ops-stats{gap:4px 14px}
 }
