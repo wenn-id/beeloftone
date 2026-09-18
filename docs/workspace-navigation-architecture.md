@@ -56,12 +56,22 @@ declared:
 feature-local request counter is bumped so a late response cannot repaint the
 newly active page. This deliberately reuses the proven per-feature counters
 (`boardRequest`, `detailRequest`, `activityRequest`, `commandCenterRequest`,
-`materialsRequest`) rather than a global cancellation rewrite.
+`materialsRequest`, `peopleRequest`, `productsRequest`) rather than a global
+cancellation rewrite.
 
 Destinations integrated in Milestone A: `command-center`, `board-home`,
 `materials`, `activity`, plus the internal `detail-view` section reached from the
 board. Later milestones extend the two tables; they do not add parallel
 activation paths.
+
+Destinations integrated in Milestone B: `workforce` → `people-view` and
+`products` → `products-view`. Both are full workspace pages: their loaders
+(`loadPeople`, `loadProducts`) re-check `epoch`, the feature counter, and the
+active `view` before painting, exactly as `loadMaterials` does. Their child
+tasks stay dialogs (Section 5), and a successful write from a child dialog
+refreshes the parent page through the `formDialog` success chain rather than
+reopening a modal. In-dialog "Kembali ke …" routes close the focused dialog
+first via `navigateFromDialog(show…)` before activating the page.
 
 ## 3. Navigation foundation contract
 
@@ -120,9 +130,10 @@ Edit attendance, approval confirmation, run detail, audit-event detail, create P
 edit BOM, production-order mutation forms, label/print confirmation, and record
 detail.
 
-A dialog must not be the entire People roster, Analytics report, Integration
-dashboard, Approval inbox, or Master SKU workspace. Those become pages in
-Milestones B–F.
+A dialog must not be the entire Analytics report, Integration dashboard,
+Approval inbox, or any other primary roster workspace. People and Master SKU
+became pages in Milestone B; the remaining legacy dialogs become pages in
+Milestones C–F.
 
 ## 6. Adding a destination (later milestones)
 
@@ -147,3 +158,14 @@ dialog, and 320px at 200% text does not overflow.
 Pending-transaction and exact-once coverage remains in `browser_smoke.cjs`
 (lost-response reload/retry, `sessionStorage` draft survival, idempotency key
 retention) and is unchanged by this milestone.
+
+Milestone B extends the same guarantees to the two migrated pages:
+`browser_navigation_foundation.cjs` asserts `people-view` and `products-view`
+against the full destination matrix including 320px at 200% text, and
+`browser_workforce.cjs` proves the roster page end to end — role-gated
+Tambah karyawan, attendance correction and history as dialogs, filter state
+surviving child-dialog close, the empty-filter state, and dark-theme mobile.
+Filter persistence after a child dialog closes is the invariant the page
+migration is most likely to regress: the filter form is the page's own state
+now, so a dialog write must refresh the list without resetting
+`workforceFilters`.

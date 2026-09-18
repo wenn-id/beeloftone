@@ -18,6 +18,8 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'Command center', nav: 'command-center', section: 'command-center-view', heading: 'Apa yang perlu diputuskan hari ini.'},
     {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Yang sedang dikerjakan.'},
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
+    {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
+    {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},
     {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Catatan produksi.'}
   ];
   const visibleSections = () => page.evaluate(() =>
@@ -142,6 +144,7 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   for (const destination of destinations) {
     await openSidebarDestination(destination.name);
     await page.getByRole('heading', {name: destination.heading, exact: true}).waitFor();
+    if (destination.content) await page.locator(destination.content).first().waitFor();
     const fits = await noOverflow();
     assert.equal(fits, true, `no horizontal overflow on ${destination.name} at 320px / 200% text\n${JSON.stringify(await overflowReport(), null, 2)}`);
     assert.deepEqual(await visibleSections(), [destination.section]);

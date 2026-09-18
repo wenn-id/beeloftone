@@ -748,6 +748,9 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 
 /* ---------- list containers ---------- */
 .product-list{max-height:min(420px,52dvh);overflow:auto;margin:0 0 var(--gap);padding:1px}
+/* Halaman workspace tidak memakai area scroll internal dialog; daftar ikut
+   menggulung bersama halaman supaya seluruh SKU dapat dijangkau keyboard maupun mobile. */
+#products-view .product-list{max-height:none;overflow:visible}
 .product-item{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .product-item>div{min-width:0}
 .workforce-master{max-height:min(460px,58dvh)}

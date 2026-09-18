@@ -67,7 +67,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.keyboard.press('Escape');assert.equal(await menu.getAttribute('aria-expanded'),'false');
   assert.equal(await menu.evaluate(element=>element===document.activeElement),true);
   assert.equal(await page.locator('#app-sidebar').isVisible(),false);
-  await menu.click();await page.getByRole('button',{name:'People',exact:true}).click();
+  await menu.click();await page.getByRole('button',{name:'Integrasi',exact:true}).click();
   await page.locator('dialog[open]').waitFor();await page.keyboard.press('Escape');
   await page.locator('dialog').waitFor({state:'hidden'});
   // The dialog is hidden as soon as `open` is removed, but its `close` event — and therefore the
@@ -121,13 +121,19 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
 
   await page.locator('[data-command-attention="workforce-incomplete"]')
     .getByRole('button',{name:'Buka roster People',exact:true}).click();
-  const peopleDialog=page.locator('dialog');
-  await peopleDialog.locator(`[data-workforce-employee="${missing.id}"]`)
+  const peoplePage=page.locator('#people-view');
+  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  await peoplePage.locator(`[data-workforce-employee="${missing.id}"]`)
     .getByText('Belum dicatat',{exact:true}).waitFor();
-  await peopleDialog.locator(`[data-workforce-employee="${absent.id}"]`)
+  await peoplePage.locator(`[data-workforce-employee="${absent.id}"]`)
     .getByText('Absen',{exact:true}).waitFor();
-  assert.equal(await peopleDialog.getByRole('button',{name:/Catat kehadiran|Koreksi kehadiran/}).count(),0);
-  await page.keyboard.press('Escape');
+  assert.equal(await peoplePage.getByRole('button',{name:/Catat kehadiran|Koreksi kehadiran/}).count(),0);
+  // The roster shortcut navigated away from the command center; the remaining
+  // shortcuts live on the command center page, so re-enter it before using them.
+  await page.getByRole('button',{name:'Command center',exact:true}).click();
+  await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
+  await page.locator('[data-command-attention="production-capacity-risk"]')
+    .getByRole('heading',{name:'Kapasitas produksi berisiko',exact:true}).waitFor();
 
   await page.locator('[data-command-attention="production-capacity-risk"]')
     .getByRole('button',{name:'Buka rencana kapasitas',exact:true}).click();

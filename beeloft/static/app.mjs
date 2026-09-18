@@ -21,6 +21,7 @@ let workforceFilters = {work_date:'',status:'all',q:''};
 let exportBusy = false;
 let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
+let peopleRequest = 0, productsRequest = 0, productsCache = [];
 let dialogReturnFocus = null;
 
 function theme(value) {
@@ -62,6 +63,8 @@ const workspaceDestinations={
   'command-center':'command-center-view',
   'board-home':'board-view',
   'materials':'materials-view',
+  'workforce':'people-view',
+  'products':'products-view',
   'activity':'activity-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
@@ -74,6 +77,8 @@ const workspaceSections=[
   {id:'board-view',view:'board',invalidate(){boardRequest++;}},
   {id:'detail-view',view:'detail',invalidate(){detailRequest++;}},
   {id:'materials-view',view:'materials',invalidate(){materialsRequest++;}},
+  {id:'people-view',view:'people',invalidate(){peopleRequest++;}},
+  {id:'products-view',view:'products',invalidate(){productsRequest++;}},
   {id:'activity-view',view:'activity',invalidate(){activityRequest++;}}
 ];
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
@@ -96,6 +101,13 @@ function activateWorkspace(navId,sectionId=workspaceDestinations[navId]){
     const heading=$(sectionId).querySelector('h1');
     if(heading){heading.tabIndex=-1;heading.focus();}
   }
+}
+
+// Tujuan halaman yang dipanggil dari dalam dialog (mis. "Kembali ke Master SKU")
+// menutup dialog fokusnya lebih dulu; drawer dan fokus ditangani activateWorkspace.
+function navigateFromDialog(show) {
+  if ($('dialog').open) $('dialog').close();
+  show();
 }
 
 function notify(message) {
@@ -139,6 +151,9 @@ function clearWorkspace() {
     'command-center-products','command-center-operations'])$(id).replaceChildren();
   $('command-center-period').textContent='';
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
+  peopleRequest++; workforceFilters = {work_date:'',status:'all',q:''};
+  $('workforce-list').replaceChildren(); $('workforce-summary').replaceChildren();
+  productsRequest++; productsCache = []; $('product-list').replaceChildren();
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -797,10 +812,12 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       }
       else if (path.startsWith('/api/purchase-requests')) purchaseRequestDialog(result.id);
       else if (path === '/api/workforce/requests' || path.startsWith('/api/workforce/requests/')) workforceRequestDialog(result.id);
-      else if (/^\/api\/workforce\/employees(\/[^/]+\/(changes|attendance))?$/.test(path)) workforceDialog();
-      else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) productMappingDialog(result.product_id);
+      else if (/^\/api\/workforce\/employees(\/[^/]+\/(changes|attendance))?$/.test(path)) { if (view === 'people') loadPeople(); }
+      else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) { if (view === 'products') loadProducts(); productMappingDialog(result.product_id); }
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
       else if (view === 'materials') loadMaterials();
+      else if (view === 'people') loadPeople();
+      else if (view === 'products') loadProducts();
       else if (view === 'detail' && selected) openDetail(selected.id);
       else loadBoard();
     } catch (error) {
@@ -855,17 +872,36 @@ async function allRows(path, extra={}) {
   do { page = await api.get(path+(path.includes('?')?'&':'?')+new URLSearchParams({...extra,limit:500,offset:rows.length})); rows.push(...page); } while (page.length === 500);
   return rows;
 }
-async function productsDialog() {
-  if (guardPending()) return;
-  const version = epoch;
-  openDialog('Master SKU', '<p class="state">Memuat daftar SKU…</p>');
-  const modalVersion = dialogVersion;
+// Master SKU sebagai halaman workspace: browse, pencarian, dan status mapping
+// ada di permukaan halaman. Tambah SKU, BOM, dan mapping tetap dialog terfokus.
+function showProducts() {
+  activateWorkspace('products'); selected = null;
+  $('new-product').hidden = user.role !== 'admin';
+  loadProducts();
+}
+async function loadProducts() {
+  const version = epoch, request = ++productsRequest;
+  const search = $('products-search'), clear = $('products-clear');
+  search.disabled = true; clear.disabled = true;
+  message('products-message','Memuat daftar SKU…'); $('product-list').replaceChildren();
   try {
     const [products,mappings] = await Promise.all([allRows('/api/products'),allRows('/api/product-external-mappings',{system:'jubelio'})]);
-    if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
+    if (version !== epoch || request !== productsRequest || view !== 'products') return;
     const byProduct=new Map(mappings.map(row=>[row.product_id,row]));
-    $('dialog-content').innerHTML = `<p class="hint">Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk.</p><div class="product-list">${products.length ? products.map(p => {const mapping=byProduct.get(p.id);return `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span><span class="hint">Jubelio · ${mapping?.status==='mapped'?e(mapping.external_sku):'Belum dipetakan'}</span></div><div class="actions"><button type="button" data-action="product-mapping" data-id="${e(p.id)}" aria-label="Jubelio ${e(p.sku)}">Jubelio</button><button type="button" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button></div></div>`;}).join('') : '<p>Belum ada SKU. Tambahkan produk untuk membuat order pertama.</p>'}</div>${user.role === 'admin' ? '<button class="primary" data-action="new-product">Tambah SKU</button>' : ''}`;
-  } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="products">Coba lagi</button>`; }
+    productsCache=products.map(product=>({...product,mapping:byProduct.get(product.id)}));
+    paintProducts();
+    search.disabled = false; clear.disabled = false;
+  } catch (error) { if (version === epoch && request === productsRequest && view === 'products') {
+    message('products-message',error.message,true);
+    $('products-message').insertAdjacentHTML('beforeend','<br><button id="products-retry" type="button">Coba lagi</button>');
+    $('products-retry').onclick=loadProducts;
+  } }
+}
+function paintProducts() {
+  const q=$('products-search').value.trim().toLowerCase();
+  const rows=!q?productsCache:productsCache.filter(p=>[p.sku,p.name,[p.color,p.size].filter(Boolean).join(' / '),p.mapping?.external_sku||''].some(value=>value.toLowerCase().includes(q)));
+  message('products-message',productsCache.length?(rows.length?'':'Tidak ada SKU yang cocok dengan pencarian ini.'):'Belum ada SKU. Tambahkan produk untuk membuat order pertama.');
+  $('product-list').innerHTML=rows.length?rows.map(p=>{const mapping=p.mapping;return `<div class="product-item"><div><strong>${e(p.sku)}</strong><span class="hint">${e(p.name)} · ${e([p.color,p.size].filter(Boolean).join(' / '))}</span><span class="hint">Jubelio · ${mapping?.status==='mapped'?e(mapping.external_sku):'Belum dipetakan'}</span></div><div class="actions"><button type="button" data-action="product-mapping" data-id="${e(p.id)}" aria-label="Jubelio ${e(p.sku)}">Jubelio</button><button type="button" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button></div></div>`;}).join(''):'';
 }
 function productForm() {
   if (guardPending()) return;
@@ -929,9 +965,9 @@ async function orderForm() {
     $('add-line').onclick = addLine; addLine();
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-order">Coba lagi</button>`; }
 }
-$('products').onclick = productsDialog; $('new-order').onclick = orderForm;
+$('products').onclick = showProducts; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = auditEventsDialog;
-$('workforce').onclick = workforceDialog;
+$('workforce').onclick = showPeople;
 $('scan-bundle').onclick = bundleScanDialog;
 $('scan-finished-goods').onclick = finishedGoodsScanDialog;
 document.addEventListener('click', event => {
@@ -979,7 +1015,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'material-batch-traceability':()=>materialBatchTraceabilityDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:productsDialog,approvals:approvalsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
+    products:()=>navigateFromDialog(showProducts),approvals:approvalsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
     'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
     integrations:integrationsDialog,'integration-runs':integrationRunsDialog,
     'integration-run':()=>integrationRunDialog(id),
@@ -1013,10 +1049,10 @@ document.addEventListener('click', event => {
     'payroll-approval-request':()=>payrollApprovalRequestDialog(id),
     'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
-    'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};workforceDialog();},
+    'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};navigateFromDialog(showPeople);},
     'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
     'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,
-    workforce:workforceDialog,'employee-master':workforceEmployeeMasterDialog,
+    workforce:()=>navigateFromDialog(showPeople),'employee-master':workforceEmployeeMasterDialog,
     'new-employee':()=>workforceEmployeeForm(),'edit-employee':()=>workforceEmployeeForm(id),
     'employee-history':()=>workforceEmployeeHistoryDialog(id),
     'attendance-form':()=>workforceAttendanceForm(id,button.dataset.date),
@@ -3719,51 +3755,51 @@ async function workforcePage(path,params={}) {
   return {...page,items};
 }
 
-async function workforceDialog() {
-  if(guardPending())return;
-  workforceFilters.work_date=workforceFilters.work_date||jakartaToday();
-  const version=epoch;
-  openDialog('People','<p class="state">Memuat roster karyawan…</p>');
-  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<div class="workforce-screen">
-    <div class="workforce-heading"><div><p class="eyebrow">Roster harian</p><p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan.</p></div><div class="actions"><button data-action="workforce-requests" type="button">Permintaan cuti / lembur</button><button data-action="employee-master" type="button">Daftar karyawan</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div>
-    <form id="workforce-filter" class="filter-form"><div class="form-grid">
-      ${field('work_date','Tanggal','date',`required max="${jakartaToday()}" value="${e(workforceFilters.work_date)}"`)}
-      <label>Status<select name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
-      <label class="full">Cari kode, nama, atau departemen<input name="q" type="search" maxlength="160" value="${e(workforceFilters.q)}"></label>
-    </div><div class="form-actions"><button class="primary" type="submit">Tampilkan roster</button></div></form>
-    <p id="workforce-message" class="state" role="status">Memuat roster karyawan…</p>
-    <dl id="workforce-summary" class="workforce-summary" hidden></dl><div id="workforce-list"></div>
-  </div>`;
-  const form=$('workforce-filter');form.elements.status.value=workforceFilters.status;
-  let generation=0;
-  const load=async()=>{
-    const gen=++generation;message('workforce-message','Memuat roster karyawan…');
-    $('workforce-summary').hidden=true;$('workforce-list').replaceChildren();
-    try{
-      const params=Object.fromEntries(new FormData(form));workforceFilters={...params};
-      const [employees,attendance]=await Promise.all([
-        workforcePage('/api/workforce/employees',{status:'active',q:params.q}),
-        workforcePage('/api/workforce/attendance',{start_date:params.work_date,end_date:params.work_date,status:'all',q:params.q})
-      ]);
-      if(!current()||gen!==generation)return;
-      message('workforce-message','');
-      const attendanceByEmployee=new Map(attendance.items.map(item=>[item.employee_id,item]));
-      const rows=employees.items.map(employee=>({employee,attendance:attendanceByEmployee.get(employee.id)||null}));
-      const filtered=rows.filter(row=>params.status==='all'?(true):params.status==='unrecorded'?!row.attendance:row.attendance?.status===params.status);
-      const recorded=rows.filter(row=>row.attendance),present=recorded.filter(row=>row.attendance.status==='present');
-      const leave=recorded.filter(row=>row.attendance.status==='leave'),absent=recorded.filter(row=>row.attendance.status==='absent');
-      const overtime=recorded.reduce((total,row)=>total+row.attendance.overtime_minutes,0);
-      $('workforce-summary').innerHTML=`<div><dt>Karyawan aktif</dt><dd>${n(rows.length)}</dd></div><div><dt>Belum dicatat</dt><dd>${n(rows.length-recorded.length)}</dd></div><div><dt>Hadir</dt><dd>${n(present.length)}</dd></div><div><dt>Cuti</dt><dd>${n(leave.length)}</dd></div><div><dt>Absen</dt><dd>${n(absent.length)}</dd></div><div><dt>Lembur</dt><dd>${e(minuteQty(overtime))}</dd></div>`;
-      $('workforce-summary').hidden=false;
-      $('workforce-list').innerHTML=filtered.length?filtered.map(({employee,attendance:item})=>{
-        const status=item?.status||'unrecorded',statusClass=status==='present'?'done':status==='absent'?'late':'';
-        const detail=item?.status==='present'?`${item.clock_in.slice(0,5)}–${item.clock_out.slice(0,5)} · kerja ${minuteQty(item.work_minutes)} · lembur ${minuteQty(item.overtime_minutes)}`:item?.notes||'Belum ada catatan untuk tanggal ini.';
-        return `<article class="workforce-row" data-workforce-employee="${e(employee.id)}"><div><span class="reference">${e(employee.code)} · ${e(employee.department)}</span><h3>${e(employee.name)}</h3><p>${e(detail)}</p>${item?.notes&&item.status==='present'?`<p class="hint">${e(item.notes)}</p>`:''}</div><div class="workforce-row-actions"><span class="status-label ${statusClass}">${e(workforceStatusLabels[status])}</span>${user.role!=='viewer'?`<button type="button" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:''}${item?`<button type="button" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:''}</div></article>`;
-      }).join(''):'<p class="state">Tidak ada karyawan yang cocok dengan status dan pencarian ini.</p>';
-    }catch(error){if(current()&&gen===generation){message('workforce-message',error.message,true);$('workforce-message').insertAdjacentHTML('beforeend','<br><button id="workforce-retry" type="button">Coba lagi</button>');$('workforce-retry').onclick=load;}}
-  };
-  form.onsubmit=event=>{event.preventDefault();load();};await load();
+// People sebagai halaman workspace: roster, filter tanggal/status/pencarian,
+// dan ringkasan harian ada di permukaan halaman. Catat/koreksi kehadiran, riwayat,
+// dan permintaan cuti/lembur tetap dialog terfokus.
+function showPeople() {
+  activateWorkspace('workforce'); selected = null;
+  $('new-employee').hidden = user.role !== 'admin';
+  workforceFilters.work_date = workforceFilters.work_date || jakartaToday();
+  const form = $('workforce-filter');
+  form.elements.work_date.max = jakartaToday();
+  form.elements.work_date.value = workforceFilters.work_date;
+  form.elements.status.value = workforceFilters.status;
+  form.elements.q.value = workforceFilters.q;
+  loadPeople();
+}
+async function loadPeople() {
+  const version = epoch, request = ++peopleRequest, form = $('workforce-filter');
+  workforceFilters = {...Object.fromEntries(new FormData(form))};
+  message('workforce-message','Memuat roster karyawan…');
+  $('workforce-summary').hidden = true; $('workforce-list').replaceChildren();
+  try{
+    const params=workforceFilters;
+    const [employees,attendance]=await Promise.all([
+      workforcePage('/api/workforce/employees',{status:'active',q:params.q}),
+      workforcePage('/api/workforce/attendance',{start_date:params.work_date,end_date:params.work_date,status:'all',q:params.q})
+    ]);
+    if(version!==epoch||request!==peopleRequest||view!=='people')return;
+    message('workforce-message','');
+    const attendanceByEmployee=new Map(attendance.items.map(item=>[item.employee_id,item]));
+    const rows=employees.items.map(employee=>({employee,attendance:attendanceByEmployee.get(employee.id)||null}));
+    const filtered=rows.filter(row=>params.status==='all'?(true):params.status==='unrecorded'?!row.attendance:row.attendance?.status===params.status);
+    const recorded=rows.filter(row=>row.attendance),present=recorded.filter(row=>row.attendance.status==='present');
+    const leave=recorded.filter(row=>row.attendance.status==='leave'),absent=recorded.filter(row=>row.attendance.status==='absent');
+    const overtime=recorded.reduce((total,row)=>total+row.attendance.overtime_minutes,0);
+    $('workforce-summary').innerHTML=`<div><dt>Karyawan aktif</dt><dd>${n(rows.length)}</dd></div><div><dt>Belum dicatat</dt><dd>${n(rows.length-recorded.length)}</dd></div><div><dt>Hadir</dt><dd>${n(present.length)}</dd></div><div><dt>Cuti</dt><dd>${n(leave.length)}</dd></div><div><dt>Absen</dt><dd>${n(absent.length)}</dd></div><div><dt>Lembur</dt><dd>${e(minuteQty(overtime))}</dd></div>`;
+    $('workforce-summary').hidden=false;
+    $('workforce-list').innerHTML=filtered.length?filtered.map(({employee,attendance:item})=>{
+      const status=item?.status||'unrecorded',statusClass=status==='present'?'done':status==='absent'?'late':'';
+      const detail=item?.status==='present'?`${item.clock_in.slice(0,5)}–${item.clock_out.slice(0,5)} · kerja ${minuteQty(item.work_minutes)} · lembur ${minuteQty(item.overtime_minutes)}`:item?.notes||'Belum ada catatan untuk tanggal ini.';
+      return `<article class="workforce-row" data-workforce-employee="${e(employee.id)}"><div><span class="reference">${e(employee.code)} · ${e(employee.department)}</span><h3>${e(employee.name)}</h3><p>${e(detail)}</p>${item?.notes&&item.status==='present'?`<p class="hint">${e(item.notes)}</p>`:''}</div><div class="workforce-row-actions"><span class="status-label ${statusClass}">${e(workforceStatusLabels[status])}</span>${user.role!=='viewer'?`<button type="button" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:''}${item?`<button type="button" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:''}</div></article>`;
+    }).join(''):'<p class="state">Tidak ada karyawan yang cocok dengan status dan pencarian ini.</p>';
+  }catch(error){if(version===epoch&&request===peopleRequest&&view==='people'){
+    message('workforce-message',error.message,true);
+    $('workforce-message').insertAdjacentHTML('beforeend','<br><button id="workforce-retry" type="button">Coba lagi</button>');
+    $('workforce-retry').onclick=loadPeople;
+  }}
 }
 
 async function workforceEmployeeMasterDialog() {
@@ -4062,6 +4098,18 @@ $('materials-previous').onclick = () => { materialsOffset = Math.max(0,materials
 $('materials-next').onclick = () => { materialsOffset += 25; loadMaterials(); };
 $('material-master').onclick = materialMasterDialog;
 $('receive-material').onclick = receiptForm;
+$('people-back').onclick = showBoard;
+$('people-master').onclick = workforceEmployeeMasterDialog;
+$('people-requests').onclick = workforceRequestsDialog;
+// onclick meneruskan event sebagai argumen pertama; workforceEmployeeForm membaca
+// id karyawan di situ, jadi harus dipanggil tanpa argumen saat menambah karyawan baru.
+$('new-employee').onclick = () => workforceEmployeeForm();
+$('workforce-filter').onsubmit = event => { event.preventDefault(); loadPeople(); };
+$('products-back').onclick = showBoard;
+$('products-refresh').onclick = () => loadProducts();
+$('new-product').onclick = productForm;
+$('products-search').oninput = paintProducts;
+$('products-clear').onclick = () => { $('products-search').value = ''; paintProducts(); };
 const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',workforce_leave:'People · cuti',workforce_overtime:'People · lembur',payroll_batch:'People · batch payroll',ai_action:'AI Brain · tindakan'};

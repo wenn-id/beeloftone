@@ -17,7 +17,8 @@ rather than labels.
 | Classification | Count | Destinations |
 |---|---|---|
 | EXISTING_PAGE | 4 | Command center, Produksi, Bahan baku, Laporan aktivitas |
-| LEGACY_DIALOG | 22 | People, Master SKU, 12 Analitik children, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
+| LEGACY_DIALOG | 20 | 12 Analitik children, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
+| MIGRATED_PAGE | 2 | People, Master SKU |
 | INTENTIONAL_DIALOG | 0 | (none among primary sidebar destinations) |
 | NEEDS_VERIFICATION | 1 | Cadangan data |
 | OTHER | 0 | — |
@@ -27,9 +28,9 @@ Non-destination workspace sections reached by navigation but not present in the
 sidebar: `detail-view` (order detail, opened from the production board). It is a
 page, not a sidebar destination, and is out of scope for the migration counts.
 
-All 22 LEGACY_DIALOG handlers call `openDialog()` directly as the primary
-experience. No primary sidebar click reaches `openDialog()` only through an
-indirect chain — every legacy handler is a direct `*Dialog()` call.
+The remaining 20 LEGACY_DIALOG handlers call `openDialog()` directly as the
+primary experience. No primary sidebar click reaches `openDialog()` only through
+an indirect chain — every legacy handler is a direct `*Dialog()` call.
 
 ## 2. Sidebar structure (source: `beeloft/static/index.html`)
 
@@ -130,21 +131,25 @@ calls `openDialog()`; ACTION = entry performs one operation with no browse state
 - Target: keep as page — **EXISTING_PAGE**
 
 #### `workforce` — People
-- Renderer: `workforceDialog` (`app.mjs:3689`, wired `app.mjs:896`)
-- Interaction: **DIALOG** (global modal "People") — full roster inside the modal
+- Renderer: `showPeople` (`app.mjs:3758`, wired `app.mjs:967`); loader
+  `loadPeople` (`app.mjs:3769`)
+- Interaction: **PAGE** → `people-view` (migrated in Milestone B)
 - Data: `GET /api/workforce/employees` + `GET /api/workforce/attendance` (via
-  `workforcePage` helper, `app.mjs:3680`); filters: `work_date`, `status`, `q`;
-  local `generation` counter inside the dialog
+  `workforcePage` helper, `app.mjs:3746`); filters: `work_date`, `status`, `q`,
+  held in `workforceFilters` and synced into the page filter form on entry
 - Mutation: none from the roster surface itself; attendance corrections and
   request decisions are child dialogs with their own idempotency keys
 - Access: all roles see roster; `new-employee` admin-only; viewer cannot mutate
-- Async: `epoch` + `dialogVersion` + local `generation` (three-layer guard)
-- State: `workforce-message` status region, summary `dl`, empty roster handled
+- Async: `epoch` + `peopleRequest` + `view === 'people'`
+- State: `workforce-message` status region, summary `dl`, empty roster and
+  empty-filter states handled
 - Child dialogs: `workforceEmployeeForm` (new/edit), `workforceEmployeeHistoryDialog`,
   `workforceAttendanceForm`, `workforceAttendanceHistoryDialog`,
   `workforceRequestsDialog`, `workforceEmployeeMasterDialog`
-- Filter state: `workforceFilters` persists in module scope across dialog reopen
-- Target: `people-view` (Milestone B) — **LEGACY_DIALOG**
+- Filter state: `workforceFilters` persists in module scope across page revisits;
+  reset by `clearWorkspace()` on session switch and by the `command-workforce`
+  shortcut
+- Target: `people-view` — **MIGRATED_PAGE** (Milestone B)
 
 #### `scan-bundle` — Scan bundle
 - Renderer: `bundleScanDialog` (`app.mjs:1448`, wired `app.mjs:897`)
@@ -170,19 +175,23 @@ calls `openDialog()`; ACTION = entry performs one operation with no browse state
 - Target: `finished-goods-scan-view` (Milestone F) — **LEGACY_DIALOG**
 
 #### `products` — Master SKU
-- Renderer: `productsDialog` (`app.mjs:820`, wired `app.mjs:894`)
-- Interaction: **DIALOG** — full master-data workspace inside modal
+- Renderer: `showProducts` (`app.mjs:877`, wired `app.mjs:965`); loader
+  `loadProducts` (`app.mjs:882`); client-side search painter
+  `paintProducts` (`app.mjs:897`)
+- Interaction: **PAGE** → `products-view` (migrated in Milestone B)
 - Data: `GET /api/products` + `GET /api/product-external-mappings` (both via
-  `allRows`, `app.mjs:815` — full list, no pagination)
+  `allRows`, `app.mjs:870` — full list, no pagination); cached in `productsCache`
+  and re-filtered by the page search field without a new request
 - Mutation: none from the list surface; SKU/BOM/mapping writes are child forms
 - Access: all roles browse; `new-product`, `edit-bom`, mapping forms admin-only
-- Async: `epoch` + `dialogVersion`
-- State: loading placeholder; empty state ("Belum ada SKU"); error with retry
-  (`data-action="products"`)
+- Async: `epoch` + `productsRequest` + `view === 'products'`
+- State: loading placeholder; empty state ("Belum ada SKU"); filter-empty state
+  ("Tidak ada SKU yang cocok dengan pencarian ini."); error with retry
+  (`#products-retry`)
 - Child dialogs: `productForm` (Tambah SKU), `bomDialog`/`bomForm`/`bomHistoryDialog`,
   `productMappingDialog`/`productMappingForm`/`productMappingHistoryDialog`,
   `unmapProductForm`
-- Target: `products-view` (Milestone B) — **LEGACY_DIALOG**
+- Target: `products-view` — **MIGRATED_PAGE** (Milestone B)
 
 ### 4.3 Analitik group — 12 insight children
 
@@ -363,19 +372,20 @@ Shared characteristics recorded for the Milestone C host design:
 
 Complete list of primary sidebar handlers whose main effect is `openDialog()`:
 
-`workforceDialog`, `productsDialog`, `auditEventsDialog`, `bundleScanDialog`,
-`finishedGoodsScanDialog`, the twelve `*InsightsDialog`/`capacityPlanDialog`/
-`demandForecastDialog`/`replenishmentDialog` functions, `aiInvestigationDialog`,
-`integrationsDialog`, `purchaseRequestsDialog`, `marketingBudgetsDialog`,
-`approvalsDialog`, and the inline `backup` handler.
+`auditEventsDialog`, `bundleScanDialog`, `finishedGoodsScanDialog`, the twelve
+`*InsightsDialog`/`capacityPlanDialog`/`demandForecastDialog`/
+`replenishmentDialog` functions, `aiInvestigationDialog`, `integrationsDialog`,
+`purchaseRequestsDialog`, `marketingBudgetsDialog`, `approvalsDialog`, and the
+inline `backup` handler.
 
 The global click-delegation map (`app.mjs:899`) also routes many `data-action`
-values to these same dialog functions (e.g. `products: productsDialog`,
-`approvals: approvalsDialog`, `ai-brain: aiInvestigationDialog`,
-`integrations: integrationsDialog`, `demand-forecast: demandForecastDialog`,
-`replenishment: replenishmentDialog`). These delegated routes must be updated in
-the same milestones as their sidebar counterparts, or the delegated entry points
-will keep opening the modal after the sidebar is migrated.
+values to these same dialog functions (e.g. `approvals: approvalsDialog`,
+`ai-brain: aiInvestigationDialog`, `integrations: integrationsDialog`,
+`demand-forecast: demandForecastDialog`, `replenishment: replenishmentDialog`).
+Migrated destinations route their delegated entry points through
+`navigateFromDialog(show…)` instead, so a "Kembali ke …" button inside a focused
+dialog closes that dialog and activates the page rather than reopening a modal
+(e.g. `products`, `workforce`, `command-workforce`).
 
 ## 6. Cross-cutting safety surface to preserve
 
@@ -424,3 +434,50 @@ handler is untouched and still opens the global modal as before.
 
 Next: Milestone B — `refactor/workspace-pages-people-products`. Do not begin
 without approval, per roadmap §4 hard-stop rule.
+
+## 9. Milestone B delta — People and Master SKU migrated to pages
+
+Milestone B (`refactor/workspace-pages-people-products`) migrates the first two
+legacy dialogs into persistent workspace pages. Migration counts move to
+4 EXISTING_PAGE, 20 LEGACY_DIALOG, 1 NEEDS_VERIFICATION, 2 MIGRATED_PAGE.
+
+Destinations integrated: `workforce` → `people-view`, `products` →
+`products-view`, both added to `workspaceDestinations` and `workspaceSections`
+with feature-local request counters (`peopleRequest`, `productsRequest`).
+
+What changed mechanically, without altering any business calculation or backend
+contract:
+
+- `workforceDialog` is replaced by `showPeople` / `loadPeople`. The roster, date
+  / status / search filter form, summary, and list render inside `people-view`.
+  `workforceFilters` remains the single filter state holder and is re-read on
+  every load, so child dialogs cannot desync it.
+- `productsDialog` is replaced by `showProducts` / `loadProducts` / 
+  `paintProducts`. Browse, search, and Jubelio mapping status render inside
+  `products-view`; `productsCache` holds the joined product + mapping rows and
+  `paintProducts` re-filters it on keystroke without a network round trip.
+- Both loaders mirror `loadMaterials`: per-feature request counter plus module
+  `epoch` plus active `view` check, so a stale response arriving after the user
+  navigated away is discarded rather than painted.
+- Record-specific work stays in focused dialogs opened from the page: Tambah
+  karyawan, Ubah karyawan, koreksi kehadiran, riwayat kehadiran, daftar
+  karyawan, permintaan cuti / lembur, Tambah SKU, Ubah SKU, BOM, riwayat BOM,
+  mapping Jubelio, riwayat mapping.
+- In-dialog "Kembali ke roster" / "Kembali ke Master SKU" / "Buka Master SKU"
+  routes now go through `navigateFromDialog(show…)`, which closes the focused
+  dialog before activating the page. This preserves the old "replace dialog
+  content" destination without leaving a modal stacked over a page.
+- `formDialog`'s success chain refreshes the parent page instead of a modal when
+  the write originated from one: employee writes and attendance corrections call
+  `loadPeople()` when `view === 'people'`, mapping writes call `loadProducts()`
+  when `view === 'products'` and reopen the mapping dialog, BOM writes reopen
+  the BOM dialog, and the generic tail refreshes whichever page is active.
+- `clearWorkspace()` bumps both new counters, resets `workforceFilters`, drops
+  `productsCache`, and empties both list containers, so a session switch cannot
+  paint a previous actor's roster or SKU list.
+- Regression: `tests/browser_workforce.cjs` (rewritten for the page), plus
+  `tests/browser_navigation_foundation.cjs`, `tests/browser_shared_ui.cjs`,
+  `tests/browser_workforce_approvals.cjs`, and `tests/browser_smoke.cjs`
+  updated for the page surface.
+
+Next: Milestone C. Do not begin without approval, per roadmap §4 hard-stop rule.
