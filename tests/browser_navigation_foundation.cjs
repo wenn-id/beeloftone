@@ -42,8 +42,11 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
       }
       return null;
     };
-    const offenders = [...document.querySelectorAll('html, body, #masthead, .app-shell, .workspace-main, #command-center-view, #command-center-view *')]
-      .map(node => {
+    const active = document.querySelector('.workspace-main > section:not([hidden])');
+    const nodes = [document.documentElement, document.body, document.getElementById('masthead'),
+      document.querySelector('.app-shell'), document.querySelector('.workspace-main'), active,
+      ...(active ? active.querySelectorAll('*') : [])].filter(Boolean);
+    const offenders = nodes.map(node => {
         const rect = node.getBoundingClientRect();
         const style = getComputedStyle(node);
         return {
