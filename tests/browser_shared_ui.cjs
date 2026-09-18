@@ -295,7 +295,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
 
   // A section other than the dashboard must be equally dark-correct.
   await openSidebarDestination('People');
-  await page.locator('dialog[open]').waitFor();
+  await page.getByRole('heading', {name: 'Kehadiran tim yang tercatat.', exact: true}).waitFor();
+  await page.locator('#people-view:not([hidden])').waitFor();
   await page.locator('#workforce-summary').waitFor();
   const peopleDark = await page.evaluate(() => {
     const cell = document.querySelector('#workforce-summary>div');

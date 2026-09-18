@@ -128,8 +128,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
     } else await route.continue();
   });
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
+  await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
   await productsStarted;
-  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  // The delayed /api/products response belongs to the Master SKU page the user
+  // has already left; it must not repaint the board nor the order-form draft.
+  await page.getByRole('button',{name:'Produksi',exact:true}).click();
   await page.getByRole('button',{name:'Buat order produksi',exact:true}).click();
   await page.getByLabel('Nama order',{exact:true}).fill('Draft must survive delayed response');
   releaseProducts(); await productsFinished;
@@ -145,6 +148,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.locator('.order-row').first().waitFor();
 
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
+  await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
   await page.getByRole('button',{name:'Tambah SKU',exact:true}).click();
   const unique = Date.now();
   await page.getByLabel('Kode SKU',{exact:true}).fill('DEMO-UI-'+unique);
@@ -153,6 +157,9 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByLabel('Ukuran',{exact:true}).fill('L');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
+  // Saving from the focused child dialog refreshes the parent page, not a modal.
+  await page.getByText('DEMO-UI-'+unique).waitFor();
+  await page.getByRole('button',{name:'Produksi',exact:true}).click();
   await page.getByRole('button',{name:'Buat order produksi',exact:true}).click();
   await page.getByLabel('Referensi order',{exact:true}).fill('DEMO-UI-ORDER-'+unique);
   await page.getByLabel('Nama order',{exact:true}).fill('CONTOH - Uji dashboard '+unique);

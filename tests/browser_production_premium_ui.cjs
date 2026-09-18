@@ -59,7 +59,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
     const cards=[...document.querySelectorAll('#summary>div')];
     const search=document.querySelector('#search').getBoundingClientRect();
     const status=document.querySelector('#status').getBoundingClientRect();
-    const submit=document.querySelector('.production-search').getBoundingClientRect();
+    const submit=document.querySelector('#board-view .production-search').getBoundingClientRect();
     return {
       width:box.width, centered:Math.abs((box.left+box.right)-(parent.left+parent.right))<2,
       cardHeights:cards.map(el=>el.getBoundingClientRect().height),
@@ -117,7 +117,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
   assert.equal(await page.locator('#board-owner').inputValue(),'');
   assert.equal(await page.locator('#board-stage').inputValue(),'all');
   await page.locator('#search').fill('NO-SUCH-PREMIUM-ORDER');
-  await loaded(()=>page.locator('.production-search').click());
+  await loaded(()=>page.locator('#board-view .production-search').click());
   assert.match(await page.locator('#board-message').textContent(),/Tidak ada order yang cocok/);
   await loaded(()=>page.locator('#reset-board').click());
   assert.equal(await page.locator('#search').inputValue(),'');
@@ -168,7 +168,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
     await page.locator('#search').focus();
     const focus=await page.locator('#search').evaluate(el=>getComputedStyle(el).outlineStyle);
     assert.notEqual(focus,'none');
-    await page.keyboard.press('Tab');assert.equal(await page.locator('.production-search').evaluate(el=>el===document.activeElement),true);
+    await page.keyboard.press('Tab');assert.equal(await page.locator('#board-view .production-search').evaluate(el=>el===document.activeElement),true);
     await page.keyboard.press('Tab');assert.equal(await page.locator('#status').evaluate(el=>el===document.activeElement),true);
     await page.locator('#new-order').click();await page.locator('#dialog-content input').first().waitFor();
     assert.equal(await page.locator('dialog[open]').evaluate(el=>el.scrollWidth<=el.clientWidth && el.getBoundingClientRect().width<=innerWidth),true,'create order dialog fits at enlarged text');

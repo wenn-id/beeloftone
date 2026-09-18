@@ -11,13 +11,14 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
 
   await role(operator);
   await openSidebarDestination('People');
+  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
   let dialog=page.locator('dialog');
   let fail=true;
   await page.route('**/api/workforce/requests*',async route=>{
     if(fail){fail=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Permintaan People sedang dimuat ulang'})});}
     else await route.continue();
   });
-  await dialog.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
+  await page.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   await dialog.locator('#workforce-request-message').filter({hasText:'Permintaan People sedang dimuat ulang'}).waitFor();
   await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await dialog.getByText('Belum ada permintaan yang sesuai filter.',{exact:true}).waitFor();
@@ -46,8 +47,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-people-approvals-mobile.png')});
 
   await role(viewer);
-  await openSidebarDestination('People');dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
+  await openSidebarDestination('People');
+  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  dialog=page.locator('dialog');
+  await page.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).count(),0);
   await dialog.locator(`[data-workforce-request="${leave.id}"]`).getByRole('button',{name:'Rincian',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:/Setujui|Tolak|Batalkan/}).count(),0);
@@ -64,8 +67,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.equal((await apiGet('/api/workforce/attendance?employee_id='+employee.id)).total,0);
 
   await role(operator);
-  await openSidebarDestination('People');dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
+  await openSidebarDestination('People');
+  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  dialog=page.locator('dialog');
+  await page.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).click();
   await dialog.locator('select[name="employee_id"]').selectOption(employee.id);
   await dialog.getByLabel('Jenis').selectOption('overtime');

@@ -159,6 +159,28 @@
         <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list"></div>
         <div class="pagination"><span id="materials-page" class="hint"></span><div class="actions"><button id="materials-previous" type="button">Batch sebelumnya</button><button id="materials-next" type="button">Batch berikutnya</button></div></div>
       </section>
+      <section id="people-view" hidden>
+        <button id="people-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">People · roster harian</p><h1>Kehadiran tim yang tercatat.</h1></div><div class="actions"><button id="people-requests" type="button">Permintaan cuti / lembur</button><button id="people-master" type="button">Daftar karyawan</button><button id="new-employee" class="primary" type="button" hidden>Tambah karyawan</button></div></div>
+        <p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan. Koreksi kehadiran menyimpan revisi baru; catatan lama tetap utuh di riwayat.</p>
+        <form id="workforce-filter" class="filters">
+          <label>Tanggal<input id="workforce-date" name="work_date" type="date" required></label>
+          <label>Status<select id="workforce-status" name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
+          <label class="search-field">Cari kode, nama, atau departemen<input id="workforce-search" name="q" type="search" maxlength="160" placeholder="Kode, nama, atau departemen"></label>
+          <button type="submit" class="primary">Tampilkan roster</button>
+        </form>
+        <p id="workforce-message" class="state" role="status" hidden></p>
+        <dl id="workforce-summary" class="workforce-summary" hidden></dl>
+        <div id="workforce-list"></div>
+      </section>
+      <section id="products-view" hidden>
+        <button id="products-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Master SKU · identitas produk</p><h1>Satu kode untuk setiap kombinasi produk.</h1></div><div class="actions"><button id="products-refresh" type="button">Muat ulang</button><button id="new-product" class="primary" type="button" hidden>Tambah SKU</button></div></div>
+        <p class="hint">Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk. BOM dan mapping menyimpan revisi.</p>
+        <div class="filters"><label class="search-field">Cari kode atau nama SKU<input id="products-search" type="search" maxlength="160" placeholder="Kode atau nama SKU"></label><button id="products-clear" type="button" class="quiet">Reset pencarian</button></div>
+        <p id="products-message" class="state" role="status" hidden></p>
+        <div id="product-list" class="product-list"></div>
+      </section>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
