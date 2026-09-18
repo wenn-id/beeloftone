@@ -621,7 +621,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .command-center-content{gap:20px}
   .band-heading{gap:.75rem}
   .band-heading h2{font-size:1.0625rem}
-  .hero-split-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hero-split-grid{grid-template-columns:minmax(0,1fr)}
   .table-scroll{margin:0 -16px;padding:0 16px}
   .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
   .ops-stats{gap:4px 14px}
