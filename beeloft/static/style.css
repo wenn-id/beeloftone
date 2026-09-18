@@ -622,7 +622,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .band-heading{gap:.75rem}
   .band-heading h2{font-size:1.0625rem}
   .hero-split-grid{grid-template-columns:minmax(0,1fr)}
-  .table-scroll{margin:0 -16px;padding:0 16px}
+  .table-scroll{margin:0;padding:0}
   .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
   .ops-stats{gap:4px 14px}
 }
