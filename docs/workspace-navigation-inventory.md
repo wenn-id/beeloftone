@@ -63,7 +63,7 @@ these; they must be preserved, not rewritten.
 | `openDialog(title, content)` | `app.mjs:596` | Increments `dialogVersion`, resets `modalBusy`/`unresolved`, calls `dialog.showModal()` on the single global `<dialog id="dialog">` (`index.html:197`) |
 | `guardPending()` | `app.mjs:784` | Reads pending draft from `sessionStorage` (`pendingKey()` = `beeloft.pending.<user_id>`); calls `recover()` and blocks navigation when a write is unresolved |
 | `modalBusy`, `unresolved` | `app.mjs:19` | In-flight mutation and unconfirmed-write flags |
-| View switching | `showBoard`, `showMaterials`, `showCommandCenter`, `activity` onclick | Manual `.hidden` toggles across `workspace-main` sections, each bumping the counters of the views it hides |
+| View switching | `showBoard`, `showMaterials`, `showCommandCenter`, `activity` onclick | Each routes through `activateWorkspace()` (Milestone A), which hides every other `workspace-main` section while bumping its request counter, records the active `view`, and moves `aria-current` |
 
 Views currently present in `workspace-main` (`index.html:125-193`):
 `command-center-view`, `materials-view`, `board-view` (default visible),
@@ -396,5 +396,31 @@ entries, 4 existing pages, 22 legacy dialogs, 1 action-only entry pending a
 Milestone F decision, 0 intentional dialogs among primary destinations. No
 feature has been migrated. No code outside this document has been changed.
 
-Next: Milestone A — `refactor/workspace-navigation-foundation`. Do not begin
+## 8. Milestone A delta — navigation foundation merged
+
+Milestone A (`refactor/workspace-navigation-foundation`) introduced the single
+activation path and did not migrate any feature. Migration counts are unchanged:
+4 EXISTING_PAGE, 22 LEGACY_DIALOG, 1 NEEDS_VERIFICATION, 0 MIGRATED_PAGE.
+
+What changed mechanically, without altering any business presentation:
+
+- `activateWorkspace(navId, sectionId)` is the sole entry point for page
+  activation. It hides every other `workspace-main` section while bumping that
+  section's feature-local request counter, reveals the target, records the active
+  `view`, moves `aria-current="page"`, closes the mobile drawer, and settles focus.
+- `workspaceDestinations` (sidebar item → section) and `workspaceSections`
+  (section → `view` name + `invalidate()` counter bump) are the coordination
+  tables. They hold no business logic.
+- `showBoard`, `showCommandCenter`, `showMaterials`, the `activity` onclick, and
+  `openDetail` now delegate to the helper instead of manual `.hidden` toggles.
+- The sidebar click delegation closes the drawer and records focus only for
+  destinations that do not yet route through the helper (legacy dialogs).
+- Contract and extension guide: `docs/workspace-navigation-architecture.md`.
+- Regression: `tests/browser_navigation_foundation.cjs`.
+
+Destinations integrated: `command-center`, `board-home`, `materials`,
+`activity`, plus the internal `detail-view` section. Every legacy `*Dialog()`
+handler is untouched and still opens the global modal as before.
+
+Next: Milestone B — `refactor/workspace-pages-people-products`. Do not begin
 without approval, per roadmap §4 hard-stop rule.

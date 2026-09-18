@@ -39,16 +39,63 @@ function sidebar(open,restoreFocus=false) {
 $('menu-toggle').onclick=()=>sidebar(!document.body.classList.contains('nav-open'));
 $('app-sidebar').onclick=event=>{
   const button=event.target.closest('button');if(!button)return;
-  const drawerOpen=document.body.classList.contains('nav-open');sidebar(false);
-  if(drawerOpen)queueMicrotask(()=>{
+  const drawerOpen=document.body.classList.contains('nav-open');
+  if(!drawerOpen)return;
+  queueMicrotask(()=>{
+    // Tujuan halaman sudah menutup drawer dan memindahkan fokus sendiri lewat
+    // activateWorkspace(). Tujuan dialog legacy masih perlu drawer ditutup dan
+    // fokus diingat pada tombol menu, karena activateWorkspace tidak dipakainya.
+    if(document.body.classList.contains('nav-open'))sidebar(false);
     if($('dialog').open)dialogReturnFocus=$('menu-toggle');
-    else{const heading=document.querySelector('.workspace-main>section:not([hidden]) h1');if(heading){heading.tabIndex=-1;heading.focus();}}
   });
 };
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open'))sidebar(false,true);});
 function activeNavigation(id) {
   for(const item of $('app-sidebar').querySelectorAll('[aria-current]'))item.removeAttribute('aria-current');
   if(id)$(id).setAttribute('aria-current','page');
+}
+// Registri tujuan workspace: item sidebar utama dipetakan ke section yang
+// dimilikinya. Tabel ini hanya mengoordinasikan aktivasi halaman — tidak memuat
+// data, tidak merender, dan tidak menyimpan logika bisnis; setiap renderer tetap
+// memiliki filter, request counter, dan kontrak state-nya sendiri.
+const workspaceDestinations={
+  'command-center':'command-center-view',
+  'board-home':'board-view',
+  'materials':'materials-view',
+  'activity':'activity-view'
+};
+// Seluruh section di dalam workspace-main, termasuk section internal seperti
+// rincian order yang berbagi satu item sidebar dengan papan produksi.
+// invalidate() menaikkan request counter feature-local penjaga section itu,
+// supaya respons yang baru sampai setelah pengguna pindah tidak bisa mengecat
+// ulang halaman yang sekarang aktif.
+const workspaceSections=[
+  {id:'command-center-view',view:'command-center',invalidate(){commandCenterRequest++;}},
+  {id:'board-view',view:'board',invalidate(){boardRequest++;}},
+  {id:'detail-view',view:'detail',invalidate(){detailRequest++;}},
+  {id:'materials-view',view:'materials',invalidate(){materialsRequest++;}},
+  {id:'activity-view',view:'activity',invalidate(){activityRequest++;}}
+];
+// Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
+// lain sambil menaikkan request counternya, tampilkan target, catat nama view
+// aktif, pindahkan aria-current, lalu tutup drawer mobile dan letakkan fokus.
+// Pemanggil tetap memuat data dan merender kontennya sendiri.
+function activateWorkspace(navId,sectionId=workspaceDestinations[navId]){
+  for(const section of workspaceSections){
+    if(section.id===sectionId)continue;
+    section.invalidate();
+    $(section.id).hidden=true;
+  }
+  const target=workspaceSections.find(section=>section.id===sectionId);
+  $(sectionId).hidden=false;
+  if(target)view=target.view;
+  activeNavigation(navId);
+  if(document.body.classList.contains('nav-open')){
+    sidebar(false);
+    if($('dialog').open){dialogReturnFocus=$('menu-toggle');return;}
+    const heading=$(sectionId).querySelector('h1');
+    if(heading){heading.tabIndex=-1;heading.focus();}
+  }
 }
 
 function notify(message) {
@@ -240,11 +287,8 @@ function issueBadge(order) {
   return order.open_issues ? `<span class="status-label late">${n(order.open_issues)} kendala terbuka</span>` : '';
 }
 function showBoard() {
-  commandCenterRequest++; $('command-center-view').hidden = true;
-  materialsRequest++; $('materials-view').hidden = true;
-  activityRequest++; $('activity-view').hidden = true;
-  view = 'board'; detailRequest++; selected = null;
-  $('board-view').hidden = false; $('detail-view').hidden = true; activeNavigation('board-home'); loadBoard();
+  activateWorkspace('board-home'); selected = null;
+  loadBoard();
 }
 $('brand').onclick = event => { event.preventDefault(); if (user) showBoard(); };
 $('board-home').onclick=showBoard;
@@ -374,10 +418,7 @@ function attentionDomainRows(attention) {
 }
 async function showCommandCenter() {
   if(guardPending())return;
-  materialsRequest++; activityRequest++; boardRequest++; detailRequest++; selected=null;
-  view='command-center'; $('materials-view').hidden=true; $('activity-view').hidden=true;
-  $('board-view').hidden=true; $('detail-view').hidden=true; $('command-center-view').hidden=false;
-  activeNavigation('command-center');
+  activateWorkspace('command-center'); selected=null;
   const version=epoch,request=++commandCenterRequest;
   message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');
   $('command-center-content').hidden=true;$('command-center-summary').setAttribute('aria-busy','true');
@@ -544,10 +585,7 @@ async function loadBoard() {
 }
 
 async function openDetail(id) {
-  commandCenterRequest++; $('command-center-view').hidden = true;
-  materialsRequest++; $('materials-view').hidden = true;
-  activityRequest++; $('activity-view').hidden = true;
-  view = 'detail'; boardRequest++; $('board-view').hidden = true; $('detail-view').hidden = false; activeNavigation('board-home');
+  activateWorkspace('board-home','detail-view');
   const version = epoch, request = ++detailRequest;
   message('detail-message', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
   try {
@@ -1148,10 +1186,7 @@ async function productionChangeRequestDialog(requestId) {
 
 const activityLabels = {movement:'Perpindahan barang',reversal:'Koreksi perpindahan',issue_opened:'Kendala dicatat',issue_resolved:'Kendala selesai',order_created:'Order dibuat',order_changed:'Tenggat / PIC diubah'};
 $('activity').onclick = () => {
-  commandCenterRequest++; $('command-center-view').hidden = true;
-  materialsRequest++; $('materials-view').hidden = true;
-  view = 'activity'; boardRequest++; detailRequest++; selected = null;
-  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = false; activeNavigation('activity');
+  activateWorkspace('activity'); selected = null;
   loadActivity();
 };
 $('activity-back').onclick = showBoard;
@@ -1223,9 +1258,7 @@ function saveDownload(blob, filename) {
 }
 
 function showMaterials() {
-  commandCenterRequest++; $('command-center-view').hidden = true;
-  view = 'materials'; boardRequest++; detailRequest++; activityRequest++; selected = null;
-  $('board-view').hidden = true; $('detail-view').hidden = true; $('activity-view').hidden = true; $('materials-view').hidden = false; activeNavigation('materials');
+  activateWorkspace('materials'); selected = null;
   $('receive-material').hidden = user.role === 'viewer';
   loadMaterials();
 }
