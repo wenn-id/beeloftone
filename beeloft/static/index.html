@@ -163,12 +163,21 @@
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
         <button id="issues-summary" class="issues-summary" type="button" hidden></button>
-        <div class="ledger-heading"><h2>Order produksi</h2><span id="updated" class="hint"></span></div>
-        <form id="search-form" class="filters"><label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label><label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="blocked">Ada kendala terbuka</option><option value="closed">Selesai / ditutup</option></select></label><label>PIC order<select id="board-owner" aria-label="PIC order"><option value="">Semua PIC</option></select></label><label>Posisi barang<select id="board-stage" aria-label="Posisi barang"><option value="all">Semua posisi</option><option value="planned">Belum cutting</option><option value="cutting">Cutting</option><option value="sewing">Sewing</option><option value="finishing">Finishing</option><option value="qc">QC</option><option value="rework">Rework</option><option value="reject">Reject</option><option value="warehouse">Gudang</option></select></label><button type="submit">Cari order</button><button id="reset-board" type="button" class="quiet">Reset filter</button></form>
-        <p class="hint">Posisi barang menampilkan order yang masih memiliki saldo di tahap tersebut. Ringkasan di atas mencakup seluruh produksi.</p>
+        <div class="ledger-heading"><h2 id="production-orders-heading">Order produksi</h2><span id="updated" class="hint"></span></div>
+        <section class="production-work" aria-labelledby="production-orders-heading">
+        <form id="search-form" class="filters">
+          <label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label>
+          <button type="submit" class="production-search">Cari order</button>
+          <label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="blocked">Ada kendala terbuka</option><option value="closed">Selesai / ditutup</option></select></label>
+          <label>PIC order<select id="board-owner" aria-label="PIC order"><option value="">Semua PIC</option></select></label>
+          <label>Posisi barang<select id="board-stage" aria-label="Posisi barang" aria-describedby="production-filter-hint"><option value="all">Semua posisi</option><option value="planned">Belum cutting</option><option value="cutting">Cutting</option><option value="sewing">Sewing</option><option value="finishing">Finishing</option><option value="qc">QC</option><option value="rework">Rework</option><option value="reject">Reject</option><option value="warehouse">Gudang</option></select></label>
+          <button id="reset-board" type="button" class="quiet">Reset filter</button>
+        </form>
+        <p id="production-filter-hint" class="hint">Posisi barang menampilkan order yang masih memiliki saldo di tahap tersebut. Ringkasan di atas mencakup seluruh produksi.</p>
         <div id="board-message" role="status" class="state" hidden></div>
         <div id="order-list"></div>
         <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
+        </section>
       </section>
       <section id="activity-view" hidden>
         <button id="activity-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>

@@ -515,15 +515,14 @@ async function loadBoard() {
     $('board-owner').innerHTML = '<option value="">Semua PIC</option>' + result.owners.map(owner => option(owner.id,owner.name + (owner.active ? '' : ' (akun nonaktif)'))).join('');
     if (ownerId && !result.owners.some(owner => owner.id === ownerId)) $('board-owner').insertAdjacentHTML('beforeend',option(ownerId,previousOwnerLabel || 'PIC tidak lagi memiliki order'));
     $('board-owner').value = ownerId;
-    $('issues-summary').textContent = `${n(result.open_issues)} kendala terbuka · lihat order terkait`;
+    $('issues-summary').classList.toggle('has-issues', result.open_issues > 0);
+    $('issues-summary').innerHTML = `${svgIcon(result.open_issues > 0 ? 'alert-triangle' : 'check-circle')}`
+      + `<span><strong>${n(result.open_issues)} kendala terbuka</strong><span class="issue-link"> · lihat order terkait</span></span>`;
     $('issues-summary').hidden = false;
     const s = result.summary;
-    // Glyph mengikuti KPI card Command Center: label lalu ikon sprite di kanan, biru,
-    // dekoratif (aria-hidden) sehingga nama metrik tetap satu-satunya teks yang dibaca
-    // pembaca layar. Angka dan definisi metrik tidak berubah.
     $('summary').innerHTML = [['Order aktif',s.active,'order','layers'],['Lewat target',s.overdue,'order','alert-triangle'],
       ['Dalam proses',s.in_progress,'pcs','activity'],['Perlu rework',s.rework,'pcs','undo']]
-      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+      .map(([label,value,unit,glyph]) => `<div${glyph === 'activity' ? ' class="production-wip"' : ''}><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
     $('summary').removeAttribute('aria-busy');
     $('updated').textContent = 'Diperbarui ' + new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit'}).format(new Date());
     if (!result.orders.length) {

@@ -327,17 +327,24 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.equal(await noPageOverflow(), true, 'no horizontal overflow at 390px');
   const mobileBoard = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('#summary>div')].map(n => n.getBoundingClientRect());
+    const summary = document.querySelector('#summary').getBoundingClientRect();
     const search = document.querySelector('#search').getBoundingClientRect();
     const form = document.querySelector('#search-form').getBoundingClientRect();
     return {
-      stacked: cards.every(box => box.width > 200),
+      reflowed: cards.length === 4 && cards[0].top === cards[1].top
+        && cards[2].top === cards[3].top && cards[2].top > cards[0].bottom
+        && cards[0].right < cards[1].left && cards[2].right < cards[3].left
+        && cards.every(box => box.left >= summary.left && box.right <= summary.right),
+      textFits: [...document.querySelectorAll('#summary dt, #summary dd')]
+        .every(n => n.scrollWidth <= n.clientWidth),
       // Every KPI card keeps a complete border once the grid collapses.
       borderedRight: [...document.querySelectorAll('#summary>div')]
         .every(n => parseFloat(getComputedStyle(n).borderRightWidth) > 0),
       searchFitsToolbar: search.width <= form.width,
     };
   });
-  assert.equal(mobileBoard.stacked, true, 'KPI cards reflow to full width on mobile');
+  assert.equal(mobileBoard.reflowed, true, 'Production KPI cards reflow to two contained rows on mobile');
+  assert.equal(mobileBoard.textFits, true, 'mobile KPI labels and values fit without clipping');
   assert.equal(mobileBoard.borderedRight, true,
     'KPI cards keep their right border when the grid collapses');
   assert.equal(mobileBoard.searchFitsToolbar, true, 'filter controls reflow inside the toolbar');
