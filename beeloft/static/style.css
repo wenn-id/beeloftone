@@ -524,6 +524,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 #command-center-view .rank-figures,#command-center-view .channel-name,
 #command-center-view .channel-net{overflow-wrap:anywhere}
 #command-center-view .hero-bar-value,#command-center-view .rank-figures{white-space:normal}
+#command-center-view h1{overflow-wrap:anywhere}
 @media(max-width:650px){
   .workforce-summary div,.workforce-summary div:first-child{padding:12px}
 }
