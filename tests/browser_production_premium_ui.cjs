@@ -17,12 +17,28 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
   };
   const noOverflow = async label => {
     const failures = await page.evaluate(() => {
+      const vw = innerWidth;
+      const describe = el => {
+        const box = el.getBoundingClientRect(), cs = getComputedStyle(el);
+        const cls = el.className && el.className.baseVal === undefined ? String(el.className).trim().split(/\s+/).join('.') : '';
+        return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''} L=${Math.round(box.left)} R=${Math.round(box.right)} sw=${el.scrollWidth} cw=${el.clientWidth} min=${cs.minWidth} ws=${cs.whiteSpace}`;
+      };
+      // Controls, KPI values and row cells must stay inside the viewport and inside themselves.
       const bad = [];
-      if (document.documentElement.scrollWidth > innerWidth) bad.push('page');
       for (const el of document.querySelectorAll('#board-view input, #board-view select, #board-view button, #summary dd, #summary dt, #board-view .cell')) {
         if (!el.getClientRects().length) continue;
         const box = el.getBoundingClientRect();
-        if (box.left < 0 || box.right > innerWidth + 1 || el.scrollWidth > el.clientWidth + 1) bad.push(el.id || el.className || el.tagName);
+        if (box.left < 0 || box.right > vw + 1 || el.scrollWidth > el.clientWidth + 1) bad.push(describe(el));
+      }
+      // When the document itself overflows, name the innermost element(s) responsible
+      // instead of reporting only the page, so a future failure points at the real cause.
+      if (document.documentElement.scrollWidth > vw) {
+        const overflowing = [...document.querySelectorAll('body *')]
+          .filter(el => el.getClientRects().length && (el.getBoundingClientRect().right > vw + 1 || el.scrollWidth > el.clientWidth + 1));
+        // Drop any element that still contains a wider descendant; the deepest offenders remain.
+        const innermost = overflowing.filter(el => overflowing.every(other => other === el || !el.contains(other)));
+        for (const el of innermost.slice(0, 10)) bad.push(describe(el));
+        if (!bad.length) bad.push('html (document scroll overflow with no visible offending element)');
       }
       return bad;
     });

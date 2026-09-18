@@ -465,7 +465,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 @media(max-width:650px){
   :root{--pad-x:16px;--gap:14px}
   .masthead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:0;padding:10px 12px}
-  .masthead-brand{flex:1 1 auto;padding:0;gap:10px}
+  .masthead-brand{flex:1 1 auto;min-width:0;flex-wrap:wrap;row-gap:6px;padding:0;gap:10px}
   .brand,.masthead-brand .brand{flex-direction:row;align-items:center;gap:9px}
   .brand>span.brand-word{font-size:1.125rem}
   .brand-mark{width:24px;height:24px}
@@ -958,7 +958,7 @@ label>input,label>select,label>textarea{margin-top:6px}
 /* Production is the bounded operational working surface; other workspaces keep their composition. */
 #board-view{max-width:1360px;margin-inline:auto;container-type:inline-size;--muted:var(--ink-2)}
 #board-view .page-heading{align-items:center;flex-wrap:wrap;gap:12px 24px;margin-bottom:20px}
-#board-view h1{font-size:1.875rem;line-height:1.2}
+#board-view h1{font-size:1.875rem;line-height:1.2;overflow-wrap:anywhere}
 #board-view .page-heading>div{min-width:0}
 #board-view .page-heading .actions{margin-left:auto}
 #board-view #summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
