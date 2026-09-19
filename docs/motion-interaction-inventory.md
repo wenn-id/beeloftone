@@ -707,3 +707,104 @@ errors, including all three motion modules. As in M0-M2, `python -m pip check` a
 and a wheel check is only meaningful once CI has the published HEAD.
 
 Next: M4 (data states and notifications), only after M3 is reviewed and merged.
+
+## 11. M4 delta — data states and notifications
+
+Baseline: `49addbb` (M3 merged as PR #21). Branch: `ui/motion-data-states`.
+
+M4 is the first milestone that changes what the operator sees *during* a request
+rather than only after it. The §08 distinction is the whole milestone: a page that
+already has data keeps it while the next request runs, and only a genuine
+replacement fades. Every state keeps its existing semantics — no loader gained or
+lost a clear, a retry, or a guard.
+
+| Change | Where | Intention |
+|---|---|---|
+| Notice entry | `.notice.motion-enter` via `playEntryMotion()` | opacity 0 + `translateY(8px)` → rest over `--motion-enter` (220ms, inside the 180-220ms band). Reuses the M2 helper, so the frame-later flush and the cleanup are the ones already proven. |
+| Notice exit | `.notice.motion-exit` via `hideNotice()` | opacity 0 + `translateY(4px)` over `--motion-base` (180ms) — the token table names `--motion-base` for the toast exit — then `hidden`. Driven by `transitionend`, with the same safety net as the dialog exit. |
+| Notice timer | `notify()` unchanged in meaning | Six seconds from the message, never from the animation. A new message cancels an in-flight exit so a stale timer cannot hide it early. |
+| Refresh treatment | `markRefreshing()` / `settleRefreshing()` | A container that already has children keeps them, gains `is-refreshing` (opacity .78) and `aria-busy="true"`, and is never locked. Returns whether it preserved anything, so the caller chooses between the first-load state and the refresh state. |
+| List replacement | `.list-host.motion-enter` via `playEntryMotion(node, '--motion-base')` | Opacity only, over the token the table names for a refresh fade. No row stagger and no movement, so a filter, a search or a page change reads as one change of content. |
+| Empty state | same replacement fade, applied to the message | An empty result is a semantic state, not a loading placeholder: the list empties and the message enters as one unit, only when there were rows to replace. The rule covers `.state` as well as `.list-host`, and the module asserts the message's opacity transition starts and finishes — otherwise the class would be applied to an element with nothing to transition, which is the "declared rather than performed" failure this programme already tests for. |
+| Errors | untouched paths, plus `settleRefreshing()` | An error is written immediately at full opacity, the dim is removed first, and the rows the operator already had stay on screen. |
+| Reduced motion | the §11 block and the JS branch | The dimming is state and stays; the fades do not run; `hideNotice()` applies `hidden` immediately. `.notice` is now named in the reduced-motion block, as §11 spells out. |
+
+### 11.1 Where the distinction is implemented, and how it is derived
+
+Three pages distinguish a refresh from a first load: **Produksi** (the §05 golden
+screen), **Master SKU**, and **Bahan baku**. They are the pages that have a manual
+refresh control over a list with the same loader shape, which is what makes the
+helper reusable rather than one page's special case.
+
+The board does not ask its nine callers which kind of load this is. It compares the
+query it is about to send against `boardQuery`, the query it last rendered, and
+treats a change as a replacement. That keeps the decision in one place, needs no
+call-site changes, and stays correct for the filter, search, pagination and reset
+paths alike, because each of them changes the query and a plain refresh does not.
+Bahan baku derives `materialsQuery` the same way from its material filter.
+
+### 11.2 What this milestone deliberately did not do
+
+**No changed-row tint.** §18 lists it as optional and it is the only bullet that
+adds a *new* signal to a successful mutation rather than reducing a reset. It also
+needs a per-row lifecycle that nothing else in the programme has, so it is left
+out rather than half-built; if it is wanted it reads as its own change.
+
+**No per-keystroke fade on Master SKU.** Its search filters a cached array on every
+`input` event, so a container fade per keystroke would read as flicker, which is
+the opposite of the specification's north star. The search stays instant; the page
+keeps the refresh treatment on its refresh control.
+
+**No propagation to the remaining list pages.** Approval, purchase request,
+marketing budget, integration and command centre loaders share the same shape but
+each carries its own clear contract, and §05 asks for the grammar to be proven on
+Produksi before it is propagated. M6 owns "cross-section propagation"; the helper
+is in place for it, and the three pages above prove it generalises.
+
+### 11.3 Regression coverage
+
+`tests/browser_motion_data_states.cjs` is new and registered in `tests/browser_smoke.cjs`.
+It asserts lifecycle flags and settled outcomes rather than animation timings:
+
+| Case | Asserted |
+|---|---|
+| Notice lifecycle | The entry really starts and finishes an opacity transition and leaves no motion class; the message is still visible four seconds in; it leaves through the exit state, finishes that transition, applies `hidden`, and leaves no class |
+| Manual refresh | The existing rows stay on screen, the list is not hidden, `is-refreshing` and `aria-busy="true"` are set, opacity lands inside the documented 0.72-0.82 band, the filters stay usable, the existing pagination guard is unchanged, and the whole state is removed when the load settles |
+| Filter replacement | Only a replacement fades: a plain refresh produces no `motion-enter` and no row restyling, while a filter change starts and finishes an opacity transition on the container and animates no individual row |
+| Empty result | The list empties and the empty state enters as one unit, then cleans up |
+| Error during refresh | The dim is removed, the message is fully legible with no motion class, and the previous rows are still there |
+| Reduced motion | The refreshing state and the dim are still reported and visible, with `0s` transition; a replaced list never fades; the notice never transitions or moves |
+| 320px / 200% and dark theme | No document overflow while a list is replaced, and the same refresh state in the dark theme |
+
+Two of the milestone's assertions were verified as load-bearing rather than
+decorative: removing the refresh branch from the board fails the module on "a
+refresh does not hide the list" — the exact visual reset §08 exists to remove.
+
+### 11.4 Tests that assumed the old refresh
+
+Preserving content on reload removes a signal three tests were leaning on: before
+this milestone, `#order-list` was hidden for the whole of a board load, so
+`!order-list.hidden` meant "the board finished loading". It no longer does, which
+is the point of the milestone. Each site was updated to the board's own busy
+marker, which is the idiom the production premium module already used:
+
+| File | Was | Now |
+|---|---|---|
+| `browser_production_premium_ui.cjs` | A held reload was expected to show the loading placeholder and hide the list | A held reload is expected to keep the rows visible and mark the list busy, with the pagination guard unchanged — and a separate block asserts the placeholder and the hidden list for a load with nothing to preserve, so the distinction itself stays covered |
+| `browser_smoke.cjs` | `!order-list.hidden` after a retry | `#summary[aria-busy]` detached |
+| `browser_navigation_foundation.cjs` | `!order-list.hidden` on re-entering the board | `#summary[aria-busy]` detached |
+
+The placeholder assertion was not simply deleted: the premium module had the only
+coverage of that first-load state on the board, so it now asserts both states
+side by side instead of one.
+
+### 11.5 Verification
+
+Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules and
+`node tests/test_client.mjs` PASS; the full browser suite PASS with no JavaScript
+errors, including all four motion modules. As in M0-M3, `python -m pip check` and
+`python -m build` are unavailable in this checkout and are recorded as gaps, not
+passes.
+
+Next: M5 (microinteractions and theme), only after M4 is reviewed and merged.
