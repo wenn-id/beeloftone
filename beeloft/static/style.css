@@ -576,8 +576,10 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
      still playing its entry keeps fading in while the dialog leaves. The dialog owns an
      animation and so does its backdrop, so both are stopped here. */
   dialog.motion-exit,dialog.motion-exit::backdrop{animation:none}
+  /* A dialog on its way out is presentation, not an interaction surface: eight controls inside
+     the content call close() directly, and without this they stay clickable while invisible. */
   dialog.is-closing{
-    animation:none;opacity:0;transform:scale(.985) translateY(4px);
+    animation:none;pointer-events:none;opacity:0;transform:scale(.985) translateY(4px);
     transition:opacity var(--motion-fast) var(--ease-exit),transform var(--motion-fast) var(--ease-exit);
   }
   dialog.is-closing::backdrop{animation:none;opacity:0;transition:opacity var(--motion-fast) var(--ease-exit)}

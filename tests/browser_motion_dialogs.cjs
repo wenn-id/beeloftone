@@ -99,20 +99,47 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await page.locator('dialog[open]').waitFor();
   await page.waitForFunction(() => document.getElementById('dialog').getAnimations()
     .some(animation => animation.animationName === 'dialog-enter'));
-  const entryWasRunning = await page.evaluate(() => {
+  const overlapStart = await page.evaluate(() => {
     const dialog = document.getElementById('dialog');
     const running = dialog.getAnimations().some(animation => animation.animationName === 'dialog-enter');
     document.getElementById('close-dialog').click();
-    return running;
+    return {running, pointerEvents: getComputedStyle(dialog).pointerEvents};
   });
   await dialogClosed();
   const overlapLog = await dialogLog();
-  assert.equal(entryWasRunning, true, 'the entry is still running when the close is dispatched');
+  assert.equal(overlapStart.running, true, 'the entry is still running when the close is dispatched');
+  assert.equal(overlapStart.pointerEvents, 'none', 'a dialog on its way out is not an interaction surface');
   assert.equal(markedClosing(overlapLog).length > 0, true, 'the close starts during the entry');
   assert.ok(sawTransition(overlapLog, 'transitionrun'), 'an exit that starts during the entry still transitions');
   assert.ok(sawTransition(overlapLog, 'transitionend'), 'that exit also runs to completion');
   assert.equal(closeEvents(overlapLog), 1, 'it closes exactly once');
   assert.equal(await dialogClasses(), '', 'no motion class survives a close that overlapped the entry');
+
+  // ---- a direct native close during the exit clears the pending motion state ----------------
+  // Eight controls inside the dialog content call close() directly rather than through the
+  // helper. Cleanup hangs off the native close event so that an abandoned exit cannot leave a
+  // timer behind, because that timer would close whatever dialog opens next.
+  await openSidebarDestination('Produksi');
+  await heading('Yang sedang dikerjakan.');
+  await trigger.click();
+  await page.locator('dialog[open]').waitFor();
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    document.getElementById('close-dialog').click();
+    document.getElementById('dialog').close();
+  });
+  assert.equal(await dialogClasses(), '',
+    'a direct close during the exit clears the closing classes immediately');
+  // Opened while that abandoned exit is still inside its window: with a surviving timer it would
+  // be closed, and with surviving classes it would be invisible.
+  await trigger.click();
+  await page.locator('dialog[open]').waitFor();
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => document.getElementById('dialog').open), true,
+    'an abandoned exit cannot close the dialog that opens next');
+  assert.equal(await dialogClasses(), '', 'the next dialog carries no closing state');
+  await page.keyboard.press('Escape');
+  await dialogClosed();
 
   // ---- Batal is wired to the same guarded close --------------------------------------------
   await openSidebarDestination('Master SKU');
@@ -172,22 +199,46 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   const event = (await apiGet('/api/audit-events?limit=1')).items[0];
   await openSidebarDestination('Audit trail');
   await heading('Audit trail');
-  let releaseEvent, signalEvent;
+  // Every touch of the surface is recorded. The log is cleared once the dialog has settled, so
+  // anything left in it happened during or after the exit — a mutation callback runs a microtask
+  // later, which is why the entry-time write cannot be separated from the exit by reading
+  // `dialog.open` inside the callback.
+  await page.evaluate(() => {
+    window.dialogRepaints = [];
+    const content = document.getElementById('dialog-content');
+    new MutationObserver(() => window.dialogRepaints.push({
+      open: document.getElementById('dialog').open,
+      hasDetail: content.innerHTML.includes('Input perubahan'),
+      html: content.innerHTML.slice(0, 80),
+    })).observe(content, {childList: true, subtree: true, characterData: true});
+  });
+  let releaseEvent, signalEvent, signalSettled;
   const eventStarted = new Promise(resolve => signalEvent = resolve);
   const eventReleased = new Promise(resolve => releaseEvent = resolve);
+  const eventSettled = new Promise(resolve => signalSettled = resolve);
+  let openWhenSettled = null;
   await page.route('**/api/audit-events/' + event.id, async route => {
     const response = await route.fetch(); signalEvent();
-    await eventReleased; await route.fulfill({response});
+    await eventReleased;
+    // Read while the exit is still running: the whole point is that the response settles while
+    // the dialog is open, which is what forces the generation guard to be the thing that
+    // rejects it rather than the `open` attribute.
+    openWhenSettled = await page.evaluate(() => document.getElementById('dialog').open);
+    await route.fulfill({response}); signalSettled();
   });
   await page.locator('#audit-list [data-action="audit-event"]').first().click();
   await eventStarted;
+  await page.evaluate(() => {window.dialogRepaints = [];});
   await page.keyboard.press('Escape');
-  await dialogClosed();
   releaseEvent();
-  await page.waitForTimeout(300);
+  await eventSettled;
+  await dialogClosed();
+  await page.waitForTimeout(200);
   await page.unroute('**/api/audit-events/' + event.id);
-  assert.equal(await page.evaluate(() => document.getElementById('dialog-content').innerHTML.includes('Input perubahan')), false,
-    'a response that lands during the exit cannot repaint the dialog');
+  assert.equal(openWhenSettled, true, 'the late response settles while the dialog is still open');
+  const repaints = await page.evaluate(() => window.dialogRepaints);
+  assert.deepEqual(repaints, [],
+    `a response that settles during the exit never touches the closing dialog :: ${JSON.stringify(repaints)}`);
 
   // ---- reduced motion: same result, no motion, same close path -----------------------------
   await page.emulateMedia({reducedMotion: 'reduce'});

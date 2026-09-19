@@ -577,7 +577,8 @@ their current meaning.
 | Dialog entry | `dialog[open]` + `@keyframes dialog-enter` | opacity 0, `scale(.975)`, `translateY(8px)` → resting over `--motion-dialog` (260ms), inside the 240-260ms band. CSS-only, so a reopen replays it and a content swap does not, without any script. |
 | Backdrop entry | `dialog[open]::backdrop` + `@keyframes dialog-backdrop-enter` | opacity 0 → target over `--motion-enter` (220ms). The layer table puts the backdrop at 180-220ms, which rules out `--motion-dialog` (260ms) despite the token table naming both layers together. |
 | Safe close helper | `closeDialogAnimated()` | Marks the dialog `is-closing`, waits for the exit transition, then calls native `close()`, so the `close` listener stays the single focus-restoration path and `dialogReturnFocus` behaviour is untouched. |
-| Exit | `dialog.is-closing` | opacity 0, `scale(.985)`, `translateY(4px)` over `--motion-fast` with `--ease-exit`. |
+| Cleanup | `resetDialogMotionState()` from the `close` listener | Every close path — the helper, the eight in-dialog controls that call `close()` directly, and session teardown — clears the pending timer, the transition listener and both motion classes. See §10.4. |
+| Exit | `dialog.is-closing` | opacity 0, `scale(.985)`, `translateY(4px)` over `--motion-fast` with `--ease-exit`, and `pointer-events:none`: a dialog on its way out is presentation, not an interaction surface. |
 | Unified close decision | `dialogCloseBlocked()` | Close button, `Batal` and Escape now share one `modalBusy`/`unresolved` check. Escape calls `preventDefault()` unconditionally and routes through the helper, which closes the §6.4 drift where two copies of the same decision could diverge. |
 | Reduced motion | `reducedMotion()` branch + the `reduce` block | Closes immediately through the same `close()`; `dialog, dialog::backdrop` join the explicit §11 list. The list is load-bearing, not decoration: the `*` catch-all matches elements, never pseudo-elements, so the backdrop would otherwise keep animating for a reduced-motion user. |
 | Print | existing `@media print` block | Animation, transition, opacity and transform are neutralised on `dialog[open]` and its backdrop, so a printed bundle or receipt label is never captured at the entry keyframe or half-faded. |
@@ -644,7 +645,37 @@ captures a settled dashboard instead of a half-faded dialog). Every other close 
 in the suite is separated from its next input by a click or a `waitFor`, and all
 168 Escape presses were checked.
 
-### 10.4 Regression coverage
+### 10.4 Two review findings that changed this milestone
+
+Both came from automated review on the PR and both were verified against the
+running product rather than taken on the report's word.
+
+**An abandoned exit could break the next dialog.** The exit left the dialog
+`open` and clickable, and eight controls inside `#dialog-content` call `close()`
+directly rather than through the helper. A direct close during the exit therefore
+left `motion-exit`/`is-closing` and the pending timer behind. The classes were not
+cosmetic: the next dialog opened invisible and non-interactive, and the surviving
+timer closed it about 180ms later. Cleanup now hangs off the native `close`
+event — the one thing every close path shares — so the timer, the transition
+listener and both classes are cleared no matter who closed the dialog. The
+regression case reproduces the abandoned exit and then opens a second dialog
+inside the abandoned window; removing the cleanup makes the whole browser suite
+fail before that case is even reached, because the SKU form in the shared smoke
+body can no longer be clicked.
+
+**The late-response case was not testing the guard it named.** The first cut
+released the held response *after* the dialog had finished closing, so the
+assertion only exercised the `!$('dialog').open` check and would have passed even
+if the `dialogVersion` guard were broken. The response is now released inside the
+exit window and the test proves it: the route handler reads back `dialog.open`
+while the exit is running and the case asserts it was still `true`, so the
+generation guard is what has to reject the response. A `MutationObserver` on the
+surface confirms nothing touched it once the close began. A first attempt asserted
+the open state read inside the observer callback and failed on the entry write —
+mutation callbacks run a microtask after the record, by which point `showModal()`
+has already run, so the log is cleared after the dialog settles instead.
+
+### 10.5 Regression coverage
 
 `tests/browser_motion_dialogs.cjs` is new and registered in `tests/browser_smoke.cjs`.
 It asserts lifecycle flags and settled outcomes rather than animation timings:
@@ -659,13 +690,14 @@ It asserts lifecycle flags and settled outcomes rather than animation timings:
 | Batal | Same helper, same single close |
 | Three open/close cycles | Exactly three close events, no stacked handler, no residue |
 | Unresolved write | Escape is refused, no `is-closing` is ever applied, the dialog stays open, and the retry then settles the draft |
-| Late dialog response | A response released during the exit cannot repaint the closed dialog — the request-generation guard, not the `open` attribute, is what rejects it |
+| Direct close during the exit | The closing classes clear immediately, and a dialog opened inside the abandoned exit window survives — it is neither closed by a surviving timer nor rendered non-interactive |
+| Late dialog response | The held response settles while the dialog is still open, and nothing touches the surface once the close has begun — the request-generation guard, not the `open` attribute, is what rejects it |
 | Reduced motion | No animation runs, the dialog is opaque immediately, the close is immediate, no `is-closing` is ever applied, focus still returns through the same path |
 | Print | Computed `animation-name: none`, opacity 1 and no transform on an open dialog |
 | 320px / 200% | No document overflow while the entry runs, and the dialog fits when settled |
 | Dark theme | The same entry and exit lifecycle |
 
-### 10.5 Verification
+### 10.6 Verification
 
 Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
 Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules and
