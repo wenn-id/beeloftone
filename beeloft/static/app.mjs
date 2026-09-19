@@ -20,6 +20,15 @@ let auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
 let workforceFilters = {work_date:'',status:'all',q:''};
 let exportBusy = false;
 let noticeTimer;
+// Preferensi gerak dibaca di satu tempat. CSS sudah mematikan transisi di mode gerak
+// dikurangi, tetapi JavaScript juga harus melewati gerak sepenuhnya di titik yang memang
+// memutuskan sendiri (gerak masuk halaman) alih-alih sekadar mempercepatnya. Query kedua
+// menjaga sidebar mobile tetap non-interaktif saat tertutup.
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+const reducedMotion = () => reducedMotionQuery.matches;
+const drawerQuery = window.matchMedia('(max-width: 980px)');
+const entryFrames = new WeakMap(), entryTimers = new WeakMap();
+let enteredSection = '';
 let materialsRequest = 0, materialsOffset = 0;
 let peopleRequest = 0, productsRequest = 0, productsCache = [];
 let dialogReturnFocus = null;
@@ -51,11 +60,24 @@ function theme(value) {
 try { theme(localStorage.getItem('beeloft.theme') || 'light'); } catch { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 
+// Drawer mobile. Saat tertutup, panel ini tidak dirender (display), sehingga sudah keluar dari
+// pohon akses dan urutan Tab — itu mekanisme yang sudah terbukti di produk ini. `inert`
+// dipasang sebagai jaminan kedua supaya tidak pernah ada kontrol tersembunyi yang masih bisa
+// dijangkau Tab, dan dilepas begitu drawer dibuka. Di desktop sidebar tidak pernah inert.
+function syncSidebarInert() {
+  const closed = !document.body.classList.contains('nav-open');
+  if (closed && drawerQuery.matches) $('app-sidebar').setAttribute('inert','');
+  else $('app-sidebar').removeAttribute('inert');
+}
 function sidebar(open,restoreFocus=false) {
   document.body.classList.toggle('nav-open',open);
   $('menu-toggle').setAttribute('aria-expanded',String(open));
+  syncSidebarInert();
+  if(open)playEntryMotion($('app-sidebar'));else clearEntryMotion($('app-sidebar'));
   if(!open&&restoreFocus&&!$('menu-toggle').hidden)$('menu-toggle').focus();
 }
+drawerQuery.addEventListener('change',syncSidebarInert);
+syncSidebarInert();
 $('menu-toggle').onclick=()=>sidebar(!document.body.classList.contains('nav-open'));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open'))sidebar(false,true);});
 function activeNavigation(id) {
@@ -119,6 +141,46 @@ const workspaceSections=[
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
   {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
 ];
+// Gerak masuk adalah lapisan presentasi saja: saat helper ini dipanggil, section sudah
+// terlihat, view sudah aktif, dan pemanggil sudah memulai request datanya. Yang dikerjakan di
+// sini hanya memasang kelas sementara, memulai transisi pada frame berikutnya, lalu
+// membersihkannya. Kelas selalu dibersihkan lebih dulu, jadi klik cepat berturut-turut tidak
+// pernah menumpuk kelas maupun handler. Durasi pembersihan dibaca dari token supaya nilainya
+// tetap punya satu sumber, bukan disalin ke JavaScript.
+function motionMs(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value.endsWith('ms') ? parseFloat(value) : parseFloat(value) * 1000;
+}
+function clearEntryMotion(node) {
+  for (const target of node ? [node] : workspaceSections.map(section => $(section.id))) {
+    const frame = entryFrames.get(target), timer = entryTimers.get(target);
+    if (frame) cancelAnimationFrame(frame);
+    if (timer) clearTimeout(timer);
+    entryFrames.delete(target); entryTimers.delete(target);
+    target.classList.remove('motion-enter','is-ready');
+  }
+}
+function playEntryMotion(node) {
+  if (!node) return;
+  clearEntryMotion(node);
+  if (reducedMotion()) return;
+  node.classList.add('motion-enter');
+  // Pastikan keadaan awal benar-benar terhitung sebelum frame berikutnya menambahkan is-ready.
+  // Tanpa ini, mesin bisa menggabungkan kedua perubahan kelas ke dalam satu perhitungan gaya,
+  // sehingga tidak ada nilai awal untuk ditransisikan dan section hanya muncul begitu saja.
+  // Membaca properti layout adalah flush-nya; tidak ada yang diukur.
+  void node.offsetHeight;
+  entryFrames.set(node, requestAnimationFrame(() => {
+    entryFrames.delete(node);
+    // Navigasi yang lebih baru sudah membersihkan kelas ini; jangan hidupkan lagi.
+    if (!node.classList.contains('motion-enter')) return;
+    node.classList.add('is-ready');
+    entryTimers.set(node, setTimeout(() => {
+      entryTimers.delete(node);
+      node.classList.remove('motion-enter','is-ready');
+    }, motionMs('--motion-enter')));
+  }));
+}
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
 // lain sambil menaikkan request counternya, tampilkan target, catat nama view
 // aktif, pindahkan aria-current, lalu tutup drawer mobile dan letakkan fokus.
@@ -133,6 +195,11 @@ function activateWorkspace(navId,sectionId=workspaceDestinations[navId]){
   $(sectionId).hidden=false;
   if(target)view=target.view;
   activeNavigation(navId);
+  // Gerak masuk hanya ketika tujuan benar-benar berpindah. Dua belas anak Analitik berbagi
+  // satu host, jadi berpindah laporan di dalamnya tidak memutar ulang gerak halaman; dan
+  // aktivasi pertama setelah login juga tidak, karena belum ada konteks yang digantikan.
+  if(enteredSection&&enteredSection!==sectionId)playEntryMotion($(sectionId));
+  enteredSection=sectionId;
   if(document.body.classList.contains('nav-open')){
     sidebar(false);
     if($('dialog').open){dialogReturnFocus=$('menu-toggle');return;}
@@ -254,6 +321,9 @@ function clearWorkspace() {
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; api.actorId = ''; user = null; selected = null; boardData = null;
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
+  // Sesi berganti: tidak ada konteks sebelumnya untuk digantikan, dan tidak boleh ada kelas
+  // gerak yang tertinggal dari akun sebelumnya.
+  enteredSection = ''; clearEntryMotion();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
   $('menu-toggle').hidden=true;sidebar(false);
   $('account-name').textContent = ''; $('access-key').value = ''; $('order-list').replaceChildren();

@@ -464,3 +464,99 @@ alone do not establish the gate. As in M0, `python -m pip check` and
 
 Next: M2 (workspace navigation and sidebar motion), only after M1 is reviewed and
 merged.
+
+## 9. M2 delta — workspace navigation and sidebar motion
+
+Baseline: `65fb28884b58f498a73094c794bd170405c982ac` (M1 merged as PR #19).
+Branch: `ui/motion-workspace-navigation`.
+
+M2 attaches presentation to the navigation lifecycle that Milestone G already
+centralised. `activateWorkspace()` remains the single writer for section
+visibility; the animation wraps that lifecycle rather than adding a router.
+
+| Change | Where | Intention |
+|---|---|---|
+| Reduced-motion helper | `reducedMotion()` over one `matchMedia` query | The JavaScript branch §6.1 recorded as missing and M1 deferred. M2 is where it is first needed: entry motion is skipped entirely rather than merely shortened. |
+| Page entry | `playEntryMotion()` called from `activateWorkspace()` | The target section fades in from `opacity:0` and `translateY(6px)` over `--motion-enter`. Only the target moves; the outgoing section is already hidden, so nothing slides out and there is no full-screen horizontal movement. |
+| Entry lifecycle | `motion-enter` → style flush → (`requestAnimationFrame`) → `is-ready` → token-timed cleanup | The class lands only after the section is revealed, `view` is set and `aria-current` has moved. The initial state is then forced to be computed, and the transition starts on the following frame, as §5 requires. Data fetches are not delayed: the loader has already been called by the time the class is applied. |
+| Drawer entry | `sidebar(true)` → `playEntryMotion($('app-sidebar'))` | The mobile panel enters as a small surface with the same frame-later pattern. |
+| Drawer accessibility | `syncSidebarInert()` toggled with `nav-open`, plus a `change` listener on the breakpoint | The closed drawer is unrendered (the mechanism this product already ships) **and** inert, so no hidden control is reachable. Desktop never sets it. |
+| Selected navigation | `.nav-item[aria-current=page]` transition | The selected tint and its icon settle over `--motion-base` (180ms) instead of the 120ms hover value, so choosing a destination reads as a state change rather than a hover. Press feedback keeps `--motion-instant`. |
+| Reduced-motion contract | `.motion-enter,.motion-exit{transform:none!important}` added to the `reduce` block | §11's literal contract for the motion classes, covering the case where the preference changes while an entry is in flight. |
+
+### 9.1 The entry runs only when the destination actually changes
+
+Two cases deliberately receive no entry, both required by §16:
+
+- **Shared analytics host.** All twelve Analitik children map to `analytics-view`.
+  Switching between two reports would otherwise replay a whole-page fade for a
+  change that is only a report swap. `activateWorkspace()` therefore compares the
+  incoming section against the last one it entered.
+- **The first activation after a session start.** There is no previous context to
+  replace, so animating the login-to-workspace transition would be decoration.
+  `clearWorkspace()` resets the record, which also guarantees a class from one
+  account cannot survive into another.
+
+### 9.2 Drawer: what is implemented, and what is not
+
+§6 describes an off-canvas drawer — closed at `translateX(-8px to -12px)` with
+`opacity:0`, a 220ms entry, a 160–180ms exit and `inert` — and states that a
+genuinely smooth drawer needs an accessibility-safe off-canvas state rather than
+"just opacity on `display:none`".
+
+**Implemented:** the entry motion (the frame-later pattern means the transition
+really runs, which is the failure that sentence warns about), the `inert`
+guarantee for the closed state, and a test that sweeps the tab order to prove no
+control inside a closed drawer is reachable.
+
+**Not implemented, deliberately:** the off-canvas repositioning and the animated
+close. The mobile sidebar in this product is an in-flow row that pushes the page
+down, not a floating panel. Converting it to a fixed overlay is a mobile layout
+change, not a motion change: it alters what users see when they open navigation
+and needs the masthead's real height as an anchor — the masthead wraps past
+`--header-h` at narrow widths, so `top` cannot simply be `var(--header-h)`. An
+animated close has the same problem in reverse: the panel occupies flow space
+while it fades, so the page would reflow 180ms late, after the heading focus has
+already moved.
+
+The trade-off is recorded here so the decision is explicit rather than silently
+skipped. If the off-canvas model is wanted, it should be its own change with its
+own review, and this milestone's entry motion and `inert` handling carry over
+unchanged.
+
+### 9.3 Regression coverage
+
+`tests/browser_motion_workspace.cjs` is new and registered in
+`tests/browser_smoke.cjs`. It asserts the milestone's focused cases:
+
+| Case | Asserted |
+|---|---|
+| Produksi → People → Approval quickly, with the board response held open | Only the final page is active, the late response cannot repaint the page the user left, one `aria-current`, no animation class left behind |
+| 390px drawer navigation | The drawer entry plays and cleans up, the drawer settles closed, focus lands on the new page heading, and the closed drawer returns to inert |
+| 320px / 200% | No document overflow while the drawer and page entries are in flight |
+| Reduced motion | No entry class is ever applied, the target is immediately opaque, and `aria-current` is identical |
+| Pending recovery | The guard is unchanged, the recovery dialog opens, the owning page is preserved, and no motion state is added |
+
+It also asserts that a report switch inside the shared analytics host never
+replays the entry, that the first activation after login carries no motion state,
+that desktop navigation moves focus nowhere, and that no control inside a closed
+drawer is reachable across a 40-step tab sweep.
+
+Two details exist because code review caught a real gap in the first cut of this
+module. The entry must be proven to **transition**, not merely to change classes:
+a class mutation is recorded even when an engine coalesces both class updates into
+a single style recalculation, and in that case the target simply appears with no
+transition at all. The module therefore requires `transitionrun` and
+`transitionend` for opacity on both the page and the drawer entry, and
+`playEntryMotion()` forces the initial state to be computed before `is-ready` is
+added so that the coalescing case cannot occur in the first place. Removing the
+entry transition from the stylesheet makes the module fail on exactly that
+assertion, which is how the assertion was verified to be load-bearing rather than
+decorative.
+
+Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules
+and `node tests/test_client.mjs` PASS; the full browser suite PASS with no
+JavaScript errors, including both motion modules.
+
+Next: M3 (dialogs and overlays), only after M2 is reviewed and merged.

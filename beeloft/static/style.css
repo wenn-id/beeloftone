@@ -514,11 +514,15 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 /* Reduced motion is a first-class mode rather than a fallback, so this is the explicit
    no-motion path for the whole product. Every moving pattern lives inside the
    `no-preference` query below; this block is the safety net that also covers anything a
-   later milestone forgets to gate. It removes movement, never state: a control still
-   tints when pressed, the disclosure caret still rotates, focus still appears — all
-   instantly. `transform` is deliberately not stripped, because the caret's rotation is
-   its state, not decoration. */
-@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+   later milestone forgets to gate, plus the motion classes themselves for the case where
+   the preference changes while an entry is in flight. It removes movement, never state: a
+   control still tints when pressed, the disclosure caret still rotates, focus still
+   appears — all instantly. `transform` is deliberately not stripped globally, because the
+   caret's rotation is its state, not decoration. */
+@media(prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+  .motion-enter,.motion-exit{transform:none!important}
+}
 @media(prefers-reduced-motion:no-preference){
   button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
   /* Press feedback. The individual `scale` property is used instead of a transform so a
@@ -527,6 +531,32 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
      so they must read as inert: `:disabled` is excluded and the busy states in the write
      flow set the disabled property, which matches this selector. */
   button:active:not(:disabled){scale:.985}
+  /* Workspace entry. Only the target moves, only after it is logically active, and only
+     6px — no full-screen horizontal slide. The previous section is already hidden by the
+     time these classes land, so nothing slides out. The classes are transient; the script
+     removes them once the entry has played so a settled page never carries motion state. */
+  .workspace-main>section.motion-enter{
+    opacity:0;transform:translateY(6px);
+    transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
+  }
+  .workspace-main>section.motion-enter.is-ready{opacity:1;transform:translateY(0)}
+  /* Selected navigation settles a little slower than hover, so choosing a destination reads
+     as a state change rather than a hover. Press feedback keeps its own faster token. The
+     rail indicator is left alone: it appears with the attribute and fades with nothing to
+     fade from, and the specification only allows it to fade or scale subtly. */
+  .nav-item[aria-current=page]{
+    transition:background-color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),scale var(--motion-instant) var(--ease-standard);
+  }
+  .nav-item .icon,.nav-summary .icon{transition:color var(--motion-base) var(--ease-standard)}
+}
+/* The mobile drawer enters as a small surface after `display` turns on, using the same
+   frame-later pattern as a workspace page rather than a screen-wide slide. */
+@media(max-width:980px) and (prefers-reduced-motion:no-preference){
+  .nav-open .app-sidebar.motion-enter{
+    opacity:0;transform:translateY(-6px);
+    transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
+  }
+  .nav-open .app-sidebar.motion-enter.is-ready{opacity:1;transform:translateY(0)}
 }
 
 

@@ -61,8 +61,8 @@ ENERGY 2 / RHYTHM 2 / MOTION 1.
   commissions, vouchers, shipping subsidy, conversion, traffic, true channel margin, and per-shop breakdowns are
   absent from the source data and are therefore absent from the interface. No trend, target, delta, placeholder
   identity, or business metric is invented.
-- Motion is limited to hover, focus, press and disclosure state, and every timing and easing value comes from
-  the shared motion tokens in `style.css`. Reduced-motion preferences remove non-essential transitions entirely:
-  state still changes, but nothing moves to express it.
+- Motion is limited to hover, focus, press, disclosure and page-entry state, and every timing and easing value
+  comes from the shared motion tokens in `style.css`. Reduced-motion preferences remove non-essential motion
+  entirely: state still changes, but nothing moves to express it.
 - Every interactive control keeps a visible focus ring, keyboard operation, mobile reflow, and usable text at
   200% zoom with no horizontal overflow at 320, 390, 768, 1024, or 1440 CSS pixels.
