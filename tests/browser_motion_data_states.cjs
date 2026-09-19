@@ -199,8 +199,30 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   assert.equal(parseFloat(errorState.messageOpacity), 1, 'the error message is fully legible immediately');
   assert.equal(errorState.messageClasses.includes('motion-'), false, 'the error is never faded in');
   assert.equal(errorState.rows, rowsBeforeError, 'the previous rows are still there');
+  assert.equal(await page.evaluate(() => document.getElementById('summary').getAttribute('aria-busy')), null,
+    'a failed reload does not leave the board reporting busy');
   await page.unroute('**/api/production-board?*');
   await page.getByRole('button', {name: 'Muat ulang', exact: true}).click();
+  await page.locator('#order-list .order-row').first().waitFor();
+
+  // ---- a query that failed the first time still counts as a replacement when it lands -------
+  // The fade compares against the query that is on screen, not the one that was asked for: a
+  // request that never rendered leaves the previous rows visible, so retrying it must still fade.
+  await page.route('**/api/production-board?*', async route => {
+    await route.fulfill({status: 503, contentType: 'application/json',
+      body: JSON.stringify({detail: 'Papan produksi sedang sibuk'})});
+  });
+  await page.locator('#board-stage').selectOption('cutting');
+  await page.getByText('Papan produksi sedang sibuk', {exact: false}).waitFor();
+  await page.unroute('**/api/production-board?*');
+  await page.evaluate(() => {window.listLog = [];});
+  await page.getByRole('button', {name: 'Muat ulang', exact: true}).click();
+  await page.waitForFunction(() => !document.getElementById('summary').hasAttribute('aria-busy'));
+  await page.waitForTimeout(400);
+  assert.equal(await replaced(), true,
+    'a filter whose first attempt failed still fades the list when it finally renders');
+  assert.equal((await listState()).motion, false, 'that fade cleans up after itself');
+  await page.locator('#board-stage').selectOption('all');
   await page.locator('#order-list .order-row').first().waitFor();
 
   // ---- reduced motion keeps every state signal and drops every movement ---------------------

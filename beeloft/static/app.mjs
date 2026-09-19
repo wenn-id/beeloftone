@@ -788,14 +788,19 @@ async function loadBoard() {
   // menggantinya. Hanya penggantian itu yang memudar sebagai satu unit, dan hanya kalau ada
   // baris yang benar-benar tergantikan — halaman yang baru dibuka tidak memudar.
   const refreshing = markRefreshing('order-list');
-  const replacing = refreshing && boardQuery !== query.toString();
-  boardQuery = query.toString();
   if (!refreshing) { message('board-message', 'Memuat posisi produksi…'); $('order-list').hidden = true; }
   $('previous').disabled = true; $('next').disabled = true;
   $('summary').setAttribute('aria-busy', 'true');
   try {
     const result = await api.get('/api/production-board?' + query);
     if (version !== epoch || request !== boardRequest || view !== 'board') return;
+    // Yang dicatat adalah kueri yang benar-benar dirender, bukan yang diminta. Permintaan yang
+    // gagal atau tersalip meninggalkan baris kueri sebelumnya di layar; kalau kueri barunya
+    // sudah tercatat lebih dahulu, percobaan ulang dengan kueri yang sama akan terbaca sebagai
+    // muat ulang biasa dan pergantian isinya kehilangan geraknya.
+    const rendered = query.toString();
+    const replacing = refreshing && boardQuery !== rendered;
+    boardQuery = rendered;
     settleRefreshing('order-list');
     boardData = result;
     const ownerId = query.get('owner_id'), previousOwnerLabel = $('board-owner').selectedOptions[0]?.textContent;
@@ -833,7 +838,7 @@ async function loadBoard() {
     $('previous').disabled = offset === 0; $('next').disabled = offset + 25 >= result.total;
     // Galat selalu muncul seketika dan tanpa peredupan: baris yang sudah ada tetap terbaca
     // sementara pesan kesalahannya bisa langsung ditindak.
-  } catch (error) { if (version === epoch && request === boardRequest) { settleRefreshing('order-list'); $('summary').replaceChildren(); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
+  } catch (error) { if (version === epoch && request === boardRequest) { settleRefreshing('order-list'); $('summary').replaceChildren(); $('summary').removeAttribute('aria-busy'); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
 }
 
 async function openDetail(id) {
@@ -5019,13 +5024,15 @@ async function loadMaterials() {
   // Muat ulang dan paginasi mempertahankan batch yang sudah tampil; mengganti filter bahan
   // menggantinya, jadi daftar itu memudar sebagai satu unit saat hasil baru masuk.
   const refreshing = markRefreshing('batch-list');
-  const replacing = refreshing && materialsQuery !== materialId;
-  materialsQuery = materialId;
   if (!refreshing) { message('materials-message','Memuat stok bahan…'); $('batch-list').replaceChildren(); $('materials-page').textContent = ''; }
   $('materials-previous').disabled = true; $('materials-next').disabled = true;
   try {
     const [materials,batches] = await Promise.all([allRows('/api/materials'), api.get('/api/material-batches?'+new URLSearchParams({limit:26,offset:materialsOffset,material_id:materialId}))]);
     if (version !== epoch || request !== materialsRequest || view !== 'materials') return;
+    // Sama seperti papan: yang dicatat adalah filter yang benar-benar dirender, supaya filter
+    // yang gagal dimuat tetap terhitung sebagai penggantian saat percobaan berikutnya berhasil.
+    const replacing = refreshing && materialsQuery !== materialId;
+    materialsQuery = materialId;
     settleRefreshing('batch-list');
     $('material-filter').innerHTML = option('','Semua bahan')+materials.map(m => option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('');
     $('material-filter').value = materialId;

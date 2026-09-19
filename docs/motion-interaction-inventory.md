@@ -772,7 +772,8 @@ It asserts lifecycle flags and settled outcomes rather than animation timings:
 | Manual refresh | The existing rows stay on screen, the list is not hidden, `is-refreshing` and `aria-busy="true"` are set, opacity lands inside the documented 0.72-0.82 band, the filters stay usable, the existing pagination guard is unchanged, and the whole state is removed when the load settles |
 | Filter replacement | Only a replacement fades: a plain refresh produces no `motion-enter` and no row restyling, while a filter change starts and finishes an opacity transition on the container and animates no individual row |
 | Empty result | The list empties and the empty state enters as one unit, then cleans up |
-| Error during refresh | The dim is removed, the message is fully legible with no motion class, and the previous rows are still there |
+| Error during refresh | The dim is removed, the message is fully legible with no motion class, the previous rows are still there, and the board is not left reporting busy |
+| A query that failed first | A filter whose first attempt fails still fades the list when the same query finally renders |
 | Reduced motion | The refreshing state and the dim are still reported and visible, with `0s` transition; a replaced list never fades; the notice never transitions or moves |
 | 320px / 200% and dark theme | No document overflow while a list is replaced, and the same refresh state in the dark theme |
 
@@ -780,7 +781,31 @@ Two of the milestone's assertions were verified as load-bearing rather than
 decorative: removing the refresh branch from the board fails the module on "a
 refresh does not hide the list" — the exact visual reset §08 exists to remove.
 
-### 11.4 Tests that assumed the old refresh
+### 11.4 Three review findings that changed this milestone
+
+All three came from automated review on the PR and all three were reproduced against
+the running product before being fixed. Two of them are about what the tracking
+variables actually mean.
+
+**The recorded query must be the rendered one.** `boardQuery` and `materialsQuery`
+were written when the request was *sent*, before its staleness guard and before
+anything was painted. A request that failed or was superseded therefore recorded a
+query the screen never showed, and the later attempt with that same query compared
+equal to it, read as a plain reload, and skipped the replacement fade entirely. Both
+loaders now compute `replacing` and record the query inside the success branch,
+after the guard. Reproduced and confirmed: with the old shape, a filter whose first
+attempt fails never fades when it finally renders.
+
+**A failed board load left `#summary` marked busy forever.** The catch cleared the
+list's own marker but not the summary's `aria-busy`, so assistive technology was
+told the summary was still updating until some later load happened to clear it.
+This is pre-existing rather than introduced here, but M4 is the milestone that
+promotes `aria-busy` to the board's documented completion signal — the doc and two
+adapted tests now depend on it — so leaving it stuck contradicts the contract this
+milestone writes. The command centre's own summary already cleared its marker on
+error; the board now matches it.
+
+### 11.5 Tests that assumed the old refresh
 
 Preserving content on reload removes a signal three tests were leaning on: before
 this milestone, `#order-list` was hidden for the whole of a board load, so
@@ -798,7 +823,7 @@ The placeholder assertion was not simply deleted: the premium module had the onl
 coverage of that first-load state on the board, so it now asserts both states
 side by side instead of one.
 
-### 11.5 Verification
+### 11.6 Verification
 
 Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
 Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules and
