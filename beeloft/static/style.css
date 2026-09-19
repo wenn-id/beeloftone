@@ -23,7 +23,9 @@
 .command-attention{border-left:3px solid var(--edge);padding:1rem 0 1rem 1.2rem;overflow-wrap:anywhere}.command-attention.critical{border-left-color:var(--danger)}.command-attention.warning{border-left-color:var(--accent)}.command-attention p{margin:.35rem 0}.command-snapshot{min-width:0}.command-snapshot h3{margin-bottom:.35rem}.command-values dt{color:var(--muted);min-width:0}.command-values dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}@media(max-width:650px){#command-center-summary{grid-template-columns:minmax(0,1fr)}#command-center-summary dd{overflow-wrap:anywhere}.command-values{grid-template-columns:minmax(0,1fr)}.command-values dd{text-align:left}}
 .audit-json{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);padding:1rem;max-height:300px;overflow:auto;font:0.8125rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.audit-event{padding:1rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.audit-event p{margin:.35rem 0}
 .bundle-label{display:grid;grid-template-columns:150px minmax(0,1fr);gap:1rem;align-items:center;border:2px solid var(--ink);padding:1rem;margin:1rem 0;background:#fff;color:#111}.bundle-label img{display:block;width:150px;height:150px}.bundle-label strong,.bundle-label span{display:block;overflow-wrap:anywhere}.bundle-label strong{font-size:1.25rem}.bundle-label .bundle-label-qty{font-size:1.1rem;font-weight:600;margin:.35rem 0}@media(max-width:450px){.bundle-label{grid-template-columns:minmax(0,1fr);text-align:center}.bundle-label img{margin:auto}}
-@media print{body>*{display:none!important}#dialog[open]{display:block!important;position:static;width:auto;max-height:none;margin:0;padding:0;border:0;box-shadow:none}#dialog[open]>*{display:none!important}#dialog[open] #dialog-content{display:block!important}#dialog-content>*{display:none!important}#dialog-content .bundle-label{display:grid!important;width:80mm;margin:0;border:1.5pt solid #000;padding:5mm;break-inside:avoid}}
+@media print{body>*{display:none!important}#dialog[open]{display:block!important;position:static;width:auto;max-height:none;margin:0;padding:0;border:0;box-shadow:none}#dialog[open]>*{display:none!important}#dialog[open] #dialog-content{display:block!important}#dialog-content>*{display:none!important}#dialog-content .bundle-label{display:grid!important;width:80mm;margin:0;border:1.5pt solid #000;padding:5mm;break-inside:avoid}/* A printed label is a static artefact: the entry animation must not freeze the surface at
+   opacity 0 in the snapshot, and an in-flight close must not be captured half-faded. */
+#dialog[open],#dialog[open]::backdrop{animation:none!important;transition:none!important;opacity:1!important;transform:none!important}}
 .dialog-heading{flex-wrap:wrap}.dialog-heading h2,.form-info{overflow-wrap:anywhere}
 .bom-line{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:.6rem;align-items:end;margin-bottom:1rem}.bom-line>div{min-width:0}.requirement-values{margin:.6rem 0}.requirement-values>div{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.requirement-values dd{margin:0;font-variant-numeric:tabular-nums}.product-item{flex-wrap:wrap}.product-item>div{min-width:0}@media(max-width:650px){.bom-line{grid-template-columns:minmax(0,1fr)}.bom-line button{justify-self:start}}
 .workforce-heading{display:flex;align-items:start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem}.workforce-heading p{margin-bottom:.25rem}.workforce-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border-top:2px solid var(--ink);border-bottom:1px solid var(--line);margin:1.5rem 0}.workforce-summary div{padding:1rem;border-right:1px solid var(--line);min-width:0}.workforce-summary div:last-child{border-right:0}.workforce-summary dt{color:var(--muted);font-size:.8125rem}.workforce-summary dd{font-size:1.35rem;font-weight:600;margin:.25rem 0 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.workforce-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,auto);gap:1.25rem;padding:1.15rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.workforce-row h3,.workforce-row p{margin-bottom:.3rem}.workforce-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}.workforce-master{max-height:60dvh}dialog:has(.workforce-screen){width:min(960px,calc(100% - 2rem))}@media(max-width:800px){.workforce-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.workforce-summary div:nth-child(3){border-right:0}.workforce-summary div:nth-child(-n+3){border-bottom:1px solid var(--line)}}@media(max-width:650px){.workforce-heading,.workforce-row{grid-template-columns:minmax(0,1fr);display:grid}.workforce-heading .actions,.workforce-row-actions{justify-content:flex-start}.workforce-row-actions button{flex:1}.workforce-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.workforce-summary div:nth-child(3){border-right:1px solid var(--line)}.workforce-summary div:nth-child(2n){border-right:0}.workforce-summary div:nth-child(-n+4){border-bottom:1px solid var(--line)}}
@@ -522,6 +524,11 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 @media(prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
   .motion-enter,.motion-exit{transform:none!important}
+  /* §11 spells the dialog out separately, and it has to be: the catch-all above matches
+     elements, never pseudo-elements, so `::backdrop` would keep animating in reduced-motion
+     mode. `transform` is stripped here because the dialog's own entry state is decoration —
+     unlike the disclosure caret, nothing about the dialog's meaning is carried by its scale. */
+  dialog,dialog::backdrop{transition:none!important;animation:none!important;transform:none!important}
 }
 @media(prefers-reduced-motion:no-preference){
   button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
@@ -548,6 +555,34 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
     transition:background-color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),scale var(--motion-instant) var(--ease-standard);
   }
   .nav-item .icon,.nav-summary .icon{transition:color var(--motion-base) var(--ease-standard)}
+  /* Dialog. Entry is CSS-only: the surface and its backdrop animate from their first frame
+     whenever this element starts matching [open], which also covers a reopen after a close and
+     never replays for a content swap, because [open] stays matched. Backdrop timing comes from
+     --motion-enter rather than --motion-dialog: the layer table puts the backdrop at 180-220ms
+     and 220ms is inside it, while 260ms is not.
+     The exit cannot be expressed this way — a native dialog disappears the instant close()
+     runs — so the script marks it `is-closing`, waits one exit budget, then calls close().
+     That budget is capped at 160ms by the close-helper contract, which is why the exit uses
+     --motion-fast: --motion-base (180ms) would exceed the cap. --ease-exit keeps it from
+     lingering. `animation:none` drops a still-running entry first; an animation outranks a
+     transition, so a close that lands during the entry would otherwise swallow the exit. */
+  @keyframes dialog-enter{from{opacity:0;transform:scale(.975) translateY(8px)}}
+  @keyframes dialog-backdrop-enter{from{opacity:0}}
+  dialog[open]{animation:dialog-enter var(--motion-dialog) var(--ease-enter)}
+  dialog[open]::backdrop{animation:dialog-backdrop-enter var(--motion-enter) var(--ease-enter)}
+  /* Stopping a running entry is a separate step from applying the closing values, and the script
+     flushes the resting state in between. Both in one recalculation and a browser generates no
+     transition at all: the dialog just disappears when the safety timer fires, and a backdrop
+     still playing its entry keeps fading in while the dialog leaves. The dialog owns an
+     animation and so does its backdrop, so both are stopped here. */
+  dialog.motion-exit,dialog.motion-exit::backdrop{animation:none}
+  /* A dialog on its way out is presentation, not an interaction surface: eight controls inside
+     the content call close() directly, and without this they stay clickable while invisible. */
+  dialog.is-closing{
+    animation:none;pointer-events:none;opacity:0;transform:scale(.985) translateY(4px);
+    transition:opacity var(--motion-fast) var(--ease-exit),transform var(--motion-fast) var(--ease-exit);
+  }
+  dialog.is-closing::backdrop{animation:none;opacity:0;transition:opacity var(--motion-fast) var(--ease-exit)}
 }
 /* The mobile drawer enters as a small surface after `display` turns on, using the same
    frame-later pattern as a workspace page rather than a screen-wide slide. */

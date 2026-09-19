@@ -148,6 +148,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.locator('#products-clear').isDisabled(),true);
   await page.unroute('**/api/products?*');
   await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  // M3: the close runs an exit animation before the native close, so the dialog stays modal
+  // for its exit budget. Wait for it to settle before touching the page behind it — a fill()
+  // into a still-blocked page silently does nothing, and the screenshot would capture a
+  // half-faded dialog.
+  await page.locator('#dialog').waitFor({state:'hidden'});
   await page.screenshot({path:path.join(work,'dashboard-desktop.png'),fullPage:true});
   await page.getByLabel('Cari order atau SKU').fill('not-found');
   await page.getByRole('button',{name:'Cari order',exact:true}).click();
@@ -444,6 +449,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_shared_ui.cjs');
   await runModule('./browser_motion_foundation.cjs');
   await runModule('./browser_motion_workspace.cjs');
+  await runModule('./browser_motion_dialogs.cjs');
   await runModule('./browser_production_premium_ui.cjs');
   await runModule('./browser_navigation_foundation.cjs');
   await runModule('./browser_workspace_utilities.cjs');
