@@ -396,3 +396,71 @@ and the PR body records those results separately.
 
 Per the specification's §20 execution protocol and §15 hard stop, M1-M6 remain
 unimplemented until M0 is reviewed and merged.
+
+## 8. M1 delta — foundation and tactile controls
+
+Baseline: `191de6d28ead2a8039888c4df3c97f44d422ef03` (M0 merged as PR #18).
+Branch: `ui/motion-foundation-tactile-controls`.
+
+M1 touches presentation only. No endpoint, schema, calculation, role rule,
+idempotency or focus contract changed, and no page transition, drawer motion or
+dialog exit was added — those are M2 and M3.
+
+| Change | Where | Intention |
+|---|---|---|
+| Nine motion and easing tokens | theme-invariant `:root`, declared once | The specification's canonical set becomes the single source for timing and easing. Declared in full even though M1 consumes four of them (`--motion-instant`, `--motion-fast`, `--motion-base`, `--ease-standard`), so M2-M4 inherit the same vocabulary instead of inventing local values. |
+| Two ad-hoc transitions normalised | `.nav-caret`; `button,.nav-item,.nav-summary` | `.12s ease` → `--motion-fast` + `--ease-standard` (duration unchanged). The caret's `.15s ease` → `--motion-base` + `--ease-standard`; 180ms sits inside the 150–180ms band the specification allows this control, and it is the nearest token to the old value. |
+| Press feedback | `button:active:not(:disabled){scale:.985}` inside the `no-preference` query | The tactile layer the milestone exists for, applied to every button — including the sidebar rows, the approval CTA and the dialog's close control, which are all `<button>` elements. |
+| Focus polish | `:focus-visible` | The ring no longer forces `border-radius:var(--r-nav)`. Overriding the radius made every pill control snap to the 10px nav radius while focused; the ring now follows the control's own shape. Visibility was already immediate and remains so. |
+| Reduced-motion refinement | `@media(prefers-reduced-motion:reduce)` | The blanket suppressor gains `animation:none!important` and the new press pattern is gated inside `no-preference`, so a reduced-motion user receives **no** movement at all rather than a faster one. |
+
+### 8.1 How the press pattern avoids a transform collision
+
+`scale` — the individual property — carries the press, not `transform`. A control
+that owns a `transform` therefore keeps it while pressed, which is what §4 asks
+for and what the caret's rotation requires. The old
+`button:active{transform:none}` suppressor was dead: nothing else in the sheet
+gives a button a transform, and it was removed rather than left beside the new
+rule. Disabled and busy controls are excluded, so a control that accepts no input
+never animates as though it had.
+
+### 8.2 Why M1 does not add a JavaScript reduced-motion check
+
+§6.1 records that no JavaScript reads the preference and suggests M1 introduce it.
+M1 does not, deliberately: its only new pattern is CSS-only, so a JS helper would
+be unreachable code, and §20 asks for the smallest complete milestone. M2 is the
+first milestone whose entry motion genuinely branches in script; the helper
+belongs there, where it can be exercised.
+
+### 8.3 What M1 deliberately left alone
+
+- The `no-preference` gate on the caret's rotation is unchanged; M5 owns further
+  disclosure behaviour.
+- The `reduce` block still does not strip `transform`, because the caret's
+  rotation expresses state rather than decoration. Stripping it would remove
+  meaning, which §11 forbids.
+- No hover-lift, no card scale on non-interactive surfaces, and no motion on the
+  many `hidden` writers that carry role, session and pagination state.
+
+### 8.4 Regression coverage
+
+`tests/browser_motion_foundation.cjs` is new and registered in
+`tests/browser_smoke.cjs`. It asserts the settled outcome of each pattern rather
+than a timing curve: the token values resolve on `:root`; a pressed board control
+settles below its resting scale while its computed `transform` stays `none`; a
+disabled control never takes the press; every button transition duration resolves
+to a token; a keyboard-focused pill keeps its own radius and its ring is visible
+without any transition on `outline`; and under `reducedMotion: reduce` a press
+produces no scale and no transition while the disclosure caret still reports open
+and closed. Produksi is asserted first, then the shared controls, matching the
+milestone's stated validation order.
+
+Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules
+and `node tests/test_client.mjs` PASS; the full browser suite PASS with no
+JavaScript errors. The published PR records CI on the actual HEAD; local passes
+alone do not establish the gate. As in M0, `python -m pip check` and
+`python -m build` are unavailable in this checkout; CI's Core job covers the first.
+
+Next: M2 (workspace navigation and sidebar motion), only after M1 is reviewed and
+merged.

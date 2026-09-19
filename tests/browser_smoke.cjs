@@ -442,6 +442,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_audit_trail.cjs');
   await runModule('./browser_kpi_glyphs.cjs');
   await runModule('./browser_shared_ui.cjs');
+  await runModule('./browser_motion_foundation.cjs');
   await runModule('./browser_production_premium_ui.cjs');
   await runModule('./browser_navigation_foundation.cjs');
   await runModule('./browser_workspace_utilities.cjs');

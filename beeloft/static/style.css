@@ -53,6 +53,12 @@
   --r-card:20px;--r-nav:10px;--r-chip:8px;--r-pill:999px;
   --shadow-sm:0 1px 2px #0b0d170a,0 1px 3px #0b0d1708;--shadow-md:0 6px 24px #0b0d1710;--shadow-lg:0 18px 48px #0b0d1718;
   --shadow:var(--shadow-md);
+  /* Motion tokens: the single source for every timing and easing in the product, so
+     component rules never carry a raw 150ms/0.3s again. These are theme-invariant, so they
+     are declared once here and deliberately not repeated in the dark override. */
+  --motion-instant:80ms;--motion-fast:120ms;--motion-base:180ms;
+  --motion-enter:220ms;--motion-dialog:260ms;--motion-slow:320ms;
+  --ease-standard:cubic-bezier(.22,1,.36,1);--ease-enter:cubic-bezier(.16,1,.3,1);--ease-exit:cubic-bezier(.4,0,1,1);
 }
 :root[data-theme=dark]{
   color-scheme:dark;
@@ -96,14 +102,17 @@ button{
   font-size:.875rem;font-weight:600;letter-spacing:-.005em;cursor:pointer;
 }
 button:hover{border-color:var(--edge);background:var(--surface-subtle)}
-button:active{transform:none}
 button:disabled{opacity:.45;cursor:not-allowed}
 .primary{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 1px 2px #2d5efb33}
 .primary:hover{background:var(--primary-hover);border-color:var(--primary-hover);color:#fff}
 :root[data-theme=dark] .primary{color:#0e121c}
 .quiet{border-color:transparent;background:transparent;box-shadow:none;color:var(--ink-2)}
 .quiet:hover{border-color:transparent;background:var(--surface-subtle);color:var(--ink)}
-:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-nav)}
+/* The ring is intentionally instant: no transition touches `outline`, so keyboard focus is
+   visible on the first frame and never depends on an animation to appear. It also no longer
+   forces a radius — overriding `border-radius` here made every pill-shaped control snap to
+   the 10px nav radius while focused; the ring now follows the control's own shape. */
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 input,select,textarea{
   width:100%;min-height:40px;padding:.5rem .8rem;
   border:1px solid var(--line-strong);border-radius:12px;
@@ -180,7 +189,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .nav-summary:hover{background:var(--surface-subtle);color:var(--ink)}
 .nav-summary>span{flex:1}
 .nav-summary .icon{color:var(--muted)}
-.nav-caret{margin-left:auto;transform:rotate(-180deg);transition:transform .15s ease}
+.nav-caret{margin-left:auto;transform:rotate(-180deg);transition:transform var(--motion-base) var(--ease-standard)}
 .nav-collapse:not([open]) .nav-caret{transform:rotate(0)}
 .nav-children{display:flex;flex-direction:column;gap:2px;margin-top:2px}
 .nav-children .nav-item{min-height:34px;padding-left:44px;font-size:.875rem;color:var(--muted)}
@@ -502,9 +511,22 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .command-values dd{text-align:left;padding-top:0}
   .command-values dt{padding-bottom:1px}
 }
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* Reduced motion is a first-class mode rather than a fallback, so this is the explicit
+   no-motion path for the whole product. Every moving pattern lives inside the
+   `no-preference` query below; this block is the safety net that also covers anything a
+   later milestone forgets to gate. It removes movement, never state: a control still
+   tints when pressed, the disclosure caret still rotates, focus still appears — all
+   instantly. `transform` is deliberately not stripped, because the caret's rotation is
+   its state, not decoration. */
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media(prefers-reduced-motion:no-preference){
-  button,.nav-item,.nav-summary{transition:background-color .12s ease,border-color .12s ease,color .12s ease}
+  button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
+  /* Press feedback. The individual `scale` property is used instead of a transform so a
+     button's own `transform` — the nav caret's rotation, and anything added later — can
+     never be overwritten by a press. Disabled and busy controls keep accepting no input,
+     so they must read as inert: `:disabled` is excluded and the busy states in the write
+     flow set the disabled property, which matches this selector. */
+  button:active:not(:disabled){scale:.985}
 }
 
 
