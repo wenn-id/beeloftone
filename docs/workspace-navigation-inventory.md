@@ -1,10 +1,15 @@
 # Workspace Navigation Inventory
 
 Program: Beeloft One — Workspace Navigation Architecture Roadmap, Version 1.0
-Milestone: 0 (Inventory and migration map)
-Baseline: `main` @ `0748571ade0f8c8da5cdff9ed17dfb8acf746991`
-Branch: `docs-only`
-Date: 18 September 2026
+Current milestone: G (Architecture cleanup and consistency verification)
+Baseline: `main` @ `af27c4634e52a338fca31c0421d7937477fcd03a`
+Branch: `refactor/workspace-navigation-cleanup`
+Date: 19 September 2026
+
+The original Milestone 0 inspection used `0748571ade0f8c8da5cdff9ed17dfb8acf746991`.
+Historical renderer names, line references and milestone deltas below describe
+that migration history. The summary counts and Milestone G current map are the
+final-state inventory.
 
 Core rule under inventory: primary navigation must establish context in the main
 workspace. A modal is reserved for a focused secondary task (create, edit, review,
@@ -768,3 +773,71 @@ Local verification (19 September 2026, Windows, Python 3.12.14):
 
 The published PR records its actual HEAD and GitHub Core/Browser results;
 local passes alone do not establish the roadmap's CI gate.
+
+## 14. Milestone G delta: cleanup and consistency verification
+
+Baseline: `af27c4634e52a338fca31c0421d7937477fcd03a` (F merged as PR #16).
+Branch: `refactor/workspace-navigation-cleanup`.
+
+No new destinations are migrated in G. Final inventory stays at 4 EXISTING_PAGE,
+23 MIGRATED_PAGE, 0 LEGACY_DIALOG and 0 NEEDS_VERIFICATION, total 27.
+
+| Current sidebar id(s) | Workspace host | Status |
+|---|---|---|
+| `command-center` | `command-center-view` | EXISTING_PAGE |
+| `board-home` | `board-view` | EXISTING_PAGE |
+| `materials` | `materials-view` | EXISTING_PAGE |
+| `activity` | `activity-view` | EXISTING_PAGE |
+| `workforce` | `people-view` | MIGRATED_PAGE |
+| `products` | `products-view` | MIGRATED_PAGE |
+| `wip-ageing-insights`, `capacity-plan`, `production-quality-insights`, `supplier-performance-insights`, `material-price-insights`, `purchase-commitment-insights`, `demand-forecast`, `replenishment`, `size-demand-insights`, `return-insights`, `dead-stock-insights`, `stock-adjustment-insights` | `analytics-view` | MIGRATED_PAGE (12) |
+| `ai-brain` | `ai-view` | MIGRATED_PAGE |
+| `integrations` | `integrations-view` | MIGRATED_PAGE |
+| `audit-trail` | `audit-view` | MIGRATED_PAGE |
+| `approvals` | `approvals-view` | MIGRATED_PAGE |
+| `purchase-requests` | `purchase-requests-view` | MIGRATED_PAGE |
+| `marketing-budgets` | `marketing-budgets-view` | MIGRATED_PAGE |
+| `scan-bundle` | `bundle-scan-view` | MIGRATED_PAGE |
+| `scan-finished-goods` | `finished-goods-scan-view` | MIGRATED_PAGE |
+| `backup` | `backup-view` | MIGRATED_PAGE |
+
+- All 99 remaining `*Dialog()` functions are accounted for in
+  `docs/workspace-dialog-classification.md`: 95 focused secondary entry points
+  and four shared lifecycle helpers. No obsolete primary implementation remains.
+- Removed the legacy sidebar click/microtask fallback. Normal navigation already
+  uses `activateWorkspace()`; pending recovery closes the drawer and saves return
+  focus inside `openDialog()`. Recovery, busy/unresolved guards, actor binding,
+  exact-once writes and per-feature request counters remain intact.
+- Reviewed all dialog-width/scroll rules and markup. Each remaining override has
+  live secondary consumers; the single HTML dialog shell is still required.
+  Section show/hide logic is already centralized. No CSS, HTML, backend, schema,
+  business calculation or endpoint change is needed.
+- Static tests compare sidebar ids to registered page hosts and require every
+  dialog function to have a classification. The browser sweep compares its
+  expected destinations with the real sidebar, preventing new untested items.
+- Browser coverage adds all-role keyboard navigation at 1440, 1024, 768, 390 and
+  320px/200% in light/dark, one visible page, one `aria-current`, no primary modal
+  opening (including transient opens), mobile heading focus and drawer close.
+  A separate pending recovery check verifies the original transaction key/actor,
+  Escape protection and menu focus after recovery.
+
+G remains a review unit until its actual PR HEAD passes Core and Browser CI and
+the PR is reviewed and merged. After that merge, stop the architecture program;
+premium refinement starts only as a separately authorized series.
+
+Local verification (19 September 2026, Windows, Python 3.12.14):
+
+- `python -m unittest discover -s tests -v`: 509 tests, PASS.
+- `python -m pip check` and `python -m compileall -q beeloft`: PASS.
+- `node --check beeloft/static/app.mjs`, `node --check beeloft/static/client.mjs`
+  and `node tests/test_client.mjs`: PASS.
+- Focused navigation browser module: PASS, including all-role keyboard sweep
+  and drawer-interrupted pending recovery.
+- `python tests/run_browser.py --channel chromium` with the local bundled
+  Playwright module supplied through `--playwright-module`: full suite PASS,
+  no JavaScript errors. A previous run was interrupted by `route.fetch: socket
+  hang up` in the unchanged settlement test; the complete rerun passed without
+  changing that test or its assertions.
+- `python -m build`: sdist and wheel PASS; `git diff --check`: PASS.
+- Local Playwright is 1.62.1; CI keeps its existing Linux 1.63.0 pin. The PR body
+  records actual published HEAD and Core/Browser CI results separately.
