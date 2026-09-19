@@ -20,11 +20,12 @@ stable identifiers.
 
 ## 1. Executive finding
 
-The product is already almost motionless. The entire baseline contains **two CSS
-transition declarations and no keyframes at all**. Everything the specification
-asks for in M1-M6 is therefore net-new construction, not replacement of an
-existing animation system. The main risks are not "too much existing motion";
-they are the six structural gaps in §6 that a naive motion layer would trip over.
+The product is already almost motionless. The entire baseline contains **three CSS
+transition declarations (two active transitions and one reduced-motion suppressor)
+and no keyframes at all**. Everything the specification asks for in M1-M6 is
+therefore net-new construction, not replacement of an existing animation system.
+The main risks are not "too much existing motion"; they are the six structural gaps
+in §6 that a naive motion layer would trip over.
 
 The specification's north star — "if a user notices a lot of animation, the system
 is probably over-animated" — is currently satisfied by default. Every milestone
@@ -37,10 +38,11 @@ adds motion budget that does not exist today.
 | Line | Selector | Declaration | Duration / curve | Purpose |
 |---|---|---|---|---|
 | `style.css:183` | `.nav-caret` | `transition:transform .15s ease` | 150ms, `ease` | Analytics disclosure caret rotates between open and closed |
+| `style.css:505` | `@media(prefers-reduced-motion:reduce) *` | `transition:none!important` | N/A | Suppresses every transition when reduced motion is requested |
 | `style.css:507` | `button,.nav-item,.nav-summary` | `transition:background-color .12s ease,border-color .12s ease,color .12s ease` | 120ms, `ease` | Hover and selected tint on every control and nav row |
 
-That is the complete list. Two declarations, both colour-or-rotation only, both
-under 200ms, neither moving layout.
+That is the complete list. It includes two active colour-or-rotation transitions,
+both under 200ms and neither moving layout, plus the reduced-motion suppressor.
 
 ### 2.2 Motion-adjacent rules that are not transitions
 
