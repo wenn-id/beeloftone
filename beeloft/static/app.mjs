@@ -23,6 +23,10 @@ let noticeTimer;
 let materialsRequest = 0, materialsOffset = 0;
 let peopleRequest = 0, productsRequest = 0, productsCache = [];
 let dialogReturnFocus = null;
+// Host analitik: dua belas laporan insight berbagi satu section workspace. Satu counter
+// request menjamin respons laporan yang tertinggal tidak bisa mengecat ulang laporan
+// yang sekarang aktif, persis seperti counter feature-local pada halaman lain.
+let analyticsRequest = 0, analyticsReport = null, analyticsFilters = {};
 
 function theme(value) {
   document.documentElement.dataset.theme = value;
@@ -65,7 +69,19 @@ const workspaceDestinations={
   'materials':'materials-view',
   'workforce':'people-view',
   'products':'products-view',
-  'activity':'activity-view'
+  'activity':'activity-view',
+  'wip-ageing-insights':'analytics-view',
+  'capacity-plan':'analytics-view',
+  'production-quality-insights':'analytics-view',
+  'supplier-performance-insights':'analytics-view',
+  'material-price-insights':'analytics-view',
+  'purchase-commitment-insights':'analytics-view',
+  'demand-forecast':'analytics-view',
+  'replenishment':'analytics-view',
+  'size-demand-insights':'analytics-view',
+  'return-insights':'analytics-view',
+  'dead-stock-insights':'analytics-view',
+  'stock-adjustment-insights':'analytics-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
 // rincian order yang berbagi satu item sidebar dengan papan produksi.
@@ -79,7 +95,8 @@ const workspaceSections=[
   {id:'materials-view',view:'materials',invalidate(){materialsRequest++;}},
   {id:'people-view',view:'people',invalidate(){peopleRequest++;}},
   {id:'products-view',view:'products',invalidate(){productsRequest++;}},
-  {id:'activity-view',view:'activity',invalidate(){activityRequest++;}}
+  {id:'activity-view',view:'activity',invalidate(){activityRequest++;}},
+  {id:'analytics-view',view:'analytics',invalidate(){analyticsRequest++;}}
 ];
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
 // lain sambil menaikkan request counternya, tampilkan target, catat nama view
@@ -108,6 +125,39 @@ function activateWorkspace(navId,sectionId=workspaceDestinations[navId]){
 function navigateFromDialog(show) {
   if ($('dialog').open) $('dialog').close();
   show();
+}
+
+// Dua belas anak sidebar Analitik berbagi satu host. Memilih anak mana pun mengaktifkan
+// section yang sama, lalu mengganti judul, filter, dan isi laporan. analyticsRequest dinaikkan
+// di sini (bukan di invalidate() saja) karena berpindah antar laporan tidak menyembunyikan
+// section, jika tidak dinaikkan respons laporan sebelumnya masih bisa mengecat hasil yang baru.
+// Mengembalikan nilai request yang harus dijaga oleh loader laporan ini.
+function activateAnalyticsReport(navId,title,content) {
+  activateWorkspace(navId);
+  analyticsRequest++;
+  analyticsReport=navId;
+  $('analytics-eyebrow').textContent='Analitik · '+$(navId).textContent.trim();
+  $('analytics-heading').textContent=title;
+  $('analytics-body').innerHTML=content;
+  return analyticsRequest;
+}
+// Memuat ulang laporan analitik yang sedang aktif, dipakai setelah child dialog berhasil
+// menyimpan (mis. master kapasitas) supaya halaman memakai data terbaru tanpa membuka ulang.
+function reloadAnalytics() {
+  return analyticsReports[analyticsReport]?.();
+}
+// Filter laporan bertahan setelah child dialog ditutup, seperti filter roster People.
+// Disimpan per laporan karena setiap laporan mempunyai bidangnya sendiri; FormData hanya
+// mengumpulkan kontrol bernama, dan seluruh bidang filter laporan adalah input/select biasa.
+function saveAnalyticsFilters(navId,form) {
+  analyticsFilters[navId]=Object.fromEntries(new FormData(form));
+}
+function restoreAnalyticsFilters(navId,form) {
+  const saved=analyticsFilters[navId]; if(!saved)return;
+  for(const [name,value] of Object.entries(saved)) {
+    const input=form.elements[name];
+    if(input&&value!==undefined)input.value=value;
+  }
 }
 
 function notify(message) {
@@ -154,6 +204,8 @@ function clearWorkspace() {
   peopleRequest++; workforceFilters = {work_date:'',status:'all',q:''};
   $('workforce-list').replaceChildren(); $('workforce-summary').replaceChildren();
   productsRequest++; productsCache = []; $('product-list').replaceChildren();
+  analyticsRequest++; analyticsReport = null; analyticsFilters = {};
+  $('analytics-body').replaceChildren(); $('analytics-heading').textContent='Analitik'; $('analytics-eyebrow').textContent='Analitik';
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -774,6 +826,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (version !== epoch || user?.id !== actorId || modalVersion !== dialogVersion) return;
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
+      if (view === 'analytics') reloadAnalytics();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -1051,7 +1104,7 @@ document.addEventListener('click', event => {
     'command-production-issues':()=>showCommandOrders('blocked'),
     'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};navigateFromDialog(showPeople);},
     'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
-    'demand-forecast':demandForecastDialog,replenishment:replenishmentDialog,
+    'demand-forecast':showDemandForecast,replenishment:showReplenishment,
     workforce:()=>navigateFromDialog(showPeople),'employee-master':workforceEmployeeMasterDialog,
     'new-employee':()=>workforceEmployeeForm(),'edit-employee':()=>workforceEmployeeForm(id),
     'employee-history':()=>workforceEmployeeHistoryDialog(id),
@@ -1060,7 +1113,7 @@ document.addEventListener('click', event => {
     'workforce-requests':workforceRequestsDialog,'new-workforce-request':workforceRequestForm,
     'workforce-request':()=>workforceRequestDialog(id),
     'workforce-request-decision':()=>workforceRequestDecisionForm(id,button.dataset.status),
-    'capacity-plan':capacityPlanDialog,'production-quality-insights':productionQualityInsightsDialog,
+    'capacity-plan':showCapacityPlan,'production-quality-insights':showProductionQualityInsights,
     'new-work-center':()=>capacityWorkCenterForm(),
     'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
     'new-order':orderForm,'cancel-form':closeDialog};
@@ -3174,10 +3227,9 @@ async function aiActionProposalDialog(proposalId) {
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-action-proposal" data-id="${e(proposalId)}">Coba lagi</button>`;}
 }
 
-function demandForecastDialog() {
-  if(guardPending())return;
+function showDemandForecast() {
   const today=jakartaToday();
-  openDialog('Forecast demand per SKU',`<form id="forecast-form" class="filter-form">
+  const request=activateAnalyticsReport('demand-forecast','Forecast demand per SKU',`<form id="forecast-form" class="filter-form">
     <p class="hint">Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3188,8 +3240,9 @@ function demandForecastDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="forecast-submit" type="submit">Hitung forecast</button></div>
   </form><p id="forecast-message" class="state" role="status" hidden></p><div id="forecast-results"></div>`);
-  const modal=dialogVersion,version=epoch,form=$('forecast-form'),button=$('forecast-submit');
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const version=epoch,form=$('forecast-form'),button=$('forecast-submit');
+  restoreAnalyticsFilters('demand-forecast',form);
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='demand-forecast'&&request===analyticsRequest;
   const load=async()=>{
     if(!current())return;
     button.disabled=true;button.textContent='Menghitung…';
@@ -3214,14 +3267,13 @@ function demandForecastDialog() {
       }
     }finally{if(current()){button.disabled=false;button.textContent='Hitung forecast';}}
   };
-  form.onsubmit=event=>{event.preventDefault();load();};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('demand-forecast',form);load();};
 }
-$('demand-forecast').onclick=demandForecastDialog;
+$('demand-forecast').onclick=showDemandForecast;
 
-function returnInsightsDialog() {
-  if(guardPending())return;
+function showReturnInsights() {
   const today=jakartaToday();
-  openDialog('Analisis retur per SKU',`<form id="return-insights-form" class="filter-form">
+  const request=activateAnalyticsReport('return-insights','Analisis retur per SKU',`<form id="return-insights-form" class="filter-form">
     <p class="hint">Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3231,9 +3283,10 @@ function returnInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="return-insights-submit" type="submit">Tampilkan analisis</button></div>
   </form><p id="return-insights-message" class="state" role="status" hidden></p><div id="return-insights-summary"></div><div id="return-insights-results"></div><button id="return-insights-more" type="button" hidden>Muat SKU berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('return-insights-form'),submit=$('return-insights-submit');
+  const version=epoch,form=$('return-insights-form'),submit=$('return-insights-submit');
+  restoreAnalyticsFilters('return-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='return-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('return-insights-summary').replaceChildren();$('return-insights-results').replaceChildren();}
@@ -3259,7 +3312,7 @@ function returnInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('return-insights',form);load(true);};
   $('return-insights-more').onclick=()=>load();
 }
 
@@ -3297,12 +3350,11 @@ async function payrollApprovalRequestDialog(requestId) {
     });
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="payroll-approval-request" data-id="${e(requestId)}">Coba lagi</button>`;}
 }
-$('return-insights').onclick=returnInsightsDialog;
+$('return-insights').onclick=showReturnInsights;
 
-function sizeDemandInsightsDialog() {
-  if(guardPending())return;
+function showSizeDemandInsights() {
   const today=jakartaToday();
-  openDialog('Analisis demand per ukuran',`<form id="size-demand-form" class="filter-form">
+  const request=activateAnalyticsReport('size-demand-insights','Analisis demand per ukuran',`<form id="size-demand-form" class="filter-form">
     <p class="hint">Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.</p>
     <div class="form-grid">
       ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
@@ -3313,9 +3365,10 @@ function sizeDemandInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="size-demand-submit" type="submit">Tampilkan analisis</button></div>
   </form><p id="size-demand-message" class="state" role="status" hidden></p><div id="size-demand-summary"></div><div id="size-demand-results"></div><button id="size-demand-more" type="button" hidden>Muat keluarga berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('size-demand-form'),submit=$('size-demand-submit');
+  const version=epoch,form=$('size-demand-form'),submit=$('size-demand-submit');
+  restoreAnalyticsFilters('size-demand-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='size-demand-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('size-demand-summary').replaceChildren();$('size-demand-results').replaceChildren();}
@@ -3346,15 +3399,14 @@ function sizeDemandInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('size-demand-insights',form);load(true);};
   $('size-demand-more').onclick=()=>load();
 }
-$('size-demand-insights').onclick=sizeDemandInsightsDialog;
+$('size-demand-insights').onclick=showSizeDemandInsights;
 
-function deadStockInsightsDialog() {
-  if(guardPending())return;
+function showDeadStockInsights() {
   const today=jakartaToday();
-  openDialog('Analisis dead stock',`<form id="dead-stock-form" class="filter-form">
+  const request=activateAnalyticsReport('dead-stock-insights','Analisis dead stock',`<form id="dead-stock-form" class="filter-form">
     <p class="hint">Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.</p>
     <div class="form-grid">
       ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
@@ -3365,9 +3417,10 @@ function deadStockInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="dead-stock-submit" type="submit">Tampilkan analisis</button></div>
   </form><p id="dead-stock-message" class="state" role="status" hidden></p><div id="dead-stock-summary"></div><div id="dead-stock-results"></div><button id="dead-stock-more" type="button" hidden>Muat SKU berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('dead-stock-form'),submit=$('dead-stock-submit');
+  const version=epoch,form=$('dead-stock-form'),submit=$('dead-stock-submit');
+  restoreAnalyticsFilters('dead-stock-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='dead-stock-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('dead-stock-summary').replaceChildren();$('dead-stock-results').replaceChildren();}
@@ -3394,15 +3447,14 @@ function deadStockInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('dead-stock-insights',form);load(true);};
   $('dead-stock-more').onclick=()=>load();
 }
-$('dead-stock-insights').onclick=deadStockInsightsDialog;
+$('dead-stock-insights').onclick=showDeadStockInsights;
 
-function stockAdjustmentInsightsDialog() {
-  if(guardPending())return;
+function showStockAdjustmentInsights() {
   const today=jakartaToday();
-  openDialog('Audit adjustment stok',`<form id="stock-adjustment-insights-form" class="filter-form">
+  const request=activateAnalyticsReport('stock-adjustment-insights','Audit adjustment stok',`<form id="stock-adjustment-insights-form" class="filter-form">
     <p class="hint">Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3419,9 +3471,10 @@ function stockAdjustmentInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="stock-adjustment-insights-submit" type="submit">Tampilkan audit</button></div>
   </form><p id="stock-adjustment-insights-message" class="state" role="status" hidden></p><div id="stock-adjustment-insights-summary"></div><div id="stock-adjustment-insights-results"></div><button id="stock-adjustment-insights-more" type="button" hidden>Muat adjustment berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('stock-adjustment-insights-form'),submit=$('stock-adjustment-insights-submit');
+  const version=epoch,form=$('stock-adjustment-insights-form'),submit=$('stock-adjustment-insights-submit');
+  restoreAnalyticsFilters('stock-adjustment-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='stock-adjustment-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('stock-adjustment-insights-summary').replaceChildren();$('stock-adjustment-insights-results').replaceChildren();}
@@ -3450,15 +3503,14 @@ function stockAdjustmentInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('stock-adjustment-insights',form);load(true);};
   $('stock-adjustment-insights-more').onclick=()=>load();
 }
-$('stock-adjustment-insights').onclick=stockAdjustmentInsightsDialog;
+$('stock-adjustment-insights').onclick=showStockAdjustmentInsights;
 
-function supplierPerformanceInsightsDialog() {
-  if(guardPending())return;
+function showSupplierPerformanceInsights() {
   const today=jakartaToday();
-  openDialog('Kinerja supplier',`<form id="supplier-performance-form" class="filter-form">
+  const request=activateAnalyticsReport('supplier-performance-insights','Kinerja supplier',`<form id="supplier-performance-form" class="filter-form">
     <p class="hint">PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3468,9 +3520,10 @@ function supplierPerformanceInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="supplier-performance-submit" type="submit">Tampilkan kinerja</button></div>
   </form><p id="supplier-performance-message" class="state" role="status" hidden></p><div id="supplier-performance-summary"></div><div id="supplier-performance-results"></div><button id="supplier-performance-more" type="button" hidden>Muat supplier berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('supplier-performance-form'),submit=$('supplier-performance-submit');
+  const version=epoch,form=$('supplier-performance-form'),submit=$('supplier-performance-submit');
+  restoreAnalyticsFilters('supplier-performance-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='supplier-performance-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('supplier-performance-summary').replaceChildren();$('supplier-performance-results').replaceChildren();}
@@ -3500,15 +3553,14 @@ function supplierPerformanceInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('supplier-performance-insights',form);load(true);};
   $('supplier-performance-more').onclick=()=>load();
 }
-$('supplier-performance-insights').onclick=supplierPerformanceInsightsDialog;
+$('supplier-performance-insights').onclick=showSupplierPerformanceInsights;
 
-function materialPriceInsightsDialog() {
-  if(guardPending())return;
+function showMaterialPriceInsights() {
   const today=jakartaToday();
-  openDialog('Pergerakan harga bahan',`<form id="material-price-form" class="filter-form">
+  const request=activateAnalyticsReport('material-price-insights','Pergerakan harga bahan',`<form id="material-price-form" class="filter-form">
     <p class="hint">Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -3518,9 +3570,10 @@ function materialPriceInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="material-price-submit" type="submit">Tampilkan harga</button></div>
   </form><p id="material-price-message" class="state" role="status" hidden></p><div id="material-price-summary"></div><div id="material-price-results"></div><button id="material-price-more" type="button" hidden>Muat harga berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('material-price-form'),submit=$('material-price-submit');
+  const version=epoch,form=$('material-price-form'),submit=$('material-price-submit');
+  restoreAnalyticsFilters('material-price-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='material-price-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('material-price-summary').replaceChildren();$('material-price-results').replaceChildren();}
@@ -3550,15 +3603,14 @@ function materialPriceInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('material-price-insights',form);load(true);};
   $('material-price-more').onclick=()=>load();
 }
-$('material-price-insights').onclick=materialPriceInsightsDialog;
+$('material-price-insights').onclick=showMaterialPriceInsights;
 
-function purchaseCommitmentInsightsDialog() {
-  if(guardPending())return;
+function showPurchaseCommitmentInsights() {
   const today=jakartaToday();
-  openDialog('Komitmen pembelian terbuka',`<form id="purchase-commitment-form" class="filter-form">
+  const request=activateAnalyticsReport('purchase-commitment-insights','Komitmen pembelian terbuka',`<form id="purchase-commitment-form" class="filter-form">
     <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
     <div class="form-grid">
       ${field('as_of','Hitung umur per tanggal','date',`required value="${today}"`)}
@@ -3568,9 +3620,10 @@ function purchaseCommitmentInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="purchase-commitment-submit" type="submit">Tampilkan komitmen</button></div>
   </form><p id="purchase-commitment-message" class="state" role="status" hidden></p><div id="purchase-commitment-summary"></div><div id="purchase-commitment-results"></div><button id="purchase-commitment-more" type="button" hidden>Muat PO berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('purchase-commitment-form'),submit=$('purchase-commitment-submit');
+  const version=epoch,form=$('purchase-commitment-form'),submit=$('purchase-commitment-submit');
+  restoreAnalyticsFilters('purchase-commitment-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='purchase-commitment-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('purchase-commitment-summary').replaceChildren();$('purchase-commitment-results').replaceChildren();}
@@ -3598,17 +3651,16 @@ function purchaseCommitmentInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('purchase-commitment-insights',form);load(true);};
   $('purchase-commitment-more').onclick=()=>load();
 }
-$('purchase-commitment-insights').onclick=purchaseCommitmentInsightsDialog;
+$('purchase-commitment-insights').onclick=showPurchaseCommitmentInsights;
 
-function wipAgeingInsightsDialog() {
-  if(guardPending())return;
+function showWipAgeingInsights() {
   const today=jakartaToday();
   const ownerOptions=(boardData?.owners||[]).map(owner=>option(owner.id,
     owner.name+(owner.active?'':' (akun nonaktif)'))).join('');
-  openDialog('WIP ageing & sinyal hambatan',`<form id="wip-ageing-form" class="filter-form">
+  const request=activateAnalyticsReport('wip-ageing-insights','WIP ageing & sinyal hambatan',`<form id="wip-ageing-form" class="filter-form">
     <p class="hint">Umur dihitung sejak movement produksi terakhir per order, atau sejak order dibuat bila belum pernah bergerak. Posisi tahap memakai saldo ledger saat ini.</p>
     <div class="form-grid">
       ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
@@ -3620,9 +3672,10 @@ function wipAgeingInsightsDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="wip-ageing-submit" type="submit">Tampilkan WIP</button></div>
   </form><p id="wip-ageing-message" class="state" role="status" hidden></p><div id="wip-ageing-summary"></div><div id="wip-ageing-stages"></div><div id="wip-ageing-results"></div><button id="wip-ageing-more" type="button" hidden>Muat order berikutnya</button>`);
-  const modal=dialogVersion,version=epoch,form=$('wip-ageing-form'),submit=$('wip-ageing-submit');
+  const version=epoch,form=$('wip-ageing-form'),submit=$('wip-ageing-submit');
+  restoreAnalyticsFilters('wip-ageing-insights',form);
   let offset=0,generation=0;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='wip-ageing-insights'&&request===analyticsRequest;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('wip-ageing-summary').replaceChildren();$('wip-ageing-stages').replaceChildren();$('wip-ageing-results').replaceChildren();}
@@ -3661,10 +3714,10 @@ function wipAgeingInsightsDialog() {
       }
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('wip-ageing-insights',form);load(true);};
   $('wip-ageing-more').onclick=()=>load();
 }
-$('wip-ageing-insights').onclick=wipAgeingInsightsDialog;
+$('wip-ageing-insights').onclick=showWipAgeingInsights;
 
 async function capacityWorkCenterForm(workCenterId=null) {
   if(guardPending())return;
@@ -3925,11 +3978,10 @@ async function workforceRequestDecisionForm(requestId,status) {
   }catch(error){if(version===epoch)notify(error.message);}
 }
 
-async function capacityPlanDialog() {
-  if(guardPending())return;
+async function showCapacityPlan() {
   const version=epoch;
-  openDialog('Kapasitas produksi','<p class="state">Memuat master kapasitas...</p>');
-  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const request=activateAnalyticsReport('capacity-plan','Kapasitas produksi','<p class="state">Memuat master kapasitas...</p>');
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='capacity-plan'&&request===analyticsRequest;
   try{
     const [centers,products]=await Promise.all([allRows('/api/work-centers'),allRows('/api/products')]);
     if(!current())return;
@@ -3944,7 +3996,7 @@ async function capacityPlanDialog() {
       <div class="filter-form"><div class="form-grid"><label>Work center kalender<select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
       ${field('capacity_calendar_date','Tanggal override','date',`id="capacity-calendar-date" value="${today}"`)}</div>
       <div class="form-actions"><button id="capacity-calendar-open" type="button" ${activeCenters.length?'':'disabled'}>Atur kapasitas tanggal</button></div></div></section>`:'';
-    $('dialog-content').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form" class="filter-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
+    $('analytics-body').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form" class="filter-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
       ${field('as_of','Mulai per tanggal','date',`required value="${today}"`)}
       ${field('horizon_days','Horizon kalender (hari)','number','required min="1" max="90" step="1" value="14"')}
       ${field('warning_percent','Peringatan utilisasi (%)','number','required min="1" max="100" step="1" value="80"')}
@@ -3958,6 +4010,7 @@ async function capacityPlanDialog() {
       $('capacity-calendar-open').onclick=()=>capacityCalendarForm($('capacity-calendar-center').value,$('capacity-calendar-date').value);
     }
     const form=$('capacity-plan-form'),submit=$('capacity-plan-submit');let offset=0,generation=0;
+    restoreAnalyticsFilters('capacity-plan',form);
     const statusLabels={overloaded:'Overload',deadline_risk:'Risiko deadline',near_capacity:'Mendekati kapasitas',available:'Masih tersedia',idle:'Tanpa beban'};
     const load=async(reset=false)=>{
       if(!current())return;
@@ -3985,15 +4038,14 @@ async function capacityPlanDialog() {
       }catch(error){if(current()&&gen===generation){message('capacity-plan-message',error.message,true);$('capacity-plan-message').insertAdjacentHTML('beforeend','<br><button id="capacity-plan-retry" type="button">Coba lagi</button>');$('capacity-plan-retry').onclick=()=>load();}}
       finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
     };
-    form.onsubmit=event=>{event.preventDefault();load(true);};$('capacity-plan-more').onclick=()=>load();await load(true);
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="capacity-plan">Coba lagi</button>`;}
+    form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('capacity-plan',form);load(true);};$('capacity-plan-more').onclick=()=>load();await load(true);
+  }catch(error){if(current())$('analytics-body').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="capacity-plan">Coba lagi</button>`;}
 }
-$('capacity-plan').onclick=capacityPlanDialog;
+$('capacity-plan').onclick=showCapacityPlan;
 
-function productionQualityInsightsDialog() {
-  if(guardPending())return;
+function showProductionQualityInsights() {
   const today=jakartaToday();
-  openDialog('Kualitas produksi',`<form id="production-quality-form" class="filter-form">
+  const request=activateAnalyticsReport('production-quality-insights','Kualitas produksi',`<form id="production-quality-form" class="filter-form">
     <p class="hint">Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.</p>
     <div class="form-grid">
       ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
@@ -4005,8 +4057,9 @@ function productionQualityInsightsDialog() {
       <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua</option></select></label>
     </div><div class="form-actions"><button class="primary" id="production-quality-submit" type="submit">Tampilkan kualitas</button></div>
   </form><p id="production-quality-message" class="state" role="status" hidden></p><div id="production-quality-summary"></div><div id="production-quality-results"></div><button id="production-quality-more" type="button" hidden>Muat penanggung jawab berikutnya</button>`);
-  const version=epoch,modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const version=epoch,current=()=>version===epoch&&view==='analytics'&&analyticsReport==='production-quality-insights'&&request===analyticsRequest;
   const form=$('production-quality-form'),submit=$('production-quality-submit');let offset=0,generation=0;
+  restoreAnalyticsFilters('production-quality-insights',form);
   const trendLabels={worsening:'Memburuk',improving:'Membaik',stable:'Stabil',new_baseline:'Baseline baru'};
   const assignmentLabels={internal:'Internal',makloon:'Makloon'};
   const delta=value=>value===null?'Belum ada pembanding':`${Number(value)>0?'+':''}${e(value)} poin`;
@@ -4037,14 +4090,13 @@ function productionQualityInsightsDialog() {
     }catch(error){if(current()&&gen===generation){message('production-quality-message',error.message,true);$('production-quality-message').insertAdjacentHTML('beforeend','<br><button id="production-quality-retry" type="button">Coba lagi</button>');$('production-quality-retry').onclick=()=>load();}}
     finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
-  form.onsubmit=event=>{event.preventDefault();load(true);};$('production-quality-more').onclick=()=>load();load(true);
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('production-quality-insights',form);load(true);};$('production-quality-more').onclick=()=>load();load(true);
 }
-$('production-quality-insights').onclick=productionQualityInsightsDialog;
+$('production-quality-insights').onclick=showProductionQualityInsights;
 
-function replenishmentDialog() {
-  if(guardPending())return;
+function showReplenishment() {
   const today=jakartaToday();
-  openDialog('Risiko stockout & rekomendasi',`<form id="replenishment-form" class="filter-form">
+  const request=activateAnalyticsReport('replenishment','Risiko stockout & rekomendasi',`<form id="replenishment-form" class="filter-form">
     <p class="hint">Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.</p>
     <div class="form-grid">
       ${field('as_of','Forecast sampai tanggal','date',`required value="${today}"`)}
@@ -4058,8 +4110,9 @@ function replenishmentDialog() {
     </div>
     <div class="form-actions"><button class="primary" id="replenishment-submit" type="submit">Hitung rekomendasi</button></div>
   </form><p id="replenishment-message" class="state" role="status" hidden></p><div id="replenishment-results"></div>`);
-  const modal=dialogVersion,version=epoch,form=$('replenishment-form'),button=$('replenishment-submit');
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  const version=epoch,form=$('replenishment-form'),button=$('replenishment-submit');
+  restoreAnalyticsFilters('replenishment',form);
+  const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='replenishment'&&request===analyticsRequest;
   const load=async()=>{
     if(!current())return;
     button.disabled=true;button.textContent='Menghitung…';
@@ -4086,9 +4139,27 @@ function replenishmentDialog() {
       }
     }finally{if(current()){button.disabled=false;button.textContent='Hitung rekomendasi';}}
   };
-  form.onsubmit=event=>{event.preventDefault();load();};
+  form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('replenishment',form);load();};
 }
-$('replenishment').onclick=replenishmentDialog;
+$('replenishment').onclick=showReplenishment;
+// Registri laporan analitik: dipakai reloadAnalytics() untuk memuat ulang laporan aktif
+// setelah child dialog (mis. master kapasitas) berhasil menyimpan. Tujuan sidebar tetap
+// dideklarasikan di workspaceDestinations; tabel ini hanya memetakan nav id ke renderernya.
+const analyticsReports={
+  'wip-ageing-insights':showWipAgeingInsights,
+  'capacity-plan':showCapacityPlan,
+  'production-quality-insights':showProductionQualityInsights,
+  'supplier-performance-insights':showSupplierPerformanceInsights,
+  'material-price-insights':showMaterialPriceInsights,
+  'purchase-commitment-insights':showPurchaseCommitmentInsights,
+  'demand-forecast':showDemandForecast,
+  'replenishment':showReplenishment,
+  'size-demand-insights':showSizeDemandInsights,
+  'return-insights':showReturnInsights,
+  'dead-stock-insights':showDeadStockInsights,
+  'stock-adjustment-insights':showStockAdjustmentInsights
+};
+$('analytics-back').onclick=showBoard;
 $('materials').onclick = showMaterials;
 $('scan-material-batch').onclick = materialBatchScanDialog;
 $('materials-back').onclick = showBoard;

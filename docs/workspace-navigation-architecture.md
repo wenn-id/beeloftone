@@ -73,6 +73,17 @@ refreshes the parent page through the `formDialog` success chain rather than
 reopening a modal. In-dialog "Kembali ke …" routes close the focused dialog
 first via `navigateFromDialog(show…)` before activating the page.
 
+Destinations integrated in Milestone C: the twelve Analitik sidebar children
+(`wip-ageing-insights`, `capacity-plan`, `production-quality-insights`,
+`supplier-performance-insights`, `material-price-insights`,
+`purchase-commitment-insights`, `demand-forecast`, `replenishment`,
+`size-demand-insights`, `return-insights`, `dead-stock-insights`,
+`stock-adjustment-insights`) all own the single `analytics-view` host. One
+host is deliberate: the twelve reports share one shell — heading, filter form,
+status line, result list, conditional paging — while each keeps its own
+formulas, endpoint, filters, and empty/error copy. Twelve static sections would
+buy symmetry, not maintainability.
+
 ## 3. Navigation foundation contract
 
 | Checkpoint | Requirement | Enforced by |
@@ -146,6 +157,32 @@ Milestones C–F.
 5. Record the destination in `docs/workspace-navigation-inventory.md` and move its
    migration status from `LEGACY_DIALOG` to `MIGRATED_PAGE`.
 
+Several sidebar children may share one section, as the twelve Analitik children
+share `analytics-view`. In that case step 2 maps every child nav id to the same
+section, and the renderer additionally bumps the shared counter itself on every
+activation — switching between children does not hide the section, so
+`invalidate()` alone would not guard the report being left.
+
+## 7. The analytics host (Milestone C)
+
+`activateAnalyticsReport(navId, title, content)` is the single entry point for an
+Analytics child. It runs `activateWorkspace(navId)` and then, in one step, bumps
+`analyticsRequest`, records `analyticsReport`, sets the eyebrow and heading, and
+installs the report markup into `#analytics-body`. It returns the request value
+the report's loader must guard on.
+
+```js
+const request = activateAnalyticsReport('wip-ageing-insights', 'WIP ageing & sinyal hambatan', formHtml);
+const current = () => epoch === version && view === 'analytics'
+  && analyticsReport === 'wip-ageing-insights' && request === analyticsRequest;
+```
+
+Per-report filter state lives in `analyticsFilters[navId]`; `saveAnalyticsFilters()`
+records it on submit and `restoreAnalyticsFilters()` reapplies it after the shell
+re-renders, so a child dialog write does not silently reset the operator's filter.
+`reloadAnalytics()` re-runs the active report through the `analyticsReports`
+registry and is what the `formDialog` success chain calls when `view === 'analytics'`.
+
 ## 7. Regression coverage
 
 Milestone A adds `tests/browser_navigation_foundation.cjs`, registered in
@@ -169,3 +206,12 @@ Filter persistence after a child dialog closes is the invariant the page
 migration is most likely to regress: the filter form is the page's own state
 now, so a dialog write must refresh the list without resetting
 `workforceFilters`.
+
+Milestone C extends the foundation test to all twelve Analytics children: each
+is asserted to reuse `analytics-view` as the only visible page, carry its own
+`aria-current`, set its own eyebrow and heading, and keep the global dialog
+closed. A delayed WIP-ageing response held across a switch to the Quality
+report proves the host's `analyticsRequest` guard — the late response cannot
+repaint the heading, the body, or render WIP rows onto the active report.
+`browser_return_insights.cjs` is new and covers the twelfth child's host
+contract, retry path, and empty state at 390px and 320px/200%.

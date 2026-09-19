@@ -21,9 +21,9 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'WIP ageing',exact:true}).click();
-  const dialog=page.locator('dialog');
+  const analytics=page.locator('#analytics-view');
   await page.locator('#wip-ageing-form select[name="status"]').selectOption('all');
-  await dialog.getByLabel('Cari order, PIC, SKU, produk, atau kendala',{exact:true})
+  await analytics.getByLabel('Cari order, PIC, SKU, produk, atau kendala',{exact:true})
     .fill('DEMO-UI-ORDER-');
   let fail=true;
   await page.route('**/api/wip-ageing-insights?*',async route=>{
@@ -31,9 +31,9 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
       body:JSON.stringify({detail:'Posisi WIP sedang dihitung ulang'})});}
     else await route.continue();
   });
-  await dialog.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
   await page.locator('#wip-ageing-message').filter({hasText:'Posisi WIP sedang dihitung ulang'}).waitFor();
-  await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await analytics.getByRole('button',{name:'Coba lagi',exact:true}).click();
   const item=page.locator('[data-wip-ageing]');
   await item.getByRole('heading',{name:`${escaped.items[0].reference} · ${escaped.items[0].title}`,
     exact:true}).waitFor();
@@ -43,19 +43,19 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.unroute('**/api/wip-ageing-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await item.scrollIntoViewIfNeeded();
-  await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  await analytics.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-wip-ageing-mobile.png')});
   await page.locator('#wip-ageing-form select[name="stage"]').selectOption('rework');
-  await dialog.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
-  await dialog.getByText('Tidak ada order aktif yang cocok dengan status dan filter ini.',
+  await analytics.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
+  await analytics.getByText('Tidak ada order aktif yang cocok dengan status dan filter ini.',
     {exact:true}).waitFor();
   await page.locator('#wip-ageing-form select[name="stage"]').selectOption('all');
-  await dialog.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan WIP',exact:true}).click();
   await item.getByRole('button',{name:'Buka order',exact:true}).click();
   await page.getByRole('heading',{name:escaped.items[0].title,exact:true}).waitFor();
   await page.keyboard.press('Escape');

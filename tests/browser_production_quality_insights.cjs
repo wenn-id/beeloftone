@@ -28,11 +28,11 @@ module.exports=async({page,login,openSidebarDestination,viewer,apiGet,apiPost,wo
     else await route.continue();
   });
   await openSidebarDestination('Kualitas produksi');
-  const dialog=page.locator('dialog');
+  const analytics=page.locator('#analytics-view');
   await page.locator('#production-quality-message').filter({hasText:'Laporan kualitas sedang dihitung ulang'}).waitFor();
-  await dialog.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-09-30');
-  await dialog.getByLabel('Batas rework + reject (%)',{exact:true}).fill('20');
-  await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-09-30');
+  await analytics.getByLabel('Batas rework + reject (%)',{exact:true}).fill('20');
+  await analytics.getByRole('button',{name:'Coba lagi',exact:true}).click();
   const item=page.locator('[data-production-quality]');
   await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
   await item.getByText('Perlu perhatian',{exact:true}).waitFor();
@@ -43,19 +43,19 @@ module.exports=async({page,login,openSidebarDestination,viewer,apiGet,apiPost,wo
   await page.unroute('**/api/production-quality-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await item.scrollIntoViewIfNeeded();
-  await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  await analytics.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-production-quality-mobile.png')});
 
-  await dialog.locator('select[name="status"]').selectOption('healthy');
-  await dialog.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
-  await dialog.getByText('Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
-  await dialog.locator('select[name="status"]').selectOption('attention');
-  await dialog.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
+  await analytics.locator('select[name="status"]').selectOption('healthy');
+  await analytics.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
+  await analytics.getByText('Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
+  await analytics.locator('select[name="status"]').selectOption('attention');
+  await analytics.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
   await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
   await page.keyboard.press('Escape');
   await openSidebarDestination('Command center');

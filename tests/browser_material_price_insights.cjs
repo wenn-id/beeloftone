@@ -17,19 +17,19 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'Harga bahan',exact:true}).click();
-  const dialog=page.locator('dialog');
-  await dialog.getByLabel('Periode pencatatan PO (hari)',{exact:true}).fill('730');
+  const analytics=page.locator('#analytics-view');
+  await analytics.getByLabel('Periode pencatatan PO (hari)',{exact:true}).fill('730');
   await page.locator('#material-price-form select[name="status"]').selectOption('all');
-  await dialog.getByLabel('Cari bahan, supplier, atau PO',{exact:true}).fill('KAIN-QC');
+  await analytics.getByLabel('Cari bahan, supplier, atau PO',{exact:true}).fill('KAIN-QC');
   let fail=true;
   await page.route('**/api/material-price-insights?*',async route=>{
     if(fail){fail=false;await route.fulfill({status:503,contentType:'application/json',
       body:JSON.stringify({detail:'Riwayat harga sedang dihitung ulang'})});}
     else await route.continue();
   });
-  await dialog.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
   await page.locator('#material-price-message').filter({hasText:'Riwayat harga sedang dihitung ulang'}).waitFor();
-  await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await analytics.getByRole('button',{name:'Coba lagi',exact:true}).click();
   const item=page.locator('[data-material-price]');
   await item.getByRole('heading',{name:'KAIN-QC · Kain pemeriksaan',exact:true}).waitFor();
   await item.getByText('SUPPLIER-QA · Toko <kain> & Kancing',{exact:true}).waitFor();
@@ -38,19 +38,19 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.unroute('**/api/material-price-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await item.scrollIntoViewIfNeeded();
-  await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  await analytics.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-material-price-mobile.png')});
   await page.locator('#material-price-form select[name="status"]').selectOption('increased');
-  await dialog.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
-  await dialog.getByText('Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.',
+  await analytics.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
+  await analytics.getByText('Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.',
     {exact:true}).waitFor();
   await page.locator('#material-price-form select[name="status"]').selectOption('all');
-  await dialog.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan harga',exact:true}).click();
   await item.getByRole('button',{name:'Buka PO',exact:true}).click();
   await page.getByText('PO-QC · Aktif',{exact:true}).waitFor();
   await page.keyboard.press('Escape');

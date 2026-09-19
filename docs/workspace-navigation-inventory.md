@@ -17,18 +17,19 @@ rather than labels.
 | Classification | Count | Destinations |
 |---|---|---|
 | EXISTING_PAGE | 4 | Command center, Produksi, Bahan baku, Laporan aktivitas |
-| LEGACY_DIALOG | 20 | 12 Analitik children, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
-| MIGRATED_PAGE | 2 | People, Master SKU |
+| LEGACY_DIALOG | 8 | Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
+| MIGRATED_PAGE | 14 | People, Master SKU, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
 | INTENTIONAL_DIALOG | 0 | (none among primary sidebar destinations) |
 | NEEDS_VERIFICATION | 1 | Cadangan data |
 | OTHER | 0 | — |
 | **Total primary destinations** | **27** | |
 
 Non-destination workspace sections reached by navigation but not present in the
-sidebar: `detail-view` (order detail, opened from the production board). It is a
-page, not a sidebar destination, and is out of scope for the migration counts.
+sidebar: `detail-view` (order detail, opened from the production board) and the
+shared `analytics-view` host (reached by the twelve Analitik children). Both are
+pages, not sidebar destinations, and are out of scope for the migration counts.
 
-The remaining 20 LEGACY_DIALOG handlers call `openDialog()` directly as the
+The remaining 8 LEGACY_DIALOG handlers call `openDialog()` directly as the
 primary experience. No primary sidebar click reaches `openDialog()` only through
 an indirect chain — every legacy handler is a direct `*Dialog()` call.
 
@@ -195,11 +196,12 @@ calls `openDialog()`; ACTION = entry performs one operation with no browse state
 
 ### 4.3 Analitik group — 12 insight children
 
-All twelve share one shape: `openDialog(<title>, <filter form + list host>)`, a
-filter form, one `GET /api/<report>` call, and per-dialog local `generation`
-counters layered on `epoch`/`dialogVersion`. All are read-only (no `api.post` on
-the primary surface). All are **LEGACY_DIALOG** → `analytics-view` host
-(Milestone C).
+All twelve previously shared one shape: `openDialog(<title>, <filter form + list
+host>)`, a filter form, one `GET /api/<report>` call, and per-report local
+`generation` counters layered on `epoch`. All are read-only (no `api.post` on the
+primary surface). All were **LEGACY_DIALOG** and are now **MIGRATED_PAGE**
+(Milestone C): each sidebar child activates the shared `analytics-view` host
+through `activateAnalyticsReport()` and renders into `#analytics-body`.
 
 | Nav id | Label | Endpoint | Drill-down (`data-action`) |
 |---|---|---|---|
@@ -216,16 +218,25 @@ the primary surface). All are **LEGACY_DIALOG** → `analytics-view` host
 | `dead-stock-insights` | Dead stock | `GET /api/dead-stock-insights?` | none (inline result) |
 | `stock-adjustment-insights` | Audit adjustment | `GET /api/stock-adjustment-insights?` | `finished-goods-adjustment` |
 
-Shared characteristics recorded for the Milestone C host design:
-- Each dialog owns its own filter form and its own `generation` counter — the
-  stale-response guard pattern to preserve.
-- Drill-downs either open a focused record dialog (e.g. `purchaseOrderDialog`,
-  `finishedGoodsAdjustmentsDialog`) or navigate to an existing page (`openDetail`).
-  Roadmap §Milestone C allows either behavior to survive.
+Migration notes for the Milestone C host:
+- One host, twelve renderers. `workspaceDestinations` maps all twelve nav ids to
+  `analytics-view`; `analyticsReports` maps each nav id to its renderer so
+  `reloadAnalytics()` can refresh the active report after a child dialog write.
+- Stale-response guard is now `epoch` + `view === 'analytics'` +
+  `analyticsReport === <nav id>` + `request === analyticsRequest`. Moving between
+  two reports in the same host does not hide the section, so the host bumps
+  `analyticsRequest` on every activation, not only on `invalidate()`.
+- Filter state persists per report in `analyticsFilters` and is restored on
+  re-render, so a child dialog write (e.g. work-center master) does not reset the
+  filter the operator set.
+- Drill-downs kept their existing behavior: focused record dialogs
+  (`purchaseOrderDialog`, `finishedGoodsAdjustmentsDialog`, `finalQcRecordDialog`)
+  or navigation to an existing page (`openDetail`).
 - Empty state: each report distinguishes "no rows after filter" from loading.
 - Error state: `message(..., true)` with a retry button that re-invokes the same
   loader.
-- No report writes; viewer access is identical to admin on the read surface.
+- No report writes; viewer access is identical to admin on the read surface. The
+  admin-only master kapasitas section is rendered for `role === 'admin'` only.
 
 ### 4.4 Group 3 — oversight
 
@@ -372,20 +383,25 @@ Shared characteristics recorded for the Milestone C host design:
 
 Complete list of primary sidebar handlers whose main effect is `openDialog()`:
 
-`auditEventsDialog`, `bundleScanDialog`, `finishedGoodsScanDialog`, the twelve
+`auditEventsDialog`, `bundleScanDialog`, `finishedGoodsScanDialog`,
+`aiInvestigationDialog`, `integrationsDialog`, `purchaseRequestsDialog`,
+`marketingBudgetsDialog`, `approvalsDialog`, and the inline `backup` handler.
+
+The twelve Analitik children used to be in this list as
 `*InsightsDialog`/`capacityPlanDialog`/`demandForecastDialog`/
-`replenishmentDialog` functions, `aiInvestigationDialog`, `integrationsDialog`,
-`purchaseRequestsDialog`, `marketingBudgetsDialog`, `approvalsDialog`, and the
-inline `backup` handler.
+`replenishmentDialog`; Milestone C renamed them to `show*` page renderers that
+activate `analytics-view` instead.
 
 The global click-delegation map (`app.mjs:899`) also routes many `data-action`
 values to these same dialog functions (e.g. `approvals: approvalsDialog`,
-`ai-brain: aiInvestigationDialog`, `integrations: integrationsDialog`,
-`demand-forecast: demandForecastDialog`, `replenishment: replenishmentDialog`).
-Migrated destinations route their delegated entry points through
-`navigateFromDialog(show…)` instead, so a "Kembali ke …" button inside a focused
-dialog closes that dialog and activates the page rather than reopening a modal
-(e.g. `products`, `workforce`, `command-workforce`).
+`ai-brain: aiInvestigationDialog`, `integrations: integrationsDialog`). The
+migrated analytics retry entries now route to the page renderers
+(`demand-forecast: showDemandForecast`, `replenishment: showReplenishment`,
+`capacity-plan: showCapacityPlan`, `production-quality-insights:
+showProductionQualityInsights`). Migrated destinations route their delegated
+entry points through `navigateFromDialog(show…)` instead, so a "Kembali ke …"
+button inside a focused dialog closes that dialog and activates the page rather
+than reopening a modal (e.g. `products`, `workforce`, `command-workforce`).
 
 ## 6. Cross-cutting safety surface to preserve
 
@@ -481,3 +497,63 @@ contract:
   updated for the page surface.
 
 Next: Milestone C. Do not begin without approval, per roadmap §4 hard-stop rule.
+
+## 10. Milestone C delta — Analytics children migrated to one page host
+
+Milestone C (`refactor/workspace-pages-analytics`) migrates all twelve Analytics
+sidebar children out of the global dialog into a single shared workspace page.
+Migration counts move to 4 EXISTING_PAGE, 8 LEGACY_DIALOG, 1 NEEDS_VERIFICATION,
+14 MIGRATED_PAGE.
+
+Destinations integrated: `wip-ageing-insights`, `capacity-plan`,
+`production-quality-insights`, `supplier-performance-insights`,
+`material-price-insights`, `purchase-commitment-insights`, `demand-forecast`,
+`replenishment`, `size-demand-insights`, `return-insights`,
+`dead-stock-insights`, `stock-adjustment-insights` — all twelve map to
+`analytics-view` in `workspaceDestinations`, and `workspaceSections` carries one
+entry for the host (`view: 'analytics'`, `invalidate()` bumps
+`analyticsRequest`).
+
+What changed mechanically, without altering any report formula, endpoint, or
+backend contract:
+
+- The twelve `*Dialog()` handlers are renamed `show*()` and now call
+  `activateAnalyticsReport(navId, title, content)` instead of `openDialog()`.
+  The helper activates the shared host through `activateWorkspace()`, bumps the
+  shared request counter, records which report is live, and sets the page
+  eyebrow/heading/body in one place.
+- One host, twelve reports — the roadmap explicitly forbids twelve static
+  sections for symmetry. `analyticsReports` maps nav id → renderer and is used
+  by `reloadAnalytics()` so a child dialog write (capacity master, work center,
+  routing standard) re-fetches the visible report instead of reopening a modal.
+- Stale-response protection extends to the shared host. Switching between two
+  analytics children never hides the section, so `invalidate()` alone cannot
+  guard the report being left; `activateAnalyticsReport()` bumps
+  `analyticsRequest` on every activation and each loader also checks
+  `analyticsReport === <navId>` alongside `epoch` and `view === 'analytics'`.
+- Report filters survive a child dialog: `analyticsFilters` holds one saved form
+  per report (saved on submit, restored after the host re-renders), mirroring
+  `workforceFilters` from Milestone B.
+- `formDialog`'s success chain gained `view === 'analytics' → reloadAnalytics()`
+  between the products and detail branches, so a write performed from an
+  analytics page refreshes that page rather than a modal.
+- `clearWorkspace()` bumps `analyticsRequest`, clears `analyticsReport` and
+  `analyticsFilters`, and empties the host, so a session switch cannot paint a
+  previous actor's report.
+- Record-specific work stays in focused dialogs opened from the page: PO and
+  final-QC drill-downs, order detail, finished-goods adjustment, and the
+  capacity master (work center, routing standard, calendar) all open over the
+  page and refresh it on save.
+- Regression: the eleven existing analytics browser modules were retargeted from
+  `dialog` to `#analytics-view`; `tests/browser_return_insights.cjs` is new for
+  the twelfth child; `tests/browser_navigation_foundation.cjs` gained a
+  twelve-child host sweep and a cross-report stale-response race; and
+  `tests/browser_management_command_center.cjs`, `tests/browser_date_boundaries.cjs`,
+  `tests/browser_shared_ui.cjs`, and `tests/browser_returns_adjustments.cjs` were
+  updated where they drilled into a report that is now a page.
+
+Remaining LEGACY_DIALOG (8): Tanya Beeloft, Integrasi, Audit trail, Inbox
+approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi.
+These are Milestone D/E/F scope.
+
+Next: Milestone D. Do not begin without approval, per roadmap §4 hard-stop rule.

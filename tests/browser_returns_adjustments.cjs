@@ -110,15 +110,19 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await insight.getByText('Warna tidak sesuai1 pcs',{exact:true}).waitFor();
   await insight.getByText('50.00%',{exact:true}).waitFor();
   await page.unroute('**/api/return-insights?*');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
-  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-return-insights-mobile.png')});
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
+  await page.locator('#analytics-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-returns-adjustments-report-mobile.png')});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.getByLabel('Cari SKU atau produk',{exact:true}).fill('SKU-TIDAK-ADA');
   await page.getByRole('button',{name:'Tampilkan analisis',exact:true}).click();
   await page.getByText('Tidak ada shipment yang cocok dengan filter pada periode ini.',{exact:true}).waitFor();
-  await page.keyboard.press('Escape');await openOrder();
+  // Analisis retur adalah halaman sekarang, bukan dialog; kembali ke papan produksi
+  // sebelum membuka order, karena tombol order ada di papan.
+  await openSidebarDestination('Produksi');
+  await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();
+  await openOrder();
   await page.locator('.order-settings').getByRole('button',{name:'Retur',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RET-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi retur',exact:true}).count(),0);
