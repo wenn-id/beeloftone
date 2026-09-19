@@ -10,16 +10,27 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
       .filter(section => !section.hidden).map(section => section.id));
   const heading = name => page.getByRole('heading', {name, exact: true}).waitFor();
 
-  // Record every class change on the workspace sections and the sidebar, so the entry
-  // lifecycle can be asserted after the fact instead of raced with a polling loop.
-  const watchMotion = () => page.evaluate(() => {
+  // Instrumentation is installed once: re-installing would stack observers and listeners.
+  // It records class changes *and* transition lifecycle events. The transition events are the
+  // load-bearing part — a class change alone is also recorded when an engine coalesces both
+  // class updates into a single style recalculation, in which case the target simply appears
+  // and no transition ever runs.
+  const installMotionWatch = () => page.evaluate(() => {
     window.motionLog = [];
     for (const node of [...document.querySelectorAll('.workspace-main > section'), document.getElementById('app-sidebar')]) {
       new MutationObserver(() => window.motionLog.push({id: node.id, classes: node.className}))
         .observe(node, {attributes: true, attributeFilter: ['class']});
+      for (const type of ['transitionrun', 'transitioncancel', 'transitionend'])
+        node.addEventListener(type, event =>
+          window.motionLog.push({id: node.id, type, transition: event.propertyName}));
     }
   });
+  const clearMotionLog = () => page.evaluate(() => {window.motionLog = [];});
   const motionLog = () => page.evaluate(() => window.motionLog);
+  const startedTransition = (entries, transition = 'opacity') =>
+    entries.some(entry => entry.type === 'transitionrun' && entry.transition === transition);
+  const finishedTransition = (entries, transition = 'opacity') =>
+    entries.some(entry => entry.type === 'transitionend' && entry.transition === transition);
   const settledClasses = () => page.evaluate(() =>
     [...document.querySelectorAll('.workspace-main > section, #app-sidebar')]
       .filter(node => node.classList.contains('motion-enter') || node.classList.contains('is-ready'))
@@ -30,15 +41,21 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await heading('Yang sedang dikerjakan.');
 
   // ---- a real page change plays the entry, then cleans up after itself ------------------
-  await watchMotion();
+  await installMotionWatch();
   await openSidebarDestination('People');
   await heading('Kehadiran tim yang tercatat.');
   await page.waitForTimeout(500);
-  const peopleEntry = (await motionLog()).filter(entry => entry.id === 'people-view');
-  assert.ok(peopleEntry.some(entry => entry.classes.includes('motion-enter')),
+  const peopleLog = (await motionLog()).filter(entry => entry.id === 'people-view');
+  const peopleEntry = peopleLog.filter(entry => entry.classes);
+  const peopleTransitions = peopleLog.filter(entry => entry.type);
+  assert.ok(peopleEntry.some(entry => String(entry.classes || "").includes('motion-enter')),
     'the target page receives the entry class after it is logically active');
-  assert.ok(peopleEntry.some(entry => entry.classes.includes('is-ready')),
+  assert.ok(peopleEntry.some(entry => String(entry.classes || "").includes('is-ready')),
     'the entry is released on the following frame');
+  assert.ok(startedTransition(peopleTransitions),
+    'the entry really starts an opacity transition rather than only changing classes');
+  assert.ok(finishedTransition(peopleTransitions),
+    'the entry transition runs to completion');
   assert.deepEqual(await settledClasses(), [],
     'transient motion classes are removed once the entry has played');
   assert.deepEqual(await visibleSections(), ['people-view']);
@@ -55,7 +72,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // ---- the first activation after a session start does not animate ----------------------
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
   await login(admin);
-  await watchMotion();
+  await clearMotionLog();
   await page.waitForTimeout(500);
   assert.deepEqual(await settledClasses(), [], 'the first page after login has no motion state');
 
@@ -63,12 +80,12 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await openSidebarDestination('WIP ageing');
   await heading('WIP ageing & sinyal hambatan');
   await page.waitForTimeout(500);
-  await watchMotion();
+  await clearMotionLog();
   await page.getByRole('button', {name: 'Kualitas produksi', exact: true}).click();
   await heading('Kualitas produksi');
   await page.waitForTimeout(500);
   const analyticsSwitch = await motionLog();
-  assert.deepEqual(analyticsSwitch.filter(entry => entry.classes.includes('motion-enter')), [],
+  assert.deepEqual(analyticsSwitch.filter(entry => String(entry.classes || "").includes('motion-enter')), [],
     'switching reports in one host does not replay the page entry');
   assert.deepEqual(await visibleSections(), ['analytics-view'], 'the shared host stays the active page');
 
@@ -88,7 +105,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
       await boardReleased; await route.fulfill({response}); finishBoard();
     } else await route.continue();
   });
-  await watchMotion();
+  await clearMotionLog();
   await page.getByRole('button', {name: 'Produksi', exact: true}).click();
   await boardStarted;
   const boardList = await page.evaluate(() => document.getElementById('order-list').innerHTML.length);
@@ -106,12 +123,12 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- reduced motion: same result, no motion at all ------------------------------------
   await page.emulateMedia({reducedMotion: 'reduce'});
-  await watchMotion();
+  await clearMotionLog();
   await openSidebarDestination('People');
   await heading('Kehadiran tim yang tercatat.');
   await page.waitForTimeout(500);
   const reducedLog = await motionLog();
-  assert.deepEqual(reducedLog.filter(entry => entry.classes.includes('motion-enter')), [],
+  assert.deepEqual(reducedLog.filter(entry => String(entry.classes || "").includes('motion-enter')), [],
     'reduced motion never receives an entry class');
   assert.deepEqual(await visibleSections(), ['people-view'], 'reduced motion reveals the target');
   assert.equal(await page.locator('#workforce').getAttribute('aria-current'), 'page',
@@ -157,13 +174,15 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   assert.equal(reachedInsideDrawer, 0, 'no control inside the closed drawer is reachable by Tab');
 
   // ---- the drawer entry plays, and opening lifts inert ----------------------------------
-  await watchMotion();
+  await clearMotionLog();
   await page.locator('#menu-toggle').click();
   assert.equal(await page.locator('#app-sidebar').getAttribute('inert'), null, 'an open drawer is interactive');
   await page.getByRole('button', {name: 'People', exact: true}).waitFor();
   await page.waitForTimeout(500);
   const drawerLog = (await motionLog()).filter(entry => entry.id === 'app-sidebar');
-  assert.ok(drawerLog.some(entry => entry.classes.includes('motion-enter')), 'the drawer entry plays on open');
+  assert.ok(drawerLog.some(entry => String(entry.classes || "").includes('motion-enter')), 'the drawer entry plays on open');
+  assert.ok(startedTransition(drawerLog.filter(entry => entry.type)),
+    'the drawer entry really transitions rather than only changing classes');
   assert.deepEqual(await settledClasses(), [], 'the drawer entry cleans up after itself');
 
   // Selecting a destination closes the drawer and keeps the heading-focus contract.
@@ -188,7 +207,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
     {storageKey, pending});
   const owningPage = await visibleSections();
   const beforeRecovery = await settledClasses();
-  await watchMotion();
+  await clearMotionLog();
   await openSidebarDestination('Scan bundle');
   await heading('Konfirmasi pencatatan sebelumnya');
   assert.notEqual(await page.locator('#dialog').getAttribute('open'), null, 'the recovery dialog opens');

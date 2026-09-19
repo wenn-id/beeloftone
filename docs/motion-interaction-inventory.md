@@ -478,7 +478,7 @@ visibility; the animation wraps that lifecycle rather than adding a router.
 |---|---|---|
 | Reduced-motion helper | `reducedMotion()` over one `matchMedia` query | The JavaScript branch §6.1 recorded as missing and M1 deferred. M2 is where it is first needed: entry motion is skipped entirely rather than merely shortened. |
 | Page entry | `playEntryMotion()` called from `activateWorkspace()` | The target section fades in from `opacity:0` and `translateY(6px)` over `--motion-enter`. Only the target moves; the outgoing section is already hidden, so nothing slides out and there is no full-screen horizontal movement. |
-| Entry lifecycle | `motion-enter` → (`requestAnimationFrame`) → `is-ready` → token-timed cleanup | The class lands only after the section is revealed, `view` is set and `aria-current` has moved, and the transition starts on the following frame, as §5 requires. Data fetches are not delayed: the loader has already been called by the time the class is applied. |
+| Entry lifecycle | `motion-enter` → style flush → (`requestAnimationFrame`) → `is-ready` → token-timed cleanup | The class lands only after the section is revealed, `view` is set and `aria-current` has moved. The initial state is then forced to be computed, and the transition starts on the following frame, as §5 requires. Data fetches are not delayed: the loader has already been called by the time the class is applied. |
 | Drawer entry | `sidebar(true)` → `playEntryMotion($('app-sidebar'))` | The mobile panel enters as a small surface with the same frame-later pattern. |
 | Drawer accessibility | `syncSidebarInert()` toggled with `nav-open`, plus a `change` listener on the breakpoint | The closed drawer is unrendered (the mechanism this product already ships) **and** inert, so no hidden control is reachable. Desktop never sets it. |
 | Selected navigation | `.nav-item[aria-current=page]` transition | The selected tint and its icon settle over `--motion-base` (180ms) instead of the 120ms hover value, so choosing a destination reads as a state change rather than a hover. Press feedback keeps `--motion-instant`. |
@@ -541,6 +541,18 @@ It also asserts that a report switch inside the shared analytics host never
 replays the entry, that the first activation after login carries no motion state,
 that desktop navigation moves focus nowhere, and that no control inside a closed
 drawer is reachable across a 40-step tab sweep.
+
+Two details exist because code review caught a real gap in the first cut of this
+module. The entry must be proven to **transition**, not merely to change classes:
+a class mutation is recorded even when an engine coalesces both class updates into
+a single style recalculation, and in that case the target simply appears with no
+transition at all. The module therefore requires `transitionrun` and
+`transitionend` for opacity on both the page and the drawer entry, and
+`playEntryMotion()` forces the initial state to be computed before `is-ready` is
+added so that the coalescing case cannot occur in the first place. Removing the
+entry transition from the stylesheet makes the module fail on exactly that
+assertion, which is how the assertion was verified to be load-bearing rather than
+decorative.
 
 Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
 Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules

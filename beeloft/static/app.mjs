@@ -165,6 +165,11 @@ function playEntryMotion(node) {
   clearEntryMotion(node);
   if (reducedMotion()) return;
   node.classList.add('motion-enter');
+  // Pastikan keadaan awal benar-benar terhitung sebelum frame berikutnya menambahkan is-ready.
+  // Tanpa ini, mesin bisa menggabungkan kedua perubahan kelas ke dalam satu perhitungan gaya,
+  // sehingga tidak ada nilai awal untuk ditransisikan dan section hanya muncul begitu saja.
+  // Membaca properti layout adalah flush-nya; tidak ada yang diukur.
+  void node.offsetHeight;
   entryFrames.set(node, requestAnimationFrame(() => {
     entryFrames.delete(node);
     // Navigasi yang lebih baru sudah membersihkan kelas ini; jangan hidupkan lagi.
