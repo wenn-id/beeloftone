@@ -32,6 +32,9 @@ let enteredSection = '';
 let materialsRequest = 0, materialsOffset = 0;
 let peopleRequest = 0, productsRequest = 0, productsCache = [];
 let dialogReturnFocus = null;
+// Satu penutupan beranimasi pada satu waktu. Handle-nya juga penanda bahwa keluar sedang
+// berjalan, supaya klik kedua pada tombol tutup tidak menumpuk timer.
+let dialogCloseTimer = null;
 // Host analitik: dua belas laporan insight berbagi satu section workspace. Satu counter
 // request menjamin respons laporan yang tertinggal tidak bisa mengecat ulang laporan
 // yang sekarang aktif, persis seperti counter feature-local pada halaman lain.
@@ -897,12 +900,65 @@ async function auditEventDialog(eventId) {
       <button type="button" data-action="audit-events">Kembali ke audit trail</button></article>`;
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-event" data-id="${e(eventId)}">Coba lagi</button>`;}
 }
+// Keluar dialog tidak bisa mengandalkan animasi CSS: `close()` melepas atribut `open` dan
+// elemennya langsung hilang, jadi transisinya tidak akan pernah terlihat. Helper ini menandai
+// dialog sedang menutup, menunggu transisi keluarnya selesai, lalu memanggil `close()` native
+// supaya listener `close` tetap menjadi satu-satunya jalur pemulihan fokus. Anggarannya dibaca
+// dari token yang sama dengan CSS-nya dan berada di bawah batas 160ms. Di mode gerak dikurangi
+// dialog ditutup seketika, tetapi tetap lewat `close()` yang sama, jadi fokus dan
+// dialogVersion tidak punya jalur kedua.
+function closeDialogAnimated() {
+  const dialog = $('dialog');
+  if (!dialog.open || dialogCloseTimer !== null) return;
+  if (reducedMotion()) { dialog.close(); return; }
+  const finish = () => {
+    if (dialogCloseTimer === null) return;
+    clearTimeout(dialogCloseTimer); dialogCloseTimer = null;
+    dialog.removeEventListener('transitionend', onEnd);
+    // close() lebih dahulu, baru kelasnya dilepas. Urutan sebaliknya menampilkan satu frame
+    // keadaan diam sebelum dialog benar-benar hilang.
+    dialog.close();
+    dialog.classList.remove('motion-exit','is-closing');
+  };
+  const onEnd = event => {
+    if (event.target === dialog && event.propertyName === 'opacity') finish();
+  };
+  // Hentikan animasi masuk lebih dahulu, lalu biarkan keadaan diamnya benar-benar terhitung
+  // sebelum keadaan menutup dipasang — pola yang sama dengan playEntryMotion(). Kalau animasi
+  // berhenti dan nilai akhirnya berubah pada satu perhitungan gaya, browser tidak membuat
+  // transisi sama sekali: dialog hanya menghilang saat jaring pengaman menutupnya, tanpa gerak
+  // keluar. motion-exit mematikan animasi masuk dialog sekaligus backdrop-nya; membiarkan yang
+  // backdrop tetap berjalan akan membuatnya terus muncul selama dialog keluar.
+  dialog.classList.add('motion-exit');
+  void dialog.offsetHeight;
+  dialog.classList.add('is-closing');
+  // Ditutup saat transisinya benar-benar selesai, bukan pada timer yang berlomba dengan durasi
+  // CSS-nya: timer sepanjang durasi akan memanggil close() tepat sebelum transisi selesai,
+  // sehingga frame terakhirnya terpotong dan transisinya berakhir sebagai transitioncancel.
+  // Timer tetap dipasang sebagai jaring pengaman kalau transisinya tidak pernah berjalan.
+  dialog.addEventListener('transitionend', onEnd);
+  dialogCloseTimer = setTimeout(finish, motionMs('--motion-fast') + 60);
+}
+// Satu keputusan izin-menutup untuk tombol tutup, tombol Batal, dan Escape. Sebelumnya Escape
+// menyalin ulang pemeriksaan yang sama secara inline, jadi dua salinan itu bisa berbeda tanpa
+// ada yang menyadarinya. Pesannya tetap berbeda karena konteksnya memang berbeda.
+function dialogCloseBlocked(message) {
+  if (!modalBusy && !unresolved) return false;
+  notify(message);
+  return true;
+}
 function closeDialog() {
-  if (modalBusy || unresolved) { notify('Konfirmasi penyimpanan lewat tombol coba ulang sebelum menutup.'); return; }
-  dialogVersion++; $('dialog').close();
+  if (dialogCloseBlocked('Konfirmasi penyimpanan lewat tombol coba ulang sebelum menutup.')) return;
+  dialogVersion++; closeDialogAnimated();
 }
 $('close-dialog').onclick = closeDialog;
-$('dialog').addEventListener('cancel', event => { if (modalBusy || unresolved) { event.preventDefault(); notify('Penyimpanan belum terkonfirmasi. Gunakan coba ulang.'); } else dialogVersion++; });
+$('dialog').addEventListener('cancel', event => {
+  // Escape selalu ditangani di sini: tanpa preventDefault browser menutup dialog sendiri dan
+  // melewati helper, sehingga keputusan yang sama tidak lagi berlaku untuk kedua jalur.
+  event.preventDefault();
+  if (dialogCloseBlocked('Penyimpanan belum terkonfirmasi. Gunakan coba ulang.')) return;
+  dialogVersion++; closeDialogAnimated();
+});
 $('dialog').addEventListener('close',()=>{const target=dialogReturnFocus;dialogReturnFocus=null;if(target&&!target.hidden)target.focus();});
 function pendingKey() { return 'beeloft.pending.' + user.id; }
 function readPending() {

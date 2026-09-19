@@ -560,3 +560,118 @@ and `node tests/test_client.mjs` PASS; the full browser suite PASS with no
 JavaScript errors, including both motion modules.
 
 Next: M3 (dialogs and overlays), only after M2 is reviewed and merged.
+
+## 10. M3 delta — dialogs and overlays
+
+Baseline: `31447f6` (M2 merged as PR #20). Branch: `ui/motion-dialogs-overlays`.
+
+M3 is the milestone the specification calls highest-risk, because the exit is the
+task most likely to break transaction recovery or focus. Nothing in the close
+*decision* or the close *lifecycle* was rewritten: the animation wraps the existing
+guarded close and the native `close()` call, so `modalBusy`, `unresolved`,
+`guardPending`, `dialogVersion` and the `close`-listener focus restoration all keep
+their current meaning.
+
+| Change | Where | Intention |
+|---|---|---|
+| Dialog entry | `dialog[open]` + `@keyframes dialog-enter` | opacity 0, `scale(.975)`, `translateY(8px)` → resting over `--motion-dialog` (260ms), inside the 240-260ms band. CSS-only, so a reopen replays it and a content swap does not, without any script. |
+| Backdrop entry | `dialog[open]::backdrop` + `@keyframes dialog-backdrop-enter` | opacity 0 → target over `--motion-enter` (220ms). The layer table puts the backdrop at 180-220ms, which rules out `--motion-dialog` (260ms) despite the token table naming both layers together. |
+| Safe close helper | `closeDialogAnimated()` | Marks the dialog `is-closing`, waits for the exit transition, then calls native `close()`, so the `close` listener stays the single focus-restoration path and `dialogReturnFocus` behaviour is untouched. |
+| Exit | `dialog.is-closing` | opacity 0, `scale(.985)`, `translateY(4px)` over `--motion-fast` with `--ease-exit`. |
+| Unified close decision | `dialogCloseBlocked()` | Close button, `Batal` and Escape now share one `modalBusy`/`unresolved` check. Escape calls `preventDefault()` unconditionally and routes through the helper, which closes the §6.4 drift where two copies of the same decision could diverge. |
+| Reduced motion | `reducedMotion()` branch + the `reduce` block | Closes immediately through the same `close()`; `dialog, dialog::backdrop` join the explicit §11 list. The list is load-bearing, not decoration: the `*` catch-all matches elements, never pseudo-elements, so the backdrop would otherwise keep animating for a reduced-motion user. |
+| Print | existing `@media print` block | Animation, transition, opacity and transform are neutralised on `dialog[open]` and its backdrop, so a printed bundle or receipt label is never captured at the entry keyframe or half-faded. |
+
+### 10.1 Two exit failures the first cuts had, and what fixed them
+
+Both were found by measuring the transition lifecycle rather than the settled
+outcome, which is why the module asserts `transitionrun` and `transitionend` instead
+of a final class list.
+
+**The timer raced its own transition.** The first cut closed the dialog from a
+`setTimeout` of the same length as the exit transition. Measured: `transitionrun`
+fired, `transitionend` never did. The timer calls `close()` in the same millisecond
+the transition is due to finish, the element is hidden, and the transition ends as
+`transitioncancel` with its last frame dropped — the exit would have been *declared*
+rather than performed. The helper now closes on the `transitionend` for `opacity` on
+the dialog itself, filtered by `event.target` so a backdrop or descendant event
+cannot end the close, and keeps a `--motion-fast + 60ms` timer as the safety net for
+a transition that never runs at all.
+
+**A close during the entry produced no exit.** Stopping the entry animation and
+applying the closing values in one style recalculation makes the engine generate no
+transition: the dialog simply vanished when the safety timer fired, 183ms later and
+past the budget, while the backdrop — which owns its own entry animation — carried
+on fading in behind it. The helper therefore stops both entry animations first
+(`motion-exit`), flushes the resting state with the same `void node.offsetHeight`
+idiom `playEntryMotion()` already uses, and only then applies `is-closing`. This is
+not reachable with an ordinary Playwright click, which waits for the element to
+settle; the module dispatches that close synthetically, and the assertion was
+verified to fail without the ordering.
+
+Measured end to end, the dialog settles closed 129-149ms after the close begins
+depending on whether the entry was still running — 120ms of transition plus event
+delivery and the flush, inside the contract's 160ms ceiling in both cases.
+
+### 10.2 Which close callers migrated, and which deliberately did not
+
+`ui/motion-dialogs-overlays` migrates the two paths where the operator is watching
+the dialog leave, and leaves the other thirteen immediate.
+
+| Path | Sites | Treatment | Reason |
+|---|---|---|---|
+| Close button, `Batal` | `closeDialog()` | **Animated** | The operator's explicit close of a settled secondary task: the case the milestone exists for. `Batal` arrives through the same `data-action` registry entry, so it inherits the guard unchanged. |
+| Escape / `cancel` | `cancel` listener | **Animated** | Now routed through the same decision and the same helper instead of a second inline copy. |
+| Navigation from a dialog | `navigateFromDialog()` | Immediate | Closing is a step of a page change, not the event; a lingering modal would hang over the page it just activated. |
+| Session reset | `clearWorkspace()` | Immediate | Teardown of a discarded session: nothing to soften, and tests assert the dialog is gone on the same turn. |
+| Post-write success chain | `formDialog` | Immediate | The chain continues synchronously into `openDetail()` or a follow-up dialog. Closing immediately lets the next dialog `showModal()` fresh, which is what replays its entry; an animated close would have the follow-up cancel the pending exit and reuse the same surface with no entry at all. |
+| Order-detail hand-offs | eight `*-order` buttons | Immediate | Each is preceded by `guardPending()` and immediately activates a workspace page. |
+| Read-only context switch | `[data-ai-history]` | Immediate | Closes the investigation dialog, activates `ai-view`, scrolls to history. |
+| Dialog-to-dialog replace | material batch scan | Immediate | The history dialog replaces the scan dialog in the same turn; the surface is reused, not dismissed. |
+
+### 10.3 The exit keeps the dialog modal for its exit budget
+
+The contract closes the native dialog *after* the exit runs, so for roughly 145ms
+after the close button is pressed the page behind is still inert and the closed
+control is not yet gone. That is the price of an animated modal exit and it is what
+the specification asks for, but it is a real behaviour change and it has one test
+consequence worth recording: a `fill()` issued during that window silently does
+nothing, because the input is inside a modal-blocked subtree. Clicks are unaffected
+— they wait for the element to receive the event — so only the one call site that
+typed into the page straight after a close needed to wait for the dialog to settle
+(`tests/browser_smoke.cjs`, before the dashboard evidence screenshot, which also now
+captures a settled dashboard instead of a half-faded dialog). Every other close site
+in the suite is separated from its next input by a click or a `waitFor`, and all
+168 Escape presses were checked.
+
+### 10.4 Regression coverage
+
+`tests/browser_motion_dialogs.cjs` is new and registered in `tests/browser_smoke.cjs`.
+It asserts lifecycle flags and settled outcomes rather than animation timings:
+
+| Case | Asserted |
+|---|---|
+| Dialog entry from Produksi | `animationstart` and `animationend` for `dialog-enter`; the backdrop resolves `dialog-backdrop-enter` with a non-zero token duration |
+| Close button | `is-closing` is applied, the exit really starts and finishes an `opacity` transition, exactly one `close` event, no class left behind, focus back on the trigger |
+| Reopen | The entry replays, which proves the element left the `[open]` state rather than merely being covered |
+| Escape | Same exit and same single close as the button, proving it no longer bypasses the helper |
+| Close during the entry | The entry is provably still running when the close is dispatched, and the exit still transitions, completes, closes once and leaves no class — the case that silently produced no exit before the ordering fix |
+| Batal | Same helper, same single close |
+| Three open/close cycles | Exactly three close events, no stacked handler, no residue |
+| Unresolved write | Escape is refused, no `is-closing` is ever applied, the dialog stays open, and the retry then settles the draft |
+| Late dialog response | A response released during the exit cannot repaint the closed dialog — the request-generation guard, not the `open` attribute, is what rejects it |
+| Reduced motion | No animation runs, the dialog is opaque immediately, the close is immediate, no `is-closing` is ever applied, focus still returns through the same path |
+| Print | Computed `animation-name: none`, opacity 1 and no transform on an open dialog |
+| 320px / 200% | No document overflow while the entry runs, and the dialog fits when settled |
+| Dark theme | The same entry and exit lifecycle |
+
+### 10.5 Verification
+
+Local verification (19 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules and
+`node tests/test_client.mjs` PASS; the full browser suite PASS with no JavaScript
+errors, including all three motion modules. As in M0-M2, `python -m pip check` and
+`python -m build` are unavailable in this checkout; CI's Core job covers the first,
+and a wheel check is only meaningful once CI has the published HEAD.
+
+Next: M4 (data states and notifications), only after M3 is reviewed and merged.
