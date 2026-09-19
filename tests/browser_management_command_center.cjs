@@ -67,7 +67,9 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.keyboard.press('Escape');assert.equal(await menu.getAttribute('aria-expanded'),'false');
   assert.equal(await menu.evaluate(element=>element===document.activeElement),true);
   assert.equal(await page.locator('#app-sidebar').isVisible(),false);
-  await menu.click();await page.getByRole('button',{name:'Integrasi',exact:true}).click();
+  // Milestone D: Integrasi sudah menjadi halaman workspace, jadi fokus-restorasi drawer
+  // setelah Escape diuji memakai destinasi yang masih dialog warisan (Scan barang jadi).
+  await menu.click();await page.getByRole('button',{name:'Scan barang jadi',exact:true}).click();
   await page.locator('dialog[open]').waitFor();await page.keyboard.press('Escape');
   await page.locator('dialog').waitFor({state:'hidden'});
   // The dialog is hidden as soon as `open` is removed, but its `close` event — and therefore the
@@ -149,7 +151,9 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();
   await page.getByRole('button',{name:'Command center',exact:true}).click();
   await page.locator('[data-command-snapshot="integrations"]').getByRole('button',{name:'Buka kesehatan integrasi'}).click();
-  await page.getByRole('heading',{name:'Kesehatan integrasi',exact:true}).waitFor();
-  await page.keyboard.press('Escape');
+  // Milestone D: tombol ini sekarang mengaktifkan halaman integrations-view, bukan dialog.
+  await page.getByRole('heading',{name:'Status integrasi dan source of truth.',exact:true}).waitFor();
+  assert.equal(await page.locator('#dialog[open]').count(),0,'kesehatan integrasi bukan dialog lagi');
+  assert.equal(await page.locator('#integrations').getAttribute('aria-current'),'page');
   console.log('Management command center browser QA PASS: consolidated snapshots, exception queue, retry, viewer, drill-down, mobile/200%.');
 };

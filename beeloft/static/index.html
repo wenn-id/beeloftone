@@ -186,6 +186,54 @@
         <div class="page-heading"><div><p class="eyebrow" id="analytics-eyebrow">Analitik</p><h1 id="analytics-heading">Analitik</h1></div></div>
         <div id="analytics-body" class="analytics-body" aria-live="polite"></div>
       </section>
+      <section id="ai-view" hidden>
+        <button id="ai-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Tanya Beeloft · analisis lokal</p><h1>Analisis operasional dari ledger sendiri.</h1></div><div class="actions"><button id="ai-history-jump" type="button">Riwayat investigasi</button></div></div>
+        <p class="hint">Ajukan pertanyaan tentang produksi, stok, approval, margin, atau prioritas bisnis. Analisis berjalan lokal dan hanya membaca ledger Beeloft.</p>
+        <form id="ai-form">
+          <div class="actions ai-prompts" aria-label="Contoh pertanyaan">
+            <button type="button" data-ai-question="SKU apa yang berisiko stockout?">Risiko stockout</button>
+            <button type="button" data-ai-question="Apa yang menunggu approval?">Approval tertunda</button>
+            <button type="button" data-ai-question="Order produksi mana yang terlambat?">Produksi terlambat</button>
+            <button type="button" data-ai-question="Bagaimana kondisi margin?">Kondisi margin</button>
+            <button type="button" data-ai-question="Apa prioritas hari ini?">Prioritas hari ini</button>
+          </div>
+          <label>Pertanyaan bisnis<textarea id="ai-question" name="question" required minlength="2" maxlength="1000" placeholder="Contoh: SKU COST-UI akan kehabisan stok kapan?"></textarea></label>
+          <details class="ai-assumptions"><summary>Asumsi analisis</summary><div class="form-grid">
+            <label>Data sampai tanggal<input name="as_of" type="date" required></label>
+            <label>Panjang window demand (hari)<input name="window_days" type="number" required min="7" max="90" step="1" value="28"></label>
+            <label>Lead time replenishment (hari)<input name="lead_time_days" type="number" required min="1" max="180" step="1" value="14"></label>
+            <label>Periode review stok (hari)<input name="review_period_days" type="number" required min="1" max="180" step="1" value="30"></label>
+            <label>Safety stock (hari)<input name="safety_stock_days" type="number" required min="0" max="90" step="1" value="7"></label>
+            <label>Kelipatan batch produksi (pcs)<input name="batch_multiple" type="number" required min="1" max="100000" step="1" value="1"></label>
+          </div></details>
+          <div class="form-actions"><button type="button" id="ai-reauth" hidden>Masuk ulang</button><button class="primary" id="ai-submit" type="submit">Analisis dan simpan</button></div>
+        </form>
+        <p id="ai-message" class="state" role="status" hidden></p>
+        <div id="ai-results"></div>
+        <section id="ai-history" class="history-section" aria-labelledby="ai-history-heading">
+          <div class="history-heading"><h2 id="ai-history-heading">Riwayat investigasi</h2></div>
+          <form id="ai-history-filter" class="filter-form"><div class="form-grid">
+            <label>Cari pertanyaan<input name="q" maxlength="160"></label>
+            <label>Jenis analisis<select name="intent"><option value="all">Semua jenis</option><option value="overview">Ringkasan bisnis</option><option value="production">Kondisi produksi</option><option value="stockout">Risiko stockout</option><option value="approvals">Antrean approval</option><option value="margin">Margin kontribusi</option></select></label>
+          </div><div class="form-actions"><button type="submit">Terapkan filter</button></div></form>
+          <p id="ai-history-message" class="state" role="status" hidden></p>
+          <div id="ai-history-list"></div>
+          <button id="ai-history-more" type="button" hidden>Muat investigasi sebelumnya</button>
+        </section>
+      </section>
+      <section id="integrations-view" hidden>
+        <button id="integrations-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Integrasi · kesehatan sinkronisasi</p><h1>Status integrasi dan source of truth.</h1></div><div class="actions"><button type="button" data-action="integration-runs">Riwayat sinkronisasi</button><button id="integrations-refresh" type="button">Muat ulang status</button></div></div>
+        <p id="integrations-message" class="state" role="status" hidden></p>
+        <div id="integrations-body" aria-live="polite"></div>
+      </section>
+      <section id="audit-view" hidden>
+        <button id="audit-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Audit trail · administrasi</p><h1>Audit trail</h1></div></div>
+        <p class="hint">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only, urut dari yang terbaru, dan dikelola admin.</p>
+        <div id="audit-body"></div>
+      </section>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>

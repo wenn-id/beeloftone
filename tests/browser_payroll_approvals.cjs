@@ -21,8 +21,11 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   const source=(await snapshot(payroll(external))).periods[0];
   await role(operator);
   await openSidebarDestination('Integrasi');
+  // Milestone D: kesehatan integrasi adalah halaman, jadi tombol ringkasan Mekari berada
+  // di integrations-view; ringkasan periodnya tetap dialog terfokus.
+  await page.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
+  await page.getByRole('heading',{name:'Payroll Mekari',exact:true}).waitFor();
   let dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
   const card=dialog.locator(`[data-payroll-period="${source.id}"]`).first();
   await card.getByText('Mekari · Ditinjau',{exact:true}).waitFor();
   assert.equal(await card.locator('script').count(),0);
@@ -51,8 +54,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await page.setViewportSize({width:1440,height:1000});
 
   await role(viewer);
-  await openSidebarDestination('Integrasi');dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
+  await openSidebarDestination('Integrasi');
+  await page.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
+  await page.getByRole('heading',{name:'Payroll Mekari',exact:true}).waitFor();
+  dialog=page.locator('dialog');
   assert.equal(await dialog.getByRole('button',{name:/Ajukan.*approval/}).count(),0);
   await dialog.locator(`[data-payroll-period="${source.id}"]`).first().getByRole('button',{name:'Rincian approval',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:/Setujui payroll|Tolak payroll|Batalkan pengajuan/}).count(),0);
@@ -71,8 +76,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   const staleExternal='PAY-STALE-'+unique;
   const first=(await snapshot(payroll(staleExternal))).periods[0];
   await role(operator);
-  await openSidebarDestination('Integrasi');dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
+  await openSidebarDestination('Integrasi');
+  await page.getByRole('button',{name:'Payroll Mekari',exact:true}).click();
+  await page.getByRole('heading',{name:'Payroll Mekari',exact:true}).waitFor();
+  dialog=page.locator('dialog');
   await dialog.locator(`[data-payroll-period="${first.id}"]`).first().getByRole('button',{name:'Ajukan approval',exact:true}).click();
   await dialog.getByLabel('Alasan / catatan',{exact:true}).fill('Menunggu keputusan sebelum perubahan');
   await dialog.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();

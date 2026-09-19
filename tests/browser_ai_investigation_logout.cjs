@@ -1,14 +1,17 @@
 // Regresi P2-A pada jalur investigasi AI: kegagalan logout tidak boleh tersembunyi di belakang
 // dialog modal, dan ruang kerja hanya boleh dipertahankan bila session masih milik akun yang sama.
 //
-// Dialog "Tanya Beeloft" adalah <dialog> modal. Ketika logout gagal, banner #session-warning di
-// belakangnya memang terlihat tetapi tidak dapat dijangkau maupun ditekan, sehingga pengguna yang
-// sedang menatap dialog tidak akan pernah tahu bahwa dirinya belum keluar. Karena itu tombol
-// "Masuk ulang" pada dialog AI melaporkan kegagalan ke #ai-message, yaitu tempat yang sedang dilihat.
+// "Tanya Beeloft" adalah halaman workspace (ai-view) sejak Milestone D. Sebelumnya permukaan ini
+// adalah <dialog> modal, sehingga banner #session-warning di belakangnya terlihat tetapi tidak
+// dapat dijangkau maupun ditekan; pengguna yang menatap dialog tidak akan pernah tahu bahwa dirinya
+// belum keluar. Karena itu tombol "Masuk ulang" melaporkan kegagalan ke #ai-message, yaitu tempat
+// yang sedang dilihat. Sebagai halaman, banner itu hidup di ruang kerja yang sama dan dapat
+// dijangkau, tetapi syarat pelaporannya tetap: kegagalan logout harus terbaca pada permukaan AI
+// yang sedang aktif, dan halaman itu tidak boleh tergusur maupun mengunci form tanpa penjelasan.
 //
 // Cookie session dipakai bersama seluruh tab, jadi hasil /api/me pada logout yang gagal belum tentu
 // milik akun yang membuka ruang kerja. Modul ini menguji kedua kemungkinannya:
-//   Fase 1 — session masih akun yang sama : ruang kerja dipertahankan, kegagalan tampil di dialog.
+//   Fase 1 — session masih akun yang sama : ruang kerja dipertahankan, kegagalan tampil di halaman.
 //   Fase 2 — session sudah akun lain      : ruang kerja lama dibongkar, sebab tampilannya akan
 //                                           bercampur identitas; peringatan menjelaskan perpindahan.
 //   Fase 3 — akun asli masuk kembali      : draft dipulihkan dan replay tepat satu kali.
@@ -96,10 +99,13 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,apiGet})=
   await page.locator('#ai-message').filter({hasText:'Logout belum berhasil'}).waitFor();
   await settled();
   assert.equal(logoutCalls,1);
-  // Pesan harus berada di dalam dialog yang sedang dibuka, bukan hanya di banner di belakangnya.
-  assert.equal(await page.locator('#dialog[open]').count(),1,'dialog AI harus tetap terbuka');
+  // Sebagai halaman, permukaan AI tidak bisa disembunyikan di balik modal: kegagalan harus terbaca
+  // pada section yang aktif dan banner session harus dapat dijangkau di ruang kerja yang sama.
+  assert.equal(await page.locator('#ai-view').isVisible(),true,'halaman AI harus tetap aktif');
+  assert.equal(await page.locator('#dialog[open]').count(),0,'tidak ada dialog yang terbuka');
   assert.equal(await page.locator('#ai-message').isVisible(),true,
-    'kegagalan logout harus terbaca di dalam dialog AI');
+    'kegagalan logout harus terbaca di halaman AI yang sedang aktif');
+  assert.equal(await warning.isVisible(),true,'banner session harus terlihat di ruang kerja');
   assert.match(await aiMessage(),/Logout belum berhasil/);
   assert.match(await warning.innerText(),/akun yang sama/);
   assert.equal(await accessKey.isHidden(),true,
@@ -130,10 +136,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,apiGet})=
   await accessKey.waitFor();
   await settled();
   assert.equal(logoutCalls,2);
-  // Ruang kerja akun lama dibongkar seluruhnya, termasuk dialog AI-nya.
+  // Ruang kerja akun lama dibongkar seluruhnya, termasuk halaman AI dan semua dialog fokusnya.
   assert.equal(await page.locator('#workspace').isHidden(),true,
     'ruang kerja identitas lama harus ditutup');
-  assert.equal(await page.locator('#dialog[open]').count(),0,'dialog AI akun lama harus ditutup');
+  assert.equal(await page.locator('#dialog[open]').count(),0,'tidak boleh ada dialog tersisa');
   assert.equal(await page.locator('#account-name').innerText(),'');
   const message=await warning.innerText();
   assert.match(message,/berpindah ke akun lain/);
@@ -157,7 +163,8 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,apiGet})=
   assert.equal(await warning.isHidden(),true,'peringatan harus hilang setelah masuk kembali');
   await page.getByRole('heading',{name:'Konfirmasi pencatatan sebelumnya',exact:true}).waitFor();
   await retry.click();
-  // Replay yang berhasil menutup dialog konfirmasi lalu membuka detail investigasi yang tersimpan.
+  // Replay yang berhasil menutup dialog konfirmasi lalu membuka detail investigasi yang tersimpan
+  // sebagai dialog fokus di atas ai-view; riwayat di halaman itu ikut dimuat ulang.
   await page.getByRole('heading',{name:'Investigasi tersimpan',exact:true}).waitFor();
   await page.getByRole('heading',{name:'Jawaban',exact:true}).waitFor();
   assert.equal(postKeys.length,3,'replay harus benar-benar dikirim sekali lagi');
@@ -184,8 +191,8 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,apiGet})=
   await page.locator('dialog').waitFor({state:'hidden'});
   await login(admin);
   console.log('AI investigation logout browser QA PASS: an uncertain investigation survives a failed '
-    +'logout on the same account with the failure reported inside the AI dialog, a switched session '
-    +'tears the stale workspace down with an honest explanation instead of keeping a mixed-identity '
-    +'view, transaction.key is preserved through both, and the original account replays exactly once '
-    +'with no duplicate investigation or audit event.');
+    +'logout on the same account with the failure reported on the active AI page and the session '
+    +'banner reachable, a switched session tears the stale workspace down with an honest explanation '
+    +'instead of keeping a mixed-identity view, transaction.key is preserved through both, and the '
+    +'original account replays exactly once with no duplicate investigation or audit event.');
 };

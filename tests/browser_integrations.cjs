@@ -40,10 +40,15 @@ module.exports=async({page,login,viewer,apiPost,work})=>{
   await updated.getByText('Vendor <timeout> saat membaca stok',{exact:true}).waitFor();
   assert.equal(await page.locator('timeout').count(),0);
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  // Milestone D: kesehatan integrasi adalah halaman, jadi lebar yang diuik adalah
+  // section aktifnya, bukan dialog global yang sudah tidak terbuka.
+  const fits=()=>page.evaluate(()=>{const section=document.getElementById('integrations-view');
+    return section.scrollWidth<=section.clientWidth
+      &&document.documentElement.scrollWidth<=document.documentElement.clientWidth;});
+  assert.ok(await fits(),'integrations page must not overflow at 390px');
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
-  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  assert.ok(await fits(),'integrations page must not overflow at 390px / 200% text');
+  await page.locator('#integrations-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-integration-health-mobile.png')});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.setViewportSize({width:1440,height:1000});
@@ -58,7 +63,9 @@ module.exports=async({page,login,viewer,apiPost,work})=>{
   await page.getByRole('heading',{name:'Rincian sinkronisasi',exact:true}).waitFor();
   await page.getByText('Jubelio · finished_goods · Gagal',{exact:true}).waitFor();
   await page.getByText('cursor-<12>',{exact:false}).waitFor();
-  assert.equal((await page.getByText('Vendor <timeout> saat membaca stok',{exact:true}).count()),1);
+  // Milestone D: kesehatan integrasi tetap tampil di halaman di bawah dialog, jadi
+  // teks error milik scope juga ada di sana; hitung hanya di dalam dialog rincian.
+  assert.equal((await page.locator('dialog').getByText('Vendor <timeout> saat membaca stok',{exact:true}).count()),1);
   assert.ok(failed.id);
   await page.keyboard.press('Escape');
   console.log('Integration browser QA PASS: honest empty state, failure retry, source-of-truth map, health, immutable run detail, escaping, mobile/200%.');
