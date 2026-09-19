@@ -98,6 +98,24 @@ state the dialog used to. Focused secondary work stays dialoged over all
 three pages: saved-investigation detail and feedback, action proposals, and
 integration run detail / audit-event detail.
 
+Destinations integrated in Milestone E: `approvals` → `approvals-view`,
+`purchase-requests` → `purchase-requests-view`, and `marketing-budgets` →
+`marketing-budgets-view`. The three cross-domain business queues are standalone
+pages sharing nothing but the contract: filter/queue/load-more for the approval
+inbox (offset pagination, 25/page), browse/filter/list for PR (cursor
+pagination), and browse/filter/list for marketing budgets (cursor pagination).
+Filter semantics are exactly the pre-migration ones: the selects render at
+their documented defaults (approvals `pending`/`all`; PR and marketing `all`)
+on every page entry and are not persisted in module scope, because the roadmap
+matrix requires filters to retain their current semantics. The page DOM
+survives child-dialog open/close untouched; only a recorded decision triggers
+the owning page's `reload*()`, which re-renders the queue. Decision work stays
+dialoged: per-kind approval detail and decision
+forms, PR create/detail/decision, and marketing budget create/detail/decision.
+The order-scoped PR list (`orderPurchaseRequestsDialog`) remains a focused
+dialog because it answers one question — what does *this order* need — and is
+reached from order detail, not the sidebar.
+
 ## 3. Navigation foundation contract
 
 | Checkpoint | Requirement | Enforced by |
@@ -243,3 +261,18 @@ unchanged in intent: the transaction key and actor binding survive a lost
 response, the pending draft still lives at `pendingKey()`, and `clearWorkspace()`
 bumps all three new counters plus clears `aiTransaction` so one account's AI
 result, integration status, or audit list cannot paint under another account.
+
+Milestone E extends the foundation test to the three business-queue pages: each
+is asserted as the only visible section with its own `aria-current`, its own
+heading, and the global dialog closed, and a delayed approvals response held
+across a navigation proves the `approvalsRequest` guard. Three modules were
+retargeted from modal to page: `browser_unified_approvals.cjs`,
+`browser_purchase_requests.cjs`, and `browser_marketing_budgets.cjs`, whose
+queue/list surfaces, error-and-retry paths, role gating, and decision flows now
+run against the pages. The approval invariants the migration is most likely to
+regress are unchanged in intent: the nine approval kinds, aggregate semantics,
+exact money arithmetic, SQLite aggregate-overflow protection, stale-decision
+handling, cancellation, lost-response retry with the same idempotency key, audit
+event integrity, and no duplicate mutation. `clearWorkspace()` bumps the three
+new counters and empties the three page bodies so one account's queues cannot
+paint under another account.

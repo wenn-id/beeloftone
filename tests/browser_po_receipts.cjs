@@ -64,6 +64,11 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByText('Diterima lengkap',{exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Terima bahan dari PO',exact:true}).count(),0);
   await page.keyboard.press('Escape');
+  // Milestone E: 'Permintaan pembelian' sekarang halaman, jadi dialog PO tidak lagi
+  // meninggalkan halaman bahan baku aktif di bawahnya. Kembali ke sana sebelum memeriksa batch.
+  // Pemeriksaan mobile sudah selesai; kembalikan viewport desktop supaya sidebar terlihat.
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Bahan baku',exact:true}).click();
   await page.locator('#batch-list').getByRole('button',{name:'RECEIPT-SECOND',exact:true}).waitFor();
   await openPO();
   detail=await apiGet('/api/purchase-orders/'+po.id);

@@ -34,6 +34,13 @@ let analyticsRequest = 0, analyticsReport = null, analyticsFilters = {};
 let aiRequest = 0, aiHistoryRequest = 0, aiHistoryBefore = null, aiTransaction = null;
 let integrationsRequest = 0;
 let auditRequest = 0;
+// Milestone E: tiga antrean bisnis (approval, PR, marketing) adalah halaman workspace,
+// bukan modal, jadi masing-masing memegang request counter sendiri. Nilai filter tidak
+// dipersist di state modul: sebelum migrasi, setiap pembukaan inbox/PR/marketing mereset
+// filter ke defaultnya, dan matrix roadmap (~6) menuntut semantik filter tidak berubah.
+let approvalsRequest = 0;
+let purchaseRequestsRequest = 0;
+let marketingBudgetsRequest = 0;
 
 function theme(value) {
   document.documentElement.dataset.theme = value;
@@ -91,7 +98,10 @@ const workspaceDestinations={
   'stock-adjustment-insights':'analytics-view',
   'ai-brain':'ai-view',
   'integrations':'integrations-view',
-  'audit-trail':'audit-view'
+  'audit-trail':'audit-view',
+  'approvals':'approvals-view',
+  'purchase-requests':'purchase-requests-view',
+  'marketing-budgets':'marketing-budgets-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
 // rincian order yang berbagi satu item sidebar dengan papan produksi.
@@ -109,7 +119,10 @@ const workspaceSections=[
   {id:'analytics-view',view:'analytics',invalidate(){analyticsRequest++;}},
   {id:'ai-view',view:'ai',invalidate(){aiRequest++;aiHistoryRequest++;}},
   {id:'integrations-view',view:'integrations',invalidate(){integrationsRequest++;}},
-  {id:'audit-view',view:'audit',invalidate(){auditRequest++;}}
+  {id:'audit-view',view:'audit',invalidate(){auditRequest++;}},
+  {id:'approvals-view',view:'approvals',invalidate(){approvalsRequest++;}},
+  {id:'purchase-requests-view',view:'purchase-requests',invalidate(){purchaseRequestsRequest++;}},
+  {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}}
 ];
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
 // lain sambil menaikkan request counternya, tampilkan target, catat nama view
@@ -192,6 +205,13 @@ function clearDialogLoading() {
   for (const node of $('dialog-content').querySelectorAll('.state'))
     if (/^(Memuat|Menghitung|Menggabungkan)/.test(node.textContent.trim())) node.remove();
 }
+// Membersihkan placeholder "Memuat ..." di halaman workspace. Dipakai ketika pemuatan pertama
+// gagal atau mengembalikan kosong, supaya status loading tidak terbaca bersamaan dengan pesan
+// error. Placeholder kosong atau berisi data tidak ikut dihapus; appendRows() menanganinya.
+function clearPageLoading(id) {
+  const host=$(id), first=host.firstElementChild;
+  if(first&&first.classList.contains('state')&&/^(Memuat|Menghitung|Menggabungkan)/.test(first.textContent.trim()))first.remove();
+}
 function appendRows(id, html) {
   const host = $(id), first = host.firstElementChild;
   if (first && first.classList.contains('state')) first.remove();
@@ -223,6 +243,9 @@ function clearWorkspace() {
   $('ai-results').replaceChildren(); $('ai-history-list').replaceChildren(); message('ai-message',''); message('ai-history-message','');
   integrationsRequest++; $('integrations-body').replaceChildren(); message('integrations-message','');
   auditRequest++; $('audit-body').replaceChildren();
+  approvalsRequest++; $('approvals-body').replaceChildren();
+  purchaseRequestsRequest++; $('purchase-requests-body').replaceChildren();
+  marketingBudgetsRequest++; $('marketing-budgets-body').replaceChildren();
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -849,6 +872,11 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
       if (view === 'analytics') reloadAnalytics();
+      // Milestone E: keputusan dari child dialog menyegarkan antrean di halaman yang
+      // memilikinya, supaya status baru terlihat tanpa membuka ulang halaman.
+      if (view === 'approvals') reloadApprovals();
+      if (view === 'purchase-requests') reloadPurchaseRequests();
+      if (view === 'marketing-budgets') reloadMarketingBudgets();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -1056,13 +1084,15 @@ document.addEventListener('click', event => {
     'new-issue':() => issueForm(id),'resolve-issue':() => resolveIssueForm(id),'more-issues':() => moreIssues(button),
     'edit-order':editOrderForm,'order-changes':orderChangesDialog,
     'new-production-change-request':productionChangeRequestForm,'production-change-requests':()=>productionChangeRequestsDialog(id || selected?.id),
-    'production-change-request':()=>productionChangeRequestDialog(id),'approvals':approvalsDialog,
-    'purchase-requests':()=>purchaseRequestsDialog(),'order-purchases':()=>purchaseRequestsDialog(selected.id),
+    'production-change-request':()=>productionChangeRequestDialog(id),
+    'approvals':()=>navigateFromDialog(showApprovals),
+    'purchase-requests':()=>navigateFromDialog(showPurchaseRequests),
+    'order-purchases':()=>orderPurchaseRequestsDialog(selected.id),
     'purchase-request':()=>purchaseRequestDialog(id),'new-purchase-request':()=>purchaseRequestForm(id || null),
     suppliers:suppliersDialog,'new-supplier':supplierForm,'purchase-orders':purchaseOrdersDialog,
     'new-purchase-order':()=>purchaseOrderForm(id),'purchase-order':()=>purchaseOrderDialog(id),
     'new-supplier-payment':()=>supplierPaymentForm(id),'supplier-payment-request':()=>supplierPaymentRequestDialog(id),
-    'marketing-budgets':marketingBudgetsDialog,'new-marketing-budget':marketingBudgetForm,
+    'marketing-budgets':()=>navigateFromDialog(showMarketingBudgets),'new-marketing-budget':marketingBudgetForm,
     'marketing-budget-request':()=>marketingBudgetRequestDialog(id),
     'receive-po':()=>purchaseReceiptForm(id),'qc-intake-form':()=>purchaseReceiptForm(id,true),
     'qc-intake':()=>qualityIntakeDialog(id),
@@ -1094,7 +1124,7 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'material-batch-traceability':()=>materialBatchTraceabilityDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:()=>navigateFromDialog(showProducts),approvals:approvalsDialog,'ai-brain':()=>navigateFromDialog(showAi),
+    products:()=>navigateFromDialog(showProducts),approvals:()=>navigateFromDialog(showApprovals),'ai-brain':()=>navigateFromDialog(showAi),
     'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
     integrations:()=>navigateFromDialog(showIntegrations),'integration-runs':integrationRunsDialog,
     'integration-run':()=>integrationRunDialog(id),
@@ -4250,17 +4280,40 @@ function approvalContextHTML(row) {
 }
 const rupiah = value => 'Rp' + BigInt(value.split('.')[0]).toLocaleString('id-ID') + ',' + value.split('.')[1];
 const purchaseStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
-$('purchase-requests').onclick = () => purchaseRequestsDialog();
-$('marketing-budgets').onclick = marketingBudgetsDialog;
-$('approvals').onclick = approvalsDialog;
+$('purchase-requests').onclick = showPurchaseRequests;
+$('marketing-budgets').onclick = showMarketingBudgets;
+$('approvals').onclick = showApprovals;
+$('approvals-back').onclick = showBoard;
+$('purchase-requests-back').onclick = showBoard;
+$('marketing-budgets-back').onclick = showBoard;
+$('approvals-refresh').onclick = () => loadApprovals();
+$('purchase-requests-refresh').onclick = () => loadPurchaseRequests();
+$('marketing-budgets-refresh').onclick = () => loadMarketingBudgets();
+$('new-purchase-request').onclick = () => purchaseRequestForm(null);
+$('new-marketing-budget').onclick = marketingBudgetForm;
 
-async function approvalsDialog() {
-  if(guardPending())return;
-  const version=epoch;openDialog('Inbox approval','<p class="state">Memuat antrean keputusan...</p>');const modal=dialogVersion;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option><option value="purchase_request">Purchasing · PR</option><option value="purchase_order">Purchasing · PO</option><option value="supplier_payment">Finance · pembayaran supplier</option><option value="marketing_budget">Marketing · budget kampanye</option><option value="production_change">Production · perubahan order</option><option value="workforce_leave">People · cuti</option><option value="workforce_overtime">People · lembur</option><option value="payroll_batch">People · batch payroll</option><option value="ai_action">AI Brain · tindakan</option></select></label></div><div class="form-actions"><button id="approval-refresh">Muat ulang inbox</button></div></div><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><div id="approval-list"><p class="state">Memuat approval...</p></div><p id="approval-error" class="error" role="alert" hidden></p><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+// Milestone E: Inbox approval adalah halaman workspace. Filter, pintasan antar-domain,
+// antrean, load-more, loading, empty, dan error hidup di section; membuka satu approval
+// lalu menyetujui/menolaknya tetap dialog terfokus. Sembilan jenis approval, semantik
+// agregat, dan offset pagination 25/halaman tidak berubah.
+function showApprovals() {
+  if (guardPending()) return;
+  activateWorkspace('approvals');
+  loadApprovals();
+}
+// Dipanggil rantai sukses formDialog setelah keputusan approval tersimpan, supaya status
+// baru langsung terlihat di antrean tanpa membuka ulang halaman.
+function reloadApprovals() { if (view === 'approvals') loadApprovals(); }
+async function loadApprovals() {
+  const version=epoch,request=++approvalsRequest,body=$('approvals-body');
+  const current=()=>version===epoch&&request===approvalsRequest&&view==='approvals';
+  body.innerHTML='<p class="state">Memuat antrean keputusan...</p>';
+  body.innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><form id="approval-filter" class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option>${Object.entries(approvalKind).map(([value,label])=>option(value,label)).join('')}</select></label></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="approval-error" class="error" role="alert" hidden></p><div id="approval-list"><p class="state">Memuat approval...</p></div><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  $('approval-status').value='pending';
+  $('approval-kind').value='all';
   let offset=0,generation=0;
   const load=async(reset=false)=>{
+    if(!current())return;
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
     const gen=generation,button=$('approval-more');button.disabled=true;message('approval-error','');
     try{
@@ -4269,20 +4322,33 @@ async function approvalsDialog() {
       appendRows('approval-list',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
       if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
-    }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);clearPageLoading('approval-list');button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
-  $('approval-status').onchange=$('approval-kind').onchange=$('approval-refresh').onclick=()=>load(true);
+  $('approval-filter').onsubmit=event=>{event.preventDefault();load(true);};
+  $('approval-status').onchange=$('approval-kind').onchange=()=>load(true);
   $('approval-more').onclick=()=>load();await load();
 }
 
-async function marketingBudgetsDialog() {
-  if(guardPending())return;
-  const version=epoch;openDialog('Budget marketing','<p class="state">Memuat pengajuan budget…</p>');const modal=dialogVersion;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions">${user.role!=='viewer'?'<button class="primary" data-action="new-marketing-budget">Ajukan budget</button>':''}<button id="marketing-budget-refresh">Muat ulang</button><button data-action="approvals">Inbox approval</button></div><div class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div></div><div id="marketing-budget-list"></div><p id="marketing-budget-error" class="error" role="alert" hidden></p><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+// Milestone E: Budget marketing adalah halaman workspace. Daftar pengajuan, filter status,
+// cursor pagination, dan retry hidup di section; mengajukan budget dan menyetujui/menolak
+// satu pengajuan tetap dialog terfokus.
+function showMarketingBudgets() {
+  if (guardPending()) return;
+  $('new-marketing-budget').hidden = user.role === 'viewer';
+  activateWorkspace('marketing-budgets');
+  loadMarketingBudgets();
+}
+function reloadMarketingBudgets() { if (view === 'marketing-budgets') loadMarketingBudgets(); }
+async function loadMarketingBudgets() {
+  const version=epoch,request=++marketingBudgetsRequest,body=$('marketing-budgets-body');
+  const current=()=>version===epoch&&request===marketingBudgetsRequest&&view==='marketing-budgets';
+  body.innerHTML='<p class="state">Memuat pengajuan budget…</p>';
+  body.innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions"><button data-action="approvals">Inbox approval</button></div><form id="marketing-budget-filter" class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="marketing-budget-error" class="error" role="alert" hidden></p><div id="marketing-budget-list"><p class="state">Memuat pengajuan budget…</p></div><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+  $('marketing-budget-status').value='all';
   let before=null,generation=0;
   const load=async(reset=false)=>{
+    if(!current())return;
     if(reset){generation++;before=null;$('marketing-budget-list').replaceChildren();}
     const gen=generation,button=$('marketing-budget-more');button.disabled=true;message('marketing-budget-error','');
     try{
@@ -4291,10 +4357,11 @@ async function marketingBudgetsDialog() {
       appendRows('marketing-budget-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.campaign_name)} · ${e(row.channel)}</p><p>${date(row.start_date)}–${date(row.end_date)} · <strong>${e(rupiah(row.amount))}</strong></p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button></article>`).join(''));
       if(!before&&!rows.length)$('marketing-budget-list').innerHTML='<p class="state">Belum ada pengajuan budget yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pengajuan berikutnya';
-    }catch(error){if(current()&&gen===generation){message('marketing-budget-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}
+    }catch(error){if(current()&&gen===generation){message('marketing-budget-error',error.message,true);clearPageLoading('marketing-budget-list');button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
-  $('marketing-budget-status').onchange=$('marketing-budget-refresh').onclick=()=>load(true);
+  $('marketing-budget-filter').onsubmit=event=>{event.preventDefault();load(true);};
+  $('marketing-budget-status').onchange=()=>load(true);
   $('marketing-budget-more').onclick=()=>load();await load();
 }
 
@@ -4332,11 +4399,49 @@ async function marketingBudgetRequestDialog(requestId) {
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketing-budget-request" data-id="${e(requestId)}">Coba lagi</button>`;}
 }
 
-async function purchaseRequestsDialog(orderId=null) {
+// Milestone E: Permintaan pembelian adalah halaman workspace. Browse, filter status, daftar,
+// cursor pagination, loading, empty, dan error hidup di section; membuat PR, rincian PR,
+// dan keputusan tetap dialog terfokus. Id halaman dipisah dari id dialog PR order-scoped
+// (orderPurchaseRequestsDialog) supaya tidak ada duplikat id saat keduanya ada di DOM.
+function showPurchaseRequests() {
+  if (guardPending()) return;
+  $('new-purchase-request').hidden = user.role === 'viewer';
+  activateWorkspace('purchase-requests');
+  loadPurchaseRequests();
+}
+function reloadPurchaseRequests() { if (view === 'purchase-requests') loadPurchaseRequests(); }
+async function loadPurchaseRequests() {
+  const version=epoch, request=++purchaseRequestsRequest, body=$('purchase-requests-body');
+  const current=()=>version===epoch&&request===purchaseRequestsRequest&&view==='purchase-requests';
+  body.innerHTML='<p class="state">Memuat permintaan pembelian...</p>';
+  body.innerHTML=`<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions"><button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button></div><form id="pr-page-filter" class="filter-form"><div class="form-grid"><div><label for="pr-page-status">Status PR</label><select id="pr-page-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="pr-page-error" role="alert" class="error" hidden></p><div id="pr-page-list"><p class="state">Memuat PR...</p></div><button id="pr-page-more">Muat PR berikutnya</button>`;
+  $('pr-page-status').value='all';
+  let before=null, generation=0;
+  async function load(reset=false) {
+    if(!current())return;
+    if(reset){generation++;before=null;$('pr-page-list').replaceChildren();}
+    const gen=generation, button=$('pr-page-more'); button.disabled=true; message('pr-page-error','');
+    try {
+      const rows=await api.get('/api/purchase-requests?'+new URLSearchParams({limit:25,status:$('pr-page-status').value,...(before?{before}:{})}));
+      if(!current() || gen!==generation)return;
+      appendRows('pr-page-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
+      if(!before && !rows.length)$('pr-page-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
+      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
+    }catch(error){if(current() && gen===generation){message('pr-page-error',error.message,true);clearPageLoading('pr-page-list');button.hidden=false;button.textContent='Coba muat PR lagi';}}
+    finally{if(current() && gen===generation)button.disabled=false;}
+  }
+  $('pr-page-filter').onsubmit=event=>{event.preventDefault();load(true);};
+  $('pr-page-status').onchange=()=>load(true);
+  $('pr-page-more').onclick=()=>load();await load();
+}
+
+// PR order-scoped dibuka dari rincian order produksi; ini tetap dialog terfokus karena
+// konteksnya satu order, bukan tujuan sidebar utama.
+async function orderPurchaseRequestsDialog(orderId) {
   if (guardPending()) return;
   const version=epoch;
-  openDialog(orderId ? 'PR untuk order ini' : 'Permintaan pembelian',
-    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><div class="filter-form"><div class="form-grid"><div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div></div><div id="pr-list"></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
+  openDialog('PR untuk order ini',
+    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><div class="filter-form"><div class="form-grid"><div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div></div><div id="pr-list"><p class="state">Memuat PR...</p></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
   const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null, generation=0;
   async function load(reset=false) {
