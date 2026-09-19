@@ -56,9 +56,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.equal(await dialog.getByRole('button',{name:/Setujui|Tolak|Batalkan/}).count(),0);
 
   await role(admin);
-  await page.locator('#approvals').click();dialog=page.locator('dialog');
+  await page.locator('#approvals').click();dialog=page.locator('#approvals-view');
   await dialog.locator('#approval-kind').selectOption('workforce_leave');
   await dialog.getByRole('button',{name:new RegExp('Rincian approval '+leave.reference)}).click();
+  dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Setujui',exact:true}).click();
   await dialog.getByLabel('Alasan / catatan',{exact:true}).fill('Jadwal tim sudah diperiksa');
   await dialog.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();

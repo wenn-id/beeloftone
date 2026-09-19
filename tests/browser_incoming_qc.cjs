@@ -61,6 +61,11 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.getByRole('button',{name:'Batch QC-BATCH',exact:true}).waitFor();
   await page.keyboard.press('Escape');
+  // Milestone E: 'Permintaan pembelian' sekarang halaman, jadi dialog PO/QC tidak lagi
+  // meninggalkan halaman bahan baku aktif di bawahnya. Kembali ke sana sebelum memeriksa batch.
+  // Pemeriksaan mobile sudah selesai; kembalikan viewport desktop supaya sidebar terlihat.
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Bahan baku',exact:true}).click();
   await page.locator('#batch-list').getByRole('button',{name:'QC-BATCH',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi catatan bahan',exact:true}).count(),0);
   await page.getByRole('button',{name:'QC asal batch',exact:true}).click();

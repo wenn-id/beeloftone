@@ -63,9 +63,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.equal(await dialog.getByRole('button',{name:/Setujui payroll|Tolak payroll|Batalkan pengajuan/}).count(),0);
 
   await role(admin);
-  await page.locator('#approvals').click();dialog=page.locator('dialog');
+  await page.locator('#approvals').click();dialog=page.locator('#approvals-view');
   await dialog.locator('#approval-kind').selectOption('payroll_batch');
   await dialog.getByRole('button',{name:new RegExp('Rincian approval '+request.reference)}).click();
+  dialog=page.locator('dialog');
   await dialog.getByRole('button',{name:'Setujui payroll',exact:true}).click();
   await dialog.getByLabel('Alasan / catatan',{exact:true}).fill('Nominal dan jumlah karyawan sudah diperiksa');
   await dialog.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
@@ -89,9 +90,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await snapshot(payroll(staleExternal,'3750000',new Date(Date.now()+1000).toISOString()));
 
   await role(admin);
-  await page.locator('#approvals').click();dialog=page.locator('dialog');
+  await page.locator('#approvals').click();dialog=page.locator('#approvals-view');
   await dialog.locator('#approval-kind').selectOption('payroll_batch');
   await dialog.getByRole('button',{name:new RegExp('Rincian approval '+staleRequest.reference)}).click();
+  dialog=page.locator('dialog');
   await dialog.getByText('Snapshot payroll sumber sudah berubah atau tidak lagi tersedia. Permintaan ini tidak dapat disetujui.',{exact:true}).waitFor();
   assert.equal(await dialog.getByRole('button',{name:'Setujui payroll',exact:true}).count(),0);
   await dialog.getByRole('button',{name:'Tolak payroll',exact:true}).click();

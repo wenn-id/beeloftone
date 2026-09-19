@@ -17,8 +17,8 @@ rather than labels.
 | Classification | Count | Destinations |
 |---|---|---|
 | EXISTING_PAGE | 4 | Command center, Produksi, Bahan baku, Laporan aktivitas |
-| LEGACY_DIALOG | 5 | Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
-| MIGRATED_PAGE | 17 | People, Master SKU, Tanya Beeloft, Integrasi, Audit trail, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
+| LEGACY_DIALOG | 2 | Scan bundle, Scan barang jadi |
+| MIGRATED_PAGE | 20 | People, Master SKU, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
 | INTENTIONAL_DIALOG | 0 | (none among primary sidebar destinations) |
 | NEEDS_VERIFICATION | 1 | Cadangan data |
 | OTHER | 0 | — |
@@ -337,52 +337,54 @@ Migration notes for the Milestone C host:
 ### 4.5 Group 4 tail — business
 
 #### `purchase-requests` — Permintaan pembelian
-- Renderer: `purchaseRequestsDialog` (`app.mjs:4131`, wired `app.mjs:4049`); the
-  same dialog is reused order-scoped via `purchaseRequestsDialog(orderId)` from
-  order detail (`data-action="order-purchases"`)
-- Interaction: **DIALOG** — browse/filter/list inside modal
+- Renderer: `showPurchaseRequests` → `loadPurchaseRequests` (page renderer,
+  Milestone E); the order-scoped list remains the focused dialog
+  `orderPurchaseRequestsDialog(orderId)` from order detail
+  (`data-action="order-purchases"`)
+- Interaction: **PAGE** — browse/filter/list inside `purchase-requests-view`
 - Data: `GET /api/purchase-requests?` — cursor `before` pagination (25/page),
-  status filter, optional `order_id` scope
+  status filter
 - Mutation: none from list; create/decision are child forms
 - Access: all roles browse; `new-purchase-request` hidden for viewer
-- Async: `epoch` + `dialogVersion` + local `generation`
-- State: `pr-error` alert region, empty-filter state, retry button
+- Async: `epoch` + `purchaseRequestsRequest` + local `generation`
+- State: `pr-page-error` alert region, empty-filter state, retry button
 - Child dialogs: `purchaseRequestForm` (create), `purchaseRequestDialog` (detail),
   `suppliersDialog`, `purchaseOrdersDialog`
-- Target: `purchase-requests-view` (Milestone E) — **LEGACY_DIALOG**
+- Target: `purchase-requests-view` — **MIGRATED_PAGE** (Milestone E)
 
 #### `marketing-budgets` — Budget marketing
-- Renderer: `marketingBudgetsDialog` (`app.mjs:4075`, wired `app.mjs:4050`)
-- Interaction: **DIALOG** — budget queue inside modal
+- Renderer: `showMarketingBudgets` → `loadMarketingBudgets` (page renderer,
+  Milestone E)
+- Interaction: **PAGE** — budget queue inside `marketing-budgets-view`
 - Data: `GET /api/marketing-budget-requests?`
 - Mutation: none from list; create/decision are child forms
 - Access: all roles browse; `new-marketing-budget` hidden for viewer
-- Async: `epoch` + `dialogVersion`
+- Async: `epoch` + `marketingBudgetsRequest` + local `generation`
 - State: error region, empty state, retry
 - Child dialogs: `marketingBudgetForm`, `marketingBudgetRequestDialog`,
   decision form via approvals
-- Target: `marketing-budgets-view` (Milestone E) — **LEGACY_DIALOG**
+- Target: `marketing-budgets-view` — **MIGRATED_PAGE** (Milestone E)
 
 ### 4.6 CTA card — approval inbox
 
 #### `approvals` — Inbox approval
-- Renderer: `approvalsDialog` (`app.mjs:4053`, wired `app.mjs:4051`); also reachable
-  as `data-action="approvals"` from many surfaces
-- Interaction: **DIALOG** — cross-domain decision queue inside modal
+- Renderer: `showApprovals` → `loadApprovals` (page renderer, Milestone E); also
+  reachable as `data-action="approvals"` from many surfaces
+- Interaction: **PAGE** — cross-domain decision queue inside `approvals-view`
 - Data: `GET /api/approvals?` — **offset** pagination (25/page), filters: status
   (pending/all/approved/rejected/cancelled) and kind
 - Mutation: none from the queue surface; approve/reject happen in per-kind
   decision dialogs (`approvalAction[row.kind]`), each with idempotency key +
   actor binding
 - Access: all roles see queue; decision authority follows per-kind role rules
-- Async: `epoch` + `dialogVersion` + local `generation`
+- Async: `epoch` + `approvalsRequest` + local `generation`
 - State: `approval-error` alert region, empty-filter state, retry
 - Cross-domain shortcuts: `purchase-requests`, `marketing-budgets`,
   `workforce-requests`, `mekari-payroll-summary`
 - Nine approval kinds in the filter: `purchase_request`, `purchase_order`,
   `supplier_payment`, `marketing_budget`, `production_change`, `workforce_leave`,
   `workforce_overtime`, `payroll_batch`, `ai_action`
-- Target: `approvals-view` (Milestone E) — **LEGACY_DIALOG**
+- Target: `approvals-view` — **MIGRATED_PAGE** (Milestone E)
 - Protected (Milestone E must retain): pending totals above 500, exact money
   arithmetic, all nine kinds, SQLite aggregate-overflow regression, stale decision
   handling, cancellation, lost-response retry, audit event integrity, no duplicate
@@ -392,8 +394,7 @@ Migration notes for the Milestone C host:
 
 Complete list of primary sidebar handlers whose main effect is `openDialog()`:
 
-`bundleScanDialog`, `finishedGoodsScanDialog`, `purchaseRequestsDialog`,
-`marketingBudgetsDialog`, `approvalsDialog`, and the inline `backup` handler.
+`bundleScanDialog`, `finishedGoodsScanDialog`, and the inline `backup` handler.
 
 The twelve Analitik children used to be in this list as
 `*InsightsDialog`/`capacityPlanDialog`/`demandForecastDialog`/
@@ -401,10 +402,17 @@ The twelve Analitik children used to be in this list as
 activate `analytics-view` instead. Milestone D removed `auditEventsDialog`,
 `aiInvestigationDialog`, and `integrationsDialog` from this list for the same
 reason: `showAuditEvents`, `showAi`, and `showIntegrations` activate
-`audit-view`, `ai-view`, and `integrations-view`.
+`audit-view`, `ai-view`, and `integrations-view`. Milestone E removed
+`approvalsDialog`, `marketingBudgetsDialog`, and the primary
+`purchaseRequestsDialog` for the same reason: `showApprovals`,
+`showMarketingBudgets`, and `showPurchaseRequests` activate `approvals-view`,
+`marketing-budgets-view`, and `purchase-requests-view`. The order-scoped
+`orderPurchaseRequestsDialog` stays on this list by design: it is a focused
+dialog reached from order detail, not a primary sidebar destination.
 
 The global click-delegation map (`app.mjs:899`) also routes many `data-action`
-values to these same dialog functions (e.g. `approvals: approvalsDialog`).
+values to these same dialog functions (e.g. `order-purchases:
+() => orderPurchaseRequestsDialog(selected.id)`).
 Milestone D repointed the migrated entries at the page renderers
 (`ai-brain: () => navigateFromDialog(showAi)`,
 `integrations: () => navigateFromDialog(showIntegrations)`,
@@ -418,6 +426,9 @@ showProductionQualityInsights`). Migrated destinations route their delegated
 entry points through `navigateFromDialog(show…)` instead, so a "Kembali ke …"
 button inside a focused dialog closes that dialog and activates the page rather
 than reopening a modal (e.g. `products`, `workforce`, `command-workforce`).
+Milestone E repointed the three business-queue entries the same way
+(`approvals`, `purchase-requests`, `marketing-budgets`), so cross-navigation
+among the approval inbox, PR, marketing, and People surfaces stays coherent.
 
 ## 6. Cross-cutting safety surface to preserve
 
@@ -637,3 +648,73 @@ Remaining LEGACY_DIALOG (5): Inbox approval, Permintaan pembelian, Budget
 marketing, Scan bundle, Scan barang jadi. These are Milestone E/F scope.
 
 Next: Milestone E. Do not begin without approval, per roadmap §4 hard-stop rule.
+
+## 13. Milestone E delta — approvals, purchasing, and marketing migrated to pages
+
+Milestone E (`refactor/workspace-pages-approvals-business`) migrates the three
+cross-domain business queues out of the global dialog into workspace pages.
+Migration counts move to 4 EXISTING_PAGE, 2 LEGACY_DIALOG, 1 NEEDS_VERIFICATION,
+20 MIGRATED_PAGE.
+
+Destinations integrated: `approvals` → `approvals-view`, `purchase-requests` →
+`purchase-requests-view`, `marketing-budgets` → `marketing-budgets-view`.
+`workspaceDestinations` maps all three, and `workspaceSections` carries one entry
+each (`view: 'approvals'`, `view: 'purchase-requests'`, `view:
+'marketing-budgets'`), each with an `invalidate()` that bumps its feature-local
+counter.
+
+What changed mechanically, without altering any endpoint, approval semantics, or
+backend contract:
+
+- `approvalsDialog` → `showApprovals` + `loadApprovals`; `marketingBudgetsDialog`
+  → `showMarketingBudgets` + `loadMarketingBudgets`; the primary
+  `purchaseRequestsDialog()` → `showPurchaseRequests` + `loadPurchaseRequests`.
+  All three call `activateWorkspace()` and render into page containers
+  (`#approvals-body`, `#purchase-requests-body`, `#marketing-budgets-body`)
+  instead of `openDialog()`.
+- The order-scoped PR list stays a focused dialog, renamed
+  `orderPurchaseRequestsDialog(orderId)`, because it is reached from order detail
+  (`data-action="order-purchases"`) and scoped to one order rather than being a
+  primary destination. Its `pr-status`/`pr-list`/`pr-error`/`pr-more` ids are
+  unchanged; the page uses `pr-page-*` ids so the two can never collide in the
+  DOM at once.
+- The three show functions keep the `guardPending()` interception the dialog
+  openers had, so an unresolved pending write still forces recovery before the
+  user can start a new task from that destination.
+- Filter controls have no module-state persistence. Each render resets them to
+  hardcoded defaults: approvals uses `pending` (and kind `all`), while PR and
+  marketing both use `all`.
+- Pagination models are unchanged: approvals keeps **offset** pagination
+  (25/page), PR and marketing keep cursor `before` pagination. Loading, empty,
+  filter-empty, error, and retry states live on the page; the retry path keeps
+  the existing behaviour of reusing the load-more button as "Coba lagi".
+- `formDialog`'s success chain refreshes the owning page through
+  `reloadApprovals()` / `reloadPurchaseRequests()` / `reloadMarketingBudgets()`
+  when that page is active, before reopening the record detail dialog, so the
+  queue behind the dialog reflects the new status without a reopen.
+- Delegated entry points (`approvals`, `purchase-requests`, `marketing-budgets`)
+  now route through `navigateFromDialog(show…)`, so "Inbox approval", "Semua
+  PR", "Semua budget marketing", and "Daftar budget" buttons inside focused
+  dialogs close the dialog and activate the page. The order-scoped
+  `order-purchases` entry keeps opening its own dialog.
+- `clearWorkspace()` bumps the three new counters and empties the three page
+  containers; there are no per-page filter objects to reset. This prevents a
+  session switch from painting a previous actor's approval queue, PR list, or
+  budget list.
+- Record-specific work stays in focused dialogs opened from the pages:
+  per-kind approval detail and decision forms (`approvalAction[row.kind]`), PR
+  create/detail/decision, marketing budget create/detail/decision, suppliers,
+  and the PO list.
+- The nine approval kinds, aggregate semantics, money arithmetic, idempotency
+  keys, actor binding, stale-decision handling, cancellation, lost-response
+  retry, and audit-event integrity are untouched. No backend route changed.
+- Regression: `tests/browser_navigation_foundation.cjs` gains the three new
+  destinations in its one-visible-page/aria-current/no-dialog sweep plus a
+  delayed-response race for the approvals page; `browser_unified_approvals.cjs`,
+  `browser_purchase_requests.cjs`, and `browser_marketing_budgets.cjs` were
+  retargeted from the modal to the page.
+
+Remaining LEGACY_DIALOG (2): Scan bundle, Scan barang jadi. These are Milestone
+F scope, alongside the Cadangan data verification.
+
+Next: Milestone F. Do not begin without approval, per roadmap §4 hard-stop rule.

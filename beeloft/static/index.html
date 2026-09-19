@@ -234,6 +234,21 @@
         <p class="hint">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only, urut dari yang terbaru, dan dikelola admin.</p>
         <div id="audit-body"></div>
       </section>
+      <section id="purchase-requests-view" hidden>
+        <button id="purchase-requests-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Purchasing · permintaan pembelian</p><h1>Pengajuan bahan untuk ditinjau.</h1></div><div class="actions"><button id="purchase-requests-refresh" type="button">Muat ulang PR</button><button id="new-purchase-request" class="primary" type="button" hidden>Buat PR</button></div></div>
+        <div id="purchase-requests-body" aria-live="polite"></div>
+      </section>
+      <section id="marketing-budgets-view" hidden>
+        <button id="marketing-budgets-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Marketing · pengajuan budget</p><h1>Pengajuan budget kampanye.</h1></div><div class="actions"><button id="marketing-budgets-refresh" type="button">Muat ulang</button><button id="new-marketing-budget" class="primary" type="button" hidden>Ajukan budget</button></div></div>
+        <div id="marketing-budgets-body" aria-live="polite"></div>
+      </section>
+      <section id="approvals-view" hidden>
+        <button id="approvals-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="page-heading"><div><p class="eyebrow">Inbox approval · antrean keputusan</p><h1>Satu antrean untuk setiap keputusan.</h1></div><div class="actions"><button id="approvals-refresh" type="button">Muat ulang inbox</button></div></div>
+        <div id="approvals-body" aria-live="polite"></div>
+      </section>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>

@@ -169,7 +169,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     await route.continue().catch(() => {});
   });
   await openSidebarDestination('Inbox approval');
-  await page.locator('dialog[open]').waitFor();
+  await page.locator('#approvals-view:not([hidden])').waitFor();
   await page.locator('#approval-list .state').waitFor();
   assert.match(await page.locator('#approval-list .state').textContent(), /Memuat/,
     'a pending list announces that it is loading');
@@ -217,10 +217,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     route.fulfill({status: 503, contentType: 'application/json',
       body: JSON.stringify({detail: 'Inbox approval sedang diperbarui'})}));
   await openSidebarDestination('Inbox approval');
-  await page.locator('dialog[open]').waitFor();
+  await page.locator('#approvals-view:not([hidden])').waitFor();
   await page.getByText('Inbox approval sedang diperbarui', {exact: true}).waitFor();
   const errorState = await page.evaluate(() => {
-    const content = document.getElementById('dialog-content');
+    const content = document.getElementById('approvals-body');
     return {
       loadingLeftOver: [...content.querySelectorAll('.state')]
         .filter(n => /Memuat|Menghitung/.test(n.textContent)).length,

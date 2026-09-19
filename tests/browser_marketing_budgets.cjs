@@ -10,7 +10,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
 
   await role(operator);
   await page.getByRole('button',{name:'Budget marketing',exact:true}).click();
-  await page.getByRole('heading',{name:'Budget marketing',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Pengajuan budget kampanye.',exact:true}).waitFor();
   await page.getByRole('button',{name:'Ajukan budget',exact:true}).click();
   await page.getByLabel('Referensi pengajuan',{exact:true}).fill('MKT-UI-001');
   await page.getByLabel('Nama kampanye',{exact:true}).fill('Koleksi <Biru>&');
@@ -62,6 +62,6 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Daftar budget',exact:true}).click();
   await page.locator('#marketing-budget-status').selectOption('approved');
   await page.getByRole('button',{name:'Rincian budget MKT-UI-001',exact:true}).waitFor();
-  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-marketing-budget-approval-mobile.png')});
+  await page.locator('#marketing-budgets-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-marketing-budgets-mobile.png')});
   console.log('Marketing budget approval browser QA PASS: submission, lost-response retry, inbox, roles, approval audit, escaping, mobile/200%.');
 };

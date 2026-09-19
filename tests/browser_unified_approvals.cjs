@@ -9,7 +9,11 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order})=>{
     assert.equal(response.status,expected,await response.clone().text());return response.json();
   }
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
-  async function openOrder(){await page.getByRole('button',{name:/DEMO-FINISHED-GOODS/}).click();await page.getByRole('heading',{name:'CONTOH penerimaan barang jadi',exact:true}).waitFor();}
+  async function openOrder(){
+    // Milestone E: '#approvals' sekarang halaman, jadi papan produksi tidak lagi
+    // tertinggal aktif di bawah inbox. Kembali ke papan sebelum membuka order.
+    await page.locator('#board-home').click();
+    await page.getByRole('button',{name:/DEMO-FINISHED-GOODS/}).click();await page.getByRole('heading',{name:'CONTOH penerimaan barang jadi',exact:true}).waitFor();}
 
   await role(operator);
   let failList=true;
@@ -55,9 +59,12 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order})=>{
   assert.equal(production.reference,'PCR-UI-001');
   await page.locator('dialog').getByRole('button',{name:'Inbox approval',exact:true}).click();
   await page.getByText('Rp3.500.000,00',{exact:true}).waitFor();
-  await page.getByText('Target 1 Des 2026 → 15 Des 2026',{exact:true}).waitFor();
+  // Milestone E: konten dialog yang ditutup tetap ada di DOM, jadi teks baris produksi
+  // muncul dua kali (di halaman approval dan di #dialog-content yang sudah ditutup).
+  // Batasi pada daftar di halaman.
+  await page.locator('#approval-list').getByText('Target 1 Des 2026 → 15 Des 2026',{exact:true}).waitFor();
   assert.equal(await page.locator('#approval-list .material-event').count(),2);
-  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-unified-approvals-mobile.png')});
+  await page.locator('#approvals-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-unified-approvals-mobile.png')});
 
   await role(viewer);
   await page.locator('#approvals').click();

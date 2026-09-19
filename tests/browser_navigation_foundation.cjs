@@ -12,6 +12,11 @@
 // (Tanya Beeloft, Integrasi, Audit trail) and adds a delayed-audit race: a
 // response that lands after the user left the audit page must not render its
 // rows or repaint the destination the user moved to.
+//
+// Milestone E extends the destination matrix to the three business-queue pages
+// (Inbox approval, Permintaan pembelian, Budget marketing) and adds a
+// delayed-approvals race: a held /api/approvals response must not render its
+// rows or repaint the page the user moved to.
 const assert = require('node:assert/strict');
 
 module.exports = async ({page, login, admin, openSidebarDestination}) => {
@@ -39,6 +44,11 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'Integrasi', nav: 'integrations', section: 'integrations-view', heading: 'Status integrasi dan source of truth.',
       content: '[data-integration-system]'},
     {name: 'Audit trail', nav: 'audit-trail', section: 'audit-view', heading: 'Audit trail', content: '#audit-summary'},
+    // Milestone E: tiga antrean bisnis adalah halaman workspace. Antrean mungkin
+    // kosong di data demo, jadi tunggu container daftar saja, bukan baris.
+    {name: 'Inbox approval', nav: 'approvals', section: 'approvals-view', heading: 'Satu antrean untuk setiap keputusan.', content: '#approval-list'},
+    {name: 'Permintaan pembelian', nav: 'purchase-requests', section: 'purchase-requests-view', heading: 'Pengajuan bahan untuk ditinjau.', content: '#pr-page-list'},
+    {name: 'Budget marketing', nav: 'marketing-budgets', section: 'marketing-budgets-view', heading: 'Pengajuan budget kampanye.', content: '#marketing-budget-list'},
     {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Catatan produksi.'}
   ];
   const visibleSections = () => page.evaluate(() =>
@@ -189,6 +199,36 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   assert.equal(await page.locator('#audit-list .audit-event').count(), 0,
     'late audit response must not render rows onto the page the user left');
   await page.unroute('**/api/audit-events?*');
+
+  // Milestone E: respons approval yang lambat tidak boleh mengecat halaman yang sudah
+  // ditinggalkan pengguna. Respons /api/approvals ditahan sampai pengguna pindah ke
+  // Command center.
+  let releaseApprovals, signalApprovals, finishApprovals;
+  const approvalsStarted = new Promise(resolve => signalApprovals = resolve);
+  const approvalsReleased = new Promise(resolve => releaseApprovals = resolve);
+  const approvalsFinished = new Promise(resolve => finishApprovals = resolve);
+  let delayApprovals = true;
+  await page.route('**/api/approvals?*', async route => {
+    if (delayApprovals) {
+      delayApprovals = false;
+      const response = await route.fetch(); signalApprovals();
+      await approvalsReleased; await route.fulfill({response}); finishApprovals();
+    } else await route.continue();
+  });
+  await page.getByRole('button', {name: 'Inbox approval', exact: true}).click();
+  await page.getByRole('heading', {name: 'Satu antrean untuk setiap keputusan.', exact: true}).waitFor();
+  await approvalsStarted;
+  await page.getByRole('button', {name: 'Command center', exact: true}).click();
+  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  releaseApprovals(); await approvalsFinished;
+  await page.waitForTimeout(150);
+  assert.deepEqual(await visibleSections(), ['command-center-view'],
+    'late approvals response must not repaint the command center');
+  assert.notEqual(await page.locator('#approvals-view').getAttribute('hidden'), null,
+    'the approvals page must stay hidden after the user left it');
+  assert.equal(await page.locator('#approval-list .material-event').count(), 0,
+    'late approvals response must not render rows onto the page the user left');
+  await page.unroute('**/api/approvals?*');
 
   // Bagian Milestone A berikutnya dimulai dari halaman detail order, jadi
   // kembali ke precondition itu sebelum memakai tombol kembali detail.
