@@ -7,6 +7,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
     await page.getByRole('button',{name:'Keluar',exact:true}).click();
     await login(key);
   }
+  // Milestone D: parameter ai-view memakai label yang sama dengan form analytics di
+  // analytics-view, dan getByLabel menyentuh seluruh DOM termasuk section tersembunyi,
+  // jadi setiap lookup parameter dibatasi pada form ini.
+  const aiForm=page.locator('#ai-form');
 
   const beforeOrders=(await apiGet('/api/orders')).length;
   const beforeRequests=(await apiGet('/api/purchase-requests')).length;
@@ -16,12 +20,12 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.equal(await page.getByLabel('Pertanyaan bisnis',{exact:true}).inputValue(),'SKU apa yang berisiko stockout?');
   await page.getByLabel('Pertanyaan bisnis',{exact:true}).fill('Apakah stok COST-UI <aman> atau akan stockout?');
   await page.getByText('Asumsi analisis',{exact:true}).click();
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
-  await page.getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
-  await page.getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
-  await page.getByLabel('Safety stock (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
+  await aiForm.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
+  await aiForm.getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
+  await aiForm.getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
+  await aiForm.getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
+  await aiForm.getByLabel('Safety stock (hari)',{exact:true}).fill('7');
+  await aiForm.getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
   let lostInvestigation=true;const investigationKeys=[];
   await page.route('**/api/ai/investigations',async route=>{
     investigationKeys.push(route.request().headers()['idempotency-key']);
@@ -33,8 +37,11 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.equal(await page.getByLabel('Pertanyaan bisnis',{exact:true}).inputValue(),'Apakah stok COST-UI <aman> atau akan stockout?');
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
   await page.getByRole('heading',{name:'Jawaban',exact:true}).waitFor();
-  await page.getByText('20 pcs direkomendasikan untuk produksi.',{exact:false}).waitFor();
-  await page.getByText('Analisis lokal · tidak mengirim data keluar · hanya baca · fokus COST-UI',{exact:true}).waitFor();
+  // Milestone D: hasil dan riwayat investigasi kini berbagi satu halaman, dan teks jawaban
+  // muncul di keduanya, jadi klaim hasil dibatasi pada area hasil.
+  const aiResults=page.locator('#ai-results');
+  await aiResults.getByText('20 pcs direkomendasikan untuk produksi.',{exact:false}).waitFor();
+  await aiResults.getByText('Analisis lokal · tidak mengirim data keluar · hanya baca · fokus COST-UI',{exact:true}).waitFor();
   assert.ok(investigationKeys[0]);
   assert.equal(new Set(investigationKeys).size,1);
   assert.equal(await page.locator('.ai-answer aman').count(),0);
@@ -75,12 +82,12 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await openSidebarDestination('Tanya Beeloft');
   await page.getByLabel('Pertanyaan bisnis',{exact:true}).fill('Apakah stok COST-UI akan stockout?');
   await page.getByText('Asumsi analisis',{exact:true}).click();
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
-  await page.getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
-  await page.getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
-  await page.getByLabel('Safety stock (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
+  await aiForm.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
+  await aiForm.getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
+  await aiForm.getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
+  await aiForm.getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
+  await aiForm.getByLabel('Safety stock (hari)',{exact:true}).fill('7');
+  await aiForm.getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
   await page.getByRole('button',{name:'Analisis dan simpan',exact:true}).click();
   const productionRecommendation=page.locator('[data-ai-recommendation="create_production_order"]');
   await productionRecommendation.getByRole('button',{name:'Ajukan untuk approval',exact:true}).click();

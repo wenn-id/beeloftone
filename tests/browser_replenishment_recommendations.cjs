@@ -40,12 +40,14 @@ module.exports=async({page,login,admin,viewer,apiGet,work,costOrder})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'Rekomendasi stok',exact:true}).click();
+  // Milestone D: kelima label parameter ini dimiliki juga oleh ai-view, dan getByLabel
+  // menyentuh section tersembunyi, jadi batasi pada host laporan ini.
   await page.getByLabel('Forecast sampai tanggal',{exact:true}).fill('2026-12-13');
-  await page.getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
-  await page.getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
-  await page.getByLabel('Safety stock (hari)',{exact:true}).fill('7');
-  await page.getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
+  await page.locator('#analytics-view').getByLabel('Panjang window demand (hari)',{exact:true}).fill('7');
+  await page.locator('#analytics-view').getByLabel('Lead time replenishment (hari)',{exact:true}).fill('14');
+  await page.locator('#analytics-view').getByLabel('Periode review stok (hari)',{exact:true}).fill('30');
+  await page.locator('#analytics-view').getByLabel('Safety stock (hari)',{exact:true}).fill('7');
+  await page.locator('#analytics-view').getByLabel('Kelipatan batch produksi (pcs)',{exact:true}).fill('5');
   await page.getByLabel('Marketplace',{exact:true}).fill('Tokopedia <Official>');
   await page.getByLabel('Cari SKU atau produk',{exact:true}).fill('COST-UI');
   let fail=true;

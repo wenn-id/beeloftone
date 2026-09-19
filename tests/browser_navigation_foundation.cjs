@@ -7,6 +7,11 @@
 // a delayed response from a previous page cannot repaint the current one, no
 // primary destination opens the global dialog, and 320px at 200% text stays
 // inside the viewport.
+//
+// Milestone D extends the destination matrix to the three oversight pages
+// (Tanya Beeloft, Integrasi, Audit trail) and adds a delayed-audit race: a
+// response that lands after the user left the audit page must not render its
+// rows or repaint the destination the user moved to.
 const assert = require('node:assert/strict');
 
 module.exports = async ({page, login, admin, openSidebarDestination}) => {
@@ -21,6 +26,19 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},
     {name: 'WIP ageing', nav: 'wip-ageing-insights', section: 'analytics-view', heading: 'WIP ageing & sinyal hambatan', content: '#wip-ageing-form'},
+    // Milestone D: Tanya Beeloft, Integrasi, dan Audit trail adalah halaman workspace.
+    // riwayat investigasi dimuat terpisah dari permintaan tulisan, jadi tunggu riwayatnya
+    // tuntas sebelum mengukur lebar halaman.
+    {name: 'Tanya Beeloft', nav: 'ai-brain', section: 'ai-view', heading: 'Analisis operasional dari ledger sendiri.',
+      content: '#ai-form',
+      ready: () => page.waitForFunction(() => {
+        const message = document.getElementById('ai-history-message');
+        return document.getElementById('ai-history-list').children.length > 0
+          || (message && message.textContent && message.textContent !== 'Memuat riwayat investigasi…');
+      })},
+    {name: 'Integrasi', nav: 'integrations', section: 'integrations-view', heading: 'Status integrasi dan source of truth.',
+      content: '[data-integration-system]'},
+    {name: 'Audit trail', nav: 'audit-trail', section: 'audit-view', heading: 'Audit trail', content: '#audit-summary'},
     {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Catatan produksi.'}
   ];
   const visibleSections = () => page.evaluate(() =>
@@ -143,6 +161,35 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     'late WIP response must not render WIP rows onto the quality report');
   await page.unroute('**/api/wip-ageing-insights?*');
 
+  // Milestone D: respons audit yang lambat tidak boleh mengecat halaman yang sudah ditinggalkan
+  // pengguna. Respons /api/audit-events ditahan sampai pengguna pindah ke Command center.
+  let releaseAudit, signalAudit, finishAudit;
+  const auditStarted = new Promise(resolve => signalAudit = resolve);
+  const auditReleased = new Promise(resolve => releaseAudit = resolve);
+  const auditFinished = new Promise(resolve => finishAudit = resolve);
+  let delayAudit = true;
+  await page.route('**/api/audit-events?*', async route => {
+    if (delayAudit) {
+      delayAudit = false;
+      const response = await route.fetch(); signalAudit();
+      await auditReleased; await route.fulfill({response}); finishAudit();
+    } else await route.continue();
+  });
+  await page.getByRole('button', {name: 'Audit trail', exact: true}).click();
+  await page.getByRole('heading', {name: 'Audit trail', exact: true}).waitFor();
+  await auditStarted;
+  await page.getByRole('button', {name: 'Command center', exact: true}).click();
+  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  releaseAudit(); await auditFinished;
+  await page.waitForTimeout(150);
+  assert.deepEqual(await visibleSections(), ['command-center-view'],
+    'late audit response must not repaint the command center');
+  assert.notEqual(await page.locator('#audit-view').getAttribute('hidden'), null,
+    'the audit page must stay hidden after the user left it');
+  assert.equal(await page.locator('#audit-list .audit-event').count(), 0,
+    'late audit response must not render rows onto the page the user left');
+  await page.unroute('**/api/audit-events?*');
+
   // Bagian Milestone A berikutnya dimulai dari halaman detail order, jadi
   // kembali ke precondition itu sebelum memakai tombol kembali detail.
   await page.getByRole('button', {name: 'Produksi', exact: true}).click();
@@ -209,6 +256,7 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     await openSidebarDestination(destination.name);
     await page.getByRole('heading', {name: destination.heading, exact: true}).waitFor();
     if (destination.content) await page.locator(destination.content).first().waitFor();
+    if (destination.ready) await destination.ready();
     const fits = await noOverflow();
     assert.equal(fits, true, `no horizontal overflow on ${destination.name} at 320px / 200% text\n${JSON.stringify(await overflowReport(), null, 2)}`);
     assert.deepEqual(await visibleSections(), [destination.section]);
@@ -239,5 +287,6 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   console.log('Workspace navigation foundation browser QA PASS: one visible page and one aria-current '
     +'per destination including the order detail under the board item, drawer close with heading focus '
     +'at 390px, repeated navigation without duplicated rows, a late board response cannot repaint the '
-    +'command center, and no horizontal overflow at 320px with 200% text.');
+    +'command center, a late audit response cannot repaint the page the user left, and no horizontal '
+    +'overflow at 320px with 200% text.');
 };

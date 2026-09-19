@@ -93,7 +93,9 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
 
   await role(viewer);
   await openSidebarDestination('Analisis retur');
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-01');
+  // Milestone D: label "Data sampai tanggal" juga dimiliki ai-view, dan getByLabel
+  // menyentuh section tersembunyi, jadi batasi pada host laporan ini.
+  await page.locator('#analytics-view').getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-01');
   await page.getByLabel('Panjang periode (hari)',{exact:true}).fill('30');
   await page.getByLabel('Marketplace',{exact:true}).fill('Shopee');
   await page.getByLabel('Cari SKU atau produk',{exact:true}).fill('FG-M');

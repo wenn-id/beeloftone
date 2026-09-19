@@ -84,6 +84,20 @@ status line, result list, conditional paging — while each keeps its own
 formulas, endpoint, filters, and empty/error copy. Twelve static sections would
 buy symmetry, not maintainability.
 
+Destinations integrated in Milestone D: `ai-brain` → `ai-view`, `integrations` →
+`integrations-view`, and `audit-trail` → `audit-view`. Each is a standalone page
+rather than a shared host, because the three surfaces have nothing in common but
+the contract: prompt/result/history for Tanya Beeloft, health/source-of-truth/
+latest-run for Integrasi, and filter/list/cursor-paging for Audit trail. The AI
+page carries two independent counters (`aiRequest` for the write,
+`aiHistoryRequest` for the read) so loading history cannot weaken the guard an
+in-flight investigation holds. Because the AI form is now persistent static
+markup instead of dialog content re-rendered on each open, activation also
+resets its assumption panel to closed, so a return visit starts from the same
+state the dialog used to. Focused secondary work stays dialoged over all
+three pages: saved-investigation detail and feedback, action proposals, and
+integration run detail / audit-event detail.
+
 ## 3. Navigation foundation contract
 
 | Checkpoint | Requirement | Enforced by |
@@ -183,7 +197,7 @@ re-renders, so a child dialog write does not silently reset the operator's filte
 `reloadAnalytics()` re-runs the active report through the `analyticsReports`
 registry and is what the `formDialog` success chain calls when `view === 'analytics'`.
 
-## 7. Regression coverage
+## 8. Regression coverage
 
 Milestone A adds `tests/browser_navigation_foundation.cjs`, registered in
 `tests/browser_smoke.cjs`. It proves: exactly one visible page per navigation,
@@ -215,3 +229,17 @@ report proves the host's `analyticsRequest` guard — the late response cannot
 repaint the heading, the body, or render WIP rows onto the active report.
 `browser_return_insights.cjs` is new and covers the twelfth child's host
 contract, retry path, and empty state at 390px and 320px/200%.
+
+Milestone D extends the foundation test to the three oversight pages: each is
+asserted as the only visible section with its own `aria-current`, its own
+heading, and the global dialog closed, and a delayed audit response held across
+a navigation proves the `auditRequest` guard. Two modules were retargeted from
+modal to page: `browser_integrations.cjs` (health rows, source-of-truth status,
+and overflow checks now run against `#integrations-view`) and
+`browser_ai_investigation_logout.cjs`, whose AI failure now surfaces on the page
+with the session banner reachable rather than trapped behind a modal. The
+pending-transaction invariants the migration is most likely to regress are
+unchanged in intent: the transaction key and actor binding survive a lost
+response, the pending draft still lives at `pendingKey()`, and `clearWorkspace()`
+bumps all three new counters plus clears `aiTransaction` so one account's AI
+result, integration status, or audit list cannot paint under another account.

@@ -17,8 +17,8 @@ rather than labels.
 | Classification | Count | Destinations |
 |---|---|---|
 | EXISTING_PAGE | 4 | Command center, Produksi, Bahan baku, Laporan aktivitas |
-| LEGACY_DIALOG | 8 | Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
-| MIGRATED_PAGE | 14 | People, Master SKU, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
+| LEGACY_DIALOG | 5 | Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi |
+| MIGRATED_PAGE | 17 | People, Master SKU, Tanya Beeloft, Integrasi, Audit trail, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
 | INTENTIONAL_DIALOG | 0 | (none among primary sidebar destinations) |
 | NEEDS_VERIFICATION | 1 | Cadangan data |
 | OTHER | 0 | — |
@@ -241,38 +241,46 @@ Migration notes for the Milestone C host:
 ### 4.4 Group 3 — oversight
 
 #### `ai-brain` — Tanya Beeloft
-- Renderer: `aiInvestigationDialog` (`app.mjs:2990`, wired `app.mjs:3056`)
-- Interaction: **DIALOG** — prompt, assumptions, results, and history all in modal
+- Renderer: `showAi` (`app.mjs`, wired `$('ai-brain').onclick=showAi`); page
+  renderer `submitAiInvestigation` for the write and `loadAiHistory` for the
+  history section
+- Interaction: **PAGE** → `ai-view` — prompt, assumptions, result, feedback, and
+  investigation history all live on the page
 - Data: `POST /api/ai/investigations` (transactional, `api.transaction()` +
-  `api.save()`); history via `aiInvestigationsDialog` (`GET /api/ai/investigations`)
+  `api.save()`); history via `GET /api/ai/investigations` into `#ai-history-list`
 - Mutation: the investigation write is exact-once with a pending draft persisted in
   `sessionStorage` under `pendingKey()`; `sameActorGuard(actorId)` binds the
   transaction to the originating account; re-auth path via `reauthenticate`
 - Access: all roles may ask; proposals/execution gated separately
-- Async: `epoch` + `dialogVersion` + modal-local `current()`; lost-response retry
-  reuses the same transaction and idempotency key
-- State: `ai-message` status, locked form during analysis, re-auth button reveal
-- Child dialogs: `aiInvestigationsDialog` (history), `aiInvestigationDetailDialog`,
-  `aiActionProposalDialog` (action proposals + execution confirmation)
-- Target: `ai-view` (Milestone D) — **LEGACY_DIALOG**
+- Async: `epoch` + `aiRequest` (submit) and `aiHistoryRequest` (history), with
+  `view==='ai'` in `current()`; lost-response retry reuses the same transaction and
+  idempotency key
+- State: `ai-message` status, locked form during analysis, re-auth button reveal,
+  `ai-history-message` loading/empty/error
+- Child dialogs: `aiInvestigationDetailDialog` (saved investigation detail),
+  `aiActionProposalDialog`/`aiActionProposalForm` (proposals + execution
+  confirmation), feedback via `formDialog`
+- Target: `ai-view` (Milestone D) — **MIGRATED_PAGE**
 - Protected (must not weaken): pending investigation recovery, snapshot/evidence
   compatibility, lost-response retry, cross-account session guard, exact-once replay
 
 #### `integrations` — Integrasi
-- Renderer: `integrationsDialog` (`app.mjs:2599`, wired `app.mjs:2609`)
-- Interaction: **DIALOG** — health, source-of-truth status, history in modal
+- Renderer: `showIntegrations` (`app.mjs`, wired `$('integrations').onclick=showIntegrations`);
+  page renderer `loadIntegrations` into `#integrations-body`
+- Interaction: **PAGE** → `integrations-view` — health, source-of-truth status,
+  latest run, and per-scope state on the page
 - Data: `GET /api/integrations`; per-system snapshot summary dialogs each issue
   their own `GET /api/<system>/...` calls
 - Mutation: none from the primary surface; run detail and reconciliation are reads
 - Access: all roles; admin-only actions where present live in child surfaces
-- Async: `epoch` + `dialogVersion`
-- State: loading placeholder, health badges, error with retry
+- Async: `epoch` + `integrationsRequest` + `view==='integrations'`
+- State: `integrations-message` loading/error with inline retry, health badges
 - Child dialogs: `integrationRunsDialog`, `integrationRunDialog`,
   `jubelioStockSnapshotsDialog`/reconciliation, `jubelioOrder/Return/ListingSummary`
   + snapshot dialogs, `mekariFinance/Payables/Receivables/PayrollSummary` + snapshot
   dialogs, `payrollPaymentReconciliationDialog`,
   `payrollAccountingReconciliationDialog`
-- Target: `integrations-view` (Milestone D) — **LEGACY_DIALOG**
+- Target: `integrations-view` (Milestone D) — **MIGRATED_PAGE**
 - Protected: immutable run history integrity; escaping of external payloads
 
 #### `activity` — Laporan aktivitas
@@ -290,19 +298,20 @@ Migration notes for the Milestone C host:
   — **EXISTING_PAGE**
 
 #### `audit-trail` — Audit trail
-- Nav item hidden unless admin (`app.mjs:198`)
-- Renderer: `auditEventsDialog` (`app.mjs:608`, wired `app.mjs:895`)
-- Interaction: **DIALOG** — filters + cursor list inside modal
-- Data: `GET /api/audit-events?` (cursor `before` pagination, limit 20) +
+- Nav item hidden unless admin (`app.mjs`)
+- Renderer: `showAuditEvents` (`app.mjs`, wired `$('audit-trail').onclick=showAuditEvents`);
+  page renderer `loadAuditEvents` into `#audit-body`
+- Interaction: **PAGE** → `audit-view` — filters + cursor list on the page
+- Data: `GET /api/audit-events?` (cursor `before` pagination, limit 25) +
   `GET /api/users` for actor filter; filters: `q`, `category`, `actor_id`,
   `start_date`, `end_date` (held in `auditFilters`, reset by `clearWorkspace`)
 - Mutation: none (immutable audit log)
 - Access: admin-only at the nav level; viewer/operator never see the item
-- Async: `epoch` + `dialogVersion` + local loader generation
+- Async: `epoch` + `auditRequest` + `view==='audit'`
 - State: loading placeholder, empty state, error with retry
 - Child dialogs: `auditEventDialog` (raw event detail)
 - Target: `audit-view` (Milestone D); admin-only restriction unchanged —
-  **LEGACY_DIALOG**
+  **MIGRATED_PAGE**
 
 #### `backup` — Cadangan data
 - Nav item hidden unless admin (`app.mjs:198`)
@@ -383,21 +392,28 @@ Migration notes for the Milestone C host:
 
 Complete list of primary sidebar handlers whose main effect is `openDialog()`:
 
-`auditEventsDialog`, `bundleScanDialog`, `finishedGoodsScanDialog`,
-`aiInvestigationDialog`, `integrationsDialog`, `purchaseRequestsDialog`,
+`bundleScanDialog`, `finishedGoodsScanDialog`, `purchaseRequestsDialog`,
 `marketingBudgetsDialog`, `approvalsDialog`, and the inline `backup` handler.
 
 The twelve Analitik children used to be in this list as
 `*InsightsDialog`/`capacityPlanDialog`/`demandForecastDialog`/
 `replenishmentDialog`; Milestone C renamed them to `show*` page renderers that
-activate `analytics-view` instead.
+activate `analytics-view` instead. Milestone D removed `auditEventsDialog`,
+`aiInvestigationDialog`, and `integrationsDialog` from this list for the same
+reason: `showAuditEvents`, `showAi`, and `showIntegrations` activate
+`audit-view`, `ai-view`, and `integrations-view`.
 
 The global click-delegation map (`app.mjs:899`) also routes many `data-action`
-values to these same dialog functions (e.g. `approvals: approvalsDialog`,
-`ai-brain: aiInvestigationDialog`, `integrations: integrationsDialog`). The
-migrated analytics retry entries now route to the page renderers
-(`demand-forecast: showDemandForecast`, `replenishment: showReplenishment`,
-`capacity-plan: showCapacityPlan`, `production-quality-insights:
+values to these same dialog functions (e.g. `approvals: approvalsDialog`).
+Milestone D repointed the migrated entries at the page renderers
+(`ai-brain: () => navigateFromDialog(showAi)`,
+`integrations: () => navigateFromDialog(showIntegrations)`,
+`audit-events: () => navigateFromDialog(showAuditEvents)`), and the
+`ai-investigations` entry was removed together with the history dialog because
+the history list is now a section of `ai-view`. The migrated analytics retry
+entries route to the page renderers (`demand-forecast: showDemandForecast`,
+`replenishment: showReplenishment`, `capacity-plan: showCapacityPlan`,
+`production-quality-insights:
 showProductionQualityInsights`). Migrated destinations route their delegated
 entry points through `navigateFromDialog(show…)` instead, so a "Kembali ke …"
 button inside a focused dialog closes that dialog and activates the page rather
@@ -557,3 +573,67 @@ approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi.
 These are Milestone D/E/F scope.
 
 Next: Milestone D. Do not begin without approval, per roadmap §4 hard-stop rule.
+
+## 11. Milestone D delta — AI, Integrations, and Audit migrated to pages
+
+Milestone D (`refactor/workspace-pages-intelligence-integrations`) migrates the
+three oversight destinations out of the global dialog into workspace pages.
+Migration counts move to 4 EXISTING_PAGE, 5 LEGACY_DIALOG, 1 NEEDS_VERIFICATION,
+17 MIGRATED_PAGE.
+
+Destinations integrated: `ai-brain` → `ai-view`, `integrations` →
+`integrations-view`, `audit-trail` → `audit-view`. `workspaceDestinations` maps
+all three, and `workspaceSections` carries one entry each (`view: 'ai'`,
+`view: 'integrations'`, `view: 'audit'`), each with an `invalidate()` that bumps
+its feature-local counter.
+
+What changed mechanically, without altering any endpoint, report logic, or
+backend contract:
+
+- `aiInvestigationDialog` → `showAi` + `submitAiInvestigation`; `integrationsDialog`
+  → `showIntegrations` + `loadIntegrations`; `auditEventsDialog` →
+  `showAuditEvents` + `loadAuditEvents`. All three call `activateWorkspace()` and
+  load data into page containers (`#ai-results`/`#ai-history-list`,
+  `#integrations-body`, `#audit-body`) instead of `openDialog()`.
+- The three show functions keep the `guardPending()` interception the dialog
+  openers had, so an unresolved pending write still forces recovery before the
+  user can start a new task from that destination.
+- Tanya Beeloft's history moved onto the page: `aiInvestigationsDialog` is
+  removed and `loadAiHistory()` renders the filter form, cursor list, and
+  load-more into `#ai-history` inside `ai-view`. Saved-investigation detail
+  (`aiInvestigationDetailDialog`) and action proposals remain focused dialogs.
+- The AI write keeps its exact-once contract: `aiTransaction` is module-level
+  state (cleared on confirmed success, on non-uncertain failure, and by
+  `clearWorkspace()`), the pending draft stays at `pendingKey()` with its
+  idempotency key, and lost-response retry reuses both.
+- `submitAiInvestigation` guards on `epoch` + `aiRequest` + `view === 'ai'`;
+  `loadAiHistory` guards on a separate `aiHistoryRequest` so loading history
+  cannot drop an in-flight investigation guard. `modalBusy` is released in the
+  `finally` block without a page-active precondition, because a page can be left
+  mid-analysis without a dialog close path to reset it.
+- `formDialog`'s success chain refreshes `loadAiHistory()` when `view === 'ai'`
+  before opening the saved-investigation detail dialog, so a recovery replay
+  from the page still lands fresh history behind the dialog.
+- Delegated entry points (`ai-brain`, `integrations`, `audit-events`) now route
+  through `navigateFromDialog(show…)`, so "Kembali ke …" buttons inside focused
+  dialogs close the dialog and activate the page. The `ai-investigations`
+  delegation entry was removed with the history dialog; `renderAiInvestigation`'s
+  "Riwayat investigasi" button became `data-ai-history`, which closes any open
+  dialog, activates `ai-view` if needed, and scrolls to the history section.
+- `clearWorkspace()` bumps the three new counters, clears `aiTransaction` and
+  `aiHistoryBefore`, and empties the three page containers, so a session switch
+  cannot paint a previous actor's AI result, integration status, or audit list.
+- Record-specific work stays in focused dialogs opened from the pages: audit-event
+  detail, integration run history/detail, per-system snapshot summaries and
+  reconciliations, saved-investigation detail, feedback, and action proposals.
+- Regression: `tests/browser_navigation_foundation.cjs` gained the three new
+  destinations in its one-visible-page/aria-current/no-dialog sweep plus a
+  delayed-response race for the audit page; `tests/browser_integrations.cjs` and
+  `tests/browser_ai_investigation_logout.cjs` were retargeted from the modal to
+  the page, with the logout module asserting the AI failure now surfaces on the
+  page and the session banner is reachable rather than trapped behind a modal.
+
+Remaining LEGACY_DIALOG (5): Inbox approval, Permintaan pembelian, Budget
+marketing, Scan bundle, Scan barang jadi. These are Milestone E/F scope.
+
+Next: Milestone E. Do not begin without approval, per roadmap §4 hard-stop rule.

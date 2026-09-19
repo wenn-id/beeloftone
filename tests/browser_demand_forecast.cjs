@@ -19,7 +19,9 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'Forecast demand',exact:true}).click();
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
+  // Milestone D: label "Data sampai tanggal" juga dimiliki ai-view, dan getByLabel
+  // menyentuh section tersembunyi, jadi batasi pada host laporan ini.
+  await page.locator('#analytics-view').getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
   await page.getByLabel('Panjang tiap periode (hari)',{exact:true}).fill('7');
   await page.getByLabel('Horizon forecast (hari)',{exact:true}).fill('14');
   await page.getByLabel('Marketplace',{exact:true}).fill('Tokopedia <Official>');

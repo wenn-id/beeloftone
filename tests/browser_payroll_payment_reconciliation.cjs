@@ -35,8 +35,11 @@ module.exports=async({page,login,admin,viewer,apiPost,work})=>{
     else await route.continue();
   });
   await page.getByRole('button',{name:'Integrasi',exact:true}).click();
+  // Milestone D: kesehatan integrasi adalah halaman, jadi tombol rekonsiliasi berada di
+  // integrations-view; hasil rekonsiliasinya tetap dialog terfokus.
+  await page.getByRole('button',{name:'Pembayaran payroll',exact:true}).click();
+  await page.getByRole('heading',{name:'Rekonsiliasi pembayaran payroll',exact:true}).waitFor();
   const dialog=page.locator('dialog');
-  await dialog.getByRole('button',{name:'Pembayaran payroll',exact:true}).click();
   await dialog.getByText('Rekonsiliasi sementara gagal',{exact:true}).waitFor();
   await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.unroute('**/api/payroll-payment-reconciliation?*');

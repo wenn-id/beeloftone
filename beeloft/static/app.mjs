@@ -27,6 +27,13 @@ let dialogReturnFocus = null;
 // request menjamin respons laporan yang tertinggal tidak bisa mengecat ulang laporan
 // yang sekarang aktif, persis seperti counter feature-local pada halaman lain.
 let analyticsRequest = 0, analyticsReport = null, analyticsFilters = {};
+// Tiga tujuan Milestone D (AI, Integrasi, Audit) adalah halaman workspace, bukan modal,
+// jadi masing-masing memegang request counter sendiri. aiHistoryRequest terpisah dari
+// aiRequest: memuat riwayat tidak boleh menjatuhkan guard submit investigasi yang sedang
+// berjalan, dan sebaliknya.
+let aiRequest = 0, aiHistoryRequest = 0, aiHistoryBefore = null, aiTransaction = null;
+let integrationsRequest = 0;
+let auditRequest = 0;
 
 function theme(value) {
   document.documentElement.dataset.theme = value;
@@ -81,7 +88,10 @@ const workspaceDestinations={
   'size-demand-insights':'analytics-view',
   'return-insights':'analytics-view',
   'dead-stock-insights':'analytics-view',
-  'stock-adjustment-insights':'analytics-view'
+  'stock-adjustment-insights':'analytics-view',
+  'ai-brain':'ai-view',
+  'integrations':'integrations-view',
+  'audit-trail':'audit-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
 // rincian order yang berbagi satu item sidebar dengan papan produksi.
@@ -96,7 +106,10 @@ const workspaceSections=[
   {id:'people-view',view:'people',invalidate(){peopleRequest++;}},
   {id:'products-view',view:'products',invalidate(){productsRequest++;}},
   {id:'activity-view',view:'activity',invalidate(){activityRequest++;}},
-  {id:'analytics-view',view:'analytics',invalidate(){analyticsRequest++;}}
+  {id:'analytics-view',view:'analytics',invalidate(){analyticsRequest++;}},
+  {id:'ai-view',view:'ai',invalidate(){aiRequest++;aiHistoryRequest++;}},
+  {id:'integrations-view',view:'integrations',invalidate(){integrationsRequest++;}},
+  {id:'audit-view',view:'audit',invalidate(){auditRequest++;}}
 ];
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
 // lain sambil menaikkan request counternya, tampilkan target, catat nama view
@@ -206,6 +219,10 @@ function clearWorkspace() {
   productsRequest++; productsCache = []; $('product-list').replaceChildren();
   analyticsRequest++; analyticsReport = null; analyticsFilters = {};
   $('analytics-body').replaceChildren(); $('analytics-heading').textContent='Analitik'; $('analytics-eyebrow').textContent='Analitik';
+  aiRequest++; aiHistoryRequest++; aiHistoryBefore = null; aiTransaction = null;
+  $('ai-results').replaceChildren(); $('ai-history-list').replaceChildren(); message('ai-message',''); message('ai-history-message','');
+  integrationsRequest++; $('integrations-body').replaceChildren(); message('integrations-message','');
+  auditRequest++; $('audit-body').replaceChildren();
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -710,17 +727,22 @@ const auditCategories = {master_data:'Master data',production:'Produksi',materia
 const auditStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',
   timeZone:'Asia/Jakarta'}).format(new Date(value));
 
-async function auditEventsDialog() {
+function showAuditEvents() {
   if (guardPending()) return;
-  const version=epoch;
-  openDialog('Global audit trail','<p class="state">Memuat audit trail…</p>');
-  const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
+  activateWorkspace('audit-trail');
+  loadAuditEvents();
+}
+// Milestone D: Audit trail adalah halaman workspace. Filter, cursor pagination, dan retry
+// hidup di section; hanya rincian event mentah yang tetap dialog terfokus.
+async function loadAuditEvents() {
+  const version=epoch,request=++auditRequest,body=$('audit-body');
+  const current=()=>version===epoch&&request===auditRequest&&view==='audit';
+  body.innerHTML='<p class="state">Memuat audit trail…</p>';
   let rows=[],before=null;
   try {
     const users=await api.get('/api/users');
     if(!current())return;
-    $('dialog-content').innerHTML=`<p class="form-info">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only dan urut dari yang terbaru.</p>
-      <form id="audit-filter" class="filter-form"><div class="form-grid">
+    body.innerHTML=`<form id="audit-filter" class="filter-form"><div class="form-grid">
         <label class="full">Cari operasi, referensi, pelaku, atau request key<input name="q" maxlength="160" value="${e(auditFilters.q)}"></label>
         <div><label for="audit-category">Kategori</label><select id="audit-category" name="category"><option value="all">Semua kategori</option>${Object.entries(auditCategories).map(([key,label])=>option(key,label)).join('')}</select></div>
         <div><label for="audit-actor">Pelaku</label><select id="audit-actor" name="actor_id"><option value="">Semua pelaku</option>${users.map(item=>option(item.id,`${item.name} · ${item.role}`)).join('')}</select></div>
@@ -755,10 +777,10 @@ async function auditEventsDialog() {
       finally{if(current())button.disabled=false;}
     };
     $('audit-filter').onsubmit=event=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));auditFilters={...data};load(true);};
-    $('audit-reset').onclick=()=>{auditFilters={q:'',category:'all',actor_id:'',start_date:'',end_date:''};auditEventsDialog();};
+    $('audit-reset').onclick=()=>{auditFilters={q:'',category:'all',actor_id:'',start_date:'',end_date:''};loadAuditEvents();};
     $('audit-more').onclick=()=>load(false);
     await load(true);
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-events">Coba lagi</button>`;}
+  }catch(error){if(current())body.innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-events">Coba lagi</button>`;}
 }
 
 async function auditEventDialog(eventId) {
@@ -852,7 +874,11 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
       else if (path.includes('/payroll-periods/') || path.startsWith('/api/payroll-approval-requests/')) payrollApprovalRequestDialog(result.id);
       else if (path === '/api/marketing-budget-requests' || path.startsWith('/api/marketing-budget-requests/')) marketingBudgetRequestDialog(result.id);
-      else if (path === '/api/ai/investigations' || /^\/api\/ai\/investigations\/[^/]+\/feedback$/.test(path)) aiInvestigationDetailDialog(result.id);
+      else if (path === '/api/ai/investigations' || /^\/api\/ai\/investigations\/[^/]+\/feedback$/.test(path)) {
+        // Simpan ulang melalui dialog pemulihan tetap menyegarkan riwayat di halaman AI.
+        if (view === 'ai') loadAiHistory();
+        aiInvestigationDetailDialog(result.id);
+      }
       else if (path === '/api/ai/action-proposals' || path.startsWith('/api/ai/action-proposals/')) aiActionProposalDialog(result.id);
       else if (path === '/api/suppliers') suppliersDialog();
       else if (path.startsWith('/api/qc-') || path.startsWith('/api/supplier-returns/') || path.endsWith('/qc-intakes')) {
@@ -1019,7 +1045,7 @@ async function orderForm() {
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-order">Coba lagi</button>`; }
 }
 $('products').onclick = showProducts; $('new-order').onclick = orderForm;
-$('audit-trail').onclick = auditEventsDialog;
+$('audit-trail').onclick = showAuditEvents;
 $('workforce').onclick = showPeople;
 $('scan-bundle').onclick = bundleScanDialog;
 $('scan-finished-goods').onclick = finishedGoodsScanDialog;
@@ -1068,9 +1094,9 @@ document.addEventListener('click', event => {
     'material-batch':() => materialHistoryDialog(id),'material-batch-traceability':()=>materialBatchTraceabilityDialog(id),'scan-material-batch':materialBatchScanDialog,'issue-material':materialIssueForm,
     'order-materials':() => materialHistoryDialog(null,selected),
     'refresh-detail':() => openDetail(selected.id),'more-history':() => moreHistory(button),
-    products:()=>navigateFromDialog(showProducts),approvals:approvalsDialog,'ai-brain':aiInvestigationDialog,'ai-investigations':aiInvestigationsDialog,
+    products:()=>navigateFromDialog(showProducts),approvals:approvalsDialog,'ai-brain':()=>navigateFromDialog(showAi),
     'ai-investigation':()=>aiInvestigationDetailDialog(id),'ai-action-proposal':()=>aiActionProposalDialog(id),
-    integrations:integrationsDialog,'integration-runs':integrationRunsDialog,
+    integrations:()=>navigateFromDialog(showIntegrations),'integration-runs':integrationRunsDialog,
     'integration-run':()=>integrationRunDialog(id),
     'jubelio-stock-reconciliation':jubelioStockReconciliationDialog,
     'jubelio-stock-snapshots':jubelioStockSnapshotsDialog,
@@ -1103,7 +1129,7 @@ document.addEventListener('click', event => {
     'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
     'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};navigateFromDialog(showPeople);},
-    'audit-events':auditEventsDialog,'audit-event':()=>auditEventDialog(id),
+    'audit-events':()=>navigateFromDialog(showAuditEvents),'audit-event':()=>auditEventDialog(id),
     'demand-forecast':showDemandForecast,replenishment:showReplenishment,
     workforce:()=>navigateFromDialog(showPeople),'employee-master':workforceEmployeeMasterDialog,
     'new-employee':()=>workforceEmployeeForm(),'edit-employee':()=>workforceEmployeeForm(id),
@@ -2718,17 +2744,34 @@ async function contributionMarginDialog(orderId) {
 
 const integrationHealth={healthy:'Sehat',failed:'Gagal',stale:'Stale',never_synced:'Belum pernah sync',incomplete:'Belum lengkap'};
 
-async function integrationsDialog() {
-  if(guardPending())return;
-  const version=epoch;openDialog('Kesehatan integrasi','<p class="state">Memuat kontrak dan status sinkronisasi…</p>');const modal=dialogVersion;
+function showIntegrations() {
+  if (guardPending()) return;
+  activateWorkspace('integrations');
+  loadIntegrations();
+}
+// Milestone D: kesehatan integrasi, source of truth, dan run terbaru hidup di halaman.
+// Rincian run dan rekonsiliasi tetap dialog terfokus.
+async function loadIntegrations() {
+  const version=epoch,request=++integrationsRequest;
+  const current=()=>version===epoch&&request===integrationsRequest&&view==='integrations';
+  message('integrations-message','Memuat kontrak dan status sinkronisasi…');
+  $('integrations-body').replaceChildren();
   try{
     const report=await api.get('/api/integrations');
-    if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    if(!current())return;
     const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
-    $('dialog-content').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Muat ulang status</button></div>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><div class="actions"><button data-action="products">Buka Master SKU</button><button data-action="jubelio-order-summary">Order & penjualan Jubelio</button><button data-action="jubelio-return-summary">Retur Jubelio</button><button data-action="jubelio-listing-summary">Listing Jubelio</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi stok Jubelio</button></div>`:''}${system.system==='mekari'?'<div class="actions"><button data-action="mekari-finance-summary">Keuangan Mekari</button><button data-action="mekari-payables-summary">Utang Mekari</button><button data-action="mekari-receivables-summary">Piutang Mekari</button><button data-action="mekari-payroll-summary">Payroll Mekari</button><button data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button data-action="payroll-accounting-reconciliation">Akuntansi payroll</button></div>':''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="integrations">Coba lagi</button>`;}
+    message('integrations-message','');
+    $('integrations-body').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><div class="actions"><button data-action="products">Buka Master SKU</button><button data-action="jubelio-order-summary">Order & penjualan Jubelio</button><button data-action="jubelio-return-summary">Retur Jubelio</button><button data-action="jubelio-listing-summary">Listing Jubelio</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi stok Jubelio</button></div>`:''}${system.system==='mekari'?'<div class="actions"><button data-action="mekari-finance-summary">Keuangan Mekari</button><button data-action="mekari-payables-summary">Utang Mekari</button><button data-action="mekari-receivables-summary">Piutang Mekari</button><button data-action="mekari-payroll-summary">Payroll Mekari</button><button data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button data-action="payroll-accounting-reconciliation">Akuntansi payroll</button></div>':''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
+  }catch(error){
+    // Pesan dan tombolnya adalah sibling, seperti saat ini menjadi dialog: elemen pesan
+    // harus tetap berisi hanya teks statusnya agar status error dapat dicocokkan tepat.
+    if(!current())return;
+    message('integrations-message','');
+    $('integrations-body').innerHTML=`<p class="error">${e(error.message)}</p><button id="integrations-retry" type="button">Coba lagi</button>`;
+    $('integrations-retry').onclick=()=>loadIntegrations();
+  }
 }
-$('integrations').onclick=integrationsDialog;
+$('integrations').onclick=showIntegrations;
 
 async function integrationRunsDialog() {
   if(guardPending())return;
@@ -3057,7 +3100,7 @@ function renderAiInvestigation(report,target,source=report.source_payload) {
   const actionStatus={submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
   const links=(report.linked_actions||[]).map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(actionStatus[row.status]||row.status)}</h3><p>${e(row.recommendation.title)}</p><button data-action="ai-action-proposal" data-id="${e(row.id)}">Buka proposal tindakan</button></article>`).join('');
   target.innerHTML=`${report.id?`<p class="form-info">Disimpan ${e(report.actor_name)} · ${purchaseStamp(report.created_at)}</p>`:''}<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
-    <div class="actions"><button data-action="ai-investigations">Riwayat investigasi</button></div>
+    <div class="actions"><button type="button" data-ai-history>Riwayat investigasi</button></div>
     <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
     <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
     <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
@@ -3074,29 +3117,14 @@ function renderAiInvestigation(report,target,source=report.source_payload) {
       '/api/ai/investigations/'+encodeURIComponent(report.id)+'/feedback',
       'Feedback tersimpan sebagai event append-only. Respons terbaru Anda dipakai dalam ringkasan.');
   });
-}
-
-async function aiInvestigationsDialog() {
-  if(guardPending())return;
-  openDialog('Riwayat investigasi',`<form id="ai-history-filter" class="filter-form"><div class="form-grid"><label>Cari pertanyaan<input name="q" maxlength="160"></label><label>Jenis analisis<select name="intent"><option value="all">Semua jenis</option><option value="overview">Ringkasan bisnis</option><option value="production">Kondisi produksi</option><option value="stockout">Risiko stockout</option><option value="approvals">Antrean approval</option><option value="margin">Margin kontribusi</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="ai-brain">Tanya Beeloft</button></div></form><p id="ai-history-message" class="state" role="status"></p><div id="ai-history-list"></div><button id="ai-history-more" type="button">Muat investigasi sebelumnya</button>`);
-  const version=epoch,modal=dialogVersion,form=$('ai-history-filter'),list=$('ai-history-list'),more=$('ai-history-more');
-  let before=null;
-  const load=async reset=>{
-    if(reset){before=null;list.replaceChildren();}
-    more.disabled=true;message('ai-history-message','Memuat riwayat investigasi…');
-    try{
-      const values=Object.fromEntries(new FormData(form));
-      const query=new URLSearchParams({limit:50,intent:values.intent,q:values.q.trim()});
-      if(before)query.set('before',before);
-      const rows=await api.get('/api/ai/investigations?'+query);
-      if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-      message('ai-history-message',rows.length?'':list.children.length?'Tidak ada riwayat yang lebih lama.':'Belum ada investigasi tersimpan.');
-      list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(row.interpretation)}</p><h3>${e(row.question)}</h3><p>${e(row.answer)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)} · ${n(row.feedback_summary.respondents)} feedback · ${n(row.action_count)} tindakan</p><button data-action="ai-investigation" data-id="${e(row.id)}">Buka investigasi</button></article>`).join(''));
-      before=rows.at(-1)?.sequence||before;more.hidden=rows.length<50;
-    }catch(error){if(version===epoch&&modal===dialogVersion)message('ai-history-message',error.message,true);}
-    finally{if(version===epoch&&modal===dialogVersion)more.disabled=false;}
-  };
-  form.onsubmit=event=>{event.preventDefault();load(true);};more.onclick=()=>load(false);load(true);
+  // Riwayat hidup di halaman ai-view, jadi tombol ini menutup dialog fokusnya lebih dulu lalu
+  // menggulir ke section riwayat; dari konteks lain ia memanggil halaman tersebut.
+  target.querySelectorAll('[data-ai-history]').forEach(button=>button.onclick=()=>{
+    if($('dialog').open)$('dialog').close();
+    if(view!=='ai')showAi();
+    const history=$('ai-history');
+    if(history){history.scrollIntoView({block:'start'});history.querySelector('input')?.focus();}
+  });
 }
 
 async function aiInvestigationDetailDialog(investigationId) {
@@ -3109,73 +3137,97 @@ async function aiInvestigationDetailDialog(investigationId) {
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-investigation" data-id="${e(investigationId)}">Coba lagi</button>`;}
 }
 
-function aiInvestigationDialog() {
+// Milestone D: Tanya Beeloft adalah halaman workspace. Prompt, asumsi, hasil, feedback, dan
+// riwayat investigasi hidup di ai-view; proposal tindakan dan rincian investigasi tersimpan
+// tetap dialog terfokus. Aktivasi memulai ulang tampilan seperti saat dialog dibuka segar.
+function showAi() {
   if(guardPending())return;
-  const today=jakartaToday();
-  openDialog('Tanya Beeloft',`<form id="ai-form">
-    <p class="hint">Ajukan pertanyaan tentang produksi, stok, approval, margin, atau prioritas bisnis. Analisis berjalan lokal dan hanya membaca ledger Beeloft.</p>
-    <div class="actions"><button type="button" data-action="ai-investigations">Riwayat investigasi</button></div>
-    <div class="actions ai-prompts" aria-label="Contoh pertanyaan">
-      <button type="button" data-ai-question="SKU apa yang berisiko stockout?">Risiko stockout</button>
-      <button type="button" data-ai-question="Apa yang menunggu approval?">Approval tertunda</button>
-      <button type="button" data-ai-question="Order produksi mana yang terlambat?">Produksi terlambat</button>
-      <button type="button" data-ai-question="Bagaimana kondisi margin?">Kondisi margin</button>
-      <button type="button" data-ai-question="Apa prioritas hari ini?">Prioritas hari ini</button>
-    </div>
-    <label>Pertanyaan bisnis<textarea id="ai-question" name="question" required minlength="2" maxlength="1000" placeholder="Contoh: SKU COST-UI akan kehabisan stok kapan?"></textarea></label>
-    <details class="ai-assumptions"><summary>Asumsi analisis</summary><div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang window demand (hari)','number','required min="7" max="90" step="1" value="28"')}
-      ${field('lead_time_days','Lead time replenishment (hari)','number','required min="1" max="180" step="1" value="14"')}
-      ${field('review_period_days','Periode review stok (hari)','number','required min="1" max="180" step="1" value="30"')}
-      ${field('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')}
-      ${field('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"')}
-    </div></details>
-    <div class="form-actions"><button type="button" id="ai-reauth" hidden>Masuk ulang</button><button class="primary" id="ai-submit" type="submit">Analisis dan simpan</button></div>
-  </form><p id="ai-message" class="state" role="status" hidden></p><div id="ai-results"></div>`);
-  const modal=dialogVersion,version=epoch,form=$('ai-form'),button=$('ai-submit'),reauth=$('ai-reauth'),storageKey=pendingKey(),actorId=user.id;
-  let transaction=null;
-  const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
-  reauth.onclick=()=>reauthenticate('ai-message');
-  $('ai-question').focus();
-  document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
-    $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();
-  });
-  const load=async()=>{
-    if(!current())return;
-    button.disabled=true;button.textContent='Menganalisis…';modalBusy=true;
-    message('ai-message','Membaca ledger lalu menyimpan snapshot investigasi…');
-    $('ai-results').replaceChildren();
-    try{
-      if(!transaction){
-        const raw=Object.fromEntries(new FormData(form));
-        for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
-        transaction=api.transaction('/api/ai/investigations',raw);
-        sessionStorage.setItem(storageKey,JSON.stringify({transaction,title:'Simpan investigasi AI',
-          info:'Pertanyaan dan snapshot bukti disimpan satu kali.',actor_id:actorId}));
-      }else await sameActorGuard(actorId);
-      const report=await api.save(transaction);
-      clearPending(storageKey,transaction);
-      if(!current())return;
-      transaction=null;unresolved=false;modalBusy=false;lock(false);reauth.hidden=true;message('ai-message','');
-      renderAiInvestigation(report,$('ai-results'));
-      notify('Investigasi tersimpan.');
-    }catch(error){
-      if(current()){
-        const denied=error.status===401||error.status===403;
-        unresolved=Boolean(error.uncertain||(unresolved&&denied));
-        if(!unresolved){clearPending(storageKey,transaction);transaction=null;}
-        lock(unresolved);reauth.hidden=!denied;
-        message('ai-message',error.message+(unresolved&&denied?' Masuk ulang dengan akun yang sama untuk memastikan snapshot tidak digandakan.':''),true);
-        $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button">Coba lagi</button>');
-        $('ai-retry').onclick=load;
-      }
-    }finally{if(current()){modalBusy=false;button.disabled=false;button.textContent=unresolved?'Coba ulang penyimpanan':'Analisis dan simpan';}}
-  };
-  form.onsubmit=event=>{event.preventDefault();load();};
+  activateWorkspace('ai-brain');
+  aiTransaction=null;unresolved=false;modalBusy=false;
+  $('ai-results').replaceChildren();
+  message('ai-message','');
+  // Milestone D: tidak ada batasan max pada as_of — dialog lama juga membiarkan pengguna
+  // memilih tanggal posisi masa depan, dan data sintetis uji memakai tanggal tersebut.
+  const form=$('ai-form');
+  // Form adalah markup statis halaman, jadi state <details> asumsi bertahan lintas aktivasi
+  // meskipun pengguna sudah keluar/masuk lagi. Dialog lama merender form segar setiap kali,
+  // jadi aktivasi mengembalikan panel ke keadaan tertutup seperti saat baru dibuka.
+  form.querySelector('details.ai-assumptions').open=false;
+  if(!form.elements.as_of.value)form.elements.as_of.value=jakartaToday();
+  [...form.elements].forEach(control=>control.disabled=false);
+  $('ai-submit').textContent='Analisis dan simpan';$('ai-reauth').hidden=true;
+  loadAiHistory(true);
 }
-$('ai-brain').onclick=aiInvestigationDialog;
+async function loadAiHistory(reset=true) {
+  const version=epoch,request=++aiHistoryRequest,form=$('ai-history-filter'),list=$('ai-history-list'),more=$('ai-history-more');
+  const current=()=>version===epoch&&request===aiHistoryRequest&&view==='ai';
+  if(reset){aiHistoryBefore=null;list.replaceChildren();}
+  more.disabled=true;message('ai-history-message','Memuat riwayat investigasi…');
+  try{
+    const values=Object.fromEntries(new FormData(form));
+    const query=new URLSearchParams({limit:50,intent:values.intent,q:values.q.trim()});
+    if(aiHistoryBefore)query.set('before',aiHistoryBefore);
+    const rows=await api.get('/api/ai/investigations?'+query);
+    if(!current())return;
+    message('ai-history-message',rows.length?'':list.children.length?'Tidak ada riwayat yang lebih lama.':'Belum ada investigasi tersimpan.');
+    list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(row.interpretation)}</p><h3>${e(row.question)}</h3><p>${e(row.answer)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)} · ${n(row.feedback_summary.respondents)} feedback · ${n(row.action_count)} tindakan</p><button data-action="ai-investigation" data-id="${e(row.id)}">Buka investigasi</button></article>`).join(''));
+    aiHistoryBefore=rows.at(-1)?.sequence||aiHistoryBefore;more.hidden=rows.length<50;
+  }catch(error){if(current())message('ai-history-message',error.message,true);}
+  finally{if(current())more.disabled=false;}
+}
+async function submitAiInvestigation() {
+  const version=epoch,request=aiRequest,form=$('ai-form'),button=$('ai-submit'),reauth=$('ai-reauth'),storageKey=pendingKey(),actorId=user.id;
+  const current=()=>version===epoch&&request===aiRequest&&view==='ai';
+  const lock=value=>[...form.elements].filter(control=>control!==button&&control!==reauth).forEach(control=>control.disabled=value);
+  button.disabled=true;button.textContent='Menganalisis…';modalBusy=true;
+  message('ai-message','Membaca ledger lalu menyimpan snapshot investigasi…');
+  $('ai-results').replaceChildren();
+  try{
+    if(!aiTransaction){
+      const raw=Object.fromEntries(new FormData(form));
+      for(const key of ['window_days','lead_time_days','review_period_days','safety_stock_days','batch_multiple']) raw[key]=Number(raw[key]);
+      aiTransaction=api.transaction('/api/ai/investigations',raw);
+      sessionStorage.setItem(storageKey,JSON.stringify({transaction:aiTransaction,title:'Simpan investigasi AI',
+        info:'Pertanyaan dan snapshot bukti disimpan satu kali.',actor_id:actorId}));
+    }else await sameActorGuard(actorId);
+    const report=await api.save(aiTransaction);
+    clearPending(storageKey,aiTransaction);
+    if(!current())return;
+    aiTransaction=null;unresolved=false;modalBusy=false;lock(false);reauth.hidden=true;message('ai-message','');
+    renderAiInvestigation(report,$('ai-results'));
+    loadAiHistory(true);
+    notify('Investigasi tersimpan.');
+  }catch(error){
+    if(current()){
+      const denied=error.status===401||error.status===403;
+      unresolved=Boolean(error.uncertain||(unresolved&&denied));
+      if(!unresolved){clearPending(storageKey,aiTransaction);aiTransaction=null;}
+      lock(unresolved);reauth.hidden=!denied;
+      message('ai-message',error.message+(unresolved&&denied?' Masuk ulang dengan akun yang sama untuk memastikan snapshot tidak digandakan.':''),true);
+      $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button">Coba lagi</button>');
+      $('ai-retry').onclick=submitAiInvestigation;
+    }
+  }finally{
+    // Halaman bisa ditinggalkan tengah analisis (pindah nav atau session berganti), sedangkan
+    // modalBusy juga mengunci dialog lain. Kunci itu dilepas di sini tanpa syarat, bukan hanya
+    // saat halaman ini masih aktif; status unresolved tetap menjaga form yang terkunci.
+    modalBusy=false;
+    if(current()){button.disabled=false;button.textContent=unresolved?'Coba ulang penyimpanan':'Analisis dan simpan';}
+  }
+}
+$('ai-brain').onclick=showAi;
+$('ai-back').onclick=showBoard;
+$('ai-reauth').onclick=()=>reauthenticate('ai-message');
+$('ai-form').onsubmit=event=>{event.preventDefault();submitAiInvestigation();};
+document.querySelectorAll('[data-ai-question]').forEach(example=>example.onclick=()=>{
+  $('ai-question').value=example.dataset.aiQuestion;$('ai-question').focus();
+});
+$('ai-history-jump').onclick=()=>{const history=$('ai-history');history.scrollIntoView({block:'start'});history.querySelector('input')?.focus();};
+$('ai-history-filter').onsubmit=event=>{event.preventDefault();loadAiHistory(true);};
+$('ai-history-more').onclick=()=>loadAiHistory(false);
+$('integrations-back').onclick=showBoard;
+$('integrations-refresh').onclick=()=>loadIntegrations();
+$('audit-back').onclick=showBoard;
 
 async function aiActionProposalForm(recommendation,source) {
   if(guardPending())return;

@@ -68,7 +68,7 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer})=>{
   await openSidebarDestination('Tanya Beeloft');
   await page.getByLabel('Pertanyaan bisnis',{exact:true}).fill('Apakah stok akan habis?');
   await page.getByText('Asumsi analisis',{exact:true}).click();
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('0001-01-01');
+  await page.locator('#ai-form').getByLabel('Data sampai tanggal',{exact:true}).fill('0001-01-01');
   await page.getByRole('button',{name:'Analisis dan simpan',exact:true}).click();
   const brainMessage=page.locator('#ai-message');
   await brainMessage.filter({hasText:outOfRange}).waitFor();
@@ -77,8 +77,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer})=>{
     'penolakan 422 tidak boleh terlihat sebagai penyimpanan yang tidak pasti: '+brainText);
   assert.ok(!/Coba ulang penyimpanan/i.test(brainText),brainText);
   assert.ok(!/Internal Server Error/i.test(brainText),brainText);
-  // Tanggal yang sah tetap dapat disimpan dari dialog yang sama.
-  await page.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
+  // Tanggal yang sah tetap dapat disimpan dari halaman yang sama.
+  await page.locator('#ai-form').getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
   await page.getByRole('button',{name:'Analisis dan simpan',exact:true}).click();
   await page.locator('#ai-results .ai-answer').waitFor();
   await page.keyboard.press('Escape');

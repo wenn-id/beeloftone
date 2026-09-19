@@ -371,8 +371,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.setViewportSize({width: 1440, height: 900});
 
   // ---- an integration snapshot nests its surfaces instead of flattening them ---------
+  // Milestone D: Integrasi adalah halaman, jadi permukaannya diukur di integrations-view.
   await openSidebarDestination('Integrasi');
-  await page.locator('dialog[open]').waitFor();
+  await page.locator('#integrations-view:not([hidden])').waitFor();
   await page.locator('[data-integration-system]').first().waitFor();
   const nesting = await page.evaluate(() => {
     const outer = document.querySelector('[data-integration-system]');
