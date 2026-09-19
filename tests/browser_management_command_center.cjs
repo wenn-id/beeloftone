@@ -137,10 +137,13 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
 
   await page.locator('[data-command-attention="production-capacity-risk"]')
     .getByRole('button',{name:'Buka rencana kapasitas',exact:true}).click();
-  const capacityDialog=page.locator('dialog');
-  await capacityDialog.getByRole('heading',{name:'Kapasitas produksi',exact:true}).waitFor();
-  await capacityDialog.locator('[data-capacity-center]').filter({hasText:'Overload'}).first().waitFor();
-  await page.keyboard.press('Escape');
+  const capacityPage=page.locator('#analytics-view');
+  await capacityPage.getByRole('heading',{name:'Kapasitas produksi',exact:true}).waitFor();
+  await capacityPage.locator('[data-capacity-center]').filter({hasText:'Overload'}).first().waitFor();
+  // The capacity plan is a workspace page now, so it replaced the command center rather than
+  // overlaying it; come back before using the remaining snapshots on that page.
+  await page.getByRole('button',{name:'Command center',exact:true}).click();
+  await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
 
   await page.locator('[data-command-snapshot="production"]').getByRole('button',{name:'Buka papan produksi'}).click();
   await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();

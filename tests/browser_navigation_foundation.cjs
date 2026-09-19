@@ -20,6 +20,7 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},
+    {name: 'WIP ageing', nav: 'wip-ageing-insights', section: 'analytics-view', heading: 'WIP ageing & sinyal hambatan', content: '#wip-ageing-form'},
     {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Catatan produksi.'}
   ];
   const visibleSections = () => page.evaluate(() =>
@@ -84,10 +85,73 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   assert.equal(await page.locator('#board-home').getAttribute('aria-current'), 'page', 'order detail keeps the board aria-current');
   assert.equal(await page.locator('#dialog').getAttribute('open'), null, 'order detail must not open the global dialog');
 
+  // Milestone C: every Analytics sidebar child shares one analytics-view host.
+  // Each child must still be its own destination: one visible page, its own
+  // aria-current, its own page heading, and never the global dialog as screen.
+  const analyticsChildren = [
+    {name: 'WIP ageing', nav: 'wip-ageing-insights', heading: 'WIP ageing & sinyal hambatan'},
+    {name: 'Kapasitas produksi', nav: 'capacity-plan', heading: 'Kapasitas produksi'},
+    {name: 'Kualitas produksi', nav: 'production-quality-insights', heading: 'Kualitas produksi'},
+    {name: 'Kinerja supplier', nav: 'supplier-performance-insights', heading: 'Kinerja supplier'},
+    {name: 'Harga bahan', nav: 'material-price-insights', heading: 'Pergerakan harga bahan'},
+    {name: 'Komitmen PO', nav: 'purchase-commitment-insights', heading: 'Komitmen pembelian terbuka'},
+    {name: 'Forecast demand', nav: 'demand-forecast', heading: 'Forecast demand per SKU'},
+    {name: 'Rekomendasi stok', nav: 'replenishment', heading: 'Risiko stockout & rekomendasi'},
+    {name: 'Analisis ukuran', nav: 'size-demand-insights', heading: 'Analisis demand per ukuran'},
+    {name: 'Analisis retur', nav: 'return-insights', heading: 'Analisis retur per SKU'},
+    {name: 'Dead stock', nav: 'dead-stock-insights', heading: 'Analisis dead stock'},
+    {name: 'Audit adjustment', nav: 'stock-adjustment-insights', heading: 'Audit adjustment stok'}
+  ];
+  for (const child of analyticsChildren) {
+    await page.getByRole('button', {name: child.name, exact: true}).click();
+    await page.getByRole('heading', {name: child.heading, exact: true}).waitFor();
+    assert.deepEqual(await visibleSections(), ['analytics-view'], `${child.name} reuses the analytics host as its only visible page`);
+    assert.equal(await page.locator('#app-sidebar [aria-current]').count(), 1, 'exactly one sidebar item carries aria-current');
+    assert.equal(await page.locator('#' + child.nav).getAttribute('aria-current'), 'page', `aria-current on ${child.name}`);
+    assert.equal(await page.locator('#dialog').getAttribute('open'), null, `${child.name} must not open the global dialog`);
+    assert.equal(await page.locator('#analytics-eyebrow').textContent(), `Analitik · ${child.name}`,
+      `${child.name} updates the page eyebrow`);
+  }
+  // A delayed response from the report being left cannot repaint the report the
+  // user moved to. WIP ageing's response is held until after the user switches
+  // to the Quality report inside the same host.
+  let releaseWip, signalWip, finishWip;
+  const wipStarted = new Promise(resolve => signalWip = resolve);
+  const wipReleased = new Promise(resolve => releaseWip = resolve);
+  const wipFinished = new Promise(resolve => finishWip = resolve);
+  let delayWip = true;
+  await page.route('**/api/wip-ageing-insights?*', async route => {
+    if (delayWip) {
+      delayWip = false;
+      const response = await route.fetch(); signalWip();
+      await wipReleased; await route.fulfill({response}); finishWip();
+    } else await route.continue();
+  });
+  await page.getByRole('button', {name: 'WIP ageing', exact: true}).click();
+  await page.locator('#wip-ageing-form').waitFor();
+  await page.getByRole('button', {name: 'Tampilkan WIP', exact: true}).click();
+  await wipStarted;
+  await page.getByRole('button', {name: 'Kualitas produksi', exact: true}).click();
+  await page.getByRole('heading', {name: 'Kualitas produksi', exact: true}).waitFor();
+  releaseWip(); await wipFinished;
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => document.getElementById('analytics-heading').textContent), 'Kualitas produksi',
+    'late WIP response must not repaint the quality report heading');
+  assert.equal(await page.locator('#wip-ageing-results').count(), 0,
+    'late WIP response must not repaint the quality report body');
+  assert.equal(await page.locator('[data-wip-ageing]').count(), 0,
+    'late WIP response must not render WIP rows onto the quality report');
+  await page.unroute('**/api/wip-ageing-insights?*');
+
+  // Bagian Milestone A berikutnya dimulai dari halaman detail order, jadi
+  // kembali ke precondition itu sebelum memakai tombol kembali detail.
+  await page.getByRole('button', {name: 'Produksi', exact: true}).click();
+  await page.getByRole('button', {name: /DEMO-PROD-001/}).first().click();
+  await page.getByRole('heading', {name: 'Posisi barang sekarang'}).waitFor();
+
   // Repeated navigation re-enters the same destination without duplicating
   // handlers or re-rendering content on top of itself.
-  await page.getByRole('button', {name: 'Semua order', exact: false}).click();
-  await page.waitForFunction(() => !document.getElementById('order-list').hidden);
+  await page.getByRole('button', {name: 'Semua order', exact: false}).click();  await page.waitForFunction(() => !document.getElementById('order-list').hidden);
   const rows = await page.locator('.order-row').count();
   for (let repeat = 0; repeat < 3; repeat += 1)
     await page.getByRole('button', {name: 'Produksi', exact: true}).click();

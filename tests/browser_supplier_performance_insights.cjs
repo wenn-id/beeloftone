@@ -23,18 +23,18 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'Kinerja supplier',exact:true}).click();
-  const dialog=page.locator('dialog');
-  await dialog.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-05');
-  await dialog.getByLabel('Periode jatuh tempo PO (hari)',{exact:true}).fill('7');
+  const analytics=page.locator('#analytics-view');
+  await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-05');
+  await analytics.getByLabel('Periode jatuh tempo PO (hari)',{exact:true}).fill('7');
   let fail=true;
   await page.route('**/api/supplier-performance-insights?*',async route=>{
     if(fail){fail=false;await route.fulfill({status:503,contentType:'application/json',
       body:JSON.stringify({detail:'Kinerja supplier sedang dihitung ulang'})});}
     else await route.continue();
   });
-  await dialog.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
   await page.locator('#supplier-performance-message').filter({hasText:'Kinerja supplier sedang dihitung ulang'}).waitFor();
-  await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await analytics.getByRole('button',{name:'Coba lagi',exact:true}).click();
   const item=page.locator('[data-supplier-performance]');
   await item.getByRole('heading',{name:'SUPPLIER-QA · Toko <kain> & Kancing',exact:true}).waitFor();
   await item.getByText('Perlu perhatian',{exact:true}).waitFor();
@@ -43,18 +43,18 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.unroute('**/api/supplier-performance-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await item.scrollIntoViewIfNeeded();
-  await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  await analytics.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-supplier-performance-mobile.png')});
   await page.locator('#supplier-performance-form select[name="status"]').selectOption('healthy');
-  await dialog.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
-  await dialog.getByText('Tidak ada supplier yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
+  await analytics.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
+  await analytics.getByText('Tidak ada supplier yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
   await page.locator('#supplier-performance-form select[name="status"]').selectOption('attention');
-  await dialog.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
   const po=item.locator('.material-event').filter({has:page.getByText('PO-RETUR · Diterima sebagian',{exact:true})});
   await po.getByRole('button',{name:'Buka PO',exact:true}).click();
   await page.getByText('PO-RETUR · Ditutup',{exact:true}).waitFor();

@@ -421,6 +421,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_size_demand_insights.cjs');
   await runModule('./browser_returns_adjustments.cjs',{...finishedGoods,...shipping});
   await runModule('./browser_dead_stock_insights.cjs');
+  await runModule('./browser_return_insights.cjs');
   await runModule('./browser_stock_adjustment_insights.cjs');
   await runModule('./browser_inventory_reconciliation.cjs',finishedGoods);
   await runModule('./browser_finished_goods_traceability.cjs',finishedGoods);

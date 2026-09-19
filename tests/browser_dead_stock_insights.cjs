@@ -38,10 +38,10 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.unroute('**/api/dead-stock-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
-  await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
+  await page.locator('#analytics-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-dead-stock-mobile.png')});
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.locator('#dead-stock-form select[name="status"]').selectOption('moving');

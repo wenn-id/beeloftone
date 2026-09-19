@@ -145,9 +145,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.ok(dialogShell.metricRows > 0, 'metric lists render as label/value rows');
   await closeDialog();
 
-  // ---- a dialog filter toolbar is the same surface as the board's --------------------
+  // ---- an analytics filter toolbar is the same surface as the board's ----------------
   await openSidebarDestination('WIP ageing');
-  await page.locator('dialog[open]').waitFor();
+  await page.locator('#analytics-view').waitFor();
   await page.locator('#wip-ageing-form').waitFor();
   const dialogFilter = await page.evaluate(() => {
     const style = getComputedStyle(document.querySelector('#wip-ageing-form'));
@@ -155,7 +155,6 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   });
   assert.equal(dialogFilter.radius, 20, 'analytics filters use the shared toolbar surface');
   assert.ok(dialogFilter.border > 0);
-  await closeDialog();
 
   // ---- loading, empty and error must be three distinguishable states ----------------
   // Loading: hold the response open and assert the surface announces progress.
@@ -352,24 +351,23 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.screenshot({path: path.join(shots, 'shared-ui-board-mobile.png')});
 
   await openSidebarDestination('Kapasitas produksi');
-  await page.locator('dialog[open]').waitFor();
+  await page.locator('#analytics-view').waitFor();
   await page.locator('#capacity-plan-form').waitFor();
-  const mobileDialog = await page.evaluate(() => {
-    const dialog = document.querySelector('dialog[open]');
+  const mobileAnalytics = await page.evaluate(() => {
+    const host = document.getElementById('analytics-view');
     return {
-      fits: dialog.getBoundingClientRect().width <= window.innerWidth,
-      noSideScroll: dialog.scrollWidth <= dialog.clientWidth,
+      fits: host.getBoundingClientRect().width <= window.innerWidth,
+      noSideScroll: host.scrollWidth <= host.clientWidth,
       // The admin master section is grouped rather than sharing one grid with the plan filter.
-      groupedForms: dialog.querySelectorAll('.filter-form').length,
+      groupedForms: host.querySelectorAll('.filter-form').length,
     };
   });
-  assert.equal(mobileDialog.fits, true, 'dialogs fit the mobile viewport');
-  assert.equal(mobileDialog.noSideScroll, true, 'dialogs do not scroll sideways on mobile');
-  assert.ok(mobileDialog.groupedForms >= 2,
+  assert.equal(mobileAnalytics.fits, true, 'the analytics page fits the mobile viewport');
+  assert.equal(mobileAnalytics.noSideScroll, true, 'the analytics page does not scroll sideways on mobile');
+  assert.ok(mobileAnalytics.groupedForms >= 2,
     'the capacity master controls are grouped into their own toolbars');
   assert.equal(await noPageOverflow(), true);
   await page.screenshot({path: path.join(shots, 'shared-ui-capacity-mobile.png')});
-  await closeDialog();
   await page.setViewportSize({width: 1440, height: 900});
 
   // ---- an integration snapshot nests its surfaces instead of flattening them ---------

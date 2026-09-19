@@ -20,19 +20,19 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
 
   await role(viewer);
   await page.getByRole('button',{name:'Audit adjustment',exact:true}).click();
-  const dialog=page.locator('dialog');
-  await dialog.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-05');
-  await dialog.getByLabel('Panjang periode (hari)',{exact:true}).fill('7');
-  await dialog.getByLabel('Cari adjustment atau SKU',{exact:true}).fill('FG-M');
+  const analytics=page.locator('#analytics-view');
+  await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-10-05');
+  await analytics.getByLabel('Panjang periode (hari)',{exact:true}).fill('7');
+  await analytics.getByLabel('Cari adjustment atau SKU',{exact:true}).fill('FG-M');
   let fail=true;
   await page.route('**/api/stock-adjustment-insights?*',async route=>{
     if(fail){fail=false;await route.fulfill({status:503,contentType:'application/json',
       body:JSON.stringify({detail:'Audit adjustment sedang dihitung ulang'})});}
     else await route.continue();
   });
-  await dialog.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
   await page.locator('#stock-adjustment-insights-message').filter({hasText:'Audit adjustment sedang dihitung ulang'}).waitFor();
-  await dialog.getByRole('button',{name:'Coba lagi',exact:true}).click();
+  await analytics.getByRole('button',{name:'Coba lagi',exact:true}).click();
   const item=page.locator('[data-stock-adjustment-insight]');
   await item.getByRole('heading',{name:'ADJ-UI-001 · +3 pcs',exact:true}).waitFor();
   await item.getByText('Perlu tinjauan',{exact:true}).waitFor();
@@ -41,18 +41,18 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await page.unroute('**/api/stock-adjustment-insights?*');
 
   await page.setViewportSize({width:390,height:844});
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));
+  assert.ok(await page.evaluate(()=>{const d=document.getElementById('analytics-view');return d.scrollWidth<=d.clientWidth;}));
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await item.scrollIntoViewIfNeeded();
-  await dialog.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
+  await analytics.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'beeloft-stock-adjustment-insights-mobile.png')});
   await page.locator('#stock-adjustment-insights-form select[name="classification"]').selectOption('normal');
-  await dialog.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
-  await dialog.getByText('Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.',{exact:true}).waitFor();
+  await analytics.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
+  await analytics.getByText('Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.',{exact:true}).waitFor();
   await page.locator('#stock-adjustment-insights-form select[name="classification"]').selectOption('flagged');
-  await dialog.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
+  await analytics.getByRole('button',{name:'Tampilkan audit',exact:true}).click();
   await item.getByRole('button',{name:'Buka adjustment',exact:true}).click();
   await page.getByRole('heading',{name:'Rincian adjustment',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Koreksi adjustment',exact:true}).count(),0);
