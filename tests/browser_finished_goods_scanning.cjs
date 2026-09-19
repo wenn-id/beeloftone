@@ -17,6 +17,9 @@ module.exports=async({page,login,viewer,work,receipt})=>{
   await input.fill(receipt.scan_code);await input.press('Enter');
   await page.getByText('Pemindai barang jadi sedang sibuk',{exact:true}).waitFor();
   await input.press('Enter');
+  await page.locator('#finished-goods-scan-result').getByText(receipt.reference,{exact:true}).waitFor();
+  assert.equal(await page.locator('#dialog').getAttribute('open'),null);
+  await page.getByRole('button',{name:'Rincian barang jadi',exact:true}).click();
   await page.getByRole('heading',{name:'Rincian barang jadi',exact:true}).waitFor();
   await page.unroute('**/api/finished-goods-receipts/scan?*');
   await page.locator('.finished-goods-label').getByText(receipt.reference,{exact:true}).waitFor();
@@ -37,6 +40,10 @@ module.exports=async({page,login,viewer,work,receipt})=>{
   assert.equal(await page.locator('.finished-goods-label').isVisible(),true);
   assert.equal(await page.locator('#main').isVisible(),false);
   await page.emulateMedia({media:'screen'});
+  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  assert.equal(await page.locator('#finished-goods-scan-view').isVisible(),true);
+  assert.equal(await input.inputValue(),receipt.scan_code);
+  await page.getByRole('button',{name:'Rincian barang jadi',exact:true}).click();
 
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}));

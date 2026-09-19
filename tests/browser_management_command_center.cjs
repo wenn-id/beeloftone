@@ -67,16 +67,14 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.keyboard.press('Escape');assert.equal(await menu.getAttribute('aria-expanded'),'false');
   assert.equal(await menu.evaluate(element=>element===document.activeElement),true);
   assert.equal(await page.locator('#app-sidebar').isVisible(),false);
-  // Milestone D: Integrasi sudah menjadi halaman workspace, jadi fokus-restorasi drawer
-  // setelah Escape diuji memakai destinasi yang masih dialog warisan (Scan barang jadi).
+  // The last legacy scanner destination is now a page; drawer navigation focuses its heading.
   await menu.click();await page.getByRole('button',{name:'Scan barang jadi',exact:true}).click();
-  await page.locator('dialog[open]').waitFor();await page.keyboard.press('Escape');
-  await page.locator('dialog').waitFor({state:'hidden'});
-  // The dialog is hidden as soon as `open` is removed, but its `close` event — and therefore the
-  // application's focus restoration — runs in a task queued after that. Wait for the restoration
-  // instead of racing it; the assertion below is unchanged and still fails if focus never returns.
-  await page.waitForFunction(()=>document.activeElement===document.getElementById('menu-toggle'));
-  assert.equal(await menu.evaluate(element=>element===document.activeElement),true);
+  await page.locator('#finished-goods-scan-view').waitFor();
+  assert.equal(await page.locator('#dialog').getAttribute('open'),null);
+  assert.equal(await menu.getAttribute('aria-expanded'),'false');
+  assert.equal(await page.locator('#finished-goods-scan-view h1').evaluate(element=>element===document.activeElement),true);
+  assert.equal(await page.locator('#scan-finished-goods').getAttribute('aria-current'),'page');
+  await menu.click();await page.getByRole('button',{name:'Command center',exact:true}).click();
   assert.equal(await page.locator('#command-center').getAttribute('aria-current'),'page');
   await page.screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,
     'command-center-mobile.png'),fullPage:true});
