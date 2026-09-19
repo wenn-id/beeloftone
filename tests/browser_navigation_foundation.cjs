@@ -19,7 +19,7 @@
 // rows or repaint the page the user moved to.
 const assert = require('node:assert/strict');
 
-module.exports = async ({page, login, admin, openSidebarDestination}) => {
+module.exports = async ({page, login, admin, operator, viewer, apiGet, openSidebarDestination}) => {
   await page.keyboard.press('Escape');
   await login(admin);
   await page.setViewportSize({width: 1440, height: 1000});
@@ -133,6 +133,13 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'Dead stock', nav: 'dead-stock-insights', heading: 'Analisis dead stock'},
     {name: 'Audit adjustment', nav: 'stock-adjustment-insights', heading: 'Audit adjustment stok'}
   ];
+  const allDestinations = [...destinations, ...analyticsChildren
+    .filter(child => !destinations.some(destination => destination.nav === child.nav))
+    .map(child => ({...child, section: 'analytics-view'}))];
+  assert.deepEqual((await page.locator('#app-sidebar button').evaluateAll(
+    buttons => buttons.map(button => button.id))).sort(),
+  allDestinations.map(destination => destination.nav).sort(),
+  'the navigation sweep must account for every actual sidebar destination');
   for (const child of analyticsChildren) {
     await page.getByRole('button', {name: child.name, exact: true}).click();
     await page.getByRole('heading', {name: child.heading, exact: true}).waitFor();
@@ -325,6 +332,99 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
   }
   await setTheme('light');
   await page.evaluate(() => document.documentElement.style.fontSize = '');
+  await page.setViewportSize({width: 1440, height: 1000});
+
+  // Track even a transient modal opening; an open-attribute snapshot alone can
+  // miss a primary handler that opens and immediately closes a legacy dialog.
+  await page.evaluate(() => {
+    window.navigationModalOpens = 0;
+    window.navigationShowModal = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function (...args) {
+      window.navigationModalOpens++;
+      return window.navigationShowModal.apply(this, args);
+    };
+  });
+  for (const [role, key] of [['admin', admin], ['operator', operator], ['viewer', viewer]]) {
+    await login(key);
+    for (const [width, scale, colorScheme] of [
+      [1440, 100, 'light'], [1024, 100, 'dark'], [768, 100, 'light'],
+      [390, 100, 'dark'], [320, 200, 'light'], [320, 200, 'dark']
+    ]) {
+      await page.setViewportSize({width, height: 1000});
+      await page.evaluate(value => document.documentElement.style.fontSize = `${value}%`, scale);
+      await setTheme(colorScheme);
+      for (const destination of allDestinations) {
+        if (role !== 'admin' && ['audit-trail', 'backup'].includes(destination.nav)) {
+          assert.notEqual(await page.locator('#' + destination.nav).getAttribute('hidden'), null);
+          continue;
+        }
+        const menu = page.locator('#menu-toggle');
+        const mobile = await menu.isVisible();
+        if (mobile) await menu.click();
+        const button = page.locator('#' + destination.nav);
+        await button.focus();
+        await button.press('Enter');
+        await page.getByRole('heading', {name: destination.heading, exact: true}).waitFor();
+        assert.deepEqual(await visibleSections(), [destination.section], `${role}: ${destination.name}`);
+        assert.equal(await button.getAttribute('aria-current'), 'page');
+        assert.equal(await page.locator('#app-sidebar [aria-current]').count(), 1);
+        assert.equal(await page.locator('#dialog').getAttribute('open'), null);
+        assert.equal(await page.evaluate(() => window.navigationModalOpens), 0,
+          `${destination.name} must never call showModal during primary navigation`);
+        assert.equal(await page.locator('#' + destination.section).getAttribute('role'), null);
+        assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), false);
+        if (mobile) {
+          assert.equal(await menu.getAttribute('aria-expanded'), 'false');
+          assert.equal(await page.evaluate(id => document.activeElement ===
+            document.getElementById(id).querySelector('h1'), destination.section), true,
+          `${role}: ${destination.name} receives mobile heading focus`);
+        }
+        assert.equal(await noOverflow(), true, `${role}: ${destination.name} at ${width}px/${scale}%/${colorScheme}`);
+      }
+    }
+    await page.evaluate(() => document.documentElement.style.fontSize = '');
+    await page.setViewportSize({width: 1440, height: 1000});
+  }
+  await page.evaluate(() => {
+    HTMLDialogElement.prototype.showModal = window.navigationShowModal;
+    delete window.navigationShowModal;
+    delete window.navigationModalOpens;
+  });
+
+  // A pending write interrupts navigation with recovery, and must still close
+  // the drawer after removal of the legacy sidebar click fallback.
+  await login(admin);
+  await setTheme('light');
+  const actor = (await apiGet('/api/users')).find(user => user.role === 'admin');
+  const pending = {actor_id: actor.id, title: 'CONTOH pending navigation',
+    transaction: {path: '/api/products', key: crypto.randomUUID(),
+      body: JSON.stringify({sku: 'NAV-RECOVERY-' + Date.now(), name: 'CONTOH recovery', color: 'Blue', size: 'M'})}};
+  const storageKey = 'beeloft.pending.' + actor.id;
+  await page.evaluate(({storageKey, pending}) => sessionStorage.setItem(storageKey, JSON.stringify(pending)),
+    {storageKey, pending});
+  await page.setViewportSize({width: 390, height: 844});
+  await page.locator('#menu-toggle').click();
+  await page.locator('#scan-bundle').click();
+  await page.getByRole('heading', {name: 'Konfirmasi pencatatan sebelumnya', exact: true}).waitFor();
+  assert.deepEqual(await visibleSections(), ['board-view'], 'pending recovery preserves the owning page');
+  assert.equal(await page.locator('#menu-toggle').getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), false);
+  assert.deepEqual(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)), storageKey), pending);
+  await page.keyboard.press('Escape');
+  assert.notEqual(await page.locator('#dialog').getAttribute('open'), null, 'unresolved recovery cannot be dismissed');
+  let replayHeaders;
+  const captureReplay = request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/products')
+      replayHeaders = request.headers();
+  };
+  page.on('request', captureReplay);
+  await page.getByRole('button', {name: 'Coba ulang penyimpanan', exact: true}).click();
+  await page.waitForFunction(() => !document.getElementById('dialog').open);
+  page.off('request', captureReplay);
+  assert.equal(replayHeaders['idempotency-key'], pending.transaction.key);
+  assert.equal(replayHeaders['x-beeloft-actor'], actor.id);
+  assert.equal(await page.evaluate(key => sessionStorage.getItem(key), storageKey), null);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'menu-toggle');
   await page.setViewportSize({width: 1440, height: 1000});
 
   console.log('Workspace navigation foundation browser QA PASS: one visible page and one aria-current '

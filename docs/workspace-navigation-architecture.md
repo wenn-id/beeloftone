@@ -1,10 +1,10 @@
 # Workspace Navigation Architecture
 
 Program: Beeloft One — Workspace Navigation Architecture Roadmap, Version 1.0
-Milestone: A (Workspace navigation foundation)
-Baseline: `main` @ `8e972773b7a5572758564dc4fd23e5e4adba76c4`
-Branch: `refactor/workspace-navigation-foundation`
-Date: 18 September 2026
+Current milestone: G (Architecture cleanup and consistency verification)
+Baseline: `main` @ `af27c4634e52a338fca31c0421d7937477fcd03a`
+Branch: `refactor/workspace-navigation-cleanup`
+Date: 19 September 2026
 
 This document is the contract for how primary navigation activates a workspace
 page. It was created in Milestone A and must be updated whenever the contract
@@ -21,8 +21,8 @@ Integrated workspace-page destinations do not use the global `<dialog id="dialog
 as their primary screen. A dialog answers one question — *what record is being
 created, edited, reviewed, confirmed, scanned, or inspected* — and never hosts
 an entire roster, report, queue, master-data surface, or dashboard. The final
-program target remains zero primary destinations using a legacy dialog as their
-main screen after later milestones migrate the remaining legacy destinations.
+inventory now contains zero primary destinations using a legacy dialog as their
+main screen: four existing pages and 23 migrated destinations.
 
 ## 2. Activation path
 
@@ -135,10 +135,11 @@ visible section's `h1` (tabindex set to `-1` so the heading is programmatically
 focusable without joining the tab order). When a focused secondary dialog is
 open, focus is remembered on the menu toggle via `dialogReturnFocus` instead.
 
-The sidebar click delegation defers to the helper: page destinations have already
-closed the drawer and moved focus before the delegation's microtask runs, so the
-delegation only closes the drawer and records focus for legacy dialog
-destinations that do not route through the helper yet. Desktop never sets
+There is no sidebar click fallback for legacy dialogs. Normal page navigation
+closes the drawer through `activateWorkspace()`. If `guardPending()` interrupts
+navigation with recovery, `openDialog()` closes the drawer and remembers the menu
+toggle for return focus. This preserves the unresolved transaction and the
+current page without activating the requested destination. Desktop never sets
 `nav-open`, so desktop navigation does not steal focus.
 
 ### 3.2 What Milestone A deliberately did not change
@@ -175,10 +176,11 @@ detail.
 
 A dialog must not be the entire Analytics report, Integration dashboard,
 Approval inbox, or any other primary roster workspace. People and Master SKU
-became pages in Milestone B; the remaining legacy dialogs become pages in
-Milestones C–F.
+became pages in Milestone B; Milestones C-F completed the remaining primary
+destinations. The exhaustive remaining-function review and live CSS consumers
+are recorded in `docs/workspace-dialog-classification.md`.
 
-## 6. Adding a destination (later milestones)
+## 6. Adding a destination
 
 1. Add the `<section id="<name>-view">` to `workspace-main` in `index.html`.
 2. Extend `workspaceDestinations` with the sidebar item id and the section id.

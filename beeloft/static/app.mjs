@@ -57,18 +57,6 @@ function sidebar(open,restoreFocus=false) {
   if(!open&&restoreFocus&&!$('menu-toggle').hidden)$('menu-toggle').focus();
 }
 $('menu-toggle').onclick=()=>sidebar(!document.body.classList.contains('nav-open'));
-$('app-sidebar').onclick=event=>{
-  const button=event.target.closest('button');if(!button)return;
-  const drawerOpen=document.body.classList.contains('nav-open');
-  if(!drawerOpen)return;
-  queueMicrotask(()=>{
-    // Tujuan halaman sudah menutup drawer dan memindahkan fokus sendiri lewat
-    // activateWorkspace(). Tujuan dialog legacy masih perlu drawer ditutup dan
-    // fokus diingat pada tombol menu, karena activateWorkspace tidak dipakainya.
-    if(document.body.classList.contains('nav-open'))sidebar(false);
-    if($('dialog').open)dialogReturnFocus=$('menu-toggle');
-  });
-};
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open'))sidebar(false,true);});
 function activeNavigation(id) {
   for(const item of $('app-sidebar').querySelectorAll('[aria-current]'))item.removeAttribute('aria-current');
@@ -752,6 +740,10 @@ const jakartaToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}
 const option = (value,label) => `<option value="${e(value)}">${e(label)}</option>`;
 const field = (name,label,type='text',attrs='') => `<label>${label}<input name="${name}" type="${type}" ${attrs}></label>`;
 function openDialog(title, content) {
+  // Hanya tugas sekunder. Recovery pending dapat memotong navigasi dari drawer.
+  if(document.body.classList.contains('nav-open')){
+    sidebar(false);dialogReturnFocus=$('menu-toggle');
+  }
   dialogVersion++;
   $('dialog-title').textContent = title; $('dialog-content').innerHTML = content;
   modalBusy = false; unresolved = false; if (!$('dialog').open) $('dialog').showModal();
