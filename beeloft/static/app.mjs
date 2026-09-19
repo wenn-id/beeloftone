@@ -826,6 +826,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (version !== epoch || user?.id !== actorId || modalVersion !== dialogVersion) return;
       modalBusy = false; unresolved = false; $('dialog').close();
       notify('Pencatatan tersimpan.');
+      if (view === 'analytics') reloadAnalytics();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -870,7 +871,6 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (view === 'materials') loadMaterials();
       else if (view === 'people') loadPeople();
       else if (view === 'products') loadProducts();
-      else if (view === 'analytics') reloadAnalytics();
       else if (view === 'detail' && selected) openDetail(selected.id);
       else loadBoard();
     } catch (error) {
