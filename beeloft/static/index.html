@@ -156,7 +156,7 @@
         <div class="page-heading"><div><p class="eyebrow">Bahan baku · stok internal</p><h1>Bahan masuk, pemakaian tercatat.</h1></div><div class="actions"><button id="scan-material-batch" type="button">Scan batch bahan</button><button id="material-master" type="button">Master bahan</button><button id="receive-material" class="primary" type="button" hidden>Terima batch bahan</button></div></div>
         <p class="hint">Saldo adalah bahan layak pakai yang diterima, dikurangi pengeluaran ke order. Stok bebas = saldo fisik dikurangi reservasi semua order. Untuk mengalokasikan atau mengeluarkan bahan, buka order produksi.</p>
         <div class="filters"><div><label for="material-filter">Bahan</label><select id="material-filter"><option value="">Semua bahan</option></select></div><button id="materials-refresh" type="button">Muat ulang bahan</button></div>
-        <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list"></div>
+        <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list" class="list-host"></div>
         <div class="pagination"><span id="materials-page" class="hint"></span><div class="actions"><button id="materials-previous" type="button">Batch sebelumnya</button><button id="materials-next" type="button">Batch berikutnya</button></div></div>
       </section>
       <section id="people-view" hidden>
@@ -179,7 +179,7 @@
         <p class="hint">Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk. BOM dan mapping menyimpan revisi.</p>
         <div class="filters"><label class="search-field">Cari kode atau nama SKU<input id="products-search" type="search" maxlength="160" placeholder="Kode atau nama SKU"></label><button id="products-clear" type="button" class="quiet">Reset pencarian</button></div>
         <p id="products-message" class="state" role="status" hidden></p>
-        <div id="product-list" class="product-list"></div>
+        <div id="product-list" class="product-list list-host"></div>
       </section>
       <section id="analytics-view" hidden>
         <button id="analytics-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
@@ -295,7 +295,7 @@
         </form>
         <p id="production-filter-hint" class="hint">Posisi barang menampilkan order yang masih memiliki saldo di tahap tersebut. Ringkasan di atas mencakup seluruh produksi.</p>
         <div id="board-message" role="status" class="state" hidden></div>
-        <div id="order-list"></div>
+        <div id="order-list" class="list-host"></div>
         <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
         </section>
       </section>

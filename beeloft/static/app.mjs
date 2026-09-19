@@ -8,6 +8,12 @@ const minuteQty = value => materialQty(value,'menit');
 const labels = {planned:'Belum cutting', cutting:'Cutting', sewing:'Sewing', finishing:'Finishing', qc:'QC', warehouse:'Gudang', rework:'Rework', reject:'Reject'};
 const stages = ['planned','cutting','sewing','finishing','qc','warehouse'];
 let user = null, transitions = [], boardData = null, selected = null, history = [], historyOffset = 0;
+// Kueri papan terakhir yang sudah dirender. Dipakai untuk membedakan muat ulang biasa dari
+// penggantian daftar oleh filter, pencarian, atau paginasi tanpa mengubah sembilan pemanggil
+// loadBoard() satu per satu.
+let boardQuery = '';
+// Filter bahan terakhir yang sudah dirender, dengan alasan yang sama seperti boardQuery.
+let materialsQuery = null;
 let offset = 0, epoch = 0, boardRequest = 0, detailRequest = 0, view = 'board', modalBusy = false, unresolved = false;
 let dialogVersion = 0;
 // Satu logout dalam penerbangan pada satu waktu. Klik ganda memakai ulang promise yang sama, jadi
@@ -164,7 +170,7 @@ function clearEntryMotion(node) {
     target.classList.remove('motion-enter','is-ready');
   }
 }
-function playEntryMotion(node) {
+function playEntryMotion(node, durationToken = '--motion-enter') {
   if (!node) return;
   clearEntryMotion(node);
   if (reducedMotion()) return;
@@ -182,7 +188,9 @@ function playEntryMotion(node) {
     entryTimers.set(node, setTimeout(() => {
       entryTimers.delete(node);
       node.classList.remove('motion-enter','is-ready');
-    }, motionMs('--motion-enter')));
+      // motionMs(durationToken) mengikuti token yang dipakai CSS pemanggil, bukan selalu
+      // --motion-enter: penggantian daftar memudar lebih pendek daripada gerak masuk halaman.
+    }, motionMs(durationToken)));
   }));
 }
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
@@ -252,13 +260,60 @@ function restoreAnalyticsFilters(navId,form) {
   }
 }
 
+// Notice adalah presentasi murni: enam detiknya tetap milik notify(), dan animasi masuk maupun
+// keluar tidak pernah mengulang atau memperpanjang timer itu. Keluarnya memakai pola yang sama
+// dengan dialog — tandai, tunggu transisinya selesai, baru pasang hidden — sehingga pesan tidak
+// pernah hilang di tengah animasinya sendiri.
+let noticeExitTimer = null, noticeExitListener = null;
+function resetNoticeMotion() {
+  const notice = $('notice');
+  if (noticeExitTimer !== null) { clearTimeout(noticeExitTimer); noticeExitTimer = null; }
+  if (noticeExitListener !== null) { notice.removeEventListener('transitionend', noticeExitListener); noticeExitListener = null; }
+  notice.classList.remove('motion-enter','is-ready','motion-exit');
+}
+function hideNotice(immediate = false) {
+  const notice = $('notice');
+  if (notice.hidden) return;
+  if (immediate || reducedMotion()) { resetNoticeMotion(); notice.hidden = true; return; }
+  if (noticeExitTimer !== null) return;
+  const finish = () => { resetNoticeMotion(); notice.hidden = true; };
+  noticeExitListener = event => {
+    if (event.target === notice && event.propertyName === 'opacity') finish();
+  };
+  notice.classList.remove('motion-enter','is-ready');
+  notice.classList.add('motion-exit');
+  notice.addEventListener('transitionend', noticeExitListener);
+  noticeExitTimer = setTimeout(finish, motionMs('--motion-base') + 60);
+}
 function notify(message) {
+  // Pesan baru membatalkan keluar yang sedang berjalan; tanpa ini timer keluar yang lama akan
+  // menyembunyikan pesan baru jauh sebelum enam detiknya habis.
+  resetNoticeMotion();
   $('notice').textContent = message; $('notice').hidden = false;
-  clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('notice').hidden = true, 6000);
+  playEntryMotion($('notice'));
+  clearTimeout(noticeTimer); noticeTimer = setTimeout(() => hideNotice(), 6000);
 }
 function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
+}
+// Muat ulang data yang sudah tampil tidak mengosongkan kontainernya. Isi yang lama dipertahankan
+// sambil diredupkan dan ditandai aria-busy, jadi pembaca layar tetap mendapat kabar bahwa datanya
+// sedang diperbarui tanpa operator kehilangan konteks. Kontrol tidak dikunci: spec hanya meminta
+// isyarat visual, dan mengunci filter selama muat ulang akan membuat halaman terasa lambat.
+// Mengembalikan true kalau memang ada isi yang dipertahankan; pemanggil memakai itu untuk
+// memilih antara keadaan memuat pertama dan perlakuan muat ulang.
+function markRefreshing(hostId) {
+  const host = $(hostId);
+  if (!host || !host.children.length) return false;
+  host.classList.add('is-refreshing');
+  host.setAttribute('aria-busy','true');
+  return true;
+}
+function settleRefreshing(hostId) {
+  const host = $(hostId);
+  host.classList.remove('is-refreshing');
+  host.removeAttribute('aria-busy');
 }
 // Menambahkan baris hasil ke daftar sekaligus membuang placeholder status yang dipasang
 // oleh shell dialog. Tanpa ini daftar berbasis cursor menampilkan "Memuat ..." di atas
@@ -327,12 +382,14 @@ function clearWorkspace() {
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
   // Sesi berganti: tidak ada konteks sebelumnya untuk digantikan, dan tidak boleh ada kelas
   // gerak yang tertinggal dari akun sebelumnya.
-  enteredSection = ''; clearEntryMotion();
+  enteredSection = ''; boardQuery = ''; materialsQuery = null; clearEntryMotion();
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
   $('menu-toggle').hidden=true;sidebar(false);
   $('account-name').textContent = ''; $('access-key').value = ''; $('order-list').replaceChildren();
   $('summary').replaceChildren(); $('detail-content').replaceChildren(); $('dialog-content').replaceChildren();
-  $('notice').hidden = true; $('access-key').focus();
+  // Sesi berganti: notice disembunyikan seketika, tanpa animasi keluar yang bisa tertinggal
+  // dari akun sebelumnya.
+  hideNotice(true); $('access-key').focus();
 }
 const LOGOUT_FAILED = 'Logout belum berhasil. Session di perangkat ini masih aktif dengan akun yang '
   + 'sama, jadi ruang kerja tetap terbuka agar statusnya tidak menyesatkan. Coba keluar lagi.';
@@ -726,13 +783,20 @@ $('command-center-refresh').onclick=showCommandCenter;
 
 async function loadBoard() {
   const version = epoch, request = ++boardRequest;
-  message('board-message', 'Memuat posisi produksi…');
-  $('order-list').hidden = true; $('previous').disabled = true; $('next').disabled = true;
+  const query = new URLSearchParams({q:$('search').value.trim(), status:$('status').value, owner_id:$('board-owner').value, stage:$('board-stage').value, limit:25, offset});
+  // Muat ulang mempertahankan daftar yang sudah tampil; filter, pencarian, dan paginasi
+  // menggantinya. Hanya penggantian itu yang memudar sebagai satu unit, dan hanya kalau ada
+  // baris yang benar-benar tergantikan — halaman yang baru dibuka tidak memudar.
+  const refreshing = markRefreshing('order-list');
+  const replacing = refreshing && boardQuery !== query.toString();
+  boardQuery = query.toString();
+  if (!refreshing) { message('board-message', 'Memuat posisi produksi…'); $('order-list').hidden = true; }
+  $('previous').disabled = true; $('next').disabled = true;
   $('summary').setAttribute('aria-busy', 'true');
   try {
-    const query = new URLSearchParams({q:$('search').value.trim(), status:$('status').value, owner_id:$('board-owner').value, stage:$('board-stage').value, limit:25, offset});
     const result = await api.get('/api/production-board?' + query);
     if (version !== epoch || request !== boardRequest || view !== 'board') return;
+    settleRefreshing('order-list');
     boardData = result;
     const ownerId = query.get('owner_id'), previousOwnerLabel = $('board-owner').selectedOptions[0]?.textContent;
     $('board-owner').innerHTML = '<option value="">Semua PIC</option>' + result.owners.map(owner => option(owner.id,owner.name + (owner.active ? '' : ' (akun nonaktif)'))).join('');
@@ -752,6 +816,9 @@ async function loadBoard() {
       message('board-message', result.summary.orders ? 'Tidak ada order yang cocok. Ubah pencarian atau filter status.' :
         user.role === 'admin' ? 'Belum ada order. Tambahkan SKU lewat Master SKU, lalu buat order produksi pertama.' : 'Belum ada order produksi. Minta admin membuat order untuk tim.');
       $('order-list').replaceChildren();
+      // Keadaan kosong adalah keadaan semantik, bukan placeholder memuat: daftar yang
+      // tergantikan olehnya memudar sebagai satu unit supaya pergantiannya terbaca.
+      if (refreshing) playEntryMotion($('board-message'), '--motion-base');
     } else {
       message('board-message',''); $('order-list').hidden = false;
       $('order-list').innerHTML = '<div class="order-grid table-head" aria-hidden="true"><span>Order / produk</span><span>Penanggung jawab</span><span>Target selesai</span><span>Diterima gudang</span><span class="status-cell">Status</span></div>' + result.orders.map(order => {
@@ -760,10 +827,13 @@ async function loadBoard() {
           <div class="cell"><span class="cell-label">PIC</span>${e(order.owner_name)}</div><div class="cell"><span class="cell-label">Target selesai</span>${date(order.due_date)}</div>
           <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}${issueBadge(order)}</div></article>`;
       }).join('');
+      if (replacing) playEntryMotion($('order-list'), '--motion-base');
     }
     $('page-count').textContent = result.total ? `${offset + 1}–${Math.min(offset + 25,result.total)} dari ${n(result.total)} order` : '0 order';
     $('previous').disabled = offset === 0; $('next').disabled = offset + 25 >= result.total;
-  } catch (error) { if (version === epoch && request === boardRequest) { $('summary').replaceChildren(); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
+    // Galat selalu muncul seketika dan tanpa peredupan: baris yang sudah ada tetap terbaca
+    // sementara pesan kesalahannya bisa langsung ditindak.
+  } catch (error) { if (version === epoch && request === boardRequest) { settleRefreshing('order-list'); $('summary').replaceChildren(); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
 }
 
 async function openDetail(id) {
@@ -1130,15 +1200,20 @@ async function loadProducts() {
   const version = epoch, request = ++productsRequest;
   const search = $('products-search'), clear = $('products-clear');
   search.disabled = true; clear.disabled = true;
-  message('products-message','Memuat daftar SKU…'); $('product-list').replaceChildren();
+  // Muat ulang mempertahankan daftar yang sudah tampil; hanya pemuatan pertama yang memasang
+  // keadaan memuat. Pencarian tetap instan dan tanpa animasi — ia menyaring cache lokal pada
+  // setiap ketikan, jadi memudarkannya per huruf akan terbaca sebagai kedipan, bukan gerak.
+  if (!markRefreshing('product-list')) { message('products-message','Memuat daftar SKU…'); $('product-list').replaceChildren(); }
   try {
     const [products,mappings] = await Promise.all([allRows('/api/products'),allRows('/api/product-external-mappings',{system:'jubelio'})]);
     if (version !== epoch || request !== productsRequest || view !== 'products') return;
+    settleRefreshing('product-list');
     const byProduct=new Map(mappings.map(row=>[row.product_id,row]));
     productsCache=products.map(product=>({...product,mapping:byProduct.get(product.id)}));
     paintProducts();
     search.disabled = false; clear.disabled = false;
   } catch (error) { if (version === epoch && request === productsRequest && view === 'products') {
+    settleRefreshing('product-list');
     message('products-message',error.message,true);
     $('products-message').insertAdjacentHTML('beforeend','<br><button id="products-retry" type="button">Coba lagi</button>');
     $('products-retry').onclick=loadProducts;
@@ -4941,18 +5016,25 @@ function materialBatchScanDialog() {
 
 async function loadMaterials() {
   const version = epoch, request = ++materialsRequest, materialId = $('material-filter').value;
-  message('materials-message','Memuat stok bahan…'); $('batch-list').replaceChildren(); $('materials-page').textContent = '';
+  // Muat ulang dan paginasi mempertahankan batch yang sudah tampil; mengganti filter bahan
+  // menggantinya, jadi daftar itu memudar sebagai satu unit saat hasil baru masuk.
+  const refreshing = markRefreshing('batch-list');
+  const replacing = refreshing && materialsQuery !== materialId;
+  materialsQuery = materialId;
+  if (!refreshing) { message('materials-message','Memuat stok bahan…'); $('batch-list').replaceChildren(); $('materials-page').textContent = ''; }
   $('materials-previous').disabled = true; $('materials-next').disabled = true;
   try {
     const [materials,batches] = await Promise.all([allRows('/api/materials'), api.get('/api/material-batches?'+new URLSearchParams({limit:26,offset:materialsOffset,material_id:materialId}))]);
     if (version !== epoch || request !== materialsRequest || view !== 'materials') return;
+    settleRefreshing('batch-list');
     $('material-filter').innerHTML = option('','Semua bahan')+materials.map(m => option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('');
     $('material-filter').value = materialId;
     message('materials-message',batches.length ? '' : 'Belum ada batch pada halaman ini. Terima bahan untuk mulai mencatat stok.');
     $('batch-list').innerHTML = batches.slice(0,25).map(b => `<article class="sku-block"><div class="sku-heading"><div><span class="reference">${e(b.code)} · ${e(b.name)}</span><h2><button class="order-title" data-action="material-batch" data-id="${e(b.id)}">${e(b.reference)}</button></h2><p class="hint">${e(b.supplier)} · ${e(b.location)} · diterima ${date(b.received_date)}</p></div><div>Saldo batch<strong class="material-balance">${e(materialQty(b.balance,b.unit))}</strong><p class="hint">Direservasi ${e(materialQty(b.reserved,b.unit))}<br>Bebas ${e(materialQty(b.available,b.unit))}</p></div></div></article>`).join('');
     $('materials-page').textContent = batches.length ? `Batch ${materialsOffset+1}–${materialsOffset+Math.min(25,batches.length)}` : '0 batch di halaman ini';
     $('materials-previous').disabled = materialsOffset === 0; $('materials-next').disabled = batches.length <= 25;
-  } catch (error) { if (version === epoch && request === materialsRequest && view === 'materials') fail(error,'materials-message'); }
+    if (replacing) playEntryMotion($('batch-list'), '--motion-base');
+  } catch (error) { if (version === epoch && request === materialsRequest && view === 'materials') { settleRefreshing('batch-list'); fail(error,'materials-message'); } }
 }
 
 async function materialMasterDialog() {

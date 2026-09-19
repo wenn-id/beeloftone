@@ -437,6 +437,10 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .pagination{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:16px}
 progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
 .notice{border-radius:12px;box-shadow:var(--shadow-lg)}
+/* State, not motion: a container whose data is being replaced in place stays readable while it
+   is dimmed, and the dimming itself is the same in reduced-motion mode. The fade into and out of
+   it lives with the other transitions below. */
+.is-refreshing{opacity:.78}
 dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-lg)}
 .stages{border-radius:var(--r-card);overflow:hidden}
 .login-form{border:1px solid var(--line);border-top:3px solid var(--primary);border-radius:var(--r-card);box-shadow:var(--shadow-md)}
@@ -529,6 +533,11 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
      mode. `transform` is stripped here because the dialog's own entry state is decoration —
      unlike the disclosure caret, nothing about the dialog's meaning is carried by its scale. */
   dialog,dialog::backdrop{transition:none!important;animation:none!important;transform:none!important}
+  /* §11 names the notice too. It never keeps `.motion-exit` in this mode — hideNotice() applies
+     `hidden` immediately — but the class list is spelled out so a notice that is hiding when the
+     preference flips still leaves without movement. `opacity` is not stripped: one is the resting
+     value, and forcing it would only fight the `hidden` attribute. */
+  .notice{transition:none!important;animation:none!important;transform:none!important}
 }
 @media(prefers-reduced-motion:no-preference){
   button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
@@ -583,6 +592,28 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
     transition:opacity var(--motion-fast) var(--ease-exit),transform var(--motion-fast) var(--ease-exit);
   }
   dialog.is-closing::backdrop{animation:none;opacity:0;transition:opacity var(--motion-fast) var(--ease-exit)}
+  /* Notice. Presentation only: notify() owns the six-second timer and neither the entry nor the
+     exit re-arms it. Same frame-later pattern as a page, so the transition really runs. */
+  .notice.motion-enter{
+    opacity:0;transform:translateY(8px);
+    transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
+  }
+  .notice.motion-enter.is-ready{opacity:1;transform:translateY(0)}
+  .notice.motion-exit{
+    opacity:0;transform:translateY(4px);
+    transition:opacity var(--motion-base) var(--ease-exit),transform var(--motion-base) var(--ease-exit);
+  }
+  /* List and table replacement fades the container as one unit, opacity only: no row stagger and
+     no movement, so a filter, a search or a page change reads as a single change of content. */
+  .list-host.motion-enter,
+  .state.motion-enter{
+    opacity:0;
+    transition:opacity var(--motion-base) var(--ease-standard);
+  }
+  .list-host.motion-enter.is-ready,
+  .state.motion-enter.is-ready{opacity:1}
+  /* Fading into the dimmed state, not the state itself: reduced motion still shows the dim. */
+  .is-refreshing{transition:opacity var(--motion-base) var(--ease-standard)}
 }
 /* The mobile drawer enters as a small surface after `display` turns on, using the same
    frame-later pattern as a workspace page rather than a screen-wide slide. */
