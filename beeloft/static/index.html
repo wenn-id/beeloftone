@@ -249,6 +249,36 @@
         <div class="page-heading"><div><p class="eyebrow">Inbox approval · antrean keputusan</p><h1>Satu antrean untuk setiap keputusan.</h1></div><div class="actions"><button id="approvals-refresh" type="button">Muat ulang inbox</button></div></div>
         <div id="approvals-body" aria-live="polite"></div>
       </section>
+      <section id="bundle-scan-view" hidden>
+        <div class="page-heading"><div><p class="eyebrow">Produksi · scanner</p><h1>Scan bundle</h1></div></div>
+        <form id="bundle-scan-form" class="filter-form">
+          <p class="form-info">Pindai QR pada label bundle atau masukkan Bundle ID. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
+          <label for="bundle-scan-code">Kode bundle<input id="bundle-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+          <div class="form-actions"><button class="primary" type="submit">Buka bundle</button></div>
+        </form>
+        <p id="bundle-scan-message" class="state" role="status" hidden></p><p id="bundle-scan-error" class="error" role="alert" hidden></p>
+        <div id="bundle-scan-result" aria-live="polite"></div>
+      </section>
+      <section id="finished-goods-scan-view" hidden>
+        <div class="page-heading"><div><p class="eyebrow">Gudang · scanner</p><h1>Scan barang jadi</h1></div></div>
+        <form id="finished-goods-scan-form" class="filter-form">
+          <p class="form-info">Pindai QR pada label penerimaan barang jadi atau masukkan referensinya. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
+          <label for="finished-goods-scan-code">Kode barang jadi<input id="finished-goods-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+          <div class="form-actions"><button class="primary" type="submit">Buka barang jadi</button></div>
+        </form>
+        <p id="finished-goods-scan-message" class="state" role="status" hidden></p><p id="finished-goods-scan-error" class="error" role="alert" hidden></p>
+        <div id="finished-goods-scan-result" aria-live="polite"></div>
+      </section>
+      <section id="backup-view" hidden>
+        <div class="page-heading"><div><p class="eyebrow">Administrasi · database</p><h1>Cadangan data</h1></div></div>
+        <div class="filter-form">
+          <p>Unduh salinan lengkap database Beeloft: order, posisi barang, riwayat, kendala, perubahan jadwal, dan akun.</p>
+          <p class="form-info">File ini memuat seluruh data produksi dan hash kunci akses akun. Simpan di folder pribadi atau drive cadangan yang hanya bisa diakses orang yang berwenang.</p>
+          <p class="hint">Kunci akses asli tidak disertakan. Simpan kunci yang sudah lu miliki untuk masuk setelah pemulihan. Salinan diambil saat unduhan diminta; perubahan setelahnya masuk cadangan berikutnya.</p>
+          <p class="hint">Setelah unduhan selesai, pastikan file .sqlite3 ada di lokasi pilihan lu. Untuk memeriksa cadangan, ikuti langkah pemulihan di README proyek.</p>
+          <p id="backup-message" role="status" hidden></p><button id="download-backup" type="button" class="primary">Unduh cadangan database</button>
+        </div>
+      </section>
       <section id="board-view">
         <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
         <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>

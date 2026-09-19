@@ -41,6 +41,7 @@ let auditRequest = 0;
 let approvalsRequest = 0;
 let purchaseRequestsRequest = 0;
 let marketingBudgetsRequest = 0;
+let scanRequest = 0, backupRequest = 0;
 
 function theme(value) {
   document.documentElement.dataset.theme = value;
@@ -101,7 +102,10 @@ const workspaceDestinations={
   'audit-trail':'audit-view',
   'approvals':'approvals-view',
   'purchase-requests':'purchase-requests-view',
-  'marketing-budgets':'marketing-budgets-view'
+  'marketing-budgets':'marketing-budgets-view',
+  'scan-bundle':'bundle-scan-view',
+  'scan-finished-goods':'finished-goods-scan-view',
+  'backup':'backup-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
 // rincian order yang berbagi satu item sidebar dengan papan produksi.
@@ -122,7 +126,10 @@ const workspaceSections=[
   {id:'audit-view',view:'audit',invalidate(){auditRequest++;}},
   {id:'approvals-view',view:'approvals',invalidate(){approvalsRequest++;}},
   {id:'purchase-requests-view',view:'purchase-requests',invalidate(){purchaseRequestsRequest++;}},
-  {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}}
+  {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}},
+  {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
+  {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
+  {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
 ];
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
 // lain sambil menaikkan request counternya, tampilkan target, catat nama view
@@ -246,6 +253,12 @@ function clearWorkspace() {
   approvalsRequest++; $('approvals-body').replaceChildren();
   purchaseRequestsRequest++; $('purchase-requests-body').replaceChildren();
   marketingBudgetsRequest++; $('marketing-budgets-body').replaceChildren();
+  scanRequest++; backupRequest++;
+  for(const kind of ['bundle','finished-goods']){
+    $(kind+'-scan-form').reset(); $(kind+'-scan-result').replaceChildren();
+    message(kind+'-scan-message',''); message(kind+'-scan-error','');
+  }
+  message('backup-message','');
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
@@ -1075,8 +1088,8 @@ async function orderForm() {
 $('products').onclick = showProducts; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = showAuditEvents;
 $('workforce').onclick = showPeople;
-$('scan-bundle').onclick = bundleScanDialog;
-$('scan-finished-goods').onclick = finishedGoodsScanDialog;
+$('scan-bundle').onclick = () => showScanner('bundle');
+$('scan-finished-goods').onclick = () => showScanner('finished-goods');
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;
@@ -1101,7 +1114,7 @@ document.addEventListener('click', event => {
     'product-mapping':()=>productMappingDialog(id),'edit-product-mapping':()=>productMappingForm(id),
     'unmap-product':()=>unmapProductForm(id),'product-mapping-history':()=>productMappingHistoryDialog(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
-    bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':bundleScanDialog,
+    bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':()=>navigateFromDialog(()=>showScanner('bundle')),
     'bundle-handoffs':()=>bundleHandoffsDialog(id),'new-bundle-handoff':()=>bundleHandoffForm(id),
     'accept-bundle-handoff':()=>acceptBundleHandoffForm(id),'cancel-bundle-handoff':()=>cancelBundleHandoffForm(id),
     'sewing-jobs':()=>sewingJobsDialog(id || selected?.id),'new-sewing-job':()=>sewingJobForm(id),'sewing-job':()=>sewingJobDialog(id),
@@ -1109,7 +1122,7 @@ document.addEventListener('click', event => {
     'final-qc-records':()=>finalQcRecordsDialog(id || selected?.id),'new-final-qc-record':()=>finalQcForm(id),'final-qc-record':()=>finalQcRecordDialog(id),
     'rework-completions':()=>reworkCompletionsDialog(id || selected?.id),'final-qc-rework-completions':()=>finalQcReworkCompletionsDialog(id),
     'new-rework-completion':()=>reworkCompletionForm(id),'rework-completion':()=>reworkCompletionDialog(id),'new-reinspection':()=>reinspectionForm(id),
-    'finished-goods':()=>finishedGoodsDialog(id || selected?.id),'new-finished-goods':()=>finishedGoodsForm(id),'finished-goods-receipt':()=>finishedGoodsReceiptDialog(id),'scan-finished-goods':finishedGoodsScanDialog,
+    'finished-goods':()=>finishedGoodsDialog(id || selected?.id),'new-finished-goods':()=>finishedGoodsForm(id),'finished-goods-receipt':()=>finishedGoodsReceiptDialog(id),'scan-finished-goods':()=>navigateFromDialog(()=>showScanner('finished-goods')),
     'finished-goods-traceability':()=>finishedGoodsTraceabilityDialog(id),
     warehouse:()=>warehouseDialog(id || selected?.id),'new-warehouse-movement':()=>warehouseMovementForm(id,kind),'warehouse-movement':()=>warehouseMovementDialog(id),
     'marketplace-reservations':()=>marketplaceReservationsDialog(id || selected?.id),'new-marketplace-reservation':()=>marketplaceReservationForm(id),'marketplace-reservation':()=>marketplaceReservationDialog(id),
@@ -1623,20 +1636,30 @@ async function bundlesDialog(orderId) {
   $('bundle-more').onclick=load;await load();
 }
 
-function bundleScanDialog() {
+function showScanner(kind) {
   if(guardPending())return;
-  openDialog('Scan bundle',`<form id="bundle-scan-form"><p class="form-info">Pindai QR pada label bundle atau masukkan Bundle ID. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
-    <label for="bundle-scan-code">Kode bundle<input id="bundle-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus></label>
-    <p id="bundle-scan-error" class="error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button class="primary" type="submit">Buka bundle</button></div></form>`);
-  const modal=dialogVersion,version=epoch,form=$('bundle-scan-form'),input=$('bundle-scan-code');
-  input.focus();
+  const drawerOpen=document.body.classList.contains('nav-open'),prefix=kind+'-scan';
+  activateWorkspace('scan-'+kind);
+  const version=epoch,form=$(prefix+'-form'),input=$(prefix+'-code'),result=$(prefix+'-result');
+  const button=form.querySelector('[type="submit"]');
+  let request=++scanRequest;
+  const current=()=>version===epoch&&request===scanRequest&&view===prefix;
+  button.disabled=false; message(prefix+'-error','');
+  message(prefix+'-message',result.children.length?'':'Belum ada hasil scan. Pindai label atau masukkan kode.');
+  if(!drawerOpen)input.focus();
   form.onsubmit=async event=>{
-    event.preventDefault();const button=form.querySelector('[type="submit"]');button.disabled=true;message('bundle-scan-error','');
+    event.preventDefault(); if(!current()||button.disabled||guardPending())return;
+    request=++scanRequest; button.disabled=true; result.replaceChildren();
+    message(prefix+'-error',''); message(prefix+'-message','Mencari hasil scan…');
     try{
-      const bundle=await api.get('/api/bundles/scan?'+new URLSearchParams({code:input.value.trim()}));
-      if(version===epoch&&modal===dialogVersion&&$('dialog').open)bundleDialog(bundle.id);
-    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open){message('bundle-scan-error',error.message,true);input.select();}}
-    finally{if(version===epoch&&modal===dialogVersion&&$('dialog').open)button.disabled=false;}
+      const row=await api.get((kind==='bundle'?'/api/bundles/scan?':'/api/finished-goods-receipts/scan?')+new URLSearchParams({code:input.value.trim()}));
+      if(!current())return;
+      result.innerHTML=`<article class="material-event"><h2>Hasil scan terakhir</h2><h3>${e(row.reference)}</h3>
+        <p>${e(row.sku)} · ${e(row.size)} · ${n(kind==='bundle'?row.quantity:row.received_quantity)} pcs</p>
+        <p>Order ${e(row.order_reference)}</p><button type="button" data-action="${kind==='bundle'?'bundle':'finished-goods-receipt'}" data-id="${e(row.id)}">${kind==='bundle'?'Rincian bundle':'Rincian barang jadi'}</button></article>`;
+      message(prefix+'-message',''); input.select();
+    }catch(error){if(current()){message(prefix+'-message','');fail(error,prefix+'-error');input.select();}}
+    finally{if(current())button.disabled=false;}
   };
 }
 
@@ -4789,20 +4812,6 @@ function materialBatchScanDialog() {
   };
 }
 
-function finishedGoodsScanDialog() {
-  if(guardPending())return;
-  openDialog('Scan barang jadi',`<form id="finished-goods-scan-form"><p class="form-info">Pindai QR pada label penerimaan barang jadi atau masukkan referensinya. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p><label for="finished-goods-scan-code">Kode barang jadi</label><input id="finished-goods-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus><p id="finished-goods-scan-error" class="error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button class="primary" type="submit">Buka barang jadi</button></div></form>`);
-  const modal=dialogVersion,version=epoch,form=$('finished-goods-scan-form'),input=$('finished-goods-scan-code');input.focus();
-  form.onsubmit=async event=>{
-    event.preventDefault();const button=form.querySelector('[type="submit"]');button.disabled=true;message('finished-goods-scan-error','');
-    try{
-      const receipt=await api.get('/api/finished-goods-receipts/scan?'+new URLSearchParams({code:input.value.trim()}));
-      if(version===epoch&&modal===dialogVersion&&$('dialog').open)finishedGoodsReceiptDialog(receipt.id);
-    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open){message('finished-goods-scan-error',error.message,true);input.select();}}
-    finally{if(version===epoch&&modal===dialogVersion&&$('dialog').open)button.disabled=false;}
-  };
-}
-
 async function loadMaterials() {
   const version = epoch, request = ++materialsRequest, materialId = $('material-filter').value;
   message('materials-message','Memuat stok bahan…'); $('batch-list').replaceChildren(); $('materials-page').textContent = '';
@@ -4954,17 +4963,13 @@ async function materialBatchTraceabilityDialog(batchId) {
 }
 
 $('backup').onclick = () => {
-  if (guardPending()) return;
-  const version = epoch;
-  openDialog('Cadangan data', `<p>Unduh salinan lengkap database Beeloft: order, posisi barang, riwayat, kendala, perubahan jadwal, dan akun.</p>
-    <p class="form-info">File ini memuat seluruh data produksi dan hash kunci akses akun. Simpan di folder pribadi atau drive cadangan yang hanya bisa diakses orang yang berwenang.</p>
-    <p class="hint">Kunci akses asli tidak disertakan. Simpan kunci yang sudah lu miliki untuk masuk setelah pemulihan. Salinan diambil saat unduhan diminta; perubahan setelahnya masuk cadangan berikutnya.</p>
-    <p class="hint">Setelah unduhan selesai, pastikan file .sqlite3 ada di lokasi pilihan lu. Untuk memeriksa cadangan, ikuti langkah pemulihan di README proyek.</p>
-    <p id="backup-message" role="status" hidden></p><button id="download-backup" type="button" class="primary">Unduh cadangan database</button>`);
-  const modalVersion = dialogVersion;
-  const current = () => version === epoch && modalVersion === dialogVersion && $('dialog').open;
+  if (user?.role !== 'admin' || guardPending()) return;
+  activateWorkspace('backup');
+  const version = epoch, request = ++backupRequest;
+  const current = () => version === epoch && request === backupRequest && view === 'backup' && user?.role === 'admin';
+  $('download-backup').disabled = false; $('download-backup').textContent = 'Unduh cadangan database'; message('backup-message','');
   $('download-backup').onclick = async () => {
-    const button = $('download-backup'); if (button.disabled) return;
+    const button = $('download-backup'); if (!current() || button.disabled || guardPending()) return;
     button.disabled = true; button.textContent = 'Menyiapkan cadangan…'; message('backup-message','');
     try {
       const blob = await api.download('/api/backup');

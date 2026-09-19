@@ -70,6 +70,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.ok(browserApiHeaders.every(headers=>!('x-api-key' in headers)));
   assert.equal(await page.getByLabel('Kunci akses',{exact:true}).inputValue(),'');
   await page.getByRole('button',{name:'Cadangan data',exact:true}).click();
+  assert.equal(await page.locator('#backup-view').isVisible(),true);
+  assert.equal(await page.locator('#dialog').getAttribute('open'),null);
   let failBackup = true;
   await page.route('**/api/backup',async route => {
     if (failBackup) { failBackup=false; await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Cadangan uji belum tersedia'})}); }
@@ -84,7 +86,9 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   const backupBytes=fs.readFileSync(await backupDownload.path());
   assert.equal(backupBytes.subarray(0,16).toString(),'SQLite format 3\x00');
   assert.ok(!backupBytes.includes(Buffer.from(admin)));
-  await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
+  await page.getByText('Unduhan dimulai.',{exact:false}).waitFor();
+  await page.unroute('**/api/backup');
+  await page.getByRole('button',{name:'Produksi',exact:true}).click();
   await page.getByLabel('Status',{exact:true}).selectOption('overdue');
   await page.waitForFunction(() => document.querySelectorAll('.order-row').length === 1 && !document.getElementById('order-list').hidden);
   assert.equal((await page.locator('.order-row').innerText()).includes('DEMO-PROD-002'),true);
@@ -440,6 +444,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_shared_ui.cjs');
   await runModule('./browser_production_premium_ui.cjs');
   await runModule('./browser_navigation_foundation.cjs');
+  await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();
   console.log('Browser QA PASS: login, filters, SKU, multi-SKU order, partial move, lost-response reload/retry exactly once, reversal, roles, dark theme, mobile overflow, Escape; no JS errors.');

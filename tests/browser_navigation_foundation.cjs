@@ -30,6 +30,9 @@ module.exports = async ({page, login, admin, openSidebarDestination}) => {
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},
+    {name: 'Scan bundle', nav: 'scan-bundle', section: 'bundle-scan-view', heading: 'Scan bundle'},
+    {name: 'Scan barang jadi', nav: 'scan-finished-goods', section: 'finished-goods-scan-view', heading: 'Scan barang jadi'},
+    {name: 'Cadangan data', nav: 'backup', section: 'backup-view', heading: 'Cadangan data'},
     {name: 'WIP ageing', nav: 'wip-ageing-insights', section: 'analytics-view', heading: 'WIP ageing & sinyal hambatan', content: '#wip-ageing-form'},
     // Milestone D: Tanya Beeloft, Integrasi, dan Audit trail adalah halaman workspace.
     // riwayat investigasi dimuat terpisah dari permintaan tulisan, jadi tunggu riwayatnya

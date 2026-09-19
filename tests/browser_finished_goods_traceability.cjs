@@ -16,6 +16,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work,receipt})=>{
   await page.getByRole('button',{name:'Scan barang jadi',exact:true}).click();
   await page.getByLabel('Kode barang jadi',{exact:true}).fill(receipt.scan_code);
   await page.getByRole('button',{name:'Buka barang jadi',exact:true}).click();
+  await page.getByRole('button',{name:'Rincian barang jadi',exact:true}).click();
   await page.getByRole('button',{name:'Jejak stok lengkap',exact:true}).waitFor();
   let failFirst=true,failNext=true;
   await page.route('**/api/finished-goods-receipts/*/traceability?*',async route=>{

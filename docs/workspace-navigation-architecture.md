@@ -276,3 +276,40 @@ handling, cancellation, lost-response retry with the same idempotency key, audit
 event integrity, and no duplicate mutation. `clearWorkspace()` bumps the three
 new counters and empties the three page bodies so one account's queues cannot
 paint under another account.
+
+## 9. Scanner and backup pages (Milestone F)
+
+`scan-bundle`, `scan-finished-goods`, and `backup` now activate their own
+workspace sections. All 27 persistent sidebar destinations resolve to pages.
+Activity remains on the existing foundation path without presentation changes.
+
+Both scanners use `showScanner(kind)` for the same read-only lookup lifecycle.
+The page retains its input and latest successful identity/quantity result across
+navigation and child-dialog close. A new scan clears that snapshot before loading;
+errors and not-found results stay separate from the idle/loading message. Enter
+resubmits the input, including the existing QR code format. Latest-result details
+are fetched afresh in the existing record dialog, so mutable inventory/custody
+and record history do not become stale copies on the scanner page.
+
+A shared `scanRequest` counter is sufficient because only one scanner can be
+active. Section invalidation, page entry, and submit advance it; the loader also
+checks epoch and active view. Repeated submit while busy is ignored. Desktop
+scanner entry intentionally focuses its input for keyboard scanners; navigation
+from the mobile drawer keeps the foundation's heading focus.
+
+Backup activation and download both require admin. `backupRequest`, epoch, view,
+and role guard the asynchronous blob before `saveDownload()`. Leaving and
+re-entering the page invalidates the old request, and the download button is
+re-enabled. Opening a page never triggers a download. The original backup copy,
+status/retry, filename construction, endpoint, and backend protections remain.
+
+`clearWorkspace()` invalidates these requests and clears scan inputs/results and
+backup status. Focused child dialogs retain the original pending-write recovery,
+actor binding, exact-once save/retry, role checks, and print styles. Scanner
+shortcuts inside a dialog use `navigateFromDialog()` to reach the page.
+
+`browser_workspace_utilities.cjs` covers page states, escaping, abandoned scan
+and download responses, repeated-submit protection, roles, session expiry/reset,
+mobile focus, 1440/1024/768/390/320 layouts and 200% text in both themes. Existing
+scanner modules still exercise real QR lookup, print output, record dialogs and
+handoff mutations. The navigation foundation matrix now includes all three pages.

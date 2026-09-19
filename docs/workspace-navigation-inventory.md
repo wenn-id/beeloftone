@@ -17,10 +17,10 @@ rather than labels.
 | Classification | Count | Destinations |
 |---|---|---|
 | EXISTING_PAGE | 4 | Command center, Produksi, Bahan baku, Laporan aktivitas |
-| LEGACY_DIALOG | 2 | Scan bundle, Scan barang jadi |
-| MIGRATED_PAGE | 20 | People, Master SKU, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
+| LEGACY_DIALOG | 0 | (none) |
+| MIGRATED_PAGE | 23 | People, Master SKU, Tanya Beeloft, Integrasi, Audit trail, Inbox approval, Permintaan pembelian, Budget marketing, Scan bundle, Scan barang jadi, Cadangan data, 12 Analitik children (WIP ageing, Kapasitas produksi, Kualitas produksi, Kinerja supplier, Harga bahan, Komitmen PO, Forecast demand, Rekomendasi stok, Analisis ukuran, Analisis retur, Dead stock, Audit adjustment) |
 | INTENTIONAL_DIALOG | 0 | (none among primary sidebar destinations) |
-| NEEDS_VERIFICATION | 1 | Cadangan data |
+| NEEDS_VERIFICATION | 0 | (none) |
 | OTHER | 0 | — |
 | **Total primary destinations** | **27** | |
 
@@ -29,9 +29,8 @@ sidebar: `detail-view` (order detail, opened from the production board) and the
 shared `analytics-view` host (reached by the twelve Analitik children). Both are
 pages, not sidebar destinations, and are out of scope for the migration counts.
 
-The remaining 8 LEGACY_DIALOG handlers call `openDialog()` directly as the
-primary experience. No primary sidebar click reaches `openDialog()` only through
-an indirect chain — every legacy handler is a direct `*Dialog()` call.
+After Milestone F, every persistent primary sidebar destination activates a
+workspace page. None calls `openDialog()` as its primary experience.
 
 ## 2. Sidebar structure (source: `beeloft/static/index.html`)
 
@@ -153,27 +152,31 @@ calls `openDialog()`; ACTION = entry performs one operation with no browse state
 - Target: `people-view` — **MIGRATED_PAGE** (Milestone B)
 
 #### `scan-bundle` — Scan bundle
-- Renderer: `bundleScanDialog` (`app.mjs:1448`, wired `app.mjs:897`)
-- Interaction: **DIALOG** — scanner surface inside modal
-- Data: `GET /api/bundles/scan?` — live scan input, result/history on the same surface
-- Mutation: scan accept/handoff writes happen in child forms (`bundleHandoffForm`,
-  `acceptBundleHandoffForm`), each exact-once
-- Access: operator/admin; viewer blocked from mutating scans
-- Async: `epoch` + `dialogVersion`; `bundle-error` region with retry
-- State: `bundle-error` status, loading placeholder, retry buttons
+- Renderer: `showScanner('bundle')`
+- Interaction: **PAGE** → `bundle-scan-view`
+- Data: `GET /api/bundles/scan?` only on submit; keyboard/QR input and latest
+  successful record identity/quantity remain on the page
+- Mutation: none on entry or scan; handoff writes remain focused child forms
+- Access: all roles scan/read; viewer cannot mutate through child dialogs
+- Async: `epoch` + shared `scanRequest` + `view === 'bundle-scan'`; navigation,
+  re-entry, and a new submit invalidate older responses
+- State: idle, loading, result, error/not-found; resubmit retries the same input;
+  input/result survive navigation and child-dialog close until the next scan or logout
 - Child dialogs: `bundleDialog`, `bundleHandoffsDialog`, handoff accept/cancel forms
-- Target: `bundle-scan-view` (Milestone F) — **LEGACY_DIALOG**
+- Target: `bundle-scan-view` (Milestone F) — **MIGRATED_PAGE**
 
 #### `scan-finished-goods` — Scan barang jadi
-- Renderer: `finishedGoodsScanDialog` (`app.mjs:4483`, wired `app.mjs:898`)
-- Interaction: **DIALOG** — scanner surface inside modal
+- Renderer: `showScanner('finished-goods')`
+- Interaction: **PAGE** → `finished-goods-scan-view`
 - Data: `GET /api/finished-goods-receipts/scan?`
-- Mutation: receipt writes via child forms, exact-once
-- Access: operator/admin; viewer read-only
-- Async: `epoch` + `dialogVersion`
-- State: error region with retry, loading placeholder
-- Child dialogs: `finishedGoodsReceiptDialog`, label/print confirmation
-- Target: `finished-goods-scan-view` (Milestone F) — **LEGACY_DIALOG**
+- Mutation: none on entry or scan; receipt operations remain focused child forms
+- Access: all roles scan/read; viewer read-only
+- Async: `epoch` + shared `scanRequest` + `view === 'finished-goods-scan'`
+- State: same scanner contract as bundle; latest result is a scan snapshot,
+  while the detail dialog fetches current inventory and record history
+- Child dialogs: `finishedGoodsReceiptDialog`, stock traceability, label/print,
+  warehouse and marketplace record actions
+- Target: `finished-goods-scan-view` (Milestone F) — **MIGRATED_PAGE**
 
 #### `products` — Master SKU
 - Renderer: `showProducts` (`app.mjs:877`, wired `app.mjs:965`); loader
@@ -314,25 +317,19 @@ Migration notes for the Milestone C host:
   **MIGRATED_PAGE**
 
 #### `backup` — Cadangan data
-- Nav item hidden unless admin (`app.mjs:198`)
-- Renderer: inline onclick (`app.mjs:4647`) — opens "Cadangan data" dialog whose
-  only control is `download-backup`
-- Interaction: **ACTION** — `GET /api/backup` (blob download via `api.download`),
-  no browse/list state, no filters, no pagination
+- Renderer: inline onclick activates `backup-view`; purpose/status and
+  `download-backup` are persistent page markup
+- Interaction: **PAGE**; `GET /api/backup` (blob via `api.download`) only on
+  explicit download, never on page entry; no filters or pagination
 - Mutation: none (read-only download of the SQLite database)
-- Access: admin-only at the nav level
-- Async: `epoch` + `dialogVersion`; `current()` guards the download result
-- State: `backup-message` status region; purpose/safety copy is static
+- Access: admin-only sidebar, activation/download guards, unchanged backend role check
+- Async: `epoch` + `backupRequest` + active view/role; navigation/re-entry/session
+  switch invalidates late downloads; disabled button prevents duplicate requests
+- State: purpose/safety copy retained; preparing, error/retry, download-started
+  status; browser filename and backend path/overwrite protection unchanged
 - Child dialogs: none
-- Verdict: this entry is action-only, not a persistent browse destination. It does
-  not establish context and has no page-worthy state. It fits the roadmap's
-  focused-secondary-task definition, so keeping it as a dialog is defensible;
-  however roadmap Appendix A targets `backup-view` **if** it is a persistent
-  destination. Recorded as **NEEDS_VERIFICATION** — Milestone F decides: expose a
-  minimal `backup-view` (purpose/status + existing download action) for
-  architectural consistency, or reclassify as INTENTIONAL_DIALOG. Recommendation
-  recorded here: expose `backup-view` in Milestone F so zero primary entries
-  remain on the dialog path, keeping the download confirmation inline.
+- Verdict: persistent primary sidebar entry for admins; Milestone F resolves
+  NEEDS_VERIFICATION to **MIGRATED_PAGE**, following the inventory recommendation
 
 ### 4.5 Group 4 tail — business
 
@@ -392,9 +389,9 @@ Migration notes for the Milestone C host:
 
 ## 5. Handlers that call `openDialog()` as primary experience
 
-Complete list of primary sidebar handlers whose main effect is `openDialog()`:
-
-`bundleScanDialog`, `finishedGoodsScanDialog`, and the inline `backup` handler.
+None after Milestone F. The scanner handlers use `showScanner()` and the inline
+`backup` handler activates `backup-view`. Scanner `data-action` shortcuts also
+close their originating dialog through `navigateFromDialog()` before activation.
 
 The twelve Analitik children used to be in this list as
 `*InsightsDialog`/`capacityPlanDialog`/`demandForecastDialog`/
@@ -407,7 +404,7 @@ reason: `showAuditEvents`, `showAi`, and `showIntegrations` activate
 `purchaseRequestsDialog` for the same reason: `showApprovals`,
 `showMarketingBudgets`, and `showPurchaseRequests` activate `approvals-view`,
 `marketing-budgets-view`, and `purchase-requests-view`. The order-scoped
-`orderPurchaseRequestsDialog` stays on this list by design: it is a focused
+`orderPurchaseRequestsDialog` remains a focused
 dialog reached from order detail, not a primary sidebar destination.
 
 The global click-delegation map (`app.mjs:899`) also routes many `data-action`
@@ -718,3 +715,56 @@ Remaining LEGACY_DIALOG (2): Scan bundle, Scan barang jadi. These are Milestone
 F scope, alongside the Cadangan data verification.
 
 Next: Milestone F. Do not begin without approval, per roadmap §4 hard-stop rule.
+
+## 13. Milestone F delta — Scanner and utility pages
+
+Baseline: `164d9a54eb7314e2dd738873a1d4264193a19df6` (Milestone E, PR #15 merged).
+Branch: `refactor/workspace-pages-utilities`.
+
+- `scan-bundle` → `bundle-scan-view`, `scan-finished-goods` →
+  `finished-goods-scan-view`, `backup` → `backup-view`.
+- Scanner input and latest successful result live on the page. Opening the
+  result's detail button fetches the current record in its existing focused
+  dialog; record history, labels/print, and mutations keep their existing flows.
+  No new scan-history persistence or endpoint is introduced.
+- `showScanner(kind)` shares only the identical lookup lifecycle of the two
+  scanners. A request counter plus epoch and active view rejects abandoned
+  responses even after leaving and re-entering the same scanner. Desktop entry
+  focuses the scan input; mobile drawer navigation keeps heading focus.
+- Backup remains an explicit admin download, with the original purpose/safety
+  copy, filename, and success/error status. Page entry never downloads. Late
+  responses cannot download after navigation or session switch. Backend path
+  safety and exclusive-create overwrite protection are unchanged.
+- `clearWorkspace()` clears both inputs/results/messages and invalidates scan
+  and backup requests. `guardPending()` and the child transaction machinery
+  remain intact.
+- Activity already routes through `activateWorkspace('activity')`; it was
+  verified through the existing foundation regression and was not rewritten.
+- Tests: extended real scanner/QR/print/handoff tests and backup download test;
+  all three pages join the navigation matrix. `browser_workspace_utilities.cjs`
+  checks not-found, retry, delayed re-entry responses, duplicate submit/download,
+  escaping, role/session reset, mobile focus, and light/dark responsive layouts.
+
+Inventory delta: 4 EXISTING_PAGE unchanged; LEGACY_DIALOG 2 → 0;
+NEEDS_VERIFICATION 1 → 0; MIGRATED_PAGE 20 → 23. Total remains 27.
+
+Next: Milestone G (cleanup and verification), only after F is reviewed and merged.
+
+Local verification (19 September 2026, Windows, Python 3.12.14):
+
+- `python -m unittest discover -s tests -v`: 507 tests, PASS.
+- `python -m pip check`: PASS; no broken requirements.
+- `python -m compileall -q beeloft`: PASS.
+- `node --check beeloft/static/app.mjs` and `node --check beeloft/static/client.mjs`: PASS.
+- `node tests/test_client.mjs`: PASS.
+- `python tests/run_browser.py --channel chromium` (bundled Playwright module
+  supplied through `--playwright-module`): full suite PASS, no JS errors.
+  Local Playwright is 1.62.1; CI uses its existing 1.63.0 pin on Linux.
+- `python -m build`: sdist and wheel PASS.
+- Screenshots reviewed for all three pages at 1440 light/dark, 390 mobile,
+  and 320/200% text. Disposable synthetic data only.
+- Bundle handoff cancellation and lost-response replay also pass from the new
+  scanner page: retry retains its idempotency key and creates one handoff.
+
+The published PR records its actual HEAD and GitHub Core/Browser results;
+local passes alone do not establish the roadmap's CI gate.
