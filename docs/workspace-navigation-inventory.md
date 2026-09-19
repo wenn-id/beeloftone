@@ -681,11 +681,9 @@ backend contract:
 - The three show functions keep the `guardPending()` interception the dialog
   openers had, so an unresolved pending write still forces recovery before the
   user can start a new task from that destination.
-- Filter state is now module-level and per page (`approvalsFilters`,
-  `purchaseRequestsFilters`, `marketingBudgetsFilters`), restored on each render
-  like `auditFilters`, so a child-dialog decision does not silently reset the
-  operator's filter. Status/kind semantics and defaults are unchanged
-  (approvals defaults to `pending`; PR and marketing default to `all`).
+- Filter controls have no module-state persistence. Each render resets them to
+  hardcoded defaults: approvals uses `pending` (and kind `all`), while PR and
+  marketing both use `all`.
 - Pagination models are unchanged: approvals keeps **offset** pagination
   (25/page), PR and marketing keep cursor `before` pagination. Loading, empty,
   filter-empty, error, and retry states live on the page; the retry path keeps
@@ -699,9 +697,10 @@ backend contract:
   PR", "Semua budget marketing", and "Daftar budget" buttons inside focused
   dialogs close the dialog and activate the page. The order-scoped
   `order-purchases` entry keeps opening its own dialog.
-- `clearWorkspace()` bumps the three new counters, resets the three filter
-  objects, and empties the three page containers, so a session switch cannot
-  paint a previous actor's approval queue, PR list, or budget list.
+- `clearWorkspace()` bumps the three new counters and empties the three page
+  containers; there are no per-page filter objects to reset. This prevents a
+  session switch from painting a previous actor's approval queue, PR list, or
+  budget list.
 - Record-specific work stays in focused dialogs opened from the pages:
   per-kind approval detail and decision forms (`approvalAction[row.kind]`), PR
   create/detail/decision, marketing budget create/detail/decision, suppliers,

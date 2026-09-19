@@ -4426,7 +4426,7 @@ async function loadPurchaseRequests() {
       if(!current() || gen!==generation)return;
       appendRows('pr-page-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
       if(!before && !rows.length)$('pr-page-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
-      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
+      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat PR berikutnya';
     }catch(error){if(current() && gen===generation){message('pr-page-error',error.message,true);clearPageLoading('pr-page-list');button.hidden=false;button.textContent='Coba muat PR lagi';}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
