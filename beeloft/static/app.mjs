@@ -334,14 +334,19 @@ function settleRefreshing(hostId) {
 // keyboard, jadi memindahkan fokus akan memutus pemindaian berikutnya.
 const SCAN_TINT_HOLD = 1200;
 const scanTimers = new WeakMap();
+function clearScanFeedback(node) {
+  if (!node) return;
+  clearTimeout(scanTimers.get(node));
+  scanTimers.delete(node);
+  node.classList.remove('is-scan-ok');
+}
 function playScanFeedback(node) {
   if (!node) return;
-  node.classList.remove('is-scan-ok');
+  clearScanFeedback(node);
   // Hentikan dulu, biarkan terhitung, baru pasang: dua pemindaian berturut-turut dalam satu
   // tugas harus tetap terlihat sebagai dua kejadian.
   void node.offsetHeight;
   node.classList.add('is-scan-ok');
-  clearTimeout(scanTimers.get(node));
   scanTimers.set(node, setTimeout(() => {
     scanTimers.delete(node);
     node.classList.remove('is-scan-ok');
@@ -1913,7 +1918,7 @@ function showScanner(kind) {
   if(!drawerOpen)input.focus();
   form.onsubmit=async event=>{
     event.preventDefault(); if(!current()||button.disabled||guardPending())return;
-    request=++scanRequest; button.disabled=true; result.replaceChildren();
+    request=++scanRequest; button.disabled=true; clearScanFeedback(result); result.replaceChildren();
     message(prefix+'-error',''); message(prefix+'-message','Mencari hasil scan…');
     try{
       const row=await api.get((kind==='bundle'?'/api/bundles/scan?':'/api/finished-goods-receipts/scan?')+new URLSearchParams({code:input.value.trim()}));

@@ -546,7 +546,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
      a control's press — keeps winning, and this rule only supplies one where there is none. That
      is also why sections and cards are included: the change reads as one movement instead of the
      chrome fading while the content snaps. */
-  html.is-theming :where(body,.masthead,.app-shell,.app-sidebar,.workspace-main,section,article,dl,dialog,.notice,.state){
+  :where(html.is-theming) :where(body,.masthead,.app-shell,.app-sidebar,.workspace-main,section,article,dl,dialog,.notice,.state){
     transition:background-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard);
   }
   button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
