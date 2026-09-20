@@ -239,7 +239,12 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .section-heading h2,.section-heading p{margin-bottom:0}
 .hero-panel .card-head h2{margin:0}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:16px}
-.card-head h3{margin:0}
+/* A card head is a flex row of a heading and a trailing glyph. At 200% text the heading's longest
+   word can exceed the card's content box; a flex item's default `min-width:auto` then grows the row
+   instead of wrapping it, and the glyph is pushed past the viewport edge. Measured at 320px/200% on
+   the command centre's marketplace comparison card. */
+.card-head>*{min-width:0}
+.card-head h3{margin:0;overflow-wrap:anywhere}
 .card-head .icon{color:var(--muted)}
 
 /* ---------- KPI row: 4 x 263x130, r16, icon top-right, 32px number ---------- */
@@ -441,6 +446,10 @@ progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
    is dimmed, and the dimming itself is the same in reduced-motion mode. The fade into and out of
    it lives with the other transitions below. */
 .is-refreshing{opacity:.78}
+/* Same reasoning for the scan feedback: the tint is the state a valid scan reports, so it is
+   declared here and stays visible with every transition disabled. Only its release is animated,
+   in the `no-preference` query below. */
+.scan-result.is-scan-ok{background:var(--success-bg)}
 dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-lg)}
 .stages{border-radius:var(--r-card);overflow:hidden}
 .login-form{border:1px solid var(--line);border-top:3px solid var(--primary);border-radius:var(--r-card);box-shadow:var(--shadow-md)}
@@ -559,12 +568,19 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   /* Workspace entry. Only the target moves, only after it is logically active, and only
      6px — no full-screen horizontal slide. The previous section is already hidden by the
      time these classes land, so nothing slides out. The classes are transient; the script
-     removes them once the entry has played so a settled page never carries motion state. */
+     removes them once the entry has played so a settled page never carries motion state.
+     The transition is declared on the state the element moves TO, and the entry state
+     switches it off: a transition declared together with the value it changes only starts
+     on the next style change, and this entry applies `is-ready` on that same frame, so the
+     value would return to its resting one before anything had started. Switching it off
+     makes the entry state an instant snap and the release a real transition from it. */
   .workspace-main>section.motion-enter{
-    opacity:0;transform:translateY(6px);
+    opacity:0;transform:translateY(6px);transition:none;
+  }
+  .workspace-main>section.motion-enter.is-ready{
+    opacity:1;transform:translateY(0);
     transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
   }
-  .workspace-main>section.motion-enter.is-ready{opacity:1;transform:translateY(0)}
   /* Selected navigation settles a little slower than hover, so choosing a destination reads
      as a state change rather than a hover. Press feedback keeps its own faster token. The
      rail indicator is left alone: it appears with the attribute and fades with nothing to
@@ -608,25 +624,32 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   }
   dialog.is-closing::backdrop{animation:none;opacity:0;transition:opacity var(--motion-fast) var(--ease-exit)}
   /* Notice. Presentation only: notify() owns the six-second timer and neither the entry nor the
-     exit re-arms it. Same frame-later pattern as a page, so the transition really runs. */
+     exit re-arms it. Same frame-later pattern as a page, so the transition really runs — and the
+     same split of entry state and transition, for the same reason. */
   .notice.motion-enter{
-    opacity:0;transform:translateY(8px);
+    opacity:0;transform:translateY(8px);transition:none;
+  }
+  .notice.motion-enter.is-ready{
+    opacity:1;transform:translateY(0);
     transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
   }
-  .notice.motion-enter.is-ready{opacity:1;transform:translateY(0)}
   .notice.motion-exit{
     opacity:0;transform:translateY(4px);
     transition:opacity var(--motion-base) var(--ease-exit),transform var(--motion-base) var(--ease-exit);
   }
   /* List and table replacement fades the container as one unit, opacity only: no row stagger and
-     no movement, so a filter, a search or a page change reads as a single change of content. */
+     no movement, so a filter, a search or a page change reads as a single change of content. This
+     is the pattern the transition split above exists for: the container is already on screen when
+     it is replaced, so declaring the transition together with the entry value would leave the
+     replacement motionless — the release has to be the thing that animates. */
   .list-host.motion-enter,
   .state.motion-enter{
-    opacity:0;
-    transition:opacity var(--motion-base) var(--ease-standard);
+    opacity:0;transition:none;
   }
   .list-host.motion-enter.is-ready,
-  .state.motion-enter.is-ready{opacity:1}
+  .state.motion-enter.is-ready{
+    opacity:1;transition:opacity var(--motion-base) var(--ease-standard);
+  }
   /* Fading into the dimmed state, not the state itself: reduced motion still shows the dim. */
   .is-refreshing{transition:opacity var(--motion-base) var(--ease-standard)}
   /* Status chips carry state with tint only — no movement, no scale — so a chip that changes can
@@ -634,21 +657,23 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .status-label,.badge{
     transition:background-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard);
   }
-  /* Scanner feedback: the result surface takes a semantic tint on a valid scan and gives it back
-     on its own. The tint appears immediately — it is state, not decoration — and only its
-     release is animated. Focus is never touched: a USB scanner types like a keyboard, so moving
-     focus would break the next scan. */
+  /* Scanner feedback: the result surface gives its tint back on its own. The colour itself is
+     declared outside this query — it is state, so it survives reduced motion — and the tint
+     appears with no transition, so only its release moves. Focus is never touched: a USB scanner
+     types like a keyboard, so moving focus would break the next scan. */
   .scan-result{transition:background-color var(--motion-slow) var(--ease-standard)}
-  .scan-result.is-scan-ok{background:var(--success-bg);transition:none}
+  .scan-result.is-scan-ok{transition:none}
 }
 /* The mobile drawer enters as a small surface after `display` turns on, using the same
    frame-later pattern as a workspace page rather than a screen-wide slide. */
 @media(max-width:980px) and (prefers-reduced-motion:no-preference){
   .nav-open .app-sidebar.motion-enter{
-    opacity:0;transform:translateY(-6px);
+    opacity:0;transform:translateY(-6px);transition:none;
+  }
+  .nav-open .app-sidebar.motion-enter.is-ready{
+    opacity:1;transform:translateY(0);
     transition:opacity var(--motion-enter) var(--ease-enter),transform var(--motion-enter) var(--ease-enter);
   }
-  .nav-open .app-sidebar.motion-enter.is-ready{opacity:1;transform:translateY(0)}
 }
 
 
@@ -668,6 +693,10 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 #command-center-view .kpi-value .chip,#command-center-view .hero-bar-value,
 #command-center-view .rank-figures,#command-center-view .channel-name,
 #command-center-view .channel-net{overflow-wrap:anywhere}
+/* `overflow-wrap` only breaks text where a soft wrap opportunity exists, and a chip is `nowrap` by
+   design, so the declaration above was inert on this one: the chip has to be allowed to wrap before
+   its text can break. Measured as a 2px document overflow at 320px/200% on the KPI strip. */
+#command-center-view .kpi-value .chip{white-space:normal}
 #command-center-view .hero-bar-value,#command-center-view .rank-figures{white-space:normal}
 .workspace-main h1{overflow-wrap:anywhere}
 @media(max-width:650px){

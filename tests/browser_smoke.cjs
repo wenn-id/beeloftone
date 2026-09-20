@@ -377,6 +377,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.locator('#activity-view [data-action="move"]').count(),0);
   const moduleContext={page,login,openSidebarDestination,admin,operator,viewer,apiGet,apiPost,work};
   async function runModule(path,extra={}){
+    // BEELOFT_QA_ONLY narrows a local run to the modules whose path contains its value, so a
+    // single motion or feature module can be iterated on without replaying the whole suite.
+    // CI never sets it, and an unset variable leaves the suite exactly as it was.
+    if(process.env.BEELOFT_QA_ONLY&&!path.includes(process.env.BEELOFT_QA_ONLY))return;
     await page.setViewportSize({width:1440,height:1000});
     return require(path)({...moduleContext,...extra});
   }
@@ -454,6 +458,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_motion_dialogs.cjs');
   await runModule('./browser_motion_data_states.cjs');
   await runModule('./browser_motion_microinteractions.cjs');
+  await runModule('./browser_motion_consistency.cjs');
   await runModule('./browser_production_premium_ui.cjs');
   await runModule('./browser_navigation_foundation.cjs');
   await runModule('./browser_workspace_utilities.cjs');

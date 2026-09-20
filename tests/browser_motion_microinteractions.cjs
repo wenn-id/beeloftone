@@ -182,6 +182,27 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
     getComputedStyle(document.getElementById('bundle-scan-result')).backgroundColor), 'rgba(0, 0, 0, 0)',
     'the surface returns to its resting colour');
 
+  // The tint is the state a valid scan reports, so it survives reduced motion; only its release
+  // moves. This is the one M5 pattern that was reachable in reduced-motion mode and it was not
+  // covered: the colour was declared inside the `no-preference` query, so the signal disappeared
+  // with the motion instead of staying as state.
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  await scanInput.fill('BEELOFT:BUNDLE:motion');
+  await scanInput.press('Enter');
+  await page.getByText('BDL-MOTION', {exact: false}).waitFor();
+  const reducedScan = await page.evaluate(() => {
+    const node = document.getElementById('bundle-scan-result');
+    return {tinted: node.classList.contains('is-scan-ok'),
+      background: getComputedStyle(node).backgroundColor,
+      transition: getComputedStyle(node).transitionDuration};
+  });
+  assert.equal(reducedScan.tinted, true, 'reduced motion still reports a valid scan as a state');
+  assert.notEqual(reducedScan.background, 'rgba(0, 0, 0, 0)', 'the success tint is still visible');
+  assert.equal(reducedScan.transition, '0s', 'the tint is not animated under reduced motion');
+  await page.emulateMedia({reducedMotion: 'no-preference'});
+  await page.waitForTimeout(1400);
+  assert.equal(await resultTinted(), false, 'the tint still releases under the normal preference');
+
   await page.unroute('**/api/bundles/scan?*');
   await page.route('**/api/bundles/scan?*', route => route.fulfill({status: 404, contentType: 'application/json',
     body: JSON.stringify({detail: 'Label bundle tidak dikenal'})}));
@@ -243,9 +264,11 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   assert.equal(parseFloat(caret.durations[rotation]) * 1000, parseFloat(await token('--motion-base')),
     'the caret duration comes from the shared token');
   assert.equal(caret.children, 'all', 'the disclosure content is never height-animated');
-  const endless = await page.evaluate(() =>
-    document.getAnimations().filter(animation => animation.iterations === Infinity).length);
-  assert.equal(endless, 0, 'nothing in the product animates forever');
+  // The iteration count lives on the effect's timing, not on the Animation object: reading
+  // `animation.iterations` would compare undefined and pass no matter what shipped.
+  const endless = () => page.evaluate(() => document.getAnimations()
+    .filter(animation => (animation.effect?.getComputedTiming()?.iterations ?? 0) === Infinity).length);
+  assert.equal(await endless(), 0, 'nothing in the product animates forever');
 
   console.log('Microinteraction browser QA PASS: only the theme toggle arms a colour transition and it '
     + 'releases after one token, progress values interpolate only when the number changed and never '
