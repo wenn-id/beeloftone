@@ -1128,14 +1128,31 @@ assumed: injecting `transition:opacity 150ms ease` into `style.css` fails the du
 rule, removing `list-host` from the approvals template fails the motion-surface rule, and
 the 320 px/200% overflow was reproduced by measurement before it was fixed.
 
-### 13.8 Verification
+### 13.9 Review findings that changed this milestone
+
+Two automated reviewers (Codex and CodeRabbit) reviewed `cd3006b`. Five findings, each
+reproduced before it was fixed:
+
+| Finding | What was wrong | Fix |
+|---|---|---|
+| A failed refresh could leave a half-populated report (both reviewers) | The refresh treatment keeps the report visible, but the failure path cleared only five of the seven panels the success path fills, so `command-center-attention` and `command-center-snapshots` kept stale figures next to the error | The failure path empties every panel the success path fills and hides the container |
+| `markRefreshing()` cannot answer "is there a report?" for these two containers | Both containers hold framework elements in the markup, so `children.length` is never zero and a retry after a failure was treated as a refresh with data to preserve — dimming a hidden, empty container | `commandCenterReport` and `integrationsReport`: declared, set on a successful render, cleared on failure and on session reset, and used to choose the treatment |
+| The declared-exception test was vacuous (both reviewers) | It asserted that the exception markers still existed in the file, so a new `setTimeout(callback, 500)` passed and the contract meant nothing | It reads every `setTimeout` delay and fails anything that neither reads a token nor appears in the declared list — which now also covers the download's object-URL lifetime, a timing that is not motion and is therefore declared as exactly that |
+| The motion-class cleanup test was tautological (both reviewers) | It extracted a class name from an entry and asserted that the name was in that same entry, so `classList.add('motion-pulse')` with no cleanup path passed | It compares two sets: every motion class the script adds against every motion class it removes, with the expected set declared |
+| The browser module leaked observers (CodeRabbit, nitpick) | Each `watchFade()` installed a new observer and listeners while the previous ones kept pushing into the next log, so a transition on a page already left behind could satisfy a "nothing faded here" assertion | One observer and one pair of listeners exist at a time; the previous pair is disconnected and removed first |
+
+Both rewritten tests were verified against the reviewers' own examples rather than assumed:
+adding `setTimeout(callback, 500)` and `classList.add('motion-pulse')` to `app.mjs` fails
+them, and the failed-refresh case is now asserted in the browser module.
+
+### 13.10 Verification
 
 Local verification (20 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
 Chromium 1243, Node 24):
 
 | Command | Result |
 |---|---|
-| `python -m unittest discover -s tests` | PASS — 526 tests, including the 17 new contract tests |
+| `python -m unittest discover -s tests` | PASS — 527 tests, including the 18 new contract tests |
 | `python -m compileall -q beeloft` | PASS |
 | `node --check beeloft/static/app.mjs` / `client.mjs` | PASS |
 | `node tests/test_client.mjs` | PASS |
@@ -1148,7 +1165,7 @@ available for M6 and is now verified: the static assets M6 changed are the exact
 wheel carries.
 
 Entry numbers for the record: the full browser suite runs 78 modules, of which six are the
-motion modules, and the contract test adds 17 assertions to the unit suite.
+motion modules, and the contract test adds 18 assertions to the unit suite.
 
 Next: the motion programme's definition of done is met and the milestone is the last one in
 the specification's roadmap. Any further motion work should start from a measured need

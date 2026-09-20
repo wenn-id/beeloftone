@@ -67,14 +67,25 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   const activeDestinations = () => page.evaluate(() =>
     [...document.querySelectorAll('#app-sidebar [aria-current]')].map(node => node.id));
   // Observes the real lifecycle: a class change alone is also recorded when an engine coalesces
-  // both updates into one style recalculation, in which case nothing ever transitions.
+  // both updates into one style recalculation, in which case nothing ever transitions. One observer
+  // and one pair of listeners exist at a time: reinstalling without releasing the previous ones
+  // would leave them pushing into the next list's log, and an entry from a previous page could make
+  // a "no fade here" assertion pass on someone else's transition.
   const watchFade = listId => page.evaluate(id => {
+    window.fadeWatch?.observer.disconnect();
+    for (const [node, type, listener] of window.fadeWatch?.listeners ?? [])
+      node.removeEventListener(type, listener);
     window.fadeLog = [];
     const node = document.getElementById(id);
-    new MutationObserver(() => window.fadeLog.push({classes: node.className}))
-      .observe(node, {attributes: true, attributeFilter: ['class']});
-    for (const type of ['transitionrun', 'transitionend'])
-      node.addEventListener(type, event => window.fadeLog.push({type, name: event.propertyName}));
+    const observer = new MutationObserver(() => window.fadeLog.push({classes: node.className}));
+    observer.observe(node, {attributes: true, attributeFilter: ['class']});
+    const listeners = [];
+    for (const type of ['transitionrun', 'transitionend']) {
+      const listener = event => window.fadeLog.push({type, name: event.propertyName});
+      node.addEventListener(type, listener);
+      listeners.push([node, type, listener]);
+    }
+    window.fadeWatch = {observer, listeners};
   }, listId);
   const clearFade = () => page.evaluate(() => {window.fadeLog = [];});
   const fadeState = () => page.evaluate(() => ({
@@ -375,6 +386,40 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   holdCommandNav.release(); await holdCommandNav.settled;
   await page.unroute('**/api/command-center');
   await settle();
+  // A refresh that fails leaves no half-populated report: the panels the loader clears are only
+  // some of the ones it fills, so anything left behind would show stale figures next to the error.
+  await page.route('**/api/command-center', route => route.fulfill({status: 503,
+    contentType: 'application/json', body: JSON.stringify({detail: 'Command center sedang sibuk'})}));
+  await page.getByRole('button', {name: 'Muat ulang', exact: true}).click();
+  await page.getByText('Command center sedang sibuk', {exact: false}).waitFor();
+  await settle();
+  const failedRefresh = await page.evaluate(() => {
+    const content = document.getElementById('command-center-content');
+    return {hidden: content.hidden, refreshing: content.classList.contains('is-refreshing'),
+      busy: content.getAttribute('aria-busy'),
+      populated: ['command-center-hero','command-center-channels','command-center-contribution',
+        'command-center-products','command-center-operations','command-center-attention',
+        'command-center-snapshots'].filter(id => document.getElementById(id).children.length)};
+  });
+  assert.equal(failedRefresh.hidden, true,
+    'a failed refresh does not leave a half-populated report on screen');
+  assert.equal(failedRefresh.refreshing, false, 'a failed refresh releases the dim');
+  assert.equal(failedRefresh.busy, null, 'a failed refresh releases the busy marker');
+  assert.deepEqual(failedRefresh.populated, [],
+    'a failed refresh empties every panel the success path fills, not only some of them');
+  await page.unroute('**/api/command-center');
+  // Retrying after a failure is a first load again, so the loading state is what the operator sees.
+  const holdRetry = await hold('**/api/command-center');
+  await page.getByRole('button', {name: 'Muat ulang', exact: true}).click();
+  await holdRetry.started;
+  await page.waitForTimeout(250);
+  assert.equal((await motionStateOf('command-center-content')).classes.includes('is-refreshing'), false,
+    'a retry after a failed report is a first load, not a refresh with data to preserve');
+  holdRetry.release(); await holdRetry.settled;
+  await page.unroute('**/api/command-center');
+  await settle();
+  assert.equal(await page.evaluate(() => !document.getElementById('command-center-content').hidden), true,
+    'the retry restores the report');
 
   // ---- reduced motion: every state signal, no movement ---------------------------------------
   await page.emulateMedia({reducedMotion: 'reduce'});

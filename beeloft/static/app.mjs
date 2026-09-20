@@ -67,6 +67,11 @@ let marketingBudgetsRequest = 0;
 // ketika section-nya dibuat, jadi membuka kembali sebuah tujuan tidak pernah memudar.
 let approvalsRendered = null, purchaseRequestsRendered = null, marketingBudgetsRendered = null;
 let auditRendered = null, workforceRendered = null;
+// Apakah sebuah laporan benar-benar sedang tampil, bukan sekadar kontainernya punya anak: kedua
+// kontainer ini memuat elemen kerangka di dalam markup-nya, jadi jumlah anak tidak pernah bisa
+// menjawab pertanyaan itu. Dipakai untuk memilih antara "muat ulang dengan data" dan pemuatan
+// pertama, termasuk setelah muat ulang yang gagal — keadaan itu tidak menyisakan laporan.
+let commandCenterReport = false, integrationsReport = false;
 let scanRequest = 0, backupRequest = 0;
 
 // Perubahan warna global hanya dianimasikan saat operator memang menekan tombolnya. Pemuatan
@@ -452,6 +457,7 @@ function clearWorkspace() {
   enteredSection = ''; boardQuery = ''; materialsQuery = null; clearEntryMotion();
   approvalsRendered = null; purchaseRequestsRendered = null; marketingBudgetsRendered = null;
   auditRendered = null; workforceRendered = null;
+  commandCenterReport = false; integrationsReport = false;
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
   $('menu-toggle').hidden=true;sidebar(false);
   $('account-name').textContent = ''; $('access-key').value = ''; $('order-list').replaceChildren();
@@ -732,7 +738,7 @@ async function showCommandCenter(refresh = false) {
   // tujuan ini dari sidebar belum punya laporan untuk dipertahankan, jadi tetap memakai keadaan
   // memuat biasa. Strip KPI tidak pernah dikosongkan sebelum data baru tiba, jadi hanya isi
   // laporan di bawahnya yang diredamkan — angkanya tetap terbaca sampai penggantiannya mendarat.
-  const holding=refresh&&markRefreshing('command-center-content');
+  const holding=refresh&&commandCenterReport&&markRefreshing('command-center-content');
   if(!holding){message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');$('command-center-content').hidden=true;}
   $('command-center-summary').setAttribute('aria-busy','true');
   try{
@@ -848,9 +854,15 @@ async function showCommandCenter(refresh = false) {
       <article class="command-snapshot snapshot-card card" data-command-snapshot="finance">${head('Keuangan Mekari','wallet')}${finance?`<dl class="command-values"><dt>Pendapatan bersih</dt><dd>${e(commandMoney(finance.net_revenue))}</dd><dt>Laba bersih</dt><dd>${e(commandMoney(finance.net_profit))}</dd><dt>Saldo kas</dt><dd>${e(commandMoney(finance.cash_balance))}</dd><dt>Utang outstanding</dt><dd>${e(commandMoney(report.finance.payables.outstanding))}</dd><dt>Piutang outstanding</dt><dd>${e(commandMoney(report.finance.receivables.outstanding))}</dd></dl>`:'<p class="state">Snapshot keuangan belum tersedia.</p>'}<p class="command-source">${e(commandSource(report.finance.snapshot_at))}</p><button data-action="mekari-finance-summary">Buka keuangan Mekari</button></article>
       <article class="command-snapshot snapshot-card card" data-command-snapshot="integrations">${head('Integrasi','plug')}<dl class="command-values">${report.integrations.systems.map(row=>`<dt>${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></article>
       <article class="command-snapshot snapshot-card card ai-card">${head('Tanya Beeloft','sparkles')}<div class="ai-orb" aria-hidden="true"></div><p class="ai-copy">Susun analisis operasional dari data yang sudah tersambung, lalu tinjau usulan tindakannya.</p><button data-action="ai-brain">Buka Tanya Beeloft</button></article>`;
-    message('command-center-message','');$('command-center-content').hidden=false;
+    message('command-center-message','');$('command-center-content').hidden=false;commandCenterReport=true;
     $('command-center-updated').textContent='Diperbarui '+new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(report.generated_at));
-  }catch(error){if(version===epoch&&request===commandCenterRequest){settleRefreshing('command-center-content');$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
+  }catch(error){if(version===epoch&&request===commandCenterRequest){
+    // Muat ulang yang gagal berakhir dengan laporan yang benar-benar kosong, bukan setengah
+    // terisi: seluruh panel yang diisi jalur sukses dikosongkan, termasuk dua yang sebelumnya
+    // tidak ikut dibersihkan dan karenanya masih memuat angka lama di samping pesan kesalahan.
+    // Kontainernya disembunyikan, persis seperti sebelum perlakuan muat ulang ada, sehingga
+    // percobaan berikutnya membaca keadaan "belum ada laporan" dan memakai keadaan memuat biasa.
+    settleRefreshing('command-center-content');$('command-center-content').hidden=true;commandCenterReport=false;$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations','command-center-attention','command-center-snapshots'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
 }
 // Tombol navigasi dan pintasan tindakan tidak meneruskan argumen apa pun: hanya kontrol "Muat
 // ulang" yang meminta perlakuan muat ulang, jadi handler-nya dipasang eksplisit sebagai arrow.
@@ -3108,21 +3120,21 @@ async function loadIntegrations(refresh = false) {
   // Muat ulang manual mempertahankan status yang sudah terbaca dan hanya meredupkannya; membuka
   // tujuan ini dari sidebar belum punya konteks untuk dipertahankan, jadi tetap memakai keadaan
   // memuat biasa. Tidak ada filter di halaman ini, jadi tidak ada yang bisa "digantikan".
-  const holding=refresh&&markRefreshing('integrations-body');
+  const holding=refresh&&integrationsReport&&markRefreshing('integrations-body');
   if(!holding){message('integrations-message','Memuat kontrak dan status sinkronisasi…');$('integrations-body').replaceChildren();}
   try{
     const report=await api.get('/api/integrations');
     if(!current())return;
     settleRefreshing('integrations-body');
     const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
-    message('integrations-message','');
+    message('integrations-message','');integrationsReport=true;
     $('integrations-body').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><div class="actions"><button data-action="products">Buka Master SKU</button><button data-action="jubelio-order-summary">Order & penjualan Jubelio</button><button data-action="jubelio-return-summary">Retur Jubelio</button><button data-action="jubelio-listing-summary">Listing Jubelio</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi stok Jubelio</button></div>`:''}${system.system==='mekari'?'<div class="actions"><button data-action="mekari-finance-summary">Keuangan Mekari</button><button data-action="mekari-payables-summary">Utang Mekari</button><button data-action="mekari-receivables-summary">Piutang Mekari</button><button data-action="mekari-payroll-summary">Payroll Mekari</button><button data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button data-action="payroll-accounting-reconciliation">Akuntansi payroll</button></div>':''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
   }catch(error){
     // Pesan dan tombolnya adalah sibling, seperti saat ini menjadi dialog: elemen pesan
     // harus tetap berisi hanya teks statusnya agar status error dapat dicocokkan tepat.
     // Kesalahan selalu muncul seketika dan tanpa peredupan: peredupan dilepas lebih dahulu.
     if(!current())return;
-    settleRefreshing('integrations-body');
+    settleRefreshing('integrations-body');integrationsReport=false;
     message('integrations-message','');
     $('integrations-body').innerHTML=`<p class="error">${e(error.message)}</p><button id="integrations-retry" type="button">Coba lagi</button>`;
     $('integrations-retry').onclick=()=>loadIntegrations();

@@ -42,15 +42,22 @@ TOKENS = {
     "--ease-exit": "cubic-bezier(.4,0,1,1)",
 }
 
-# Angka waktu yang sengaja BUKAN token, masing-masing dengan alasannya. Daftar ini adalah
-# deklarasi "pengecualian yang disetujui" untuk M6: setiap entri harus tetap ada, dan angka
-# waktu baru mana pun akan gagal di `test_scripted_timings_are_declared_exceptions`.
-APPROVED_SCRIPT_TIMINGS = {
-    "SCAN_TINT_HOLD": "lama tint pemindai bertahan sebelum dilepas; ini penahanan state, "
+# Setiap penundaan `setTimeout` di skrip, selain yang membaca durasinya dari token CSS. Nilai yang
+# tidak ada di sini gagal di `test_scripted_delays_are_tokens_or_declared_exceptions`, jadi durasi
+# mentah tidak bisa masuk tanpa disadari — termasuk durasi yang bukan milik gerak.
+APPROVED_SCRIPT_DELAYS = {
+    "SCAN_TINT_HOLD": "lama tint pemindai bertahan sebelum dilepas; penahanan state, "
                       "bukan durasi animasi",
-    "motionMs": "durasi pembersihan selalu dibaca dari token CSS",
     "6000": "timer semantik notice: enam detik pesan terbaca, tidak boleh disentuh gerak",
+    "1000": "masa hidup object URL setelah unduhan selesai; bukan durasi gerak",
 }
+
+# Kelas gerak yang dipasang skrip. Setiap entri harus juga dihapus di suatu tempat: kelas yang
+# dipasang tanpa jalur pembersihan akan tertinggal di DOM setelah geraknya selesai.
+SCRIPTED_MOTION_CLASSES = ("is-closing", "is-ready", "is-refreshing", "is-scan-ok", "is-theming",
+                           "motion-enter", "motion-exit")
+MOTION_CLASS_PATTERN = re.compile(
+    r"'(motion-[\w-]+|is-ready|is-closing|is-refreshing|is-theming|is-scan-ok)'")
 
 DURATION_PROPERTIES = ("transition", "transition-duration", "animation", "animation-duration",
                        "transition-delay", "animation-delay")
@@ -233,17 +240,24 @@ class MotionSurfaceTest(unittest.TestCase):
                          "bawaan --motion-enter")
 
     def test_every_motion_class_the_script_adds_is_removed_again(self):
+        """Setiap kelas gerak yang dipasang punya jalur pembersihan, bukan sekadar disebut.
+
+        Versi sebelumnya mengekstrak nama dari entri `classList.add` lalu memastikan nama itu ada
+        di entri yang sama — selalu benar, sehingga `classList.add('motion-pulse')` tanpa
+        penghapus tetap lolos. Yang dibandingkan sekarang adalah dua himpunan: kelas yang dipasang
+        dan kelas yang benar-benar dihapus di suatu tempat di skrip.
+        """
         source = APP.read_text(encoding="utf-8")
-        added = set(re.findall(r"classList\.add\(([^)]*'motion-[^)]*)\)", source))
-        for entry in added:
-            for name in re.findall(r"'(motion-[\w-]+)'", entry):
-                with self.subTest(classes=entry):
-                    self.assertIn(f"'{name}'", entry)
-        # Kelas gerak selalu dibersihkan lewat clearEntryMotion() atau resetNoticeMotion(),
-        # yang keduanya menghapus daftar lengkapnya.
-        self.assertIn("target.classList.remove('motion-enter','is-ready')", source)
-        self.assertIn("notice.classList.remove('motion-enter','is-ready','motion-exit')", source)
-        self.assertIn("dialog.classList.remove('motion-exit','is-closing')", source)
+        added = {name for entry in re.findall(r"classList\.add\(([^)]*)\)", source)
+                 for name in MOTION_CLASS_PATTERN.findall(entry)}
+        removed = {name for entry in re.findall(r"classList\.remove\(([^)]*)\)", source)
+                   for name in MOTION_CLASS_PATTERN.findall(entry)}
+        self.assertEqual(sorted(added), sorted(SCRIPTED_MOTION_CLASSES),
+                         "kelas gerak yang dipasang skrip berubah; perbarui kontraknya bersama "
+                         "jalur pembersihannya")
+        for name in sorted(added):
+            with self.subTest(classes=name):
+                self.assertIn(name, removed, f"{name} dipasang tetapi tidak pernah dihapus")
 
 
 class ScriptedTimingTest(unittest.TestCase):
@@ -261,14 +275,25 @@ class ScriptedTimingTest(unittest.TestCase):
             with self.subTest(timer=arguments[1]):
                 self.assertRegex(arguments[1], r"^motionMs\('--motion-[a-z]+'\) \+ 60$|^motionMs\(durationToken\) \+ 60$")
 
-    def test_scripted_timings_are_declared_exceptions(self):
-        """Angka waktu yang tersisa di JavaScript harus terdaftar sebagai pengecualian."""
-        for name in APPROVED_SCRIPT_TIMINGS:
+    def test_scripted_delays_are_tokens_or_declared_exceptions(self):
+        """Setiap penundaan di skrip membaca token atau terdaftar sebagai pengecualian.
+
+        Versi sebelumnya hanya memastikan penanda pengecualiannya masih ada di berkas, sehingga
+        `setTimeout(callback, 500)` yang baru ditambahkan tetap lolos dan kontraknya tidak berarti
+        apa-apa. Yang diperiksa sekarang adalah nilai penundaannya sendiri.
+        """
+        delays = [arguments[1] for arguments in js_call_arguments(self.source, "setTimeout")
+                  if len(arguments) > 1]
+        self.assertTrue(delays, "tidak ada penundaan yang terbaca dari skrip")
+        tokenised = re.compile(r"^motionMs\('--motion-[a-z]+'\) \+ 60$|^motionMs\(durationToken\) \+ 60$")
+        for delay in delays:
+            with self.subTest(delay=delay):
+                self.assertTrue(tokenised.match(delay) or delay in APPROVED_SCRIPT_DELAYS,
+                                f"penundaan `{delay}` tidak membaca token dan tidak terdaftar "
+                                f"sebagai pengecualian")
+        for name, reason in APPROVED_SCRIPT_DELAYS.items():
             with self.subTest(exception=name):
-                if name == "motionMs":
-                    self.assertIn("function motionMs(name)", self.source)
-                else:
-                    self.assertIn(name, self.source)
+                self.assertIn(name, delays, f"pengecualian `{name}` tidak dipakai lagi: {reason}")
 
     def test_the_notice_timer_stays_six_seconds(self):
         """Presentasi tidak boleh memperpanjang atau memperpendek waktu baca pesan."""
@@ -291,6 +316,19 @@ class PropagationTest(unittest.TestCase):
                 resets = re.findall(rf"\b{name}\s*=\s*null", self.source)
                 self.assertTrue(resets, f"{name} harus direset saat section atau sesi berganti")
                 self.assertIn(f"{name}!==null&&{name}!==", self.source.replace(" ", ""))
+
+    def test_refresh_hosts_track_whether_a_report_is_on_screen(self):
+        """Kontainer kedua halaman itu memuat elemen kerangka di dalam markup-nya, jadi "kontainer
+        ini punya anak" bukan jawaban yang benar untuk "ada laporan untuk dipertahankan".
+        """
+        for name in ("commandCenterReport", "integrationsReport"):
+            with self.subTest(variable=name):
+                self.assertIn(f"{name} = false", self.source, "penanda harus dideklarasikan")
+                self.assertIn(f"{name}=false", self.source,
+                              "penanda harus direset saat sesi berganti dan saat muat ulang gagal")
+                self.assertIn(f"{name}=true", self.source, "penanda harus dipasang saat render berhasil")
+                with self.subTest(gate=name):
+                    self.assertIn(f"refresh&&{name}&&markRefreshing", self.source.replace(" ", ""))
 
     def test_refresh_controls_ask_for_the_refresh_treatment(self):
         """Hanya kontrol muat ulang yang meminta peredupan; navigasi tidak."""
