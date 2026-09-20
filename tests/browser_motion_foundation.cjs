@@ -80,7 +80,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
       closed = getComputedStyle(caret).transform;
     }
     collapse.open = wasOpen;
-    return {open, closed, duration: getComputedStyle(caret).transitionDuration};
+    return {open, closed, durations: getComputedStyle(caret).transitionDuration
+      .split(',').map(value => value.trim())};
   });
 
   await login(admin);
@@ -160,7 +161,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
 
   const navCaret = await caretStates();
   assert.notEqual(navCaret.open, navCaret.closed, 'the disclosure caret still rotates between states');
-  assert.equal(navCaret.duration, '0.18s', 'the caret duration comes from the motion token set');
+  // M5: the caret is also an `.icon`, so it declares the rotation and the glyph colour together.
+  // Every duration it declares still has to come from the token set.
+  assert.deepEqual(navCaret.durations.filter(value => value !== '0.18s'), [],
+    'every caret duration comes from the motion token set');
 
   // ---- no overflow at the 320px / 200% boundary while a control is pressed -------------
   await page.setViewportSize({width: 320, height: 900});
@@ -190,7 +194,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
   const reducedCaret = await caretStates();
   assert.notEqual(reducedCaret.open, reducedCaret.closed,
     'reduced motion keeps every state change, just without movement');
-  assert.ok(parseFloat(reducedCaret.duration) === 0,
+  assert.deepEqual(reducedCaret.durations.filter(value => parseFloat(value) !== 0), [],
     'reduced motion resolves the caret state without a transition');
 
   await page.emulateMedia({reducedMotion: 'no-preference'});

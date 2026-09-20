@@ -62,13 +62,26 @@ let purchaseRequestsRequest = 0;
 let marketingBudgetsRequest = 0;
 let scanRequest = 0, backupRequest = 0;
 
-function theme(value) {
-  document.documentElement.dataset.theme = value;
+// Perubahan warna global hanya dianimasikan saat operator memang menekan tombolnya. Pemuatan
+// pertama dan pemulihan sesi memasang tema tanpa kelas ini, jadi tidak ada sapuan warna yang
+// menemani halaman yang baru muncul. Kelasnya hidup satu token lalu dilepas, dan kelasnya
+// dipasang lebih dahulu dengan satu perhitungan gaya di antaranya supaya warnanya benar-benar
+// punya nilai awal untuk ditransisikan.
+let themeTimer = null;
+function theme(value, animate = false) {
+  const root = document.documentElement;
+  if (animate && !reducedMotion()) {
+    root.classList.add('is-theming');
+    void root.offsetHeight;
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(() => { themeTimer = null; root.classList.remove('is-theming'); }, motionMs('--motion-base') + 60);
+  }
+  root.dataset.theme = value;
   $('theme').textContent = value === 'dark' ? 'Mode terang' : 'Mode gelap';
   try { localStorage.setItem('beeloft.theme', value); } catch {}
 }
 try { theme(localStorage.getItem('beeloft.theme') || 'light'); } catch { theme('light'); }
-$('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
 
 // Drawer mobile. Saat tertutup, panel ini tidak dirender (display), sehingga sudah keluar dari
 // pohon akses dan urutan Tab — itu mekanisme yang sudah terbukti di produk ini. `inert`
@@ -314,6 +327,50 @@ function settleRefreshing(hostId) {
   const host = $(hostId);
   host.classList.remove('is-refreshing');
   host.removeAttribute('aria-busy');
+}
+// Umpan balik pemindai: hasil yang sah mendapat warna semantik sesaat, lalu memberikannya
+// kembali dengan sendirinya. Warnanya muncul seketika — itu state, bukan hiasan — dan hanya
+// pelepasannya yang dianimasikan. Fokus tidak pernah disentuh: pemindai USB mengetik seperti
+// keyboard, jadi memindahkan fokus akan memutus pemindaian berikutnya.
+const SCAN_TINT_HOLD = 1200;
+const scanTimers = new WeakMap();
+function clearScanFeedback(node) {
+  if (!node) return;
+  clearTimeout(scanTimers.get(node));
+  scanTimers.delete(node);
+  node.classList.remove('is-scan-ok');
+}
+function playScanFeedback(node) {
+  if (!node) return;
+  clearScanFeedback(node);
+  // Hentikan dulu, biarkan terhitung, baru pasang: dua pemindaian berturut-turut dalam satu
+  // tugas harus tetap terlihat sebagai dua kejadian.
+  void node.offsetHeight;
+  node.classList.add('is-scan-ok');
+  scanTimers.set(node, setTimeout(() => {
+    scanTimers.delete(node);
+    node.classList.remove('is-scan-ok');
+  }, SCAN_TINT_HOLD));
+}
+// Interpolasi pendek hanya untuk nilai progres yang benar-benar berubah. Baris papan selalu
+// dirender ulang, jadi pembandingnya adalah payload sebelumnya: tanpa itu setiap pemuatan akan
+// menghitung naik dari nol, dan spec melarangnya. Durasi dibaca dari token; di mode gerak
+// dikurangi nilai barunya langsung dipasang tanpa gerak.
+function playProgressSettle(before) {
+  if (!before.size || reducedMotion()) return;
+  for (const node of document.querySelectorAll('.order-row progress[data-order]')) {
+    const previous = before.get(node.dataset.order), target = Number(node.value);
+    if (previous === undefined || !Number.isFinite(target) || previous === target) continue;
+    const from = previous, started = performance.now(), budget = motionMs('--motion-base');
+    node.value = from;
+    const step = now => {
+      if (!node.isConnected) return;
+      const ratio = Math.min(1, (now - started) / budget);
+      node.value = from + (target - from) * ratio;
+      if (ratio < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 }
 // Menambahkan baris hasil ke daftar sekaligus membuang placeholder status yang dipasang
 // oleh shell dialog. Tanpa ini daftar berbasis cursor menampilkan "Memuat ..." di atas
@@ -802,6 +859,10 @@ async function loadBoard() {
     const replacing = refreshing && boardQuery !== rendered;
     boardQuery = rendered;
     settleRefreshing('order-list');
+    // Nilai progres dibandingkan dengan yang sedang tampil, bukan dengan permintaan sebelumnya:
+    // hanya angka yang benar-benar berubah yang bergerak, dan pemuatan pertama tidak menghitung
+    // naik dari nol.
+    const progressBefore = new Map((boardData?.orders || []).map(order => [order.id, order.totals.warehouse]));
     boardData = result;
     const ownerId = query.get('owner_id'), previousOwnerLabel = $('board-owner').selectedOptions[0]?.textContent;
     $('board-owner').innerHTML = '<option value="">Semua PIC</option>' + result.owners.map(owner => option(owner.id,owner.name + (owner.active ? '' : ' (akun nonaktif)'))).join('');
@@ -830,8 +891,9 @@ async function loadBoard() {
         const progress = Math.round(order.totals.warehouse / order.target_quantity * 100);
         return `<article class="order-grid order-row"><div class="cell"><button class="order-title" data-action="detail" data-id="${e(order.id)}"><span class="reference">${e(order.reference)}</span>${e(order.title)}</button><span class="hint">${order.lines.length} SKU · target ${n(order.target_quantity)} pcs</span></div>
           <div class="cell"><span class="cell-label">PIC</span>${e(order.owner_name)}</div><div class="cell"><span class="cell-label">Target selesai</span>${date(order.due_date)}</div>
-          <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}${issueBadge(order)}</div></article>`;
+          <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress data-order="${e(order.id)}" value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}${issueBadge(order)}</div></article>`;
       }).join('');
+      playProgressSettle(progressBefore);
       if (replacing) playEntryMotion($('order-list'), '--motion-base');
     }
     $('page-count').textContent = result.total ? `${offset + 1}–${Math.min(offset + 25,result.total)} dari ${n(result.total)} order` : '0 order';
@@ -1856,11 +1918,12 @@ function showScanner(kind) {
   if(!drawerOpen)input.focus();
   form.onsubmit=async event=>{
     event.preventDefault(); if(!current()||button.disabled||guardPending())return;
-    request=++scanRequest; button.disabled=true; result.replaceChildren();
+    request=++scanRequest; button.disabled=true; clearScanFeedback(result); result.replaceChildren();
     message(prefix+'-error',''); message(prefix+'-message','Mencari hasil scan…');
     try{
       const row=await api.get((kind==='bundle'?'/api/bundles/scan?':'/api/finished-goods-receipts/scan?')+new URLSearchParams({code:input.value.trim()}));
       if(!current())return;
+      playScanFeedback(result);
       result.innerHTML=`<article class="material-event"><h2>Hasil scan terakhir</h2><h3>${e(row.reference)}</h3>
         <p>${e(row.sku)} · ${e(row.size)} · ${n(kind==='bundle'?row.quantity:row.received_quantity)} pcs</p>
         <p>Order ${e(row.order_reference)}</p><button type="button" data-action="${kind==='bundle'?'bundle':'finished-goods-receipt'}" data-id="${e(row.id)}">${kind==='bundle'?'Rincian bundle':'Rincian barang jadi'}</button></article>`;
