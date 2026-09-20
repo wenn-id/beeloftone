@@ -934,3 +934,223 @@ errors, including all five motion modules. As in M0-M4, `python -m pip check` an
 `python -m build` are unavailable in this checkout and are recorded as gaps.
 
 Next: M6 (consistency and performance cleanup), only after M5 is reviewed and merged.
+
+## 13. M6 delta — consistency and performance cleanup
+
+Baseline: `6806338ccd25e31961b91a1ad31959cfb74ca998` (`main`, M5 merged as PR #23).
+Branch: `ui/motion-consistency-cleanup`.
+
+M6 is the milestone that measures the finished system rather than adding to it, and the
+measurement changed three things: the replacement grammar had never reached most of the
+list pages, the entry pattern did not actually animate a container that was already on
+screen, and two documents overflowed at the smallest regression width. All three were
+found by the new sweep, not by reading the code.
+
+### 13.1 Cross-section propagation
+
+M4 proved the refresh and replacement grammar on Produksi, Master SKU and Bahan baku and
+left the rest of the list pages to M6 (§11.2). M6 propagates it to the pages that share
+the same shape:
+
+| Page | Treatment | Why that one |
+|---|---|---|
+| Integrations | Refresh keeps the rendered status on screen, dimmed and `aria-busy`, until the new report lands | The page has no filter, so "manual refresh with existing data" (§08) is its only in-place case |
+| Command center | Same, on `#command-center-content` | The largest surface in the product; the KPI strip is never emptied before the new report arrives |
+| Approvals, Purchase requests, Marketing budgets | A filter change fades the queue as one unit; loading the next page appends without fading | Their containers persist across a filter change, so the replacement is exactly §08's "filter/search replacement" |
+| Audit trail | Same | It is the same list shape with real ledger rows |
+| People roster | Same, on `#workforce-list` | Its filter form replaces the roster in place |
+
+Three details make the propagation match the M4 contract rather than approximate it:
+
+- **The rendered query, not the requested one.** Each page now records the query it
+  actually painted (`approvalsRendered`, `purchaseRequestsRendered`,
+  `marketingBudgetsRendered`, `auditRendered`, `workforceRendered`) and compares against
+  that. A filter whose first attempt fails leaves its rows on screen, so retrying it must
+  still count as a replacement — the lesson M4 learned on the board and materials pages.
+  The trackers are also reset when a section is rebuilt and when the session ends, so
+  opening a destination again is a first render and never fades.
+- **The existing CSS contract.** The propagated containers carry the same `list-host`
+  class the three M4 pages use, so no new selector was needed and no page gets a private
+  motion rule.
+- **Only the refresh control refreshes.** The command centre's nav button and its
+  action-map entry were wired to explicit arrow handlers, because both previously passed
+  a click `Event` into the function that now takes the refresh flag. A truthy event would
+  have made every navigation through them a "refresh".
+
+### 13.2 The entry pattern did not animate an element that was already on screen
+
+This is the finding that matters most, and it was measured rather than reasoned about.
+
+Every entry in the system used one shape:
+
+```css
+.panel.motion-enter{opacity:0;transition:opacity var(--motion-base) var(--ease-standard)}
+.panel.motion-enter.is-ready{opacity:1}
+```
+
+That shape animates only when the element was **not rendered** in the previous style
+change — a section being unhidden, the notice being unhidden, the drawer opening. For an
+element that is already visible, which is every list replacement, declaring the transition
+together with the value it changes does not produce a transition at all: the value returns
+to its resting one on the frame `is-ready` lands, before the pending transition has
+started, so Chromium discards it. Produksi only appeared to fade because `.is-refreshing`
+had left an opacity transition armed, so what the operator saw was that release transition
+being retargeted — a dip — rather than a fade into the replaced content.
+
+Measured on the audit list, before and after:
+
+| | Class lifecycle | Transition |
+|---|---|---|
+| Before | `list-host` → `list-host motion-enter` → `… is-ready` → `list-host` | None. No `transitionrun`, opacity stays `1` |
+| After | the same lifecycle | `transitionrun` at 0 ms, opacity `0` → `0.9999`, `transitionend` at 180 ms |
+
+The fix moves the transition to the state the element moves *to*, for all four entry
+patterns (`section`, `.notice`, `.list-host`/`.state`, drawer):
+
+```css
+.panel.motion-enter{opacity:0;transition:none}
+.panel.motion-enter.is-ready{opacity:1;transition:opacity var(--motion-base) var(--ease-standard)}
+```
+
+The entry state is now an instant snap to the start value and the release is a real
+transition from it. That is what §05 asks for in words — "animate only the target from
+opacity 0 + translateY(6px) to its resting state" — and until this milestone the section
+entry did not do it either: it dipped from `1` rather than arriving from `0`.
+
+One supporting change: `playEntryMotion()` released its transient classes after exactly
+one token, which is exactly when the transition it was waiting for ends. The removal could
+therefore cancel the transition it was cleaning up after. The cleanup now uses the same
++60 ms slack that `notify()` and the dialog close helper already used.
+
+### 13.3 Two reduced-motion gaps
+
+**The scan tint was motion-gated state.** `.scan-result.is-scan-ok` was declared inside
+the `no-preference` query, so under `prefers-reduced-motion: reduce` the success tint did
+not exist at all: a reduced-motion user lost the signal, not just its animation. §11's
+first requirement is that no meaning depends on motion. The colour is now declared outside
+the query and only its release is animated; the M5 module asserts the tint is visible with
+a `0s` transition.
+
+**The entry state relied on the catch-all.** `.motion-enter` now switches the transition
+off explicitly, so the reduced-motion path is a property of the pattern rather than
+something the blanket suppressor has to rescue.
+
+### 13.4 Measured layout overflow
+
+The sweep walks every destination at 1440, 1024, 768, 390 and 320, then at 320 with the
+root at 200% text, and measures the document's own scroll width. Two real overflows
+surfaced, both on the command centre at 320/200%:
+
+| Cause | Overflow | Fix |
+|---|---|---|
+| `.card-head` is a flex row whose heading cannot shrink below its longest word, so it pushed the trailing glyph past the viewport edge | 3 px | `min-width:0` on the row's children and `overflow-wrap:anywhere` on the heading |
+| The KPI chip's break rule was inert: `overflow-wrap:anywhere` cannot break text that `white-space:nowrap` refuses to wrap | 2 px | `white-space:normal` on `#command-center-view .kpi-value .chip` |
+
+The second is the more interesting one: the stylesheet already *looked* protected, because
+a previous milestone had added an `overflow-wrap` declaration to exactly that chip. It had
+never had any effect. That is the class of finding this milestone exists for.
+
+### 13.5 What M6 deliberately did not do
+
+**No changed-row tint after a mutation.** §18 lists it as optional and M4 declined it; M6
+keeps that decision. It would add a per-row lifecycle that nothing else in the programme
+has, on the surfaces least able to afford one.
+
+**No fade on the activity list.** Its inputs clear the list eagerly, before the request
+leaves, so by the time a replacement lands there is nothing on screen to cross-fade from.
+Its replacement is instant by construction; asserting a fade would mean changing when it
+clears, which is a state change rather than a motion change.
+
+**No per-report fade across the twelve analytics destinations.** They share one host, and
+M2 already settled that switching a report inside it does not replay page entry. Each
+report repaints its own body through its own loader, and the destination change is covered
+by the section entry.
+
+**No motion on the AI results, the detail view, the scanner pages or the backup page.**
+None of them replaces a list in place: the AI and detail surfaces are created by an
+explicit submit, the scanner pages report state through the tint fixed in §13.3, and the
+backup page is static.
+
+**No per-keystroke fade on any search box.** Master SKU's search filters a cached array on
+every `input` event; a fade per keystroke reads as flicker, which is the opposite of the
+north star.
+
+**No row stagger, anywhere.** Container opacity only, as §09 requires.
+
+### 13.6 The hard-coded duration audit
+
+Every duration in a `transition` or `animation` declaration in `style.css` resolves to a
+token; the raw times that remain in the file are all inside comments explaining the token
+choices. The scripted numbers that are not animation durations are now declared
+exceptions, and each is asserted to still exist:
+
+| Exception | Value | Why it is not a token |
+|---|---|---|
+| `SCAN_TINT_HOLD` | 1200 ms | How long the scan tint is *held* before it releases. It is a state lifetime, not a transition duration |
+| Notice timer | 6000 ms | The six seconds a message is readable. §10 forbids motion from touching it |
+| Cleanup slack | +60 ms | How long after a token the transient classes are removed, so a class removal cannot cancel the transition it waits for |
+
+### 13.7 Regression coverage
+
+`tests/browser_motion_consistency.cjs` is new and registered in `tests/browser_smoke.cjs`
+after the other five motion modules:
+
+| Case | Asserted |
+|---|---|
+| Every destination, every width | All 27 destinations are the single active destination showing exactly one section, and none of them overflows the document at 1440/1024/768/390/320 or at 320 with 200% text |
+| Motion state after settling | No section, list host or sidebar keeps `motion-enter`, `is-ready`, `is-refreshing` or `aria-busy` once a destination has settled |
+| Continuous animation | Nothing in the document reports infinite iterations, read from the effect's computed timing rather than the `Animation` object |
+| Analytics host | Two reports in the shared host leave one active section and replay no entry |
+| Replacement fade | Audit trail and the People roster fade as one unit on a filter change, run the transition to completion, clean up, and animate no individual row |
+| Re-entry and reset | Returning to People with the same filter, and resetting the audit filters, rebuild the list without fading |
+| Approval queues | The three approval pages fade on a filter change whether or not the filtered queue has rows |
+| Secondary dialogs | An audit detail closed with Escape and the integrations sync history closed with its own control both leave `open === false`, no `is-closing` or `motion-` state, focus back on the page behind them, and the page's rows intact |
+| Refresh with data | Integrations and the command centre keep their content, report `is-refreshing` and `aria-busy`, dim inside the documented 0.72–0.82 band, and settle back to full opacity — while opening either destination still shows the loading state |
+| Reduced motion | Five destinations play no entry motion, transition nothing and move nothing; the refresh dim is still reported and visible with a `0s` transition; a replaced roster does not fade but is still replaced |
+| 320 px / 200% in flight | No document overflow while a list is replaced at the smallest width and the largest text |
+
+`tests/test_motion_contract.py` is new and runs in the ordinary unit suite. It enforces
+the static half of the contract, which a browser cannot prove:
+
+| Case | Asserted |
+|---|---|
+| Tokens | The nine motion and easing tokens are declared exactly once with the specified values |
+| Durations | No `transition`/`animation` declaration carries a raw time outside the token set |
+| Keyframes | Every `@keyframes` lives inside the `no-preference` query |
+| Reduced motion | The `reduce` block stops transitions and animations everywhere, and names the motion classes, the dialog, its backdrop and the notice |
+| Motion surfaces | Every element the script asks to fade has a rule that can fade it — a class on an element with no rule animates nothing and only leaves stale state behind |
+| Cleanup | Every motion class the script adds is also removed, and the cleanup timers read their duration from a token |
+| Exceptions | The three scripted timings above exist, and the notice timer is still exactly six seconds |
+| Propagation | Each propagated page declares its rendered-query tracker, resets it, and only the refresh controls ask for the refresh treatment |
+
+Three of those assertions were verified against deliberately broken code rather than
+assumed: injecting `transition:opacity 150ms ease` into `style.css` fails the duration
+rule, removing `list-host` from the approvals template fails the motion-surface rule, and
+the 320 px/200% overflow was reproduced by measurement before it was fixed.
+
+### 13.8 Verification
+
+Local verification (20 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243, Node 24):
+
+| Command | Result |
+|---|---|
+| `python -m unittest discover -s tests` | PASS — 526 tests, including the 17 new contract tests |
+| `python -m compileall -q beeloft` | PASS |
+| `node --check beeloft/static/app.mjs` / `client.mjs` | PASS |
+| `node tests/test_client.mjs` | PASS |
+| `python tests/run_browser.py --channel chromium` | PASS — the full suite, all 78 modules, no JavaScript errors |
+| `python -m build` | PASS — wheel and sdist built; the packaged `static/style.css` and `static/app.mjs` are byte-identical to the files the browser suite ran against |
+
+`python -m pip check` remains unavailable in this checkout (the virtual environment has no
+`pip`); CI's Core job runs it on the PR. `python -m build`, recorded as a gap in M0-M5, was
+available for M6 and is now verified: the static assets M6 changed are the exact ones the
+wheel carries.
+
+Entry numbers for the record: the full browser suite runs 78 modules, of which six are the
+motion modules, and the contract test adds 17 assertions to the unit suite.
+
+Next: the motion programme's definition of done is met and the milestone is the last one in
+the specification's roadmap. Any further motion work should start from a measured need
+rather than from the roadmap.
+

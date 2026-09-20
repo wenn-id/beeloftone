@@ -60,6 +60,13 @@ let auditRequest = 0;
 let approvalsRequest = 0;
 let purchaseRequestsRequest = 0;
 let marketingBudgetsRequest = 0;
+// Satu kueri yang benar-benar dirender per halaman, sama seperti boardQuery dan materialsQuery.
+// Penggantian daftar dihitung dari isi yang sedang tampil, bukan dari permintaan yang belum tentu
+// berhasil mendarat, supaya filter yang gagal dimuat tetap terhitung sebagai penggantian saat
+// percobaan berikutnya berhasil. Halaman yang membangun ulang selnya sendiri mereset ini ke null
+// ketika section-nya dibuat, jadi membuka kembali sebuah tujuan tidak pernah memudar.
+let approvalsRendered = null, purchaseRequestsRendered = null, marketingBudgetsRendered = null;
+let auditRendered = null, workforceRendered = null;
 let scanRequest = 0, backupRequest = 0;
 
 // Perubahan warna global hanya dianimasikan saat operator memang menekan tombolnya. Pemuatan
@@ -203,7 +210,9 @@ function playEntryMotion(node, durationToken = '--motion-enter') {
       node.classList.remove('motion-enter','is-ready');
       // motionMs(durationToken) mengikuti token yang dipakai CSS pemanggil, bukan selalu
       // --motion-enter: penggantian daftar memudar lebih pendek daripada gerak masuk halaman.
-    }, motionMs(durationToken)));
+      // Sisa 60ms sama dengan pembersihan notice dan dialog: kelas dilepas setelah transisinya
+      // selesai, bukan berbarengan dengannya, supaya transisi tidak pernah dibatalkan di ujung.
+    }, motionMs(durationToken) + 60));
   }));
 }
 // Satu jalur aktivasi untuk setiap tujuan workspace: sembunyikan setiap section
@@ -438,8 +447,11 @@ function clearWorkspace() {
   epoch++; boardRequest++; detailRequest++; api.key = ''; api.actorId = ''; user = null; selected = null; boardData = null;
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
   // Sesi berganti: tidak ada konteks sebelumnya untuk digantikan, dan tidak boleh ada kelas
-  // gerak yang tertinggal dari akun sebelumnya.
+  // gerak yang tertinggal dari akun sebelumnya. Kueri yang tercatat sebagai "sedang tampil" ikut
+  // direset: layar berikutnya adalah pemuatan pertama bagi akun itu, bukan penggantian.
   enteredSection = ''; boardQuery = ''; materialsQuery = null; clearEntryMotion();
+  approvalsRendered = null; purchaseRequestsRendered = null; marketingBudgetsRendered = null;
+  auditRendered = null; workforceRendered = null;
   $('workspace').hidden = true; $('login-view').hidden = false; $('logout').hidden = true;
   $('menu-toggle').hidden=true;sidebar(false);
   $('account-name').textContent = ''; $('access-key').value = ''; $('order-list').replaceChildren();
@@ -712,15 +724,21 @@ function attentionDomainRows(attention) {
   const rest = rows.slice(6).reduce((total, row) => total + row.value, 0);
   return [...rows.slice(0, 6), {label:'Lain', value:rest}];
 }
-async function showCommandCenter() {
+async function showCommandCenter(refresh = false) {
   if(guardPending())return;
   activateWorkspace('command-center'); selected=null;
   const version=epoch,request=++commandCenterRequest;
-  message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');
-  $('command-center-content').hidden=true;$('command-center-summary').setAttribute('aria-busy','true');
+  // Muat ulang manual mempertahankan laporan yang sedang tampil dan hanya meredupkannya; membuka
+  // tujuan ini dari sidebar belum punya laporan untuk dipertahankan, jadi tetap memakai keadaan
+  // memuat biasa. Strip KPI tidak pernah dikosongkan sebelum data baru tiba, jadi hanya isi
+  // laporan di bawahnya yang diredamkan — angkanya tetap terbaca sampai penggantiannya mendarat.
+  const holding=refresh&&markRefreshing('command-center-content');
+  if(!holding){message('command-center-message','Menggabungkan ledger operasional dan snapshot vendor…');$('command-center-content').hidden=true;}
+  $('command-center-summary').setAttribute('aria-busy','true');
   try{
     const report=await api.get('/api/command-center');
     if(version!==epoch||request!==commandCenterRequest||view!=='command-center')return;
+    settleRefreshing('command-center-content');
     const action={production_overdue:'command-production-overdue',production_issues:'command-production-issues',
       replenishment:'replenishment',approvals:'approvals',jubelio_stock:'jubelio-stock-reconciliation',
       production_quality:'production-quality-insights',production_capacity:'capacity-plan',
@@ -832,11 +850,13 @@ async function showCommandCenter() {
       <article class="command-snapshot snapshot-card card ai-card">${head('Tanya Beeloft','sparkles')}<div class="ai-orb" aria-hidden="true"></div><p class="ai-copy">Susun analisis operasional dari data yang sudah tersambung, lalu tinjau usulan tindakannya.</p><button data-action="ai-brain">Buka Tanya Beeloft</button></article>`;
     message('command-center-message','');$('command-center-content').hidden=false;
     $('command-center-updated').textContent='Diperbarui '+new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(report.generated_at));
-  }catch(error){if(version===epoch&&request===commandCenterRequest){$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
+  }catch(error){if(version===epoch&&request===commandCenterRequest){settleRefreshing('command-center-content');$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
 }
-$('command-center').onclick=showCommandCenter;
+// Tombol navigasi dan pintasan tindakan tidak meneruskan argumen apa pun: hanya kontrol "Muat
+// ulang" yang meminta perlakuan muat ulang, jadi handler-nya dipasang eksplisit sebagai arrow.
+$('command-center').onclick=()=>showCommandCenter();
 $('command-center-back').onclick=showBoard;
-$('command-center-refresh').onclick=showCommandCenter;
+$('command-center-refresh').onclick=()=>showCommandCenter(true);
 
 async function loadBoard() {
   const version = epoch, request = ++boardRequest;
@@ -976,6 +996,8 @@ function showAuditEvents() {
 async function loadAuditEvents() {
   const version=epoch,request=++auditRequest,body=$('audit-body');
   const current=()=>version===epoch&&request===auditRequest&&view==='audit';
+  // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
+  auditRendered=null;
   body.innerHTML='<p class="state">Memuat audit trail…</p>';
   let rows=[],before=null;
   try {
@@ -988,7 +1010,7 @@ async function loadAuditEvents() {
         ${field('start_date','Tanggal awal','date')}${field('end_date','Tanggal akhir','date')}
       </div><div class="form-actions"><button type="button" id="audit-reset">Reset</button><button class="primary" type="submit">Terapkan filter</button></div></form>
       <p id="audit-summary" class="hint" role="status"></p><p id="audit-error" class="error" role="alert" hidden></p>
-      <div id="audit-list"></div><button id="audit-more" type="button">Muat catatan sebelumnya</button>`;
+      <div id="audit-list" class="list-host"></div><button id="audit-more" type="button">Muat catatan sebelumnya</button>`;
     $('audit-category').value=auditFilters.category;$('audit-actor').value=auditFilters.actor_id;
     $('audit-filter').elements.start_date.value=auditFilters.start_date;
     $('audit-filter').elements.end_date.value=auditFilters.end_date;
@@ -1004,13 +1026,19 @@ async function loadAuditEvents() {
     };
     const load=async reset=>{
       if(reset){rows=[];before=null;}
+      const rendered=JSON.stringify(auditFilters);
       const button=$('audit-more');button.disabled=true;message('audit-error','');
       try{
         const params=new URLSearchParams({limit:'25',...auditFilters,...(before?{before:String(before)}:{})});
         for(const [key,value] of [...params])if(!value)params.delete(key);
         const page=await api.get('/api/audit-events?'+params);
         if(!current())return;
+        const replacing=auditRendered!==null&&auditRendered!==rendered;
+        auditRendered=rendered;
         rows.push(...page.items);before=page.next_before;render(page.total);
+        // Pergantian filter memudar sebagai satu unit; memuat catatan sebelumnya hanya menambah
+        // baris ke daftar yang sama, jadi daftar itu tidak boleh berkedip.
+        if(replacing)playEntryMotion($('audit-list'),'--motion-base');
         button.hidden=!before;button.textContent='Muat catatan sebelumnya';
       }catch(error){if(current()){message('audit-error',error.message,true);button.textContent='Coba lagi';}}
       finally{if(current())button.disabled=false;}
@@ -1438,7 +1466,7 @@ document.addEventListener('click', event => {
     'payroll-accounting-reconciliation':payrollAccountingReconciliationDialog,
     'new-payroll-approval':()=>payrollApprovalForm(id),
     'payroll-approval-request':()=>payrollApprovalRequestDialog(id),
-    'command-center':showCommandCenter,'command-production-overdue':()=>showCommandOrders('overdue'),
+    'command-center':()=>showCommandCenter(),'command-production-overdue':()=>showCommandOrders('overdue'),
     'command-production-issues':()=>showCommandOrders('blocked'),
     'command-workforce':()=>{workforceFilters={work_date:jakartaToday(),status:'all',q:''};navigateFromDialog(showPeople);},
     'audit-events':()=>navigateFromDialog(showAuditEvents),'audit-event':()=>auditEventDialog(id),
@@ -3074,21 +3102,27 @@ function showIntegrations() {
 }
 // Milestone D: kesehatan integrasi, source of truth, dan run terbaru hidup di halaman.
 // Rincian run dan rekonsiliasi tetap dialog terfokus.
-async function loadIntegrations() {
+async function loadIntegrations(refresh = false) {
   const version=epoch,request=++integrationsRequest;
   const current=()=>version===epoch&&request===integrationsRequest&&view==='integrations';
-  message('integrations-message','Memuat kontrak dan status sinkronisasi…');
-  $('integrations-body').replaceChildren();
+  // Muat ulang manual mempertahankan status yang sudah terbaca dan hanya meredupkannya; membuka
+  // tujuan ini dari sidebar belum punya konteks untuk dipertahankan, jadi tetap memakai keadaan
+  // memuat biasa. Tidak ada filter di halaman ini, jadi tidak ada yang bisa "digantikan".
+  const holding=refresh&&markRefreshing('integrations-body');
+  if(!holding){message('integrations-message','Memuat kontrak dan status sinkronisasi…');$('integrations-body').replaceChildren();}
   try{
     const report=await api.get('/api/integrations');
     if(!current())return;
+    settleRefreshing('integrations-body');
     const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
     message('integrations-message','');
     $('integrations-body').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><div class="actions"><button data-action="products">Buka Master SKU</button><button data-action="jubelio-order-summary">Order & penjualan Jubelio</button><button data-action="jubelio-return-summary">Retur Jubelio</button><button data-action="jubelio-listing-summary">Listing Jubelio</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi stok Jubelio</button></div>`:''}${system.system==='mekari'?'<div class="actions"><button data-action="mekari-finance-summary">Keuangan Mekari</button><button data-action="mekari-payables-summary">Utang Mekari</button><button data-action="mekari-receivables-summary">Piutang Mekari</button><button data-action="mekari-payroll-summary">Payroll Mekari</button><button data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button data-action="payroll-accounting-reconciliation">Akuntansi payroll</button></div>':''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
   }catch(error){
     // Pesan dan tombolnya adalah sibling, seperti saat ini menjadi dialog: elemen pesan
     // harus tetap berisi hanya teks statusnya agar status error dapat dicocokkan tepat.
+    // Kesalahan selalu muncul seketika dan tanpa peredupan: peredupan dilepas lebih dahulu.
     if(!current())return;
+    settleRefreshing('integrations-body');
     message('integrations-message','');
     $('integrations-body').innerHTML=`<p class="error">${e(error.message)}</p><button id="integrations-retry" type="button">Coba lagi</button>`;
     $('integrations-retry').onclick=()=>loadIntegrations();
@@ -3549,7 +3583,7 @@ $('ai-history-jump').onclick=()=>{const history=$('ai-history');history.scrollIn
 $('ai-history-filter').onsubmit=event=>{event.preventDefault();loadAiHistory(true);};
 $('ai-history-more').onclick=()=>loadAiHistory(false);
 $('integrations-back').onclick=showBoard;
-$('integrations-refresh').onclick=()=>loadIntegrations();
+$('integrations-refresh').onclick=()=>loadIntegrations(true);
 $('audit-back').onclick=showBoard;
 
 async function aiActionProposalForm(recommendation,source) {
@@ -4200,6 +4234,7 @@ function showPeople() {
 async function loadPeople() {
   const version = epoch, request = ++peopleRequest, form = $('workforce-filter');
   workforceFilters = {...Object.fromEntries(new FormData(form))};
+  const rendered = JSON.stringify(workforceFilters);
   message('workforce-message','Memuat roster karyawan…');
   $('workforce-summary').hidden = true; $('workforce-list').replaceChildren();
   try{
@@ -4223,6 +4258,11 @@ async function loadPeople() {
       const detail=item?.status==='present'?`${item.clock_in.slice(0,5)}–${item.clock_out.slice(0,5)} · kerja ${minuteQty(item.work_minutes)} · lembur ${minuteQty(item.overtime_minutes)}`:item?.notes||'Belum ada catatan untuk tanggal ini.';
       return `<article class="workforce-row" data-workforce-employee="${e(employee.id)}"><div><span class="reference">${e(employee.code)} · ${e(employee.department)}</span><h3>${e(employee.name)}</h3><p>${e(detail)}</p>${item?.notes&&item.status==='present'?`<p class="hint">${e(item.notes)}</p>`:''}</div><div class="workforce-row-actions"><span class="status-label ${statusClass}">${e(workforceStatusLabels[status])}</span>${user.role!=='viewer'?`<button type="button" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:''}${item?`<button type="button" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:''}</div></article>`;
     }).join(''):'<p class="state">Tidak ada karyawan yang cocok dengan status dan pencarian ini.</p>';
+    // Tanggal, status, dan pencarian menggantikan roster; hanya penggantian itu yang memudar
+    // sebagai satu unit. Membuka halaman ini dengan filter yang sama tidak memudar.
+    const replacing = workforceRendered !== null && workforceRendered !== rendered;
+    workforceRendered = rendered;
+    if (replacing) playEntryMotion($('workforce-list'), '--motion-base');
   }catch(error){if(version===epoch&&request===peopleRequest&&view==='people'){
     message('workforce-message',error.message,true);
     $('workforce-message').insertAdjacentHTML('beforeend','<br><button id="workforce-retry" type="button">Coba lagi</button>');
@@ -4600,21 +4640,30 @@ function reloadApprovals() { if (view === 'approvals') loadApprovals(); }
 async function loadApprovals() {
   const version=epoch,request=++approvalsRequest,body=$('approvals-body');
   const current=()=>version===epoch&&request===approvalsRequest&&view==='approvals';
+  // Section dibangun ulang dari nol, jadi daftarnya baru: tidak ada isi sebelumnya yang bisa
+  // digantikan dan tidak ada yang boleh memudar.
+  approvalsRendered=null;
   body.innerHTML='<p class="state">Memuat antrean keputusan...</p>';
-  body.innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><form id="approval-filter" class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option>${Object.entries(approvalKind).map(([value,label])=>option(value,label)).join('')}</select></label></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="approval-error" class="error" role="alert" hidden></p><div id="approval-list"><p class="state">Memuat approval...</p></div><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  body.innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><form id="approval-filter" class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option>${Object.entries(approvalKind).map(([value,label])=>option(value,label)).join('')}</select></label></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="approval-error" class="error" role="alert" hidden></p><div id="approval-list" class="list-host"><p class="state">Memuat approval...</p></div><button id="approval-more" type="button">Muat approval berikutnya</button>`;
   $('approval-status').value='pending';
   $('approval-kind').value='all';
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
+    const rendered=JSON.stringify([$('approval-status').value,$('approval-kind').value]);
     const gen=generation,button=$('approval-more');button.disabled=true;message('approval-error','');
     try{
       const rows=await api.get('/api/approvals?'+new URLSearchParams({limit:25,offset,status:$('approval-status').value,kind:$('approval-kind').value}));
       if(!current()||gen!==generation)return;
+      const replacing=approvalsRendered!==null&&approvalsRendered!==rendered;
+      approvalsRendered=rendered;
       appendRows('approval-list',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
       if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
+      // Hanya penggantian filter yang memudar; memuat halaman berikutnya menambahkan baris ke
+      // daftar yang sama, jadi daftar itu tidak boleh berkedip.
+      if(replacing)playEntryMotion($('approval-list'),'--motion-base');
     }catch(error){if(current()&&gen===generation){message('approval-error',error.message,true);clearPageLoading('approval-list');button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
@@ -4636,20 +4685,27 @@ function reloadMarketingBudgets() { if (view === 'marketing-budgets') loadMarket
 async function loadMarketingBudgets() {
   const version=epoch,request=++marketingBudgetsRequest,body=$('marketing-budgets-body');
   const current=()=>version===epoch&&request===marketingBudgetsRequest&&view==='marketing-budgets';
+  // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
+  marketingBudgetsRendered=null;
   body.innerHTML='<p class="state">Memuat pengajuan budget…</p>';
-  body.innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions"><button data-action="approvals">Inbox approval</button></div><form id="marketing-budget-filter" class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="marketing-budget-error" class="error" role="alert" hidden></p><div id="marketing-budget-list"><p class="state">Memuat pengajuan budget…</p></div><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+  body.innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions"><button data-action="approvals">Inbox approval</button></div><form id="marketing-budget-filter" class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="marketing-budget-error" class="error" role="alert" hidden></p><div id="marketing-budget-list" class="list-host"><p class="state">Memuat pengajuan budget…</p></div><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
   $('marketing-budget-status').value='all';
   let before=null,generation=0;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;before=null;$('marketing-budget-list').replaceChildren();}
+    const rendered=JSON.stringify($('marketing-budget-status').value);
     const gen=generation,button=$('marketing-budget-more');button.disabled=true;message('marketing-budget-error','');
     try{
       const rows=await api.get('/api/marketing-budget-requests?'+new URLSearchParams({limit:25,status:$('marketing-budget-status').value,...(before?{before}:{})}));
       if(!current()||gen!==generation)return;
+      const replacing=marketingBudgetsRendered!==null&&marketingBudgetsRendered!==rendered;
+      marketingBudgetsRendered=rendered;
       appendRows('marketing-budget-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.campaign_name)} · ${e(row.channel)}</p><p>${date(row.start_date)}–${date(row.end_date)} · <strong>${e(rupiah(row.amount))}</strong></p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button></article>`).join(''));
       if(!before&&!rows.length)$('marketing-budget-list').innerHTML='<p class="state">Belum ada pengajuan budget yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pengajuan berikutnya';
+      // Pergantian filter memudar sebagai satu unit; menambah halaman berikutnya tidak.
+      if(replacing)playEntryMotion($('marketing-budget-list'),'--motion-base');
     }catch(error){if(current()&&gen===generation){message('marketing-budget-error',error.message,true);clearPageLoading('marketing-budget-list');button.hidden=false;button.textContent='Coba lagi';}}
     finally{if(current()&&gen===generation)button.disabled=false;}
   };
@@ -4706,20 +4762,27 @@ function reloadPurchaseRequests() { if (view === 'purchase-requests') loadPurcha
 async function loadPurchaseRequests() {
   const version=epoch, request=++purchaseRequestsRequest, body=$('purchase-requests-body');
   const current=()=>version===epoch&&request===purchaseRequestsRequest&&view==='purchase-requests';
+  // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
+  purchaseRequestsRendered=null;
   body.innerHTML='<p class="state">Memuat permintaan pembelian...</p>';
-  body.innerHTML=`<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions"><button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button></div><form id="pr-page-filter" class="filter-form"><div class="form-grid"><div><label for="pr-page-status">Status PR</label><select id="pr-page-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="pr-page-error" role="alert" class="error" hidden></p><div id="pr-page-list"><p class="state">Memuat PR...</p></div><button id="pr-page-more">Muat PR berikutnya</button>`;
+  body.innerHTML=`<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions"><button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button></div><form id="pr-page-filter" class="filter-form"><div class="form-grid"><div><label for="pr-page-status">Status PR</label><select id="pr-page-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="pr-page-error" role="alert" class="error" hidden></p><div id="pr-page-list" class="list-host"><p class="state">Memuat PR...</p></div><button id="pr-page-more">Muat PR berikutnya</button>`;
   $('pr-page-status').value='all';
   let before=null, generation=0;
   async function load(reset=false) {
     if(!current())return;
     if(reset){generation++;before=null;$('pr-page-list').replaceChildren();}
+    const rendered=JSON.stringify($('pr-page-status').value);
     const gen=generation, button=$('pr-page-more'); button.disabled=true; message('pr-page-error','');
     try {
       const rows=await api.get('/api/purchase-requests?'+new URLSearchParams({limit:25,status:$('pr-page-status').value,...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
+      const replacing=purchaseRequestsRendered!==null&&purchaseRequestsRendered!==rendered;
+      purchaseRequestsRendered=rendered;
       appendRows('pr-page-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
       if(!before && !rows.length)$('pr-page-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat PR berikutnya';
+      // Pergantian filter memudar sebagai satu unit; menambah halaman berikutnya tidak.
+      if(replacing)playEntryMotion($('pr-page-list'),'--motion-base');
     }catch(error){if(current() && gen===generation){message('pr-page-error',error.message,true);clearPageLoading('pr-page-list');button.hidden=false;button.textContent='Coba muat PR lagi';}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
