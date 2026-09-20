@@ -7,6 +7,20 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
     await page.getByRole('button',{name:'Keluar',exact:true}).click();
     await login(key);
   }
+  // Menahan satu GET mapping sesudah responsnya tiba, supaya dialog bisa ditutup dan draft
+  // lain sempat diketik sebelum respons lama dilepas.
+  async function holdMappingResponse(){
+    const held={};
+    held.started=new Promise(resolve=>held.signal=resolve);
+    held.released=new Promise(resolve=>held.release=resolve);
+    held.finished=new Promise(resolve=>held.done=resolve);
+    await page.route('**/api/products/*/external-mappings/jubelio',async route=>{
+      if(route.request().method()!=='GET')return route.continue();
+      const response=await route.fetch();held.signal();
+      await held.released;await route.fulfill({response});held.done();
+    });
+    return held;
+  }
   const order=(await apiGet('/api/orders')).find(row=>row.reference==='DEMO-PROD-001');
   const product=order.lines[0];
   await role(admin);
@@ -33,6 +47,44 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.unroute('**/api/products/*/external-mappings/jubelio');
   const history=await apiGet('/api/products/'+product.product_id+'/external-mappings/jubelio/history');
   assert.equal(history.length,1);
+  // Respons lama tidak boleh mengganti dialog yang dibuka sesudah dialog asal ditutup.
+  const delayedEdit=await holdMappingResponse();
+  await page.getByRole('button',{name:'Ubah mapping',exact:true}).click();
+  await delayedEdit.started;
+  await page.keyboard.press('Escape');
+  await page.locator('#dialog').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Tambah SKU',exact:true}).click();
+  await page.getByLabel('Kode SKU',{exact:true}).fill('UNRELATED-DRAFT');
+  delayedEdit.release();await delayedEdit.finished;
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('heading',{name:'Tambah SKU',exact:true}).isVisible(),true);
+  assert.equal(await page.getByLabel('Kode SKU',{exact:true}).inputValue(),'UNRELATED-DRAFT');
+  assert.equal(await page.getByRole('heading',{name:'Ubah mapping Jubelio',exact:true}).count(),0);
+  assert.equal(await page.getByRole('heading',{name:'Hubungkan SKU ke Jubelio',exact:true}).count(),0);
+  await page.keyboard.press('Escape');
+  await page.locator('#dialog').waitFor({state:'hidden'});
+  await page.unroute('**/api/products/*/external-mappings/jubelio');
+  // Jalur unmap memakai guard yang sama: respons lama tidak boleh membuka lagi dialog mapping.
+  await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
+  await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).waitFor();
+  const delayedUnmap=await holdMappingResponse();
+  await page.getByRole('button',{name:'Lepaskan mapping',exact:true}).click();
+  await delayedUnmap.started;
+  await page.keyboard.press('Escape');
+  await page.locator('#dialog').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Tambah SKU',exact:true}).click();
+  await page.getByLabel('Kode SKU',{exact:true}).fill('UNRELATED-UNMAP-DRAFT');
+  delayedUnmap.release();await delayedUnmap.finished;
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('heading',{name:'Tambah SKU',exact:true}).isVisible(),true);
+  assert.equal(await page.getByLabel('Kode SKU',{exact:true}).inputValue(),'UNRELATED-UNMAP-DRAFT');
+  assert.equal(await page.getByRole('heading',{name:'Lepaskan mapping Jubelio',exact:true}).count(),0);
+  assert.equal(await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).count(),0);
+  await page.keyboard.press('Escape');
+  await page.locator('#dialog').waitFor({state:'hidden'});
+  await page.unroute('**/api/products/*/external-mappings/jubelio');
+  await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
+  await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).waitFor();
 
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
@@ -51,7 +103,21 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
   await page.getByRole('button',{name:'Ubah mapping',exact:true}).waitFor();
 
-  await role(viewer);
+  // Sesudah logout, respons mapping yang tertunda tidak boleh membuka dialog di layar login.
+  const delayedLogout=await holdMappingResponse();
+  await page.getByRole('button',{name:'Ubah mapping',exact:true}).click();
+  await delayedLogout.started;
+  await page.keyboard.press('Escape');
+  await page.locator('#dialog').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();
+  await page.getByLabel('Kunci akses',{exact:true}).waitFor();
+  delayedLogout.release();await delayedLogout.finished;
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#dialog').getAttribute('open'),null);
+  assert.equal(await page.getByRole('heading',{name:'Ubah mapping Jubelio',exact:true}).count(),0);
+  await page.unroute('**/api/products/*/external-mappings/jubelio');
+
+  await login(viewer);
   await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
   await page.getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
@@ -60,5 +126,5 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByRole('button',{name:'Riwayat mapping',exact:true}).click();
   await page.getByText('CONTOH mapping master sebelum read sync',{exact:true}).waitFor();
   await page.keyboard.press('Escape');
-  console.log('Product mapping browser QA PASS: empty state, idempotent retry, escaping, coverage, history, roles, mobile/200%.');
+  console.log('Product mapping browser QA PASS: empty state, idempotent retry, delayed-response draft survival, post-logout guard, escaping, coverage, history, roles, mobile/200%.');
 };
