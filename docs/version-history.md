@@ -2584,3 +2584,22 @@ Mapping lama yang tersimpan dalam bentuk terpangkas tidak dapat dibalik otomatis
 terhadap nilai subject yang sebenarnya dari penyedia sebelum dipakai lagi.
 
 Bukti: [audit OIDC subject verification](audit-oidc-subject-verification.md).
+
+## Perbaikan audit P2: respons mapping yang tertunda (v0.89)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`productMappingForm()` dan `unmapProductForm()` menunggu GET mapping hanya dengan pemeriksaan sesi.
+Selama sesi belum berganti, respons yang tiba setelah dialog asalnya ditutup tetap menggambar form
+berikutnya: buka mapping, klik `Ubah mapping` atau `Lepaskan mapping`, tutup dialog, lalu buka
+`Tambah SKU` dan ketik draft — respons lama yang menyusul mengganti dialog aktif dan draft ketikan
+hilang. Jalur unmap bahkan dapat memanggil `productMappingDialog()` lagi dari respons lama.
+
+Kedua fungsi sekarang menyimpan `dialogVersion` sebelum `await` dan keluar tanpa menggambar apa pun
+bila sesi berganti, versi dialog berubah, atau dialog sudah tertutup — pola yang sama dengan
+`productMappingDialog()` di dekatnya. Respons lama dibuang diam-diam, sehingga dialog aktif dan draft
+yang sedang diketik tidak lagi digantikan, dan logout tidak dapat memunculkan dialog mapping di layar
+login.
+
+Bukti: [audit P2 mapping dialog race verification](audit-p2-mapping-dialog-race-verification.md).

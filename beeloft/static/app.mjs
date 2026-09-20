@@ -1348,15 +1348,16 @@ async function productMappingDialog(productId) {
 }
 async function productMappingForm(productId) {
   if(guardPending())return;
-  const version=epoch, row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
-  if(version!==epoch)return;
+  const version=epoch,modal=dialogVersion,row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
+  if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
   formDialog(row.status==='mapped'?'Ubah mapping Jubelio':'Hubungkan SKU ke Jubelio',field('external_id','ID eksternal Jubelio','text','required maxlength="160"')+field('external_sku','SKU Jubelio','text','required maxlength="160"')+'<label class="full">Alasan mapping<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{const data=new FormData(form);return {expected_revision:row.revision,action:'mapped',external_id:data.get('external_id').trim(),external_sku:data.get('external_sku').trim(),reason:data.get('reason').trim()};},`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`,`${row.sku} · simpan identifier persis seperti yang diberikan Jubelio.`);
   $('action-form').elements.external_id.value=row.external_id;$('action-form').elements.external_sku.value=row.external_sku;
 }
 async function unmapProductForm(productId) {
   if(guardPending())return;
-  const version=epoch,row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
-  if(version!==epoch||row.status!=='mapped')return productMappingDialog(productId);
+  const version=epoch,modal=dialogVersion,row=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`);
+  if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+  if(row.status!=='mapped')return productMappingDialog(productId);
   formDialog('Lepaskan mapping Jubelio','<label class="full">Alasan pelepasan<textarea name="reason" required maxlength="1000"></textarea></label>',form=>({expected_revision:row.revision,action:'unmapped',external_id:'',external_sku:'',reason:new FormData(form).get('reason').trim()}),`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio`,`${row.sku} · ${row.external_sku}\nWorker tidak boleh mencocokkan SKU ini setelah mapping dilepas.`);
 }
 async function productMappingHistoryDialog(productId) {
