@@ -833,3 +833,104 @@ errors, including all four motion modules. As in M0-M3, `python -m pip check` an
 passes.
 
 Next: M5 (microinteractions and theme), only after M4 is reviewed and merged.
+
+## 12. M5 delta — microinteractions and theme
+
+Baseline: `50b44a3` (M4 merged as PR #22). Branch: `ui/motion-microinteractions-theme`.
+
+M5 is the milestone with the most small promises and the least new machinery: each
+pattern is a few lines, and much of the work is proving that the product does *not*
+do the thing the specification warns about. Two of the six bullets turned out to be
+already satisfied by construction; the rest are implemented below.
+
+| Change | Where | Intention |
+|---|---|---|
+| Theme transition | `theme(value, animate)` + `html.is-theming :where(...)` | Only the toggle arms it, for one token. The initial application and every session restore pass no flag, so a page that is appearing never carries a colour sweep. |
+| Progress interpolation | `playProgressSettle(before)` in the board render | Values move only when the number genuinely changed since the previous payload, and only for the row that changed. Measured at `--motion-base`, inside the 260ms ceiling the table allows. |
+| Scanner feedback | `playScanFeedback(node)` on the scan result | A valid scan tints the result surface immediately and gives it back on its own. Focus is never touched, and the tint is fire-and-forget, so no handoff or mutation confirmation waits on it. |
+| Chip tint | `.status-label,.badge` | Colour only: no scale, no movement, so a chip that changes state cannot pull the eye off the table. |
+| Disclosure caret | `.nav-summary .nav-caret` | See §12.1 — this bullet was a real defect, not a normalisation. |
+
+### 12.1 The caret was not rotating
+
+§19 asks for "analytics disclosure and caret behavior: normalize to tokens", which
+reads like bookkeeping. It was not. The caret is `<svg class="icon nav-caret">`, so
+`.nav-summary .icon{transition:color …}` and `.nav-caret{transition:transform …}`
+both matched it, at a lower specificity for the caret. The colour rule took the
+`transition` shorthand for itself and the rotation snapped open and shut — the
+caret has been instant since the summary gained an icon rule, and the token M1
+attached to it had no effect at all.
+
+The fix moves the caret's transition into the motion block *after* the icon rule and
+declares both properties there, so the glyph still settles its colour and the caret
+turns. The new module asserts that `transform` is genuinely among the caret's
+transitioned properties and that its duration is the shared token — an assertion
+that fails against the pre-fix stylesheet, which is how the defect was found.
+
+### 12.2 What was already true, and is now asserted instead
+
+Two bullets needed no new motion, only proof that the warning does not apply:
+
+**No continuous decorative animation.** The product has no `@keyframes` outside the
+two dialog entries, no `animation` on a settled element, and no `infinite`
+iteration count anywhere. The module asserts that nothing in the document reports
+`Infinity` iterations, so the first decorative loop added later fails a test instead
+of shipping.
+
+**Nothing animates from zero on load.** §09 warns about this twice — for the progress
+bar and again for the data-dense surfaces. Every bar in this product (`<progress>` on
+the board, the meter, hero and share bars in the command centre and the reports) is
+rendered inside freshly created markup, so there is no previous computed value and
+no transition can start: the from-zero failure needs a width set *after* insertion,
+which nothing here does. Rather than add transitions to those bars and take on the
+risk, M5 leaves them instant and asserts the property that matters instead: a first
+render paints the real value, and the board's `<progress>` reports the payload
+number on its first frame.
+
+### 12.3 What this milestone deliberately did not do
+
+**No tint for a rejected scan.** §10 specifies a success tint after a *valid* scan.
+The invalid path already reports itself immediately and legibly, and §04 wants an
+error to appear with no motion at all, so the module asserts that path is untinted
+and immediate rather than animating it.
+
+**No width or height animation anywhere.** §12 forbids layout-animated properties
+for routine motion and §10 asks for auto-height animations to stay rare, so the
+disclosure's content is asserted to be un-animated rather than given a height
+transition.
+
+**The materials scanner dialog is untouched.** §10 scopes scanner feedback to
+scanner *pages*; that flow opens a dialog and closes it, which M3 already covers.
+
+### 12.4 Regression coverage
+
+`tests/browser_motion_microinteractions.cjs` is new and registered in `tests/browser_smoke.cjs`:
+
+| Case | Asserted |
+|---|---|
+| First paint | No `is-theming` class and a `0s` body transition — the session never keeps a global colour transition |
+| Theme toggle | The class is applied, the body really starts and finishes a `background-color` transition, the theme changes, and the class is released after one token |
+| Theme vs component motion | A section carrying `motion-enter` keeps its `opacity`/`transform` transition while the theme is armed — the theming selector contributes no specificity |
+| Theme under reduced motion | The theme changes with no class and no transition |
+| Progress, changed value | The bar passes through a value strictly between the old and the new number, settles on the new one, and the ramp stays inside 300ms |
+| Progress, first render | The bar reports the payload number immediately rather than counting up from zero |
+| Progress under reduced motion | The new value is written directly |
+| Scanner, valid | The result surface takes a real tint, the input keeps focus, the code stays selected for the next scan, and the tint releases on its own so the surface returns to its resting colour |
+| Scanner, rejected | No tint, the error is immediately visible, and focus stays on the input |
+| Chips | The transition lists colour properties only and the chip carries no transform |
+| Disclosure | `transform` is among the caret's transitioned properties with the shared token as its duration, and the content is not height-animated |
+| Continuous animation | Nothing in the document reports infinite iterations |
+
+Two of those assertions were verified against the pre-fix code rather than assumed:
+the caret one failed on the stylesheet as it stood, and the interpolation one failed
+with the `playProgressSettle()` call removed.
+
+### 12.5 Verification
+
+Local verification (20 September 2026, Linux, Python 3.14.5, Playwright 1.63.0 /
+Chromium 1243): 509 unit tests PASS; `compileall`, `node --check` on both modules and
+`node tests/test_client.mjs` PASS; the full browser suite PASS with no JavaScript
+errors, including all five motion modules. As in M0-M4, `python -m pip check` and
+`python -m build` are unavailable in this checkout and are recorded as gaps.
+
+Next: M6 (consistency and performance cleanup), only after M5 is reviewed and merged.

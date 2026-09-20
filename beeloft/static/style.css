@@ -191,7 +191,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .nav-summary:hover{background:var(--surface-subtle);color:var(--ink)}
 .nav-summary>span{flex:1}
 .nav-summary .icon{color:var(--muted)}
-.nav-caret{margin-left:auto;transform:rotate(-180deg);transition:transform var(--motion-base) var(--ease-standard)}
+.nav-caret{margin-left:auto;transform:rotate(-180deg)}
 .nav-collapse:not([open]) .nav-caret{transform:rotate(0)}
 .nav-children{display:flex;flex-direction:column;gap:2px;margin-top:2px}
 .nav-children .nav-item{min-height:34px;padding-left:44px;font-size:.875rem;color:var(--muted)}
@@ -540,6 +540,15 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .notice{transition:none!important;animation:none!important;transform:none!important}
 }
 @media(prefers-reduced-motion:no-preference){
+  /* Theme change is the only place a colour transition runs across surfaces, and the toggle arms
+     it for a single token. The selector is wrapped in :where() so it contributes no specificity
+     at all: every component rule that owns a transition — the drawer's entry, the dialog's exit,
+     a control's press — keeps winning, and this rule only supplies one where there is none. That
+     is also why sections and cards are included: the change reads as one movement instead of the
+     chrome fading while the content snaps. */
+  html.is-theming :where(body,.masthead,.app-shell,.app-sidebar,.workspace-main,section,article,dl,dialog,.notice,.state){
+    transition:background-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard);
+  }
   button,.nav-item,.nav-summary{transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard),scale var(--motion-instant) var(--ease-standard)}
   /* Press feedback. The individual `scale` property is used instead of a transform so a
      button's own `transform` — the nav caret's rotation, and anything added later — can
@@ -564,6 +573,12 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
     transition:background-color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),scale var(--motion-instant) var(--ease-standard);
   }
   .nav-item .icon,.nav-summary .icon{transition:color var(--motion-base) var(--ease-standard)}
+  /* The caret is an `.icon` too, so the summary's colour rule was taking the shorthand for itself
+     at equal specificity and the rotation snapped instead of turning. This rule comes after it and
+     declares both: the glyph settles its colour and the caret turns, on the same token. */
+  .nav-summary .nav-caret{
+    transition:transform var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard);
+  }
   /* Dialog. Entry is CSS-only: the surface and its backdrop animate from their first frame
      whenever this element starts matching [open], which also covers a reopen after a close and
      never replays for a content swap, because [open] stays matched. Backdrop timing comes from
@@ -614,6 +629,17 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .state.motion-enter.is-ready{opacity:1}
   /* Fading into the dimmed state, not the state itself: reduced motion still shows the dim. */
   .is-refreshing{transition:opacity var(--motion-base) var(--ease-standard)}
+  /* Status chips carry state with tint only — no movement, no scale — so a chip that changes can
+     never pull the eye away from the table it belongs to. */
+  .status-label,.badge{
+    transition:background-color var(--motion-base) var(--ease-standard),color var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard);
+  }
+  /* Scanner feedback: the result surface takes a semantic tint on a valid scan and gives it back
+     on its own. The tint appears immediately — it is state, not decoration — and only its
+     release is animated. Focus is never touched: a USB scanner types like a keyboard, so moving
+     focus would break the next scan. */
+  .scan-result{transition:background-color var(--motion-slow) var(--ease-standard)}
+  .scan-result.is-scan-ok{background:var(--success-bg);transition:none}
 }
 /* The mobile drawer enters as a small surface after `display` turns on, using the same
    frame-later pattern as a workspace page rather than a screen-wide slide. */
