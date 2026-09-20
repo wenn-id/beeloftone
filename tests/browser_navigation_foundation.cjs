@@ -248,11 +248,14 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
 
   // Repeated navigation re-enters the same destination without duplicating
   // handlers or re-rendering content on top of itself.
-  await page.getByRole('button', {name: 'Semua order', exact: false}).click();  await page.waitForFunction(() => !document.getElementById('order-list').hidden);
+  await page.getByRole('button', {name: 'Semua order', exact: false}).click();
+  // M4: the row list keeps its previous rows through a reload, so the completion signal is the
+  // board's busy marker rather than the list's hidden flag.
+  await page.locator('#summary[aria-busy]').waitFor({state:'detached'});
   const rows = await page.locator('.order-row').count();
   for (let repeat = 0; repeat < 3; repeat += 1)
     await page.getByRole('button', {name: 'Produksi', exact: true}).click();
-  await page.waitForFunction(() => !document.getElementById('order-list').hidden);
+  await page.locator('#summary[aria-busy]').waitFor({state:'detached'});
   assert.equal(await page.locator('.order-row').count(), rows, 'repeated navigation must not duplicate board rows');
   assert.deepEqual(await visibleSections(), ['board-view']);
   assert.equal(await page.locator('#board-home').getAttribute('aria-current'), 'page');

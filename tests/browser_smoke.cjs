@@ -118,7 +118,9 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByRole('button',{name:'Muat ulang',exact:true}).click();
   await page.getByText('Simulasi koneksi terputus',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Muat ulang',exact:true}).click();
-  await page.waitForFunction(() => !document.getElementById('order-list').hidden);
+  // M4: a reload keeps the rows it already has, so the hidden flag no longer marks the end of a
+  // load. The board's own busy marker is the completion signal.
+  await page.locator('#summary[aria-busy]').waitFor({state:'detached'});
   let releaseProducts, signalProducts, finishProducts;
   const productsStarted = new Promise(resolve => signalProducts = resolve);
   const productsReleased = new Promise(resolve => releaseProducts = resolve);
@@ -450,6 +452,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_motion_foundation.cjs');
   await runModule('./browser_motion_workspace.cjs');
   await runModule('./browser_motion_dialogs.cjs');
+  await runModule('./browser_motion_data_states.cjs');
   await runModule('./browser_production_premium_ui.cjs');
   await runModule('./browser_navigation_foundation.cjs');
   await runModule('./browser_workspace_utilities.cjs');

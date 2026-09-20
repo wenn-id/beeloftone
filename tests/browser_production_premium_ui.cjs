@@ -186,10 +186,32 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
 
   let release;const gate=new Promise(resolve=>release=resolve);
   await page.route(endpoint,async route=>{await gate;await route.continue();});
-  await page.locator('#refresh').click();await page.locator('#board-message').filter({hasText:'Memuat'}).waitFor();
-  assert.equal(await page.locator('#order-list').isHidden(),true);
+  await page.locator('#refresh').click();
+  // M4/§08: a reload with rows already on screen keeps them and signals the request in place, so
+  // the in-flight state here is the busy marker and the dim, not a placeholder that replaces the
+  // data. The pagination guard is unchanged.
+  await page.locator('#order-list[aria-busy]').waitFor();
+  assert.equal(await page.locator('#order-list').isHidden(),false);
+  assert.equal(await page.locator('#order-list .order-row').first().isVisible(),true);
   assert.equal(await page.locator('#next').isDisabled(),true);
   release();await ready();await page.unroute(endpoint);
+  // With nothing left to preserve, the same control still shows the loading placeholder and
+  // hides the list: that state belongs to a load from scratch, and it is asserted here so the
+  // distinction itself stays covered.
+  await page.locator('#search').fill('zzz-premium-tidak-ada');
+  await page.getByRole('button',{name:'Cari order',exact:true}).click();
+  await page.locator('#board-message').filter({hasText:'Tidak ada order yang cocok'}).waitFor();
+  let releaseEmpty;const emptyGate=new Promise(resolve=>releaseEmpty=resolve);
+  await page.route(endpoint,async route=>{await emptyGate;await route.continue();});
+  await page.locator('#refresh').click();
+  await page.locator('#board-message').filter({hasText:'Memuat'}).waitFor();
+  assert.equal(await page.locator('#order-list').isHidden(),true);
+  // Let the released response land before the route is removed, or the pending handler's
+  // continue() races the removal and throws.
+  releaseEmpty();await page.locator('#summary[aria-busy]').waitFor({state:'detached'});
+  await page.unroute(endpoint);
+  await page.getByRole('button',{name:'Reset filter',exact:true}).click();
+  await ready();
   await page.route(endpoint,route=>route.fulfill({status:503,json:{detail:'CONTOH production request failed'}}));
   await page.locator('#refresh').click();await page.locator('#board-message').filter({hasText:'CONTOH production request failed'}).waitFor();
   assert.equal(await page.locator('#issues-summary').isHidden(),true);
