@@ -69,6 +69,17 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   });
   assert.equal(entryTransition.includes('opacity') && entryTransition.includes('transform'), true,
     'an in-flight page entry keeps its own transition while the theme is armed');
+  const ownedTransition = await page.evaluate(() => {
+    const notice = document.getElementById('notice');
+    notice.classList.add('motion-exit');
+    document.documentElement.classList.add('is-theming');
+    const property = getComputedStyle(notice).transitionProperty;
+    notice.classList.remove('motion-exit');
+    document.documentElement.classList.remove('is-theming');
+    return property;
+  });
+  assert.equal(ownedTransition, 'opacity, transform',
+    'the zero-specificity theme rule cannot replace another component transition');
 
   // ---- reduced motion changes the theme without arming anything -----------------------------
   await page.emulateMedia({reducedMotion: 'reduce'});
@@ -185,6 +196,29 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   assert.equal(rejected.tinted, false, 'a rejected scan carries no success tint');
   assert.equal(rejected.message, false, 'the failure is reported immediately');
   assert.equal(rejected.focusKept, true, 'the keyboard path survives a rejected scan');
+  await page.unroute('**/api/bundles/scan?*');
+
+  // A second scan can fail while the first success tint is still being held. Starting the new
+  // attempt clears both that state and its timer, so a rejected code is never presented with a
+  // stale success colour.
+  await page.route('**/api/bundles/scan?*', route => {
+    const code = new URL(route.request().url()).searchParams.get('code');
+    if (code === 'BEELOFT:BUNDLE:cepat') return route.fulfill({status: 200,
+      contentType: 'application/json', body: JSON.stringify({id: 'motion-scan-2',
+        reference: 'BDL-CEPAT', sku: 'SKU-1', size: 'M', quantity: 5,
+        order_reference: 'ORD-1'})});
+    return route.fulfill({status: 404, contentType: 'application/json',
+      body: JSON.stringify({detail: 'Label kedua tidak dikenal'})});
+  });
+  await scanInput.fill('BEELOFT:BUNDLE:cepat');
+  await scanInput.press('Enter');
+  await page.getByText('BDL-CEPAT', {exact: false}).waitFor();
+  assert.equal(await resultTinted(), true, 'the first scan in a rapid pair is tinted');
+  await scanInput.fill('BEELOFT:BUNDLE:gagal-cepat');
+  await scanInput.press('Enter');
+  await page.getByText('Label kedua tidak dikenal', {exact: false}).waitFor();
+  assert.equal(await resultTinted(), false,
+    'a rapid rejected scan cannot retain the preceding success tint');
   await page.unroute('**/api/bundles/scan?*');
 
   // ---- chips, disclosure and the absence of continuous animation ----------------------------
