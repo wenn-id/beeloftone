@@ -408,13 +408,18 @@ class Store:
 
     @staticmethod
     def _oidc_identity_values(issuer, subject):
-        issuer=issuer.strip().rstrip('/');subject=subject.strip()
+        issuer=issuer.strip().rstrip('/')
         parsed=urlsplit(issuer)
         if (parsed.scheme!='https' or not parsed.netloc or parsed.fragment or parsed.query
                 or parsed.username or parsed.password or not 8<=len(issuer)<=500):
             raise DomainError(422,'Issuer OIDC harus berupa URL HTTPS yang valid.')
-        if not 1<=len(subject)<=500:
-            raise DomainError(422,'Subject OIDC wajib diisi dan maksimal 500 karakter.')
+        # Subject adalah identitas persis dari penyedia, jadi nilainya dipakai apa adanya di sini.
+        # Nilai yang tidak dapat disimpan apa adanya ditolak, bukan dipangkas: pemangkasan spasi
+        # pernah membuat dua subject berbeda menunjuk akun yang sama.
+        if (not isinstance(subject,str) or subject!=subject.strip()
+                or not 1<=len(subject)<=500):
+            raise DomainError(422,'Subject OIDC wajib berupa string 1 sampai 500 karakter tanpa '
+                                  'spasi di awal atau akhir.')
         return issuer,subject
 
     def link_oidc_identity(self, issuer, subject, user_id):

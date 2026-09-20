@@ -185,7 +185,12 @@ class OidcClient:
             raise OidcError(401, 'Authorized party ID token tidak cocok.')
         if isinstance(audience, list) and len(audience) > 1 and 'azp' not in claims:
             raise OidcError(401, 'Authorized party ID token tidak cocok.')
-        subject = str(claims['sub']).strip()
-        if not 1 <= len(subject) <= 500:
+        # Subject adalah identifier milik penyedia: nilainya dipakai apa adanya dan tidak pernah
+        # dipangkas. Subject dengan spasi awal/akhir ditolak karena pemangkasan menyatukan dua
+        # subject berbeda ke satu identitas, dan nilai seperti itu memang tidak dapat disimpan
+        # persis oleh constraint oidc_identities.
+        subject = claims['sub']
+        if (not isinstance(subject, str) or subject != subject.strip()
+                or not 1 <= len(subject) <= 500):
             raise OidcError(401, 'Subject ID token tidak valid.')
         return {'issuer': self.config.issuer, 'subject': subject}

@@ -148,7 +148,7 @@ class OidcSsoTest(TestCase):
             OidcConfig('http://identity.example','id','secret','http://127.0.0.1/callback')
 
     def test_identity_mapping_backup_and_migration_from_43(self):
-        linked=self.app.state.store.link_oidc_identity(self.config.issuer+'/',' employee-123 ',self.admin['id'])
+        linked=self.app.state.store.link_oidc_identity(self.config.issuer+'/','employee-123',self.admin['id'])
         self.assertEqual((linked['issuer'],linked['subject']),(self.config.issuer,'employee-123'))
         with self.assertRaises(DomainError) as duplicate:
             self.app.state.store.link_oidc_identity(self.config.issuer,'employee-456',self.admin['id'])
@@ -167,3 +167,35 @@ class OidcSsoTest(TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],55)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_identities').fetchone()[0],0)
+
+    def test_identity_values_are_stored_and_compared_exactly(self):
+        store=self.app.state.store
+        store.link_oidc_identity(self.config.issuer,'employee-123',self.admin['id'])
+        for subject in (' employee-123','employee-123 ',' employee-123 ',123):
+            with self.assertRaises(DomainError) as linked:
+                store.link_oidc_identity(self.config.issuer,subject,self.admin['id'])
+            self.assertEqual(linked.exception.status,422)
+            with self.assertRaises(DomainError) as unlinked:
+                store.unlink_oidc_identity(self.config.issuer,subject)
+            self.assertEqual(unlinked.exception.status,422)
+            with self.assertRaises(DomainError) as looked_up:
+                store.authenticate_oidc_identity(self.config.issuer,subject)
+            self.assertEqual(looked_up.exception.status,422)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT issuer,subject FROM oidc_identities').fetchall(),
+                             [(self.config.issuer,'employee-123')])
+        self.assertEqual(store.authenticate_oidc_identity(self.config.issuer,'employee-123')['id'],
+                         self.admin['id'])
+
+    def test_signed_token_with_distinct_whitespace_subject_does_not_open_the_linked_account(self):
+        self.app.state.store.link_oidc_identity(self.config.issuer,'employee-123',self.admin['id'])
+        for subject in (' employee-123 ','employee-123 '):
+            _,query=self.begin()
+            self.transport.id_token=self.transport.token(query['nonce'][0],subject=subject)
+            response=self.callback(query)
+            self.assertEqual(response.status_code,401,response.text)
+            self.assertFalse(self.client.cookies.get('beeloft_session'))
+            self.assertEqual(self.client.get('/api/me').status_code,401)
+        _,query=self.begin();self.transport.id_token=self.transport.token(query['nonce'][0])
+        self.assertEqual(self.callback(query).status_code,303)
+        self.assertEqual(self.client.get('/api/me').json()['id'],self.admin['id'])

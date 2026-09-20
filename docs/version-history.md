@@ -2560,3 +2560,27 @@ masih dapat menghasilkan 500; dan logout dengan API key tanpa cookie masih mengh
 
 Rencana: [audit P2 plan](audit-p2-plan.md).
 Bukti: [audit P2 verification](audit-p2-verification.md).
+
+## Perbaikan audit P1: identitas subject OIDC yang persis (v0.88)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+Klaim `sub` dipangkas dengan `.strip()` sesudah verifikasi tanda tangan dan sekali lagi sebelum lookup
+identitas. Dua subject yang hanya dibedakan spasi awal/akhir karena itu dapat menunjuk akun yang sama:
+setelah `employee-123` ditautkan ke seorang admin, token bertanda tangan yang sah dengan
+`sub = " employee-123 "` menjawab callback `303`, membuat cookie session, dan `/api/me` mengembalikan
+admin yang sama, walaupun subject itu belum pernah ditautkan. OIDC memakai pasangan issuer/subject apa
+adanya (OIDC Core §5.7 dan §14), jadi pemangkasan seperti itu mengubah arti identitas.
+
+Subject sekarang divalidasi sebagai string 1–500 karakter dan dipakai persis. `OidcClient.exchange`
+tidak lagi memakai `str(...)` maupun `.strip()`, dan `Store._oidc_identity_values`, yang dipakai
+bersama oleh link, unlink, dan authenticate, tidak lagi memangkas subject. Subject dengan spasi
+awal/akhir ditolak — 422 pada operasi identitas CLI/API dan 401 pada klaim token — bukan dinormalkan,
+sehingga tidak ada dua subject berbeda yang dapat bertabrakan; nilai seperti itu memang tidak dapat
+disimpan persis oleh constraint `oidc_identities`. Normalisasi issuer pada konfigurasi tidak berubah.
+
+Mapping lama yang tersimpan dalam bentuk terpangkas tidak dapat dibalik otomatis dan perlu ditinjau
+terhadap nilai subject yang sebenarnya dari penyedia sebelum dipakai lagi.
+
+Bukti: [audit OIDC subject verification](audit-oidc-subject-verification.md).
