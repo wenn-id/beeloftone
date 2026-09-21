@@ -1,5 +1,6 @@
 import sqlite3
 import secrets
+import string
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -25,6 +26,29 @@ from beeloft.reports import activity_csv
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
 MAX_EXPORT_ROWS = 10_000
 JAKARTA = timezone(timedelta(hours=7))
+# `OidcClient.authorization_request` menerbitkan state lewat `secrets.token_urlsafe`, sehingga state
+# yang sah hanya memuat karakter Base64 URL-safe.
+OIDC_STATE_CHARACTERS = frozenset(string.ascii_letters + string.digits + '-_')
+
+
+def oidc_state_bytes(value):
+    """Representasi byte state OIDC, atau None bila state di luar alfabet yang aplikasi terbitkan.
+
+    `secrets.compare_digest` menolak `str` yang memuat karakter non-ASCII dengan `TypeError`, dan
+    kedua state yang dibandingkan pada callback sepenuhnya dikendalikan pengirim request: parameter
+    `state` pada query dan cookie `beeloft_oidc_state`. Membandingkannya mentah membuat
+    `/api/sso/callback?code=x&state=%C3%A9` — dan juga state sah yang datang bersama cookie ber-byte
+    non-ASCII — dijawab HTTP 500 dengan traceback, padahal state seperti itu tidak pernah diterbitkan
+    aplikasi dan semestinya ditolak sebagai state tidak sah.
+
+    State karena itu diperiksa terhadap alfabet `secrets.token_urlsafe` lebih dahulu, lalu
+    dibandingkan sebagai byte ASCII. Yang di luar alfabet tidak pernah mencapai perbandingan,
+    tidak pernah mencapai `consume_oidc_login_attempt`, dan tidak dapat menghabiskan attempt yang
+    tersimpan. Panjangnya tetap dibatasi `Query(max_length=512)` seperti sebelumnya.
+    """
+    if not value or not OIDC_STATE_CHARACTERS.issuperset(value):
+        return None
+    return value.encode('ascii')
 
 
 def jakarta_today():
@@ -39,7 +63,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.94.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.95.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -158,8 +182,9 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
             raise OidcError(404,'Login SSO belum dikonfigurasi.')
         if error or not code or not state:
             raise OidcError(401,'Login dibatalkan atau ditolak oleh penyedia identitas.')
-        browser_state=request.cookies.get('beeloft_oidc_state','')
-        if not secrets.compare_digest(browser_state,state):
+        browser_state=oidc_state_bytes(request.cookies.get('beeloft_oidc_state',''))
+        callback_state=oidc_state_bytes(state)
+        if browser_state is None or callback_state is None or not secrets.compare_digest(browser_state,callback_state):
             raise OidcError(401,'State login OIDC tidak cocok dengan browser.')
         attempt=store.consume_oidc_login_attempt(state)
         identity=oidc.exchange(code,attempt['code_verifier'],attempt['nonce_hash'])

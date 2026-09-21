@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
-from urllib.parse import parse_qs, unquote_plus, urlsplit
+from urllib.parse import parse_qs, quote, unquote_plus, urlsplit
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -194,6 +194,64 @@ class OidcSsoTest(TestCase):
                                     params={'code':'authorization-code','state':query['state'][0]})
                 self.assertEqual(callback.status_code,303,callback.text)
                 self.assertEqual(client.get('/api/me').json()['id'],admin['id'])
+
+    def lenient_client(self):
+        """Client yang menerjemahkan exception yang tidak tertangani menjadi respons 500.
+
+        Tanpa ini, handler yang melempar menggagalkan test dengan exception aslinya, sehingga test
+        tidak dapat membedakan penolakan 4xx yang benar dari kegagalan server.
+        """
+        return TestClient(self.app,raise_server_exceptions=False)
+
+    def test_state_outside_the_issued_alphabet_is_rejected_without_a_server_error(self):
+        """Issue #35: `/api/sso/callback?code=x&state=%C3%A9` dijawab 401, bukan 500."""
+        self.app.state.store.link_oidc_identity(self.config.issuer,'employee-123',self.admin['id'])
+        client=self.lenient_client()
+        login=client.get('/api/sso/login',follow_redirects=False)
+        self.assertEqual(login.status_code,302,login.text)
+        query=parse_qs(urlsplit(login.headers['location']).query)
+        for state in ('%C3%A9','%C3%A9%C3%A9','%E2%82%AC','%00','abc%20def','a.b','a%2Bb',
+                      quote(query['state'][0])+'%C3%A9'):
+            with self.subTest(state=state):
+                response=client.get(f'/api/sso/callback?code=authorization-code&state={state}',
+                                    follow_redirects=False)
+                self.assertEqual(response.status_code,401,response.text)
+                self.assertEqual(response.json()['detail'],'State login OIDC tidak cocok dengan browser.')
+                self.assertFalse(client.cookies.get('beeloft_session'))
+        # State tidak sah tidak boleh menukar code maupun menghabiskan attempt yang tersimpan.
+        self.assertEqual(len(self.transport.token_requests),0)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_login_attempts').fetchone()[0],1)
+        self.transport.id_token=self.transport.token(query['nonce'][0])
+        callback=client.get('/api/sso/callback',follow_redirects=False,
+                            params={'code':'authorization-code','state':query['state'][0]})
+        self.assertEqual(callback.status_code,303,callback.text)
+        self.assertEqual(client.get('/api/me').json()['id'],self.admin['id'])
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_login_attempts').fetchone()[0],0)
+        replay=client.get('/api/sso/callback',follow_redirects=False,
+                          params={'code':'authorization-code','state':query['state'][0]})
+        self.assertEqual(replay.status_code,401,replay.text)
+        self.assertEqual(len(self.transport.token_requests),1)
+
+    def test_non_ascii_state_cookie_is_rejected_without_a_server_error(self):
+        """Cookie state juga dikendalikan pengirim: byte non-ASCII di dalamnya tidak boleh 500."""
+        client=self.lenient_client()
+        login=client.get('/api/sso/login',follow_redirects=False)
+        self.assertEqual(login.status_code,302,login.text)
+        state=parse_qs(urlsplit(login.headers['location']).query)['state'][0]
+        client.cookies.clear()
+        for cookie in (b'beeloft_oidc_state=\xe9',b'beeloft_oidc_state=\xe9\xe9',
+                       b'beeloft_oidc_state='+state.encode()+b'\xe9'):
+            with self.subTest(cookie=cookie):
+                response=client.get('/api/sso/callback',follow_redirects=False,
+                                    params={'code':'authorization-code','state':state},
+                                    headers={'Cookie':cookie})
+                self.assertEqual(response.status_code,401,response.text)
+                self.assertFalse(client.cookies.get('beeloft_session'))
+        self.assertEqual(len(self.transport.token_requests),0)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_login_attempts').fetchone()[0],1)
 
     def test_nonce_and_state_are_one_time_and_unknown_identity_is_denied(self):
         _,query=self.begin()
