@@ -11,6 +11,11 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   const resultTinted = () => page.evaluate(() =>
     document.getElementById('bundle-scan-result').classList.contains('is-scan-ok'));
 
+  // A fresh document is the only honest first paint: the suite shares one page, and a module that
+  // ends right after toggling the theme leaves `is-theming` armed for one token plus its 60ms
+  // release (180ms + 60ms in the app). `login()` can finish inside that window, so the checks below
+  // used to fail on suite timing rather than on product behaviour.
+  await page.reload();
   await login(admin);
 
   // ---- first paint carries no theme transition ---------------------------------------------
