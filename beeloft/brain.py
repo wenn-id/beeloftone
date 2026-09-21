@@ -167,9 +167,12 @@ def _margin(store,focus,orders):
     findings=[];proposals=[]
     for row in reports:
         if row['status']=='complete':
+            rate=row['contribution_margin_rate']
+            detail=('Rasio margin '+rate+'%.' if rate is not None else
+                    'Rasio margin belum tersedia (pendapatan bersih Rp'+row['net_revenue']+').')
             findings.append({'severity':'medium' if Decimal(row['contribution_margin'])<0 else 'info',
                 'title':row['order_reference']+' · margin Rp'+row['contribution_margin'],
-                'detail':'Rasio margin '+row['contribution_margin_rate']+'%.',
+                'detail':detail,
                 'source':'/api/orders/{id}/contribution-margin',
                 'entity':{'type':'order','id':row['order_id']}})
         else:
