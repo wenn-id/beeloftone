@@ -687,6 +687,12 @@ class Store:
         with self.transaction() as db:
             return [dict(row) for row in db.execute("SELECT * FROM products ORDER BY sku LIMIT ? OFFSET ?", (limit, offset))]
 
+    def product_identities(self, limit=100, offset=0):
+        """Identitas produk saja. Dipakai jalur yang hanya perlu memilih entity, bukan detailnya."""
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute("""SELECT id,sku,name FROM products
+                ORDER BY sku LIMIT ? OFFSET ?""", (limit, offset))]
+
     def _product_external_mapping(self, db, product_id, system):
         product=db.execute('SELECT id,sku,name,color,size FROM products WHERE id=?',(product_id,)).fetchone()
         if not product:
@@ -7122,6 +7128,33 @@ class Store:
         with self.transaction() as db:
             ids = [row[0] for row in db.execute("SELECT id FROM orders ORDER BY due_date,created_at,id LIMIT ? OFFSET ?", (limit, offset))]
             return [self._order(db, order_id) for order_id in ids]
+
+    def order_identities(self, limit=100, offset=0):
+        """Identitas order saja, tanpa menghidrasi detailnya.
+
+        `orders()` memanggil `_order()` untuk setiap baris, jadi biayanya tumbuh sekitar lima
+        statement per order: revision, lines, balances per line, dan kendala terbuka. Pemilihan
+        entity hanya memerlukan kolom identitas, sehingga jalur itu membaca satu statement di sini
+        dan memuat detail setelah entity-nya terpilih. Urutannya sama dengan `orders()` supaya
+        pemenggalan halaman tetap dapat dibandingkan.
+        """
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute("""SELECT id,reference,title FROM orders
+                ORDER BY due_date,created_at,id LIMIT ? OFFSET ?""", (limit, offset))]
+
+    def order_ids_for_products(self, product_ids):
+        """Id order yang memiliki baris untuk salah satu produk, tanpa menghidrasi order.
+
+        Urutannya sama dengan `orders()` supaya pemilihan yang dipotong tetap deterministik.
+        """
+        ids = list(dict.fromkeys(product_ids))
+        if not ids:
+            return []
+        with self.transaction() as db:
+            return [row[0] for row in db.execute(f"""SELECT o.id FROM orders o WHERE EXISTS(
+                SELECT 1 FROM order_lines l WHERE l.order_id=o.id
+                AND l.product_id IN ({','.join('?' * len(ids))}))
+                ORDER BY o.due_date,o.created_at,o.id""", ids)]
 
     def _production_filters(self, query, status, owner_id, stage):
         """Parameter filter board yang sama untuk ringkasan global dan agregat terpilih."""

@@ -29,15 +29,22 @@ def _intent(question):
 
 
 def _focus(store, normalized):
-    products=store.products(1_000_000_000,0)
-    orders=store.orders(1_000_000_000,0)
+    """Cocokkan pertanyaan ke produk dan order memakai kolom identitas saja.
+
+    Metadata focus tetap bagian dari kontrak jawaban, tetapi pencocokannya tidak membutuhkan detail
+    apa pun: cukup satu statement untuk produk dan satu untuk order. Detail dimuat belakangan, oleh
+    jalur intent yang benar-benar memakainya, sehingga intent seperti approval tidak lagi membayar
+    hidrasi seluruh order hanya untuk mengisi metadata ini.
+    """
+    products=store.product_identities(1_000_000_000,0)
+    orders=store.order_identities(1_000_000_000,0)
     matched_products=[row for row in products if row['sku'].casefold() in normalized
                       or (len(row['name'])>=3 and row['name'].casefold() in normalized)]
     matched_orders=[row for row in orders if row['reference'].casefold() in normalized
                     or (len(row['title'])>=3 and row['title'].casefold() in normalized)]
     return {'products':[{'id':row['id'],'sku':row['sku'],'name':row['name']} for row in matched_products],
             'orders':[{'id':row['id'],'reference':row['reference'],'title':row['title']}
-                      for row in matched_orders]},products,orders
+                      for row in matched_orders]},orders
 
 
 def _fact(label,value,unit,source):
@@ -155,13 +162,15 @@ def _production(store,focus):
 
 
 def _margin(store,focus,orders):
-    selected=orders
+    # Pemilihan order bekerja atas id saja; `contribution_margin()` yang memuat detail order, dan
+    # hanya untuk order yang benar-benar dilaporkan.
     if focus['orders']:
-        ids={row['id'] for row in focus['orders']};selected=[row for row in orders if row['id'] in ids]
+        selected=[row['id'] for row in focus['orders']]
     elif focus['products']:
-        ids={row['id'] for row in focus['products']}
-        selected=[row for row in orders if any(line['product_id'] in ids for line in row['lines'])]
-    reports=[store.contribution_margin(row['id']) for row in selected[:100]]
+        selected=store.order_ids_for_products([row['id'] for row in focus['products']])
+    else:
+        selected=[row['id'] for row in orders]
+    reports=[store.contribution_margin(order_id) for order_id in selected[:100]]
     complete=[row for row in reports if row['status']=='complete']
     total=sum((Decimal(row['contribution_margin']) for row in complete),Decimal(0))
     answer=(f"{len(complete)} dari {len(reports)} order memiliki margin lengkap. "
@@ -197,7 +206,7 @@ def _margin(store,focus,orders):
 
 def investigate(store,payload):
     intent,confidence,matched,normalized=_intent(payload['question'])
-    focus,_,orders=_focus(store,normalized)
+    focus,orders=_focus(store,normalized)
     if intent=='stockout':
         result=_stock(store,payload,focus)
     elif intent=='approvals':
