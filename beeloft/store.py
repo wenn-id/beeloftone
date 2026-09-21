@@ -7145,16 +7145,19 @@ class Store:
     def order_ids_for_products(self, product_ids):
         """Id order yang memiliki baris untuk salah satu produk, tanpa menghidrasi order.
 
-        Urutannya sama dengan `orders()` supaya pemilihan yang dipotong tetap deterministik.
+        Id dikirim sebagai satu parameter JSON, bukan satu placeholder per id. Jumlah produk yang
+        cocok tidak dibatasi - satu nama produk dapat dipakai seluruh varian SKU-nya - jadi daftar
+        placeholder akan menabrak `SQLITE_LIMIT_VARIABLE_NUMBER` pada katalog besar. Urutannya sama
+        dengan `orders()` supaya pemilihan yang dipotong tetap deterministik.
         """
         ids = list(dict.fromkeys(product_ids))
         if not ids:
             return []
         with self.transaction() as db:
-            return [row[0] for row in db.execute(f"""SELECT o.id FROM orders o WHERE EXISTS(
+            return [row[0] for row in db.execute("""SELECT o.id FROM orders o WHERE EXISTS(
                 SELECT 1 FROM order_lines l WHERE l.order_id=o.id
-                AND l.product_id IN ({','.join('?' * len(ids))}))
-                ORDER BY o.due_date,o.created_at,o.id""", ids)]
+                AND l.product_id IN (SELECT value FROM json_each(?)))
+                ORDER BY o.due_date,o.created_at,o.id""", (json.dumps(ids),))]
 
     def _production_filters(self, query, status, owner_id, stage):
         """Parameter filter board yang sama untuk ringkasan global dan agregat terpilih."""

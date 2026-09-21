@@ -2748,4 +2748,9 @@ Kontrak metadata `focus` tidak berubah. `_margin()` bekerja atas id order — le
 `evidence.truncated` yang sama. Jalur approval kini berbiaya 28 statement konstan pada ketiga ukuran
 populasi di atas, tanpa cache, service, atau dependency baru.
 
+`order_ids_for_products()` mengirim id produk sebagai satu parameter JSON dan membandingkannya lewat
+`json_each()`, bukan satu placeholder per id. Jumlah produk yang cocok tidak dibatasi dan satu nama
+produk dapat dipakai seluruh varian SKU-nya, jadi daftar placeholder akan melewati
+`SQLITE_LIMIT_VARIABLE_NUMBER` pada katalog besar dan menjawab pertanyaan margin dengan HTTP 500.
+
 Bukti: [audit approval focus hydration verification](audit-p3-approval-focus-hydration-verification.md).

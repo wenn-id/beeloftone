@@ -10,6 +10,8 @@ Oracle biaya hidrasinya independen: dibaca langsung dari `store.orders()` atas p
 sehingga angka "sekitar lima per order" tidak pernah dipatok sebagai konstanta di dalam tes.
 """
 
+import sqlite3
+
 from beeloft.brain import investigate
 import test_approval_aggregates
 import test_production
@@ -216,6 +218,48 @@ class IdentityReadTest(FocusHydrationFixture):
         self.assertEqual(len(statements), 1)
         for sql in statements:
             self.assertNotIn('balances', sql.lower())
+
+    def variants(self, count, name='Kaus varian'):
+        """Banyak SKU yang berbagi satu nama produk, seperti varian warna dan ukuran."""
+        return [self.post('/api/products', {'sku': 'VARIAN-%04d' % self.next_index(),
+                                            'name': name, 'color': 'Biru', 'size': 'M'})
+                for _ in range(count)]
+
+    def test_product_selection_survives_a_low_sqlite_variable_limit(self):
+        """`_focus()` tidak membatasi jumlah produk yang cocok, jadi id tidak boleh jadi placeholder.
+
+        Satu nama produk dapat dipakai seluruh varian SKU-nya, sehingga daftar placeholder per id
+        akan menabrak `SQLITE_LIMIT_VARIABLE_NUMBER`. Batasnya diturunkan di sini supaya regresi
+        terdeteksi di lingkungan mana pun, bukan hanya pada build SQLite yang batasnya rendah.
+        """
+        store = self.app.state.store
+        products = self.variants(40)
+        wanted = [self.seed_orders(1, product=row)[0] for row in products[:6]]
+        original = store.connect
+
+        def connect():
+            db = original()
+            db.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 4)
+            return db
+
+        store.connect = connect
+        self.addCleanup(setattr, store, 'connect', original)
+        selected = store.order_ids_for_products([row['id'] for row in products])
+        self.assertEqual(sorted(selected), sorted(row['id'] for row in wanted))
+
+    def test_margin_question_matching_every_variant_selects_with_one_parameter(self):
+        products = self.variants(40)
+        wanted = [self.seed_orders(1, product=row)[0] for row in products[:4]]
+        report = self.investigate('Bagaimana margin kontribusi Kaus varian?')
+        self.assertEqual(report['intent'], 'margin')
+        # Premis temuan: seluruh varian cocok, tanpa batas jumlah.
+        self.assertEqual(len(report['focus']['products']), 40)
+        self.assertEqual(sorted(row['order_id'] for row in report['evidence']['contribution_margins']),
+                         sorted(row['id'] for row in wanted))
+        selection = [sql for sql in self.reads(self.executed_sql(
+            lambda: self.app.state.store.order_ids_for_products([row['id'] for row in products])))]
+        self.assertEqual(len(selection), 1)
+        self.assertIn('json_each', selection[0])
 
 
 class AuthenticatedEndpointTest(FocusHydrationFixture):
