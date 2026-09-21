@@ -2727,3 +2727,30 @@ dikonsumsi. Callback yang sah tidak berubah: tetap 303 ke `/` dengan cookie sess
 sekali pakai.
 
 Bukti: [audit oidc state non-ASCII verification](audit-p3-oidc-state-non-ascii-verification.md).
+
+## Perbaikan audit P3: hidrasi order pada metadata focus investigasi (v0.96)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`investigate()` menjalankan `_focus()` untuk semua intent sebelum dispatch, dan `_focus()` memanggil
+`store.orders()` yang menghidrasi setiap order lewat `_order()`: revision, lines, balances per line,
+dan hitungan kendala terbuka. Biayanya tumbuh sekitar lima statement per order, padahal jawaban
+approval hanya memakai agregat dan contoh approval, dan pencocokan focus sendiri hanya memakai kolom
+identitas. Pada populasi sintetis satu baris per order, pertanyaan `approval persetujuan` mengeksekusi
+528 statement untuk 100 order, 5.028 untuk 1.000 order, dan 25.028 untuk 5.000 order.
+
+`_focus()` sekarang membaca `store.product_identities()` dan `store.order_identities()`: satu
+statement masing-masing, hanya kolom yang dipakai untuk mencocokkan SKU dan referensi order.
+Kontrak metadata `focus` tidak berubah. `_margin()` bekerja atas id order — lewat
+`store.order_ids_for_products()` untuk fokus produk — sehingga detail hanya dimuat oleh
+`contribution_margin()` untuk order yang benar-benar dilaporkan, dengan pemotongan 100 order dan flag
+`evidence.truncated` yang sama. Jalur approval kini berbiaya 28 statement konstan pada ketiga ukuran
+populasi di atas, tanpa cache, service, atau dependency baru.
+
+`order_ids_for_products()` mengirim id produk sebagai satu parameter JSON dan membandingkannya lewat
+`json_each()`, bukan satu placeholder per id. Jumlah produk yang cocok tidak dibatasi dan satu nama
+produk dapat dipakai seluruh varian SKU-nya, jadi daftar placeholder akan melewati
+`SQLITE_LIMIT_VARIABLE_NUMBER` pada katalog besar dan menjawab pertanyaan margin dengan HTTP 500.
+
+Bukti: [audit approval focus hydration verification](audit-p3-approval-focus-hydration-verification.md).
