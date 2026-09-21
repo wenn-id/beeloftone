@@ -50,6 +50,11 @@ def oidc_state_bytes(value):
         return None
     return value.encode('ascii')
 
+# Batas atas integer signed 64-bit SQLite. Parameter offset/cursor yang dibind langsung ke SQL
+# wajib dibatasi di bawah ini: nilai 2**63 atau lebih memicu OverflowError saat binding dan
+# menjawab HTTP 500, bukan 422. Lihat issue #33.
+SQLITE_MAX_INTEGER = 9223372036854775807
+
 
 def jakarta_today():
     """Tanggal berjalan menurut zona operasional Jakarta.
@@ -63,7 +68,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.96.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.97.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -115,7 +120,8 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                            'workforce_overtime','payroll_batch','ai_action']
     RequestKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
     Limit = Annotated[int, Query(ge=1, le=500)]
-    Offset = Annotated[int, Query(ge=0)]
+    Offset = Annotated[int, Query(ge=0, le=SQLITE_MAX_INTEGER)]
+    Before = Annotated[int | None, Query(ge=1, le=SQLITE_MAX_INTEGER)]
 
     @app.exception_handler(DomainError)
     async def domain_error(request, exc):
@@ -240,7 +246,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/audit-events', tags=['Audit'])
     def audit_events(user: Actor, limit: Limit = 50,
-                     before: Annotated[int | None, Query(ge=1)] = None,
+                     before: Before = None,
                      category: Literal['all','master_data','production','materials','purchasing',
                                        'warehouse','marketplace','approval','ai','integration'] = 'all',
                      actor_id: Annotated[str, Query(max_length=500)] = '',
@@ -273,7 +279,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/ai/action-proposals', tags=['AI Brain','Approvals'])
     def ai_action_proposals(user: Actor, limit: Limit = 100,
-                            before: Annotated[int | None, Query(ge=1)] = None,
+                            before: Before = None,
                             status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
         return store.ai_action_proposals(limit,before,status)
 
@@ -293,7 +299,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/marketing-budget-requests', tags=['Marketing','Approvals'])
     def marketing_budget_requests(user: Actor, limit: Limit = 100,
-                                  before: Annotated[int | None, Query(ge=1)] = None,
+                                  before: Before = None,
                                   status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
         return store.marketing_budget_requests(limit, before, status)
 
@@ -321,7 +327,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/ai/investigations', tags=['AI Brain'])
     def ai_investigations(user: Actor, limit: Limit = 100,
-                          before: Annotated[int | None, Query(ge=1)] = None,
+                          before: Before = None,
                           intent: Literal['all','overview','production','stockout','approvals','margin'] = 'all',
                           q: Annotated[str, Query(max_length=160)] = ''):
         return store.ai_investigations(limit,before,intent,q)
@@ -349,7 +355,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integration-sync-runs', tags=['Integrations'])
     def integration_sync_runs(user: Actor, limit: Limit = 100,
-                              before: Annotated[int | None, Query(ge=1)] = None,
+                              before: Before = None,
                               system: Literal['all','jubelio','mekari'] = 'all',
                               scope: Annotated[str, Query(max_length=40)] = '',
                               status: Literal['all','succeeded','failed'] = 'all'):
@@ -369,7 +375,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/jubelio/finished-goods-snapshots', tags=['Integrations'])
     def jubelio_stock_snapshots(user: Actor, limit: Limit = 100,
-                                before: Annotated[int | None, Query(ge=1)] = None):
+                                before: Before = None):
         return store.jubelio_stock_snapshots(limit,before)
 
     @app.get('/api/integrations/jubelio/finished-goods-snapshots/{batch_id}', tags=['Integrations'])
@@ -386,7 +392,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/jubelio/order-snapshots', tags=['Integrations'])
     def jubelio_order_snapshots(user: Actor, limit: Limit = 100,
-                                before: Annotated[int | None, Query(ge=1)] = None):
+                                before: Before = None):
         return store.jubelio_order_snapshots(limit,before)
 
     @app.get('/api/integrations/jubelio/order-snapshots/{batch_id}', tags=['Integrations'])
@@ -403,7 +409,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/jubelio/return-snapshots', tags=['Integrations'])
     def jubelio_return_snapshots(user: Actor, limit: Limit = 100,
-                                 before: Annotated[int | None, Query(ge=1)] = None):
+                                 before: Before = None):
         return store.jubelio_return_snapshots(limit,before)
 
     @app.get('/api/integrations/jubelio/return-snapshots/{batch_id}', tags=['Integrations'])
@@ -420,7 +426,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/jubelio/listing-snapshots', tags=['Integrations'])
     def jubelio_listing_snapshots(user: Actor, limit: Limit = 100,
-                                  before: Annotated[int | None, Query(ge=1)] = None):
+                                  before: Before = None):
         return store.jubelio_listing_snapshots(limit,before)
 
     @app.get('/api/integrations/jubelio/listing-snapshots/{batch_id}', tags=['Integrations'])
@@ -437,7 +443,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/mekari/finance-snapshots', tags=['Integrations'])
     def mekari_finance_snapshots(user: Actor, limit: Limit = 100,
-                                 before: Annotated[int | None, Query(ge=1)] = None):
+                                 before: Before = None):
         return store.mekari_finance_snapshots(limit,before)
 
     @app.get('/api/integrations/mekari/finance-snapshots/{batch_id}', tags=['Integrations'])
@@ -454,7 +460,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/mekari/payable-snapshots', tags=['Integrations'])
     def mekari_payable_snapshots(user: Actor, limit: Limit = 100,
-                                 before: Annotated[int | None, Query(ge=1)] = None):
+                                 before: Before = None):
         return store.mekari_payable_snapshots(limit,before)
 
     @app.get('/api/integrations/mekari/payable-snapshots/{batch_id}', tags=['Integrations'])
@@ -471,7 +477,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/mekari/receivable-snapshots', tags=['Integrations'])
     def mekari_receivable_snapshots(user: Actor, limit: Limit = 100,
-                                    before: Annotated[int | None, Query(ge=1)] = None):
+                                    before: Before = None):
         return store.mekari_receivable_snapshots(limit,before)
 
     @app.get('/api/integrations/mekari/receivable-snapshots/{batch_id}', tags=['Integrations'])
@@ -488,7 +494,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/mekari/payroll-snapshots', tags=['Integrations'])
     def mekari_payroll_snapshots(user: Actor, limit: Limit = 100,
-                                 before: Annotated[int | None, Query(ge=1)] = None):
+                                 before: Before = None):
         return store.mekari_payroll_snapshots(limit,before)
 
     @app.get('/api/integrations/mekari/payroll-snapshots/{batch_id}', tags=['Integrations'])
@@ -507,7 +513,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/payroll-approval-requests', tags=['People','Approvals'])
     def payroll_approval_requests(user: Actor, limit: Limit = 100,
-                                  before: Annotated[int | None, Query(ge=1)] = None,
+                                  before: Before = None,
                                   status: Literal['all','submitted','approved','rejected','cancelled'] = 'all'):
         return store.payroll_approval_requests(status,limit,before)
 
@@ -567,7 +573,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/workforce/employees/{employee_id}/history', tags=['People'])
     def employee_history(employee_id: str, user: Actor, limit: Limit = 100,
-                         before: Annotated[int | None, Query(ge=1)] = None):
+                         before: Before = None):
         return store.employee_history(employee_id,limit,before)
 
     @app.get('/api/workforce/attendance', tags=['People'])
@@ -586,7 +592,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/workforce/attendance/{attendance_id}/history', tags=['People'])
     def attendance_history(attendance_id: str, user: Actor, limit: Limit = 100,
-                           before: Annotated[int | None, Query(ge=1)] = None):
+                           before: Before = None):
         return store.attendance_history(attendance_id,limit,before)
 
     @app.get('/api/workforce/requests', tags=['People','Approvals'])
@@ -669,7 +675,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
              tags=['Products','Integrations'])
     def product_external_mapping_history(product_id: str, system: Literal['jubelio'], user: Actor,
                                          limit: Limit = 100,
-                                         before: Annotated[int | None, Query(ge=1)] = None):
+                                         before: Before = None):
         return store.product_external_mapping_history(product_id,system,limit,before)
 
     @app.get('/api/products/{product_id}/bom', tags=['BOM'])
@@ -682,7 +688,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/products/{product_id}/bom-history', tags=['BOM'])
     def bom_history(product_id: str, user: Actor, limit: Limit = 100,
-                    before: Annotated[int | None, Query(ge=1)] = None):
+                    before: Before = None):
         return store.bom_history(product_id, limit, before)
 
     @app.get('/api/orders/{order_id}/material-requirements', tags=['BOM'])
@@ -702,7 +708,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return store.create_supplier(body.model_dump(mode='json'), user, key)
 
     @app.get('/api/purchase-orders', tags=['Purchasing'])
-    def purchase_orders(user: Actor, limit: Limit = 100, before: Annotated[int | None, Query(ge=1)] = None,
+    def purchase_orders(user: Actor, limit: Limit = 100, before: Before = None,
                         status: Literal['all','pending','issued','rejected','cancelled','closed'] = 'all',
                         request_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
         return store.purchase_orders(limit, before, status, request_id)
@@ -721,7 +727,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/purchase-orders/{order_id}/payment-requests', tags=['Supplier Payments'])
     def supplier_payment_requests(order_id: str, user: Actor, limit: Limit = 100,
-                                  before: Annotated[int | None, Query(ge=1)] = None):
+                                  before: Before = None):
         return store.supplier_payment_requests(order_id, limit, before)
 
     @app.post('/api/purchase-orders/{order_id}/payment-requests', status_code=201, tags=['Supplier Payments'])
@@ -785,7 +791,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/purchase-requests', tags=['Purchasing'])
     def purchase_requests(user: Actor, limit: Limit = 100,
-                          before: Annotated[int | None, Query(ge=1)] = None,
+                          before: Before = None,
                           status: Literal['all','submitted','approved','rejected','cancelled'] = 'all',
                           order_id: Annotated[str | None, Query(min_length=1,max_length=160)] = None):
         return store.purchase_requests(limit, before, status, order_id)
@@ -839,7 +845,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/cutting-runs', tags=['Cutting'])
     def cutting_runs(order_id: str, user: Actor, limit: Limit = 100,
-                     before: Annotated[int | None, Query(ge=1)] = None):
+                     before: Before = None):
         return store.cutting_runs(order_id, limit, before)
 
     @app.get('/api/cutting-runs/{run_id}', tags=['Cutting'])
@@ -856,7 +862,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/bundles', tags=['Bundling'])
     def bundles(order_id: str, user: Actor, limit: Limit = 100,
-                before: Annotated[int | None, Query(ge=1)] = None):
+                before: Before = None):
         return store.bundles(order_id, limit, before)
 
     @app.get('/api/bundles/scan', tags=['Bundling'])
@@ -878,7 +884,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/bundles/{bundle_id}/handoffs', tags=['Bundling'])
     def bundle_handoffs(bundle_id: str, user: Actor, limit: Limit = 100,
-                        before: Annotated[int | None, Query(ge=1)] = None):
+                        before: Before = None):
         return store.bundle_handoffs(bundle_id,limit,before)
 
     @app.post('/api/bundles/{bundle_id}/handoffs', status_code=201, tags=['Bundling'])
@@ -903,7 +909,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/sewing-jobs', tags=['Sewing'])
     def sewing_jobs(order_id: str, user: Actor, limit: Limit = 100,
-                    before: Annotated[int | None, Query(ge=1)] = None):
+                    before: Before = None):
         return store.sewing_jobs(order_id, limit, before)
 
     @app.get('/api/sewing-jobs/{job_id}', tags=['Sewing'])
@@ -924,7 +930,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/finishing-records', tags=['Finishing'])
     def finishing_records(order_id: str, user: Actor, limit: Limit = 100,
-                          before: Annotated[int | None, Query(ge=1)] = None):
+                          before: Before = None):
         return store.finishing_records(order_id, limit, before)
 
     @app.get('/api/finishing-records/{record_id}', tags=['Finishing'])
@@ -941,7 +947,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/final-qc-records', tags=['Final QC'])
     def final_qc_records(order_id: str, user: Actor, limit: Limit = 100,
-                         before: Annotated[int | None, Query(ge=1)] = None):
+                         before: Before = None):
         return store.final_qc_records(order_id, limit, before)
 
     @app.get('/api/final-qc-records/{record_id}', tags=['Final QC'])
@@ -958,12 +964,12 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/final-qc-records/{record_id}/rework-completions', tags=['Final QC'])
     def final_qc_rework_completions(record_id: str, user: Actor, limit: Limit = 100,
-                                    before: Annotated[int | None, Query(ge=1)] = None):
+                                    before: Before = None):
         return store.final_qc_rework_completions(record_id, limit, before)
 
     @app.get('/api/orders/{order_id}/rework-completions', tags=['Final QC'])
     def rework_completions(order_id: str, user: Actor, limit: Limit = 100,
-                           before: Annotated[int | None, Query(ge=1)] = None):
+                           before: Before = None):
         return store.rework_completions(order_id, limit, before)
 
     @app.get('/api/rework-completions/{completion_id}', tags=['Final QC'])
@@ -985,7 +991,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/finished-goods-receipts', tags=['Finished Goods'])
     def finished_goods_receipts(order_id: str, user: Actor, limit: Limit = 100,
-                                before: Annotated[int | None, Query(ge=1)] = None):
+                                before: Before = None):
         return store.finished_goods_receipts(order_id, limit, before)
 
     @app.get('/api/finished-goods-receipts/scan', tags=['Finished Goods'])
@@ -1027,7 +1033,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/warehouse-movements', tags=['Warehouse'])
     def warehouse_movements(order_id: str, user: Actor, limit: Limit = 100,
-                            before: Annotated[int | None, Query(ge=1)] = None):
+                            before: Before = None):
         return store.warehouse_movements(order_id, limit, before)
 
     @app.get('/api/warehouse-movements/{movement_id}', tags=['Warehouse'])
@@ -1048,7 +1054,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/marketplace-reservations', tags=['Marketplace'])
     def marketplace_reservations(order_id: str, user: Actor, limit: Limit = 100,
-                                 before: Annotated[int | None, Query(ge=1)] = None):
+                                 before: Before = None):
         return store.marketplace_reservations(order_id, limit, before)
 
     @app.get('/api/marketplace-reservations/{reservation_id}', tags=['Marketplace'])
@@ -1066,7 +1072,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/marketplace-picks', tags=['Marketplace'])
     def marketplace_picks(order_id: str, user: Actor, limit: Limit = 100,
-                          before: Annotated[int | None, Query(ge=1)] = None):
+                          before: Before = None):
         return store.marketplace_picks(order_id, limit, before)
 
     @app.get('/api/marketplace-picks/{pick_id}', tags=['Marketplace'])
@@ -1083,7 +1089,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/marketplace-packs', tags=['Marketplace'])
     def marketplace_packs(order_id: str, user: Actor, limit: Limit = 100,
-                          before: Annotated[int | None, Query(ge=1)] = None):
+                          before: Before = None):
         return store.marketplace_packs(order_id, limit, before)
 
     @app.get('/api/marketplace-packs/{pack_id}', tags=['Marketplace'])
@@ -1100,7 +1106,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/marketplace-shipments', tags=['Marketplace'])
     def marketplace_shipments(order_id: str, user: Actor, limit: Limit = 100,
-                              before: Annotated[int | None, Query(ge=1)] = None):
+                              before: Before = None):
         return store.marketplace_shipments(order_id, limit, before)
 
     @app.get('/api/marketplace-shipments/{shipment_id}', tags=['Marketplace'])
@@ -1118,7 +1124,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/sale-settlements', tags=['Economics'])
     def marketplace_sale_settlements(order_id: str, user: Actor, limit: Limit = 100,
-                                     before: Annotated[int | None, Query(ge=1)] = None):
+                                     before: Before = None):
         return store.marketplace_sale_settlements(order_id, limit, before)
 
     @app.get('/api/marketplace-sale-settlements/{settlement_id}', tags=['Economics'])
@@ -1275,7 +1281,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/marketplace-returns', tags=['Marketplace'])
     def marketplace_returns(order_id: str, user: Actor, limit: Limit = 100,
-                            before: Annotated[int | None, Query(ge=1)] = None):
+                            before: Before = None):
         return store.marketplace_returns(order_id, limit, before)
 
     @app.get('/api/marketplace-returns/{return_id}', tags=['Marketplace'])
@@ -1293,7 +1299,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/finished-goods-adjustments', tags=['Warehouse'])
     def finished_goods_adjustments(order_id: str, user: Actor, limit: Limit = 100,
-                                   before: Annotated[int | None, Query(ge=1)] = None):
+                                   before: Before = None):
         return store.finished_goods_adjustments(order_id, limit, before)
 
     @app.get('/api/finished-goods-adjustments/{adjustment_id}', tags=['Warehouse'])
@@ -1311,7 +1317,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/finished-goods-stock-counts', tags=['Warehouse'])
     def finished_goods_stock_counts(order_id: str, user: Actor, limit: Limit = 100,
-                                    before: Annotated[int | None, Query(ge=1)] = None):
+                                    before: Before = None):
         return store.finished_goods_stock_counts(order_id, limit, before)
 
     @app.get('/api/finished-goods-stock-counts/{count_id}', tags=['Warehouse'])
@@ -1336,7 +1342,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/consumption-history', tags=['Materials'])
     def consumption_history(order_id: str, user: Actor, limit: Limit = 100,
-                            before: Annotated[int | None, Query(ge=1)] = None):
+                            before: Before = None):
         return store.consumption_history(order_id, limit, before)
 
     @app.get('/api/orders/{order_id}/material-reservations', tags=['Materials'])
@@ -1345,7 +1351,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/reservation-history', tags=['Materials'])
     def reservation_history(order_id: str, user: Actor, limit: Limit = 100,
-                            before: Annotated[int | None, Query(ge=1)] = None):
+                            before: Before = None):
         return store.reservation_history(order_id, limit, before)
 
     @app.get('/api/material-batches/{batch_id}', tags=['Materials'])
@@ -1368,12 +1374,12 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/material-batches/{batch_id}/movements', tags=['Materials'])
     def batch_material_history(batch_id: str, user: Actor, limit: Limit = 100,
-                               before: Annotated[int | None, Query(ge=1)] = None):
+                               before: Before = None):
         return store.material_history(batch_id=batch_id, limit=limit, before=before)
 
     @app.get('/api/orders/{order_id}/material-movements', tags=['Materials'])
     def order_material_history(order_id: str, user: Actor, limit: Limit = 100,
-                               before: Annotated[int | None, Query(ge=1)] = None):
+                               before: Before = None):
         return store.material_history(order_id=order_id, limit=limit, before=before)
 
     @app.post("/api/orders", status_code=201, tags=["Production"])
@@ -1410,7 +1416,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get("/api/orders/{order_id}/issues", tags=["Issues"])
     def issues(order_id: str, user: Actor, limit: Limit = 100, offset: Offset = 0,
-               before: Annotated[int | None, Query(ge=1)] = None):
+               before: Before = None):
         return store.issues(order_id, limit, offset, before)
 
     @app.post("/api/issues", status_code=201, tags=["Issues"])
@@ -1427,7 +1433,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get("/api/orders/{order_id}/changes", tags=["Production"])
     def order_changes(order_id: str, user: Actor, limit: Limit = 100,
-                      before: Annotated[int | None, Query(ge=1)] = None):
+                      before: Before = None):
         return store.order_changes(order_id, limit, before)
 
     @app.post("/api/orders/{order_id}/change-requests", status_code=201, tags=["Approvals"])
@@ -1437,7 +1443,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get("/api/orders/{order_id}/change-requests", tags=["Approvals"])
     def production_change_requests(order_id: str, user: Actor, limit: Limit = 100,
-                                   before: Annotated[int | None, Query(ge=1)] = None):
+                                   before: Before = None):
         return store.production_change_requests(order_id, limit, before)
 
     @app.get("/api/production-change-requests/{request_id}", tags=["Approvals"])
