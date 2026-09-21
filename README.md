@@ -137,7 +137,7 @@ terinstal. Jalankan setiap kali versi naik atau endpoint berubah; `tests/test_op
 gagal bila kontrak tertinggal, dan `tests/test_readme_test_count.py` gagal bila jumlah
 test di README tidak lagi cocok dengan discovery.
 
-Suite Python berisi 570 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 572 test yang memakai database sementara serta API/CLI sungguhan; mencakup
 konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
 input tidak sah, guard bisnis, pembalikan, migrasi, dan backup. Tidak ada data bisnis nyata di dalam
 test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance
@@ -201,6 +201,9 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 - [Register proses bisnis F01](docs/f01-process-register.md) dan
   [keputusan, bukti, serta gerbang sign-off](docs/f01-decisions-evidence.md) untuk
   roadmap penggantian backoffice #40. Status discovery; belum business accepted.
+- [Kontrak transaksi dan data bersama F02](docs/f02-shared-contracts.md), dengan
+  fixture sintetis dan inventaris pemilik tabel/endpoint untuk #41. Draft persiapan;
+  penerimaan kontrak menunggu keputusan F01 dan sign-off A1/A2/A3 serta A0/pemilik bisnis.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
