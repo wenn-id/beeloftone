@@ -2603,3 +2603,23 @@ yang sedang diketik tidak lagi digantikan, dan logout tidak dapat memunculkan di
 login.
 
 Bukti: [audit P2 mapping dialog race verification](audit-p2-mapping-dialog-race-verification.md).
+
+## Perbaikan audit P2: rasio margin null pada investigasi (v0.90)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`_margin()` menyusun detail finding dengan menggabungkan `contribution_margin_rate` dan string tanpa
+memeriksa nilai null. Rasio itu memang `None` ketika pendapatan bersih tidak positif: settlement sah
+dengan omzet kotor Rp1000 dan diskon penjual Rp1000 menghasilkan laporan margin berstatus `complete`,
+pendapatan bersih `0.00`, dan rasio `null`. Satu order seperti itu sudah cukup membuat
+`POST /api/ai/investigate` menjawab `500` untuk pertanyaan margin, baik yang menyebut referensi order
+maupun pertanyaan margin umum yang menyertakan order tersebut.
+
+Finding sekarang menampilkan nominal margin apa adanya dan mengganti rasio yang tidak dapat dihitung
+dengan keterangan `Rasio margin belum tersedia (pendapatan bersih Rp0.00).` Rasio tidak pernah
+ditampilkan sebagai nol, dan order berstatus `complete` tetap ikut dihitung pada agregat margin.
+Test `tests/test_ai_investigation.py` menambahkan kasus pendapatan bersih nol untuk pertanyaan
+terfokus dan pertanyaan margin umum.
+
+Bukti: [audit margin null ratio verification](audit-margin-null-ratio-verification.md).

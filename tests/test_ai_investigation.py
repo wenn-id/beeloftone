@@ -35,6 +35,12 @@ class AiInvestigationTest(TestCase):
         self.assertEqual(response.status_code,status,response.text)
         return response.json()
 
+    def settle(self, shipment):
+        return self.post('/api/marketplace-shipments/'+shipment['id']+'/sale-settlements',dict(
+            reference='AI-MARGIN-SETTLE',gross_revenue='1000',seller_discount='1000',
+            customer_refund='0',marketplace_fee='100',shipping_cost='25',other_variable_cost='10',
+            settled_date='2026-10-25',reason='Settlement diskon penuh'))
+
     def test_stockout_question_returns_focused_evidence_and_non_executable_proposals(self):
         self.scenario()
         with self.app.state.store.transaction() as db:
@@ -90,6 +96,28 @@ class AiInvestigationTest(TestCase):
         self.assertIn('SKU berisiko stockout',overview['answer'])
         self.assertEqual(set(overview['evidence']),
                          {'production_board','approvals','replenishment'})
+
+    def test_zero_net_revenue_margin_answers_without_a_ratio(self):
+        order,shipment=self.setup_shipment()
+        settlement=self.settle(shipment)
+        self.assertEqual((settlement['gross_revenue'],settlement['seller_discount'],
+                          settlement['net_revenue']),('1000.00','1000.00','0.00'))
+        general=self.ask(self.body('Bagaimana margin kontribusi bisnis saat ini?'))
+        focused=self.ask(self.body('Tolong investigasi margin '+order['reference']))
+        for result in (general,focused):
+            self.assertEqual(result['intent'],'margin')
+            finding=result['findings'][0]
+            self.assertEqual(finding['entity'],{'type':'order','id':order['id']})
+            self.assertIn('margin Rp-228.11',finding['title'])
+            self.assertEqual(finding['detail'],'Rasio margin belum tersedia (pendapatan bersih Rp0.00).')
+            facts={row['label']:row['value'] for row in result['facts']}
+            self.assertEqual((facts['Margin lengkap'],facts['Margin belum lengkap'],
+                              facts['Total margin terhitung']),(1,0,'-228.11'))
+        self.assertEqual(focused['focus']['orders'][0]['id'],order['id'])
+        self.assertEqual([(row['net_revenue'],row['contribution_margin'],
+                           row['contribution_margin_rate'])
+                          for row in focused['evidence']['contribution_margins']],
+                         [('0.00','-228.11',None)])
 
     def test_reference_in_question_focuses_production_and_margin(self):
         first,_,_,_=self.scenario()
