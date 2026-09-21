@@ -24,7 +24,7 @@ dengan helper yang sedang diuji, dan beberapa kasus ditulis sebagai tanggal lite
 import json
 import sqlite3
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest import TestCase
 
 import test_production
@@ -498,6 +498,163 @@ class ShiftDateHelperTest(TestCase):
             shift_date('2026-01-01', 7, 'as_of')
         with self.assertRaises(ZeroDivisionError):
             shift_date(date(2026, 1, 1), 1 // 0, 'as_of')
+
+
+
+class TimestampTimezoneBoundaryTest(TestCase):
+    """Regresi P3 #34: konversi timezone di validator model menjawab 422, bukan 500.
+
+    Field `datetime` dengan offset zona waktu lolos parsing Pydantic, lalu validatornya mengubah
+    ke UTC. `astimezone` menjawab `OverflowError` saat hasil konversinya jatuh di luar rentang
+    `datetime` yang dapat diwakili -- tengah malam 0001-01-01 di zona +14:00 adalah 0000-12-31
+    dalam UTC. Pydantic hanya menerjemahkan `ValueError` menjadi 422, jadi sebelum perbaikan
+    permintaan itu menjawab 500:
+
+        POST /api/integration-sync-runs  {"started_at": "0001-01-01T00:00:00+14:00"}  -> 500
+
+    Yang ditegakkan modul ini:
+
+    * Kedua ujung kalender dengan offset timezone ditolak 422 pada setiap validator konversi UTC.
+    * Timestamp normal tetap diterima dan disimpan dalam UTC.
+    * Penolakan tidak meninggalkan sync run, request, atau audit.
+    * Hanya OverflowError yang ditangani; TypeError lain tetap muncul sebagai bug.
+    """
+
+    setUp = test_production.ProductionTest.setUp
+    post = test_production.ProductionTest.post
+
+    # Offset yang mendorong hasil konversi melewati ujung kalender. +14:00 pada 0001-01-01 dan
+    # -14:00 pada 9999-12-31 adalah pasangan simetrisnya; arah sebaliknya justru masih sah.
+    LOWER_EDGE = '0001-01-01T00:00:00+14:00'
+    UPPER_EDGE = '9999-12-31T23:59:59.999999-14:00'
+    LOWER_STILL_VALID = '0001-01-01T00:00:00-14:00'
+    UPPER_STILL_VALID = '9999-12-31T23:59:59.999999+14:00'
+
+    def sync_body(self, **changes):
+        body = dict(system='jubelio', scope='orders', status='succeeded',
+                    started_at='2026-09-01T00:00:00+07:00', finished_at='2026-09-01T01:00:00+07:00',
+                    records_read=0, records_written=0, reason='Uji batas timestamp')
+        body.update(changes)
+        return body
+
+    def snapshot_body(self, snapshot_at):
+        return dict(started_at='2026-09-01T00:00:00+07:00', finished_at='2026-09-01T00:30:00+07:00',
+                    snapshot_at=snapshot_at, external_cursor='edge-page',
+                    reason='Uji batas timestamp', items=[{'external_id': 'item-42',
+                    'external_sku': 'JUB-LUNA-M', 'sellable_quantity': 1, 'reserved_quantity': 0}])
+
+    # ------------------------------------------------------ kasus yang dilaporkan issue #34
+    def test_reported_body_is_refused_with_422_not_500(self):
+        """Reproduksi persis dari issue: started_at +14:00 pada awal kalender."""
+        response = self.client.post('/api/integration-sync-runs', json=self.sync_body(
+            started_at=self.LOWER_EDGE), headers={'Idempotency-Key': 'p34-reported'})
+        self.assertEqual(response.status_code, 422, response.text)
+        error = response.json()['detail'][0]
+        self.assertEqual(error['loc'], ['body', 'started_at'])
+        self.assertIn('di luar jangkauan', error['msg'])
+        self.assertIn('0001-01-01 sampai 9999-12-31', error['msg'])
+
+    def test_the_upper_edge_is_refused_the_same_way(self):
+        response = self.client.post('/api/integration-sync-runs', json=self.sync_body(
+            finished_at=self.UPPER_EDGE), headers={'Idempotency-Key': 'p34-upper'})
+        self.assertEqual(response.status_code, 422, response.text)
+        error = response.json()['detail'][0]
+        self.assertEqual(error['loc'], ['body', 'finished_at'])
+        self.assertIn('di luar jangkauan', error['msg'])
+
+    def test_the_same_edges_are_refused_on_every_snapshot_endpoint(self):
+        """Pola validator yang identik di seluruh import snapshot harus konsisten."""
+        self.post(f"/api/products/{self.product['id']}/external-mappings/jubelio",
+                  {'expected_revision': 0, 'action': 'mapped', 'external_id': 'item-42',
+                   'external_sku': 'JUB-LUNA-M', 'reason': 'Mapping untuk uji batas'})
+        for path in ('/api/integrations/jubelio/finished-goods-snapshots',
+                     '/api/integrations/jubelio/order-snapshots',
+                     '/api/integrations/jubelio/return-snapshots',
+                     '/api/integrations/jubelio/listing-snapshots',
+                     '/api/integrations/mekari/finance-snapshots',
+                     '/api/integrations/mekari/payable-snapshots',
+                     '/api/integrations/mekari/receivable-snapshots',
+                     '/api/integrations/mekari/payroll-snapshots'):
+            for edge in (self.LOWER_EDGE, self.UPPER_EDGE):
+                with self.subTest(path=path, snapshot_at=edge):
+                    response = self.client.post(path, json=self.snapshot_body(edge),
+                                                headers={'Idempotency-Key': 'p34-snap'})
+                    self.assertEqual(response.status_code, 422, f'{path} -> {response.text}')
+                    self.assertIn('di luar jangkauan', response.json()['detail'][0]['msg'])
+
+    # ----------------------------------- ujung kalender yang justru masih dapat dikonversi
+    def test_the_mirror_offsets_at_both_edges_are_still_accepted(self):
+        """Offset dengan arah yang aman tetap diterima; bukan batas tahun yang ditolak."""
+        for index, started_at in enumerate((self.LOWER_STILL_VALID, self.UPPER_STILL_VALID)):
+            with self.subTest(started_at=started_at):
+                run = self.post('/api/integration-sync-runs',
+                                self.sync_body(started_at=started_at,
+                                               finished_at=self.UPPER_STILL_VALID),
+                                key=f'p34-valid-{index}')
+                self.assertTrue(run['id'])
+
+    def test_a_normal_timestamp_is_stored_in_utc(self):
+        run = self.post('/api/integration-sync-runs', self.sync_body(), key='p34-normal')
+        self.assertTrue(run['id'])
+        detail = self.client.get('/api/integration-sync-runs/' + run['id']).json()
+        # 2026-09-01T00:00:00+07:00 -> 2026-08-31T17:00:00Z; konversi tetap berjalan.
+        self.assertEqual(detail['started_at'], '2026-08-31T17:00:00Z')
+        self.assertEqual(detail['finished_at'], '2026-08-31T18:00:00Z')
+
+    # --------------------------------------------------------------- tidak ada efek samping
+    def test_a_refused_run_leaves_no_record_or_audit(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            before = list(db.iterdump())
+        self.client.post('/api/integration-sync-runs', json=self.sync_body(
+            started_at=self.LOWER_EDGE), headers={'Idempotency-Key': 'p34-leftover'})
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(list(db.iterdump()), before)
+        self.assertEqual(self.client.get('/api/integration-sync-runs').json(), [])
+
+    def test_the_same_idempotency_key_is_still_usable_after_a_refusal(self):
+        refused = self.client.post('/api/integration-sync-runs', json=self.sync_body(
+            started_at=self.LOWER_EDGE), headers={'Idempotency-Key': 'p34-reuse'})
+        self.assertEqual(refused.status_code, 422, refused.text)
+        saved = self.post('/api/integration-sync-runs', self.sync_body(), key='p34-reuse')
+        self.assertTrue(saved['id'])
+        replay = self.post('/api/integration-sync-runs', self.sync_body(), key='p34-reuse')
+        self.assertEqual(replay, saved)
+
+    # ------------------------------------------------------------- helper dan konsistensi
+    def test_to_utc_converts_and_validates_as_documented(self):
+        from beeloft.models import to_utc
+        jakarta = datetime.fromisoformat('2026-09-01T00:00:00+07:00')
+        self.assertEqual(to_utc(jakarta, 'Waktu uji'), datetime.fromisoformat('2026-08-31T17:00:00+00:00'))
+        for edge in (self.LOWER_EDGE, self.UPPER_EDGE):
+            with self.subTest(edge=edge):
+                with self.assertRaises(ValueError) as caught:
+                    to_utc(datetime.fromisoformat(edge), 'Waktu uji')
+                self.assertIn('0001-01-01 sampai 9999-12-31', str(caught.exception))
+        with self.assertRaises(ValueError) as caught:
+            to_utc(datetime.fromisoformat('2026-09-01T00:00:00'), 'Waktu uji')
+        self.assertEqual(str(caught.exception), 'Waktu uji harus menyertakan zona waktu.')
+
+    def test_to_utc_does_not_swallow_unrelated_errors(self):
+        from beeloft.models import to_utc
+        with self.assertRaises(AttributeError):
+            to_utc('2026-09-01', 'Waktu uji')
+
+    def test_every_utc_conversion_validator_refuses_both_edges(self):
+        """Penjagaan harus seragam di seluruh model, bukan hanya yang dilaporkan issue."""
+        import inspect
+        from beeloft import models
+        checked = 0
+        for _name, cls in inspect.getmembers(models, inspect.isclass):
+            if 'timezone_required' not in vars(cls):
+                continue
+            for edge in (self.LOWER_EDGE, self.UPPER_EDGE):
+                with self.subTest(model=cls.__name__, snapshot_at=edge):
+                    with self.assertRaises(ValueError):
+                        cls.timezone_required(datetime.fromisoformat(edge))
+                    checked += 1
+        # 16 model masing-masing menolak kedua ujung; bila ada validator baru yang lupa
+        # memakai to_utc, angka ini tidak akan bertambah seiring model baru.
+        self.assertEqual(checked, 32)
 
 
 

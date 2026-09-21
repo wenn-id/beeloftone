@@ -18,6 +18,28 @@ TRANSITIONS = {("planned", "cutting"), ("cutting", "sewing"), ("sewing", "finish
                ("finishing", "qc"), ("qc", "warehouse"), ("qc", "reject")}
 
 
+def to_utc(value, label):
+    """Konversi datetime ke UTC, atau tolak sebagai kesalahan validasi (HTTP 422).
+
+    `datetime.astimezone(timezone.utc)` menjawab `OverflowError` saat hasil konversinya jatuh di
+    luar rentang yang dapat diwakili -- 0001-01-01T00:00:00Z sampai 9999-12-31T23:59:59.999999Z.
+    Offset yang sah di sisi input tetap dapat mendorong hasilnya melewati batas itu: tengah malam
+    1 Januari tahun 1 di zona +14:00 adalah 31 Desember tahun 0 dalam UTC. Pydantic hanya
+    menerjemahkan `ValueError` menjadi 422, jadi tanpa penerjemahan ini permintaan yang lolos
+    parsing datetime menjawab 500 ke klien.
+
+    Hanya `OverflowError` yang ditangkap, dan hanya di sekitar satu operasi konversi, agar
+    kesalahan lain tetap muncul sebagai bug.
+    """
+    if value.utcoffset() is None:
+        raise ValueError(f'{label} harus menyertakan zona waktu.')
+    try:
+        return value.astimezone(timezone.utc)
+    except OverflowError:
+        raise ValueError(f'{label} di luar jangkauan setelah dikonversi ke UTC '
+                         '(0001-01-01 sampai 9999-12-31).') from None
+
+
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -296,9 +318,7 @@ class IntegrationSyncRunCreate(Input):
     @field_validator('started_at','finished_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu sinkronisasi harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu sinkronisasi')
 
     @model_validator(mode='after')
     def valid_contract(self):
@@ -355,9 +375,7 @@ class JubelioStockSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -396,9 +414,7 @@ class JubelioOrderSnapshotRecord(Input):
     @field_validator('ordered_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu order harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu order')
 
     @model_validator(mode='after')
     def unique_products(self):
@@ -420,9 +436,7 @@ class JubelioOrderSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -455,9 +469,7 @@ class JubelioReturnSnapshotRecord(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan retur harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan retur')
 
     @model_validator(mode='after')
     def valid_return(self):
@@ -485,9 +497,7 @@ class JubelioReturnSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -522,9 +532,7 @@ class JubelioListingSnapshotRecord(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan listing harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan listing')
 
 
 class JubelioListingSnapshotImport(Input):
@@ -538,9 +546,7 @@ class JubelioListingSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -600,9 +606,7 @@ class MekariFinanceSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -639,9 +643,7 @@ class MekariPayableSnapshotRecord(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan utang harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan utang')
 
     @model_validator(mode='after')
     def valid_payable(self):
@@ -671,9 +673,7 @@ class MekariPayableSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -710,9 +710,7 @@ class MekariReceivableSnapshotRecord(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan piutang harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan piutang')
 
     @model_validator(mode='after')
     def valid_receivable(self):
@@ -742,9 +740,7 @@ class MekariReceivableSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
@@ -776,9 +772,7 @@ class MekariPayrollAccounting(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan posting payroll harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan posting payroll')
 
     @model_validator(mode='after')
     def valid_posting(self):
@@ -812,9 +806,7 @@ class MekariPayrollSnapshotPeriod(Input):
     @field_validator('updated_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu pembaruan payroll harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu pembaruan payroll')
 
     @model_validator(mode='after')
     def valid_period(self):
@@ -842,9 +834,7 @@ class MekariPayrollSnapshotImport(Input):
     @field_validator('started_at','finished_at','snapshot_at')
     @classmethod
     def timezone_required(cls, value):
-        if value.utcoffset() is None:
-            raise ValueError('Waktu snapshot harus menyertakan zona waktu.')
-        return value.astimezone(timezone.utc)
+        return to_utc(value, 'Waktu snapshot')
 
     @model_validator(mode='after')
     def valid_snapshot(self):
