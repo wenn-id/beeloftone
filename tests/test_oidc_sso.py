@@ -8,14 +8,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from beeloft.api import create_app
-from beeloft.oidc import OidcConfig
+from beeloft.oidc import OidcClient, OidcConfig, UrlTransport
 from beeloft.store import DomainError, Store
 
 
@@ -53,6 +53,49 @@ class FakeOidcTransport:
         moment=datetime.now(timezone.utc)
         claims={'iss':self.issuer,'sub':subject,'aud':audience,'nonce':nonce,
                 'iat':moment,'exp':moment+timedelta(minutes=5)}|changes
+        return jwt.encode(claims,self.private_key,algorithm='RS256',headers={'kid':'test-key'})
+
+
+def decoded_basic_credentials(header):
+    """Membaca header Basic seperti provider menurut RFC 6749 §2.3.1: pisahkan pada titik dua
+    pertama, lalu form-decode username dan password secara terpisah."""
+    scheme,_,payload=header.partition(' ')
+    assert scheme=='Basic',header
+    client_id,_,client_secret=base64.b64decode(payload).decode().partition(':')
+    return unquote_plus(client_id),unquote_plus(client_secret)
+
+
+class ProviderUrlTransport(UrlTransport):
+    """UrlTransport dengan jaringan dimatikan: request yang benar-benar dibangun form_post
+    disimpan supaya dapat dibaca persis seperti provider membacanya."""
+
+    def __init__(self,issuer,methods):
+        self.private_key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
+        numbers=self.private_key.public_key().public_numbers()
+        self.jwks={'keys':[{'kty':'RSA','kid':'test-key','use':'sig','alg':'RS256',
+                            'n':encoded_integer(numbers.n),'e':encoded_integer(numbers.e)}]}
+        self.discovery={'issuer':issuer,'authorization_endpoint':issuer+'/authorize',
+            'token_endpoint':issuer+'/token','jwks_uri':issuer+'/jwks',
+            'token_endpoint_auth_methods_supported':methods,
+            'id_token_signing_alg_values_supported':['RS256']}
+        self.id_token=None
+        self.token_requests=[]
+
+    def _read(self,request,http_error_status=503):
+        url=request.full_url
+        if url.endswith('/.well-known/openid-configuration'):
+            return self.discovery
+        if url==self.discovery['token_endpoint']:
+            self.token_requests.append(request)
+            return {'id_token':self.id_token}
+        if url==self.discovery['jwks_uri']:
+            return self.jwks
+        raise AssertionError(url)
+
+    def token(self,nonce,audience):
+        moment=datetime.now(timezone.utc)
+        claims={'iss':self.discovery['issuer'],'sub':'employee-123','aud':audience,'nonce':nonce,
+                'iat':moment,'exp':moment+timedelta(minutes=5)}
         return jwt.encode(claims,self.private_key,algorithm='RS256',headers={'kid':'test-key'})
 
 
@@ -242,3 +285,45 @@ class OidcSsoTest(TestCase):
         _,query=self.begin();self.transport.id_token=self.transport.token(query['nonce'][0])
         self.assertEqual(self.callback(query).status_code,303)
         self.assertEqual(self.client.get('/api/me').json()['id'],self.admin['id'])
+
+
+class OidcBasicAuthTest(TestCase):
+    """Kredensial client_secret_basic diuji lewat header yang dibangun UrlTransport sendiri."""
+
+    def exchange(self,client_id,client_secret,methods):
+        config=OidcConfig('https://identity.example',client_id,client_secret,
+                          'http://127.0.0.1:8000/api/sso/callback')
+        transport=ProviderUrlTransport(config.issuer,methods)
+        client=OidcClient(config,transport)
+        nonce='nonce-'+client_id
+        transport.id_token=transport.token(nonce,config.client_id)
+        identity=client.exchange('authorization-code','code-verifier',
+                                 hashlib.sha256(nonce.encode()).hexdigest())
+        return config,transport,identity
+
+    def test_basic_auth_form_encodes_each_credential_before_base64(self):
+        cases=(('client:id','secret+percent%value'),('client id','secret value'),
+               ('100%client','a%2Bb'),('client:with:colon','secret:with:colon'))
+        for client_id,client_secret in cases:
+            with self.subTest(client_id=client_id,client_secret=client_secret):
+                config,transport,identity=self.exchange(client_id,client_secret,['client_secret_basic'])
+                self.assertEqual(identity,{'issuer':config.issuer,'subject':'employee-123'})
+                request=transport.token_requests[0]
+                self.assertEqual(decoded_basic_credentials(request.headers['Authorization']),
+                                 (config.client_id,config.client_secret))
+                form=parse_qs(request.data.decode())
+                self.assertNotIn('client_secret',form)
+                self.assertEqual(form['client_id'],[config.client_id])
+
+    def test_client_secret_post_keeps_the_secret_in_the_form_body(self):
+        cases=(('beeloft-client','secret+percent%value'),('client id','secret value'),
+               ('100%client','a%2Bb'))
+        for client_id,client_secret in cases:
+            with self.subTest(client_id=client_id,client_secret=client_secret):
+                config,transport,identity=self.exchange(client_id,client_secret,['client_secret_post'])
+                self.assertEqual(identity,{'issuer':config.issuer,'subject':'employee-123'})
+                request=transport.token_requests[0]
+                self.assertIsNone(request.headers.get('Authorization'))
+                form=parse_qs(request.data.decode())
+                self.assertEqual(form['client_secret'],[config.client_secret])
+                self.assertEqual(form['client_id'],[config.client_id])

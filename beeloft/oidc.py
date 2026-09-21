@@ -90,7 +90,11 @@ class UrlTransport:
         body = urllib.parse.urlencode(data).encode()
         headers={'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'}
         if basic_auth:
-            encoded=base64.b64encode(f'{basic_auth[0]}:{basic_auth[1]}'.encode()).decode()
+            # RFC 6749 §2.3.1: username dan password masing-masing di-form-encode (Appendix B)
+            # sebelum digabung, supaya provider yang memisah pada titik dua pertama tetap
+            # memperoleh nilai asli untuk kredensial yang memuat ':', '+', '%', atau spasi.
+            credentials=':'.join(urllib.parse.quote_plus(value) for value in basic_auth)
+            encoded=base64.b64encode(credentials.encode()).decode()
             headers['Authorization']='Basic '+encoded
         return self._read(urllib.request.Request(url, data=body, headers=headers),http_error_status=401)
 

@@ -2686,3 +2686,22 @@ menghasilkan URL yang sama benarnya. Nilai parameter, validasi metadata, dan alu
 berubah.
 
 Bukti: [audit oidc authorization query verification](audit-p2-oidc-authorization-query-verification.md).
+
+## Perbaikan audit P2: encoding client_secret_basic OAuth (v0.94)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`UrlTransport.form_post` menyusun header `Authorization` client_secret_basic dari `id:secret` mentah
+sebelum Base64. RFC 6749 §2.3.1 mewajibkan username dan password di-form-encode (Appendix B) sebelum
+digabung, sementara provider membacanya dengan memisah pada titik dua pertama lalu mem-form-decode
+kedua bagian. Kredensial seperti `client:id` / `secret+percent%value` karena itu dibaca provider
+sebagai `client` / `id:secret percent%value`, nilai yang memuat `+` atau `%` berubah arti, dan login
+gagal pada provider yang hanya mendukung Basic.
+
+Setiap nilai sekarang di-encode terpisah dengan `urllib.parse.quote_plus`, baru digabung dengan `:`
+dan di-Base64, sehingga titik dua di dalam nilai menjadi `%3A` dan pemisah pertama yang dibaca
+provider selalu pemisah yang benar. Jalur `client_secret_post` tidak berubah: secret tetap dikirim di
+body form lewat `urlencode` dan header `Authorization` tidak dikirim.
+
+Bukti: [audit oidc client secret basic verification](audit-p2-oidc-client-secret-basic-verification.md).
