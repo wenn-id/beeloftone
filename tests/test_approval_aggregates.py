@@ -406,7 +406,7 @@ class ApprovalSummaryConsumerTest(ApprovalFixture):
         self.assertIn('Ada 610 item menunggu keputusan dengan total nominal '
                       'tercatat Rp500000.00.', report['answer'])
         self.assertEqual(set(report['evidence']),
-                         {'production_board', 'approvals', 'replenishment'})
+                         {'production_board', 'production_scope', 'approvals', 'replenishment'})
 
     def test_evidence_separates_the_population_summary_from_the_sample(self):
         self.big_population()

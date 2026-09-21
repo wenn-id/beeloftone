@@ -76,6 +76,38 @@ APPROVAL_AGGREGATES = (
 )
 
 
+# Per-order totals dan filter board produksi dipakai dua konsumen dengan kebutuhan berlawanan.
+# `production_board()` sengaja menyajikan ringkasan global supaya KPI board tidak bergerak ketika
+# daftar difilter; jawaban fokus justru membutuhkan agregat atas order yang dipilih saja. Keduanya
+# harus membaca populasi dengan definisi filter yang sama persis, jadi SQL-nya tinggal di sini.
+PRODUCTION_CTE_SQL = """WITH production AS (
+    SELECT o.id,o.reference,o.title,o.due_date,o.created_at,o.owner_id,
+        SUM(CASE WHEN b.stage NOT IN ('warehouse','reject') THEN b.quantity ELSE 0 END) AS pending,
+        SUM(CASE WHEN b.stage IN ('cutting','sewing','finishing','qc','rework') THEN b.quantity ELSE 0 END) AS in_progress,
+        SUM(CASE WHEN b.stage='rework' THEN b.quantity ELSE 0 END) AS rework
+    FROM orders o JOIN order_lines l ON l.order_id=o.id
+    JOIN balances b ON b.line_id=l.id GROUP BY o.id
+) """
+
+PRODUCTION_WHERE_SQL = """(:status='all' OR (:status='active' AND p.pending>0)
+        OR (:status='overdue' AND p.pending>0 AND p.due_date<:today)
+        OR (:status='closed' AND p.pending=0)
+        OR (:status='blocked' AND EXISTS(SELECT 1 FROM issues i JOIN order_lines l ON l.id=i.line_id
+            WHERE l.order_id=p.id AND i.resolved_at IS NULL)))
+    AND (:owner_id='' OR p.owner_id=:owner_id)
+    AND (:stage='all' OR EXISTS(SELECT 1 FROM order_lines l JOIN balances b ON b.line_id=l.id
+        WHERE l.order_id=p.id AND b.stage=:stage AND b.quantity>0))
+    AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
+        OR EXISTS(SELECT 1 FROM order_lines l JOIN products s ON s.id=l.product_id
+            WHERE l.order_id=p.id AND (instr(lower(s.sku),:query)>0 OR instr(lower(s.name),:query)>0))) """
+
+PRODUCTION_SUMMARY_COLUMNS = """COUNT(*) AS orders,
+    SUM(pending>0) AS active,SUM(pending>0 AND due_date<:today) AS overdue,
+    SUM(pending=0) AS closed,SUM(in_progress) AS in_progress,SUM(rework) AS rework"""
+
+PRODUCTION_SELECTION_SQL = " FROM production p WHERE " + PRODUCTION_WHERE_SQL
+
+
 def approval_amount(minor, rupiah=Decimal(0)):
     """Format nominal approval dari akumulator satuan minor berpresisi arbitrer.
 
@@ -7091,44 +7123,43 @@ class Store:
             ids = [row[0] for row in db.execute("SELECT id FROM orders ORDER BY due_date,created_at,id LIMIT ? OFFSET ?", (limit, offset))]
             return [self._order(db, order_id) for order_id in ids]
 
+    def _production_filters(self, query, status, owner_id, stage):
+        """Parameter filter board yang sama untuk ringkasan global dan agregat terpilih."""
+        return {"today": datetime.now(timezone(timedelta(hours=7))).date().isoformat(),
+                "query": query.strip().lower(), "status": status, "owner_id": owner_id, "stage": stage}
+
     def production_board(self, limit=25, offset=0, query="", status="all", owner_id="", stage="all"):
-        totals = """WITH production AS (
-            SELECT o.id,o.reference,o.title,o.due_date,o.created_at,o.owner_id,
-                SUM(CASE WHEN b.stage NOT IN ('warehouse','reject') THEN b.quantity ELSE 0 END) AS pending,
-                SUM(CASE WHEN b.stage IN ('cutting','sewing','finishing','qc','rework') THEN b.quantity ELSE 0 END) AS in_progress,
-                SUM(CASE WHEN b.stage='rework' THEN b.quantity ELSE 0 END) AS rework
-            FROM orders o JOIN order_lines l ON l.order_id=o.id
-            JOIN balances b ON b.line_id=l.id GROUP BY o.id
-        ) """
-        filters = """ FROM production p WHERE
-            (:status='all' OR (:status='active' AND p.pending>0)
-                OR (:status='overdue' AND p.pending>0 AND p.due_date<:today)
-                OR (:status='closed' AND p.pending=0)
-                OR (:status='blocked' AND EXISTS(SELECT 1 FROM issues i JOIN order_lines l ON l.id=i.line_id
-                    WHERE l.order_id=p.id AND i.resolved_at IS NULL)))
-            AND (:owner_id='' OR p.owner_id=:owner_id)
-            AND (:stage='all' OR EXISTS(SELECT 1 FROM order_lines l JOIN balances b ON b.line_id=l.id
-                WHERE l.order_id=p.id AND b.stage=:stage AND b.quantity>0))
-            AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
-                OR EXISTS(SELECT 1 FROM order_lines l JOIN products s ON s.id=l.product_id
-                    WHERE l.order_id=p.id AND (instr(lower(s.sku),:query)>0 OR instr(lower(s.name),:query)>0))) """
-        params = {"today": datetime.now(timezone(timedelta(hours=7))).date().isoformat(),
-                  "query": query.strip().lower(), "status": status, "limit": limit, "offset": offset,
-                  "owner_id": owner_id, "stage": stage}
+        params = self._production_filters(query, status, owner_id, stage) | {"limit": limit, "offset": offset}
         with self.transaction() as db:
-            row = db.execute(totals + """SELECT COUNT(*) AS orders,
-                SUM(pending>0) AS active,SUM(pending>0 AND due_date<:today) AS overdue,
-                SUM(pending=0) AS closed,SUM(in_progress) AS in_progress,SUM(rework) AS rework
-                FROM production""", params).fetchone()
+            row = db.execute(PRODUCTION_CTE_SQL + "SELECT " + PRODUCTION_SUMMARY_COLUMNS +
+                             " FROM production", params).fetchone()
             summary = {key: value or 0 for key, value in dict(row).items()}
-            count = db.execute(totals + "SELECT COUNT(*)" + filters, params).fetchone()[0]
-            ids = [r[0] for r in db.execute(totals + "SELECT p.id" + filters +
+            count = db.execute(PRODUCTION_CTE_SQL + "SELECT COUNT(*)" + PRODUCTION_SELECTION_SQL, params).fetchone()[0]
+            ids = [r[0] for r in db.execute(PRODUCTION_CTE_SQL + "SELECT p.id" + PRODUCTION_SELECTION_SQL +
                                            "ORDER BY p.due_date,p.created_at,p.id LIMIT :limit OFFSET :offset", params)]
             return {"summary": summary, "total": count, "limit": limit, "offset": offset,
                     "owners": [dict(row) for row in db.execute("""SELECT u.id,u.name,u.active FROM users u
                         WHERE EXISTS(SELECT 1 FROM orders o WHERE o.owner_id=u.id) ORDER BY u.name,u.id""")],
                     "open_issues": db.execute("SELECT COUNT(*) FROM issues WHERE resolved_at IS NULL").fetchone()[0],
                     "orders": [self._order(db, order_id) for order_id in ids]}
+
+    def production_scope(self, query="", status="all", owner_id="", stage="all"):
+        """Agregat order yang cocok filter, dihitung atas seluruh populasi.
+
+        Ringkasan `production_board()` sengaja global supaya KPI board tidak bergoyang saat daftar
+        difilter. Jawaban fokus membutuhkan kebalikannya: angka yang hanya mencakup order terpilih,
+        dan seluruh populasi yang cocok - bukan satu halaman daftar. Agregatnya dibaca terpisah
+        tanpa menghidrasi order mana pun.
+        """
+        params = self._production_filters(query, status, owner_id, stage)
+        with self.transaction() as db:
+            row = db.execute(PRODUCTION_CTE_SQL + "SELECT " + PRODUCTION_SUMMARY_COLUMNS +
+                             PRODUCTION_SELECTION_SQL, params).fetchone()
+            summary = {key: value or 0 for key, value in dict(row).items()}
+            open_issues = db.execute(PRODUCTION_CTE_SQL + """SELECT COUNT(*) FROM issues i
+                JOIN order_lines l ON l.id=i.line_id JOIN production p ON p.id=l.order_id
+                WHERE i.resolved_at IS NULL AND """ + PRODUCTION_WHERE_SQL, params).fetchone()[0]
+            return {"summary": summary, "total": summary["orders"], "open_issues": open_issues}
 
     def create_issue(self, payload, actor, key):
         def perform(db):

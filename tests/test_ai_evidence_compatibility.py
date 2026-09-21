@@ -209,8 +209,14 @@ class AiEvidenceCompatibilityTest(aggregate_tests.ApprovalFixture):
         self.seed_marketing(2, amount_minor=1_000_00)
         report = self.ask('Apa yang harus saya lihat sekarang?')
         self.assertEqual(report['intent'], 'overview')
+        # `production_scope` ditambahkan sengaja bersama perbaikan agregat fokus produksi: ringkasan
+        # board tetap global, sedangkan agregat yang mendasari jawaban disimpan terpisah.
         self.assertEqual(set(report['evidence']),
-                         {'production_board', 'approvals', 'replenishment'})
+                         {'production_board', 'production_scope', 'approvals', 'replenishment'})
+        self.assertEqual(set(report['evidence']['production_scope']),
+                         {'summary', 'total', 'open_issues'})
+        self.assertEqual(set(report['evidence']['production_scope']['summary']),
+                         {'orders', 'active', 'overdue', 'closed', 'in_progress', 'rework'})
         self.assertEqual(set(report['evidence']['approvals']),
                          {'summary', 'sample', 'sample_size', 'truncated'})
         self.assertEqual(set(report['evidence']['approvals']['summary']),
