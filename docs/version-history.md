@@ -2705,3 +2705,25 @@ provider selalu pemisah yang benar. Jalur `client_secret_post` tidak berubah: se
 body form lewat `urlencode` dan header `Authorization` tidak dikirim.
 
 Bukti: [audit oidc client secret basic verification](audit-p2-oidc-client-secret-basic-verification.md).
+
+
+## Perbaikan audit P3: state callback OIDC non-ASCII (v0.95)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`/api/sso/callback` membandingkan cookie `beeloft_oidc_state` dengan parameter `state` memakai
+`secrets.compare_digest()` atas `str` mentah. Fungsi itu menolak `str` yang memuat karakter non-ASCII
+dengan `TypeError`, dan kedua nilai sepenuhnya dikendalikan pengirim request. Dengan SSO aktif,
+`/api/sso/callback?code=x&state=%C3%A9` karena itu dijawab HTTP 500 dengan traceback — juga callback
+yang `state`-nya sah tetapi datang bersama cookie ber-byte non-ASCII — padahal state seperti itu
+tidak pernah diterbitkan aplikasi dan semestinya ditolak sebagai state tidak sah.
+
+State sekarang diperiksa lebih dahulu terhadap alfabet yang memang diterbitkan `secrets.token_urlsafe`
+(huruf, angka, `-`, `_`), lalu dibandingkan sebagai byte ASCII dengan `secrets.compare_digest` seperti
+sebelumnya. Kedua sisi diperiksa, sehingga state maupun cookie di luar alfabet ditolak 401 dengan
+pesan yang sama seperti state ASCII yang tidak cocok, berhenti sebelum attempt login tersimpan
+dikonsumsi. Callback yang sah tidak berubah: tetap 303 ke `/` dengan cookie session, dan state tetap
+sekali pakai.
+
+Bukti: [audit oidc state non-ASCII verification](audit-p3-oidc-state-non-ascii-verification.md).
