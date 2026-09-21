@@ -2623,3 +2623,23 @@ Test `tests/test_ai_investigation.py` menambahkan kasus pendapatan bersih nol un
 terfokus dan pertanyaan margin umum.
 
 Bukti: [audit margin null ratio verification](audit-margin-null-ratio-verification.md).
+
+## Perbaikan audit P2: agregat produksi pada jawaban fokus (v0.91)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`_production()` memakai ringkasan `production_board` apa adanya untuk jawaban fokus. Ringkasan itu
+memang global supaya KPI board tidak bergoyang ketika daftar difilter, jadi pertanyaan tentang satu
+order ikut menjawab angka order lain: satu order fokus 10 pcs yang belum jatuh tempo bersama satu
+order terlambat berisi 500 pcs di cutting dijawab `Ada 2 order aktif, 1 terlambat, 0 kendala terbuka,
+dan 500 pcs sedang diproses.` Bila hasil fokus melewati satu halaman, angka yang bocor juga bisa
+berasal dari populasi yang lebih luas daripada halaman pertama daftar.
+
+Jawaban dan facts sekarang memakai `production_scope()`: agregat atas order yang dipilih saja,
+dihitung di database atas seluruh populasi yang cocok sehingga hasil di atas satu halaman tetap utuh.
+SQL populasi dipakai bersama `production_board()`, jadi definisi filternya tidak dapat menyimpang.
+Kontrak KPI `/api/production-board` tidak berubah - ringkasannya tetap global - dan agregat yang
+mendasari jawaban disimpan pada `evidence.production_scope` di samping `evidence.production_board`.
+
+Bukti: [audit focused production aggregate verification](audit-p2-focused-production-aggregate-verification.md).

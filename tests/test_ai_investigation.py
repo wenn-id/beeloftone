@@ -95,7 +95,7 @@ class AiInvestigationTest(TestCase):
         self.assertIn('item menunggu keputusan',overview['answer'])
         self.assertIn('SKU berisiko stockout',overview['answer'])
         self.assertEqual(set(overview['evidence']),
-                         {'production_board','approvals','replenishment'})
+                         {'production_board','production_scope','approvals','replenishment'})
 
     def test_zero_net_revenue_margin_answers_without_a_ratio(self):
         order,shipment=self.setup_shipment()
@@ -129,6 +129,55 @@ class AiInvestigationTest(TestCase):
         self.assertEqual(margin['focus']['orders'][0]['id'],order['id'])
         reports=margin['evidence']['contribution_margins']
         self.assertEqual([row['order_id'] for row in reports],[order['id']])
+
+    def test_focused_production_answer_never_reports_another_order(self):
+        focused=self.order(qty=10,reference='AUDIT-FOCUSED',due_date='2026-12-31')
+        late=self.order(qty=500,reference='AUDIT-LATE',due_date='2026-01-01')
+        self.post('/api/movements',dict(line_id=late['lines'][0]['id'],from_stage='planned',
+            to_stage='cutting',quantity=500,reason='Cutting order lain'))
+        board=self.client.get('/api/production-board').json()
+        self.assertEqual((board['summary']['active'],board['summary']['overdue'],
+                          board['summary']['in_progress']),(2,1,500))
+        filtered=self.client.get('/api/production-board',params={'q':'AUDIT-FOCUSED'}).json()
+        self.assertEqual((filtered['total'],filtered['summary']),(1,board['summary']))
+        report=self.ask(self.body('Cek produksi AUDIT-FOCUSED'))
+        self.assertEqual([row['id'] for row in report['focus']['orders']],[focused['id']])
+        self.assertEqual(report['intent'],'production')
+        self.assertEqual(report['answer'],
+            'Ada 1 order aktif, 0 terlambat, 0 kendala terbuka, dan 0 pcs sedang diproses.')
+        self.assertEqual({row['label']:row['value'] for row in report['facts']},
+            {'Order aktif':1,'Order terlambat':0,'Kendala terbuka':0,'Sedang diproses':0})
+        scope=report['evidence']['production_scope']
+        self.assertEqual((scope['total'],scope['summary']['orders'],scope['open_issues']),(1,1,0))
+        # Ringkasan board tetap global di evidence; yang fokus adalah agregat scope-nya.
+        self.assertEqual(report['evidence']['production_board']['summary'],
+            {'orders':2,'active':2,'overdue':1,'closed':0,'in_progress':500,'rework':0})
+
+    def test_focused_production_aggregate_covers_results_beyond_one_page(self):
+        product=self.post('/api/products',dict(sku='AUDIT-PAGE-M',name='Batch halaman',
+            color='Abu',size='M'))
+        for index in range(120):
+            self.post('/api/orders',dict(reference='AUDIT-PAGE-%03d'%index,title='Batch halaman',
+                owner_id=self.operator['id'],due_date='2026-12-31',
+                lines=[dict(product_id=product['id'],quantity=1)]))
+        # Lima order di luar populasi fokus. Jawaban yang masih bocor dari KPI global akan
+        # melaporkan 125 order dan 5 keterlambatan, sedangkan jawaban yang hanya menjumlahkan
+        # halaman pertama akan melaporkan 100.
+        for index in range(5):
+            self.order(qty=40,reference='AUDIT-OUTSIDE-%d'%index,due_date='2026-01-01')
+        self.assertEqual(self.client.get('/api/production-board').json()['summary'],
+            {'orders':125,'active':125,'overdue':5,'closed':0,'in_progress':0,'rework':0})
+        report=self.ask(self.body('Cek produksi AUDIT-PAGE-M'))
+        self.assertEqual(report['focus']['products'][0]['sku'],'AUDIT-PAGE-M')
+        self.assertEqual(report['focus']['orders'],[])
+        self.assertEqual(report['answer'],
+            'Ada 120 order aktif, 0 terlambat, 0 kendala terbuka, dan 0 pcs sedang diproses.')
+        self.assertEqual({row['label']:row['value'] for row in report['facts']},
+            {'Order aktif':120,'Order terlambat':0,'Kendala terbuka':0,'Sedang diproses':0})
+        board=report['evidence']['production_board']
+        self.assertEqual((board['total'],len(board['orders'])),(120,100))
+        self.assertEqual(report['evidence']['production_scope']['total'],120)
+        self.assertEqual(report['evidence']['production_scope']['summary']['active'],120)
 
     def test_access_validation_backup_and_schema_remain_read_only(self):
         self.scenario()

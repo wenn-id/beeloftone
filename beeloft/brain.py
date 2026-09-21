@@ -127,12 +127,16 @@ def _production(store,focus):
     query=focus['orders'][0]['reference'] if len(focus['orders'])==1 else (
         focus['products'][0]['sku'] if len(focus['products'])==1 else '')
     board=store.production_board(100,0,query,'all','','all')
-    summary=board['summary']
+    # Ringkasan board selalu global supaya KPI-nya tidak bergoyang saat daftar difilter. Jawaban
+    # fokus tidak boleh memakai kontrak itu: jawaban dan faktanya dihitung ulang atas populasi order
+    # yang dipilih saja, dan atas seluruh populasi itu - bukan hanya halaman pertama daftar.
+    scope=store.production_scope(query)
+    summary=scope['summary']
     answer=(f"Ada {summary['active']} order aktif, {summary['overdue']} terlambat, "
-            f"{board['open_issues']} kendala terbuka, dan {summary['in_progress']} pcs sedang diproses.")
+            f"{scope['open_issues']} kendala terbuka, dan {summary['in_progress']} pcs sedang diproses.")
     facts=[_fact('Order aktif',summary['active'],'order','/api/production-board'),
            _fact('Order terlambat',summary['overdue'],'order','/api/production-board'),
-           _fact('Kendala terbuka',board['open_issues'],'issue','/api/production-board'),
+           _fact('Kendala terbuka',scope['open_issues'],'issue','/api/production-board'),
            _fact('Sedang diproses',summary['in_progress'],'pcs','/api/production-board')]
     candidates=[row for row in board['orders'] if row['overdue'] or row['open_issues']]
     findings=[{'severity':'high' if row['overdue'] else 'medium',
@@ -144,7 +148,10 @@ def _production(store,focus):
     proposals=[_proposal('investigate_order','Periksa '+row['reference'],
         'Buka order dan cek tahap, PIC, tenggat, serta kendala aktif.',
         '/api/production-board',{'order_id':row['id']}) for row in candidates[:10]]
-    return answer,facts,findings,proposals,{'production_board':board}
+    # `production_board` tetap membawa kontrak KPI global, sedangkan `production_scope` adalah
+    # agregat yang benar-benar mendasari jawaban dan facts. Keduanya disimpan supaya snapshot dapat
+    # diaudit tanpa menebak angka mana yang dipakai.
+    return answer,facts,findings,proposals,{'production_board':board,'production_scope':scope}
 
 
 def _margin(store,focus,orders):
