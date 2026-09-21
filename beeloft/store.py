@@ -95,6 +95,7 @@ PRODUCTION_WHERE_SQL = """(:status='all' OR (:status='active' AND p.pending>0)
         OR (:status='blocked' AND EXISTS(SELECT 1 FROM issues i JOIN order_lines l ON l.id=i.line_id
             WHERE l.order_id=p.id AND i.resolved_at IS NULL)))
     AND (:owner_id='' OR p.owner_id=:owner_id)
+    AND (:order_ids IS NULL OR p.id IN (SELECT value FROM json_each(:order_ids)))
     AND (:stage='all' OR EXISTS(SELECT 1 FROM order_lines l JOIN balances b ON b.line_id=l.id
         WHERE l.order_id=p.id AND b.stage=:stage AND b.quantity>0))
     AND (:query='' OR instr(lower(p.reference),:query)>0 OR instr(lower(p.title),:query)>0
@@ -7159,13 +7160,14 @@ class Store:
                 AND l.product_id IN (SELECT value FROM json_each(?)))
                 ORDER BY o.due_date,o.created_at,o.id""", (json.dumps(ids),))]
 
-    def _production_filters(self, query, status, owner_id, stage):
+    def _production_filters(self, query, status, owner_id, stage, order_ids=None):
         """Parameter filter board yang sama untuk ringkasan global dan agregat terpilih."""
         return {"today": datetime.now(timezone(timedelta(hours=7))).date().isoformat(),
-                "query": query.strip().lower(), "status": status, "owner_id": owner_id, "stage": stage}
+                "query": query.strip().lower(), "status": status, "owner_id": owner_id, "stage": stage,
+                "order_ids": json.dumps(order_ids) if order_ids is not None else None}
 
-    def production_board(self, limit=25, offset=0, query="", status="all", owner_id="", stage="all"):
-        params = self._production_filters(query, status, owner_id, stage) | {"limit": limit, "offset": offset}
+    def production_board(self, limit=25, offset=0, query="", status="all", owner_id="", stage="all", *, order_ids=None):
+        params = self._production_filters(query, status, owner_id, stage, order_ids) | {"limit": limit, "offset": offset}
         with self.transaction() as db:
             row = db.execute(PRODUCTION_CTE_SQL + "SELECT " + PRODUCTION_SUMMARY_COLUMNS +
                              " FROM production", params).fetchone()
@@ -7179,7 +7181,7 @@ class Store:
                     "open_issues": db.execute("SELECT COUNT(*) FROM issues WHERE resolved_at IS NULL").fetchone()[0],
                     "orders": [self._order(db, order_id) for order_id in ids]}
 
-    def production_scope(self, query="", status="all", owner_id="", stage="all"):
+    def production_scope(self, query="", status="all", owner_id="", stage="all", *, order_ids=None):
         """Agregat order yang cocok filter, dihitung atas seluruh populasi.
 
         Ringkasan `production_board()` sengaja global supaya KPI board tidak bergoyang saat daftar
@@ -7187,7 +7189,7 @@ class Store:
         dan seluruh populasi yang cocok - bukan satu halaman daftar. Agregatnya dibaca terpisah
         tanpa menghidrasi order mana pun.
         """
-        params = self._production_filters(query, status, owner_id, stage)
+        params = self._production_filters(query, status, owner_id, stage, order_ids)
         with self.transaction() as db:
             row = db.execute(PRODUCTION_CTE_SQL + "SELECT " + PRODUCTION_SUMMARY_COLUMNS +
                              PRODUCTION_SELECTION_SQL, params).fetchone()

@@ -179,6 +179,33 @@ class AiInvestigationTest(TestCase):
         self.assertEqual(report['evidence']['production_scope']['total'],120)
         self.assertEqual(report['evidence']['production_scope']['summary']['active'],120)
 
+    def test_production_focus_uses_selected_ids_instead_of_text_search(self):
+        first=self.order(qty=10,reference='FOCUS-ONE',due_date='2026-12-31')
+        second=self.order(qty=20,reference='FOCUS-TWO',due_date='2026-12-31')
+        other_product=self.post('/api/products',dict(sku='OUTSIDE-M',name='Outside',color='Red',size='M'))
+        outside=self.post('/api/orders',dict(reference='FOCUS-ONE-EXTRA',title='Other batch',
+            owner_id=self.operator['id'],due_date='2026-01-01',
+            lines=[dict(product_id=other_product['id'],quantity=500)]))
+        self.post('/api/movements',dict(line_id=outside['lines'][0]['id'],from_stage='planned',
+            to_stage='cutting',quantity=500,reason='Outside focus'))
+        empty=self.post('/api/products',dict(sku='EMPTY-M',name='Unused',color='Blue',size='M'))
+        cases=[('FOCUS-ONE',[first['id']]),
+               ('FOCUS-ONE dan FOCUS-TWO',[first['id'],second['id']]),
+               (self.product['sku']+' dan '+empty['sku'],[first['id'],second['id']]),
+               (empty['sku'],[])]
+        for question,wanted in cases:
+            with self.subTest(question=question):
+                report=self.ask(self.body('Cek produksi '+question))
+                self.assertEqual({row['label']:row['value'] for row in report['facts']},
+                    {'Order aktif':len(wanted),'Order terlambat':0,'Kendala terbuka':0,'Sedang diproses':0})
+                board=report['evidence']['production_board']
+                self.assertEqual(sorted(row['id'] for row in board['orders']),sorted(wanted))
+                self.assertEqual(board['total'],len(wanted))
+                self.assertEqual(report['evidence']['production_scope']['total'],len(wanted))
+                self.assertEqual(board['summary']['in_progress'],500)
+                self.assertEqual(report['findings'],[])
+                self.assertEqual(report['recommendations'],[])
+
     def test_access_validation_backup_and_schema_remain_read_only(self):
         self.scenario()
         body=self.body('Apakah stok akan habis?')
