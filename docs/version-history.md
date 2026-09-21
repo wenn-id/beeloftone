@@ -2643,3 +2643,23 @@ Kontrak KPI `/api/production-board` tidak berubah - ringkasannya tetap global - 
 mendasari jawaban disimpan pada `evidence.production_scope` di samping `evidence.production_board`.
 
 Bukti: [audit focused production aggregate verification](audit-p2-focused-production-aggregate-verification.md).
+
+## Perbaikan audit P2: tombol login lokal yang salah dikunci (v0.92)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+Handler `login-form` memilih tombolnya dengan `querySelector('button')`. Tombol SSO berada lebih
+dahulu di dalam form yang sama dan tetap elemen pertama ketika SSO tidak dikonfigurasi, jadi yang
+dinonaktifkan dan diberi label `Memeriksa akses…` adalah tombol provider: tombol submit tetap aktif
+selama request login berjalan, dua klik mengirim dua `POST /api/session` yang berlomba menggantikan
+cookie session, dan blok `finally` menimpa label provider menjadi `Buka ruang produksi` — permanen,
+dan terlihat sebagai tombol yang salah ketika SSO aktif.
+
+Pemilihan sekarang dipersempit ke `button[type="submit"]` sehingga hanya tombol submit yang dikunci,
+diberi label proses, dan dipulihkan labelnya dari salinan nilai sebelumnya. Satu login dalam
+penerbangan dijaga `loginRequest` dengan pola yang sama seperti `logoutRequest`, karena
+penonaktifan tombol saja tidak menutup jalur `form.requestSubmit()` yang tetap memicu `submit` event
+ketika tombol defaultnya nonaktif. Alur SSO dan `POST /api/session` tidak berubah.
+
+Bukti: [audit login submit verification](audit-p2-login-submit-verification.md).
