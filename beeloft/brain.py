@@ -131,13 +131,16 @@ def _approvals(store):
 
 
 def _production(store,focus):
-    query=focus['orders'][0]['reference'] if len(focus['orders'])==1 else (
-        focus['products'][0]['sku'] if len(focus['products'])==1 else '')
-    board=store.production_board(100,0,query,'all','','all')
+    order_ids=None
+    if focus['orders']:
+        order_ids=[row['id'] for row in focus['orders']]
+    elif focus['products']:
+        order_ids=store.order_ids_for_products([row['id'] for row in focus['products']])
+    board=store.production_board(100,0,order_ids=order_ids)
     # Ringkasan board selalu global supaya KPI-nya tidak bergoyang saat daftar difilter. Jawaban
     # fokus tidak boleh memakai kontrak itu: jawaban dan faktanya dihitung ulang atas populasi order
     # yang dipilih saja, dan atas seluruh populasi itu - bukan hanya halaman pertama daftar.
-    scope=store.production_scope(query)
+    scope=store.production_scope(order_ids=order_ids)
     summary=scope['summary']
     answer=(f"Ada {summary['active']} order aktif, {summary['overdue']} terlambat, "
             f"{scope['open_issues']} kendala terbuka, dan {summary['in_progress']} pcs sedang diproses.")
