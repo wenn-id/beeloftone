@@ -2663,3 +2663,26 @@ penonaktifan tombol saja tidak menutup jalur `form.requestSubmit()` yang tetap m
 ketika tombol defaultnya nonaktif. Alur SSO dan `POST /api/session` tidak berubah.
 
 Bukti: [audit login submit verification](audit-p2-login-submit-verification.md).
+
+## Perbaikan audit P2: authorization endpoint OIDC ber-query (v0.93)
+
+Rilis perbaikan tanpa fitur produk baru, tanpa connector vendor, dan tanpa perubahan schema. Schema
+database tetap 55.
+
+`OidcClient.authorization_request` menyusun URL otorisasi dengan
+`metadata['authorization_endpoint'] + '?' + query`. Ketika metadata memuat authorization endpoint yang
+sudah memiliki query bawaan — mis. `https://identity.example/authorize?p=tenant-policy` — hasilnya
+`…?p=tenant-policy?response_type=code&…`: tanda `?` kedua tidak pernah menjadi pemisah query, sehingga
+`response_type` tidak ada sebagai parameter tersendiri melainkan menempel pada nilai `p`. Provider yang
+memakai parameter policy/tenant karena itu tidak pernah menerima permintaan otorisasi yang benar, dan
+RFC 6749 §3.1 mensyaratkan query bawaan endpoint dipertahankan saat parameter tambahan ditambahkan.
+
+URL sekarang dirakit dengan `urllib.parse`: `urlsplit` memecah endpoint, query bawaan dipertahankan
+apa adanya, dan parameter OAuth — `response_type`, `client_id`, `redirect_uri`,
+`scope=openid profile email`, `state`, `nonce`, `code_challenge`, `code_challenge_method=S256` —
+disambung sebagai parameter query tersendiri sebelum `urlunsplit` menyusun ulang URL. Endpoint tanpa
+query, endpoint dengan `?` kosong, dan endpoint dengan satu atau lebih parameter policy/tenant
+menghasilkan URL yang sama benarnya. Nilai parameter, validasi metadata, dan alur callback tidak
+berubah.
+
+Bukti: [audit oidc authorization query verification](audit-p2-oidc-authorization-query-verification.md).

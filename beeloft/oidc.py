@@ -136,7 +136,13 @@ class OidcClient:
             'redirect_uri': self.config.redirect_uri, 'scope': 'openid profile email',
             'state': state, 'nonce': nonce, 'code_challenge': challenge,
             'code_challenge_method': 'S256'})
-        return metadata['authorization_endpoint'] + '?' + query, state, nonce, verifier
+        # Authorization endpoint boleh membawa query bawaan (mis. policy/tenant) dan RFC 6749 §3.1
+        # mensyaratkan query itu dipertahankan. Parameter OAuth karena itu disambung sebagai
+        # parameter query tersendiri, bukan ditempel pada query yang sudah ada.
+        endpoint = urllib.parse.urlsplit(metadata['authorization_endpoint'])
+        combined = endpoint.query + '&' + query if endpoint.query else query
+        url = urllib.parse.urlunsplit(endpoint._replace(query=combined))
+        return url, state, nonce, verifier
 
     def exchange(self, code, verifier, nonce_hash):
         metadata = self.metadata()

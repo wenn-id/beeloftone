@@ -25,13 +25,13 @@ def encoded_integer(value):
 
 
 class FakeOidcTransport:
-    def __init__(self, issuer):
+    def __init__(self, issuer, authorization_endpoint=None):
         self.issuer=issuer
         self.private_key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
         numbers=self.private_key.public_key().public_numbers()
         self.jwks={'keys':[{'kty':'RSA','kid':'test-key','use':'sig','alg':'RS256',
                             'n':encoded_integer(numbers.n),'e':encoded_integer(numbers.e)}]}
-        self.discovery={'issuer':issuer,'authorization_endpoint':issuer+'/authorize',
+        self.discovery={'issuer':issuer,'authorization_endpoint':authorization_endpoint or issuer+'/authorize',
             'token_endpoint':issuer+'/token','jwks_uri':issuer+'/jwks',
             'token_endpoint_auth_methods_supported':['client_secret_post'],
             'id_token_signing_alg_values_supported':['RS256']}
@@ -77,6 +77,14 @@ class OidcSsoTest(TestCase):
         return self.client.get('/api/sso/callback',params={'code':code,'state':query['state'][0]},
                                follow_redirects=False)
 
+    def endpoint_client(self,endpoint):
+        folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
+        path=Path(folder.name)/'endpoint.sqlite3'
+        transport=FakeOidcTransport(self.config.issuer,endpoint)
+        app=create_app(path,self.config,transport)
+        client=TestClient(app).__enter__();self.addCleanup(client.__exit__,None,None,None)
+        return client,transport,app,path
+
     def test_authorization_code_pkce_login_creates_browser_session(self):
         self.app.state.store.link_oidc_identity(self.config.issuer,'employee-123',self.admin['id'])
         self.assertEqual(self.client.get('/api/sso').json(),{
@@ -108,6 +116,41 @@ class OidcSsoTest(TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_login_attempts').fetchone()[0],0)
             self.assertIsNotNone(db.execute('SELECT last_login_at FROM oidc_identities').fetchone()[0])
+
+    def test_authorization_endpoint_query_is_kept_as_separate_parameters(self):
+        oauth=('response_type','client_id','redirect_uri','scope','state','nonce','code_challenge',
+               'code_challenge_method')
+        for suffix,preserved in (
+                ('/authorize',{}),
+                ('/authorize?',{}),
+                ('/authorize?p=tenant-policy',{'p':['tenant-policy']}),
+                ('/authorize?p=tenant-policy&realm=beeloft',{'p':['tenant-policy'],'realm':['beeloft']})):
+            with self.subTest(endpoint=suffix):
+                client,transport,app,path=self.endpoint_client(self.config.issuer+suffix)
+                admin=app.state.store.provision_user('Pemilik','admin')
+                app.state.store.link_oidc_identity(self.config.issuer,'employee-123',admin['id'])
+                response=client.get('/api/sso/login',follow_redirects=False)
+                self.assertEqual(response.status_code,302,response.text)
+                location=urlsplit(response.headers['location'])
+                self.assertEqual(location.path,'/authorize')
+                query=parse_qs(location.query)
+                self.assertEqual(set(query),set(preserved)|set(oauth))
+                for name in preserved:
+                    self.assertEqual(query[name],preserved[name])
+                self.assertEqual(query['response_type'],['code'])
+                self.assertEqual(query['client_id'],['beeloft-client'])
+                self.assertEqual(query['redirect_uri'],[self.config.redirect_uri])
+                self.assertEqual(query['scope'],['openid profile email'])
+                self.assertEqual(query['code_challenge_method'],['S256'])
+                with closing(sqlite3.connect(path)) as db:
+                    verifier=db.execute('SELECT code_verifier FROM oidc_login_attempts').fetchone()[0]
+                challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+                self.assertEqual(query['code_challenge'],[challenge])
+                transport.id_token=transport.token(query['nonce'][0])
+                callback=client.get('/api/sso/callback',follow_redirects=False,
+                                    params={'code':'authorization-code','state':query['state'][0]})
+                self.assertEqual(callback.status_code,303,callback.text)
+                self.assertEqual(client.get('/api/me').json()['id'],admin['id'])
 
     def test_nonce_and_state_are_one_time_and_unknown_identity_is_denied(self):
         _,query=self.begin()
