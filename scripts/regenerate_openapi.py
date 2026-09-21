@@ -13,9 +13,14 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+REPO = Path(__file__).resolve().parent.parent
+# Menjalankan file ini hanya menambah scripts/ ke sys.path, bukan root repo, jadi
+# import beeloft memerlukan pemasangan editable. Tanpa baris ini script gagal
+# dengan ModuleNotFoundError pada checkout segar.
+sys.path.insert(0, str(REPO))
+
 from beeloft.api import create_app
 
-REPO = Path(__file__).resolve().parent.parent
 CONTRACT = REPO / "docs" / "openapi.json"
 
 
