@@ -198,6 +198,9 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 
 ## Dokumentasi
 
+- [Register proses bisnis F01](docs/f01-process-register.md) dan
+  [keputusan, bukti, serta gerbang sign-off](docs/f01-decisions-evidence.md) untuk
+  roadmap penggantian backoffice #40. Status discovery; belum business accepted.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
