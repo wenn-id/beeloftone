@@ -2,7 +2,7 @@
 
 Workspace operasional internal Beeloft. Satu aplikasi dan satu database lokal menyatukan performa
 marketplace, produksi, pembelian, bahan baku, gudang, kualitas, people, visibilitas keuangan,
-approval, serta analitik dan AI. Versi aplikasi 0.96.0, schema database 55.
+approval, serta analitik dan AI. Versi aplikasi 0.97.0, schema database 55.
 
 [![CI](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml/badge.svg)](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml)
 
@@ -127,11 +127,17 @@ Lokal:
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe scripts\regenerate_openapi.py
 node tests/test_client.mjs
 python tests/run_browser.py --node PATH_NODE --playwright-module PATH_MODUL_PLAYWRIGHT
 ```
 
-Suite Python berisi 372 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+`scripts\regenerate_openapi.py` menulis ulang `docs/openapi.json` dari runtime yang
+terinstal. Jalankan setiap kali versi naik atau endpoint berubah; `tests/test_openapi_contract.py`
+gagal bila kontrak tertinggal, dan `tests/test_readme_test_count.py` gagal bila jumlah
+test di README tidak lagi cocok dengan discovery.
+
+Suite Python berisi 570 test yang memakai database sementara serta API/CLI sungguhan; mencakup
 konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
 input tidak sah, guard bisnis, pembalikan, migrasi, dan backup. Tidak ada data bisnis nyata di dalam
 test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance
@@ -199,6 +205,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 - [Spesifikasi antarmuka](DESIGN.md) — sistem visual, grid, tipografi, dan aturan Command Center.
 - [Rencana implementasi](docs/implementation-plan.md) — status dan urutan pengerjaan.
 - [Kontrak OpenAPI](docs/openapi.json) — juga tersedia dari server berjalan di `/openapi.json`.
+  Regenerasi dengan `python scripts/regenerate_openapi.py` setiap kali endpoint atau versi
+  berubah; `tests/test_openapi_contract.py` memblokir kontrak tertinggal dari runtime.
 - [Tangkapan layar](docs/screenshots) — Command Center desktop, mobile, dan zoom teks 200%.
 - Rencana dan bukti pengujian per milestone tersimpan sebagai `docs/*-plan.md` dan
   `docs/*-verification.md`, dan ditautkan dari riwayat versi.

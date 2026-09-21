@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.96.0"
+    "version": "0.97.0"
   },
   "paths": {
     "/health": {
@@ -316,6 +316,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -502,6 +503,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -679,6 +681,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -933,6 +936,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -1254,6 +1258,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -1564,6 +1569,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -1827,6 +1833,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2017,6 +2024,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2207,6 +2215,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2397,6 +2406,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2587,6 +2597,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2777,6 +2788,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -2967,6 +2979,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -3157,6 +3170,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -3361,6 +3375,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -3556,6 +3571,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -3643,6 +3659,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -3786,6 +3803,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -3989,6 +4007,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -4227,6 +4246,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -4373,6 +4393,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -4510,6 +4531,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -4617,6 +4639,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -4943,6 +4966,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -5314,6 +5338,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -5527,6 +5552,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -5711,6 +5737,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -5864,6 +5891,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -5981,6 +6009,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -6259,6 +6288,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -7206,6 +7236,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -7472,6 +7503,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -7587,6 +7619,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -7896,6 +7929,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -8149,6 +8183,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -8355,6 +8390,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -8762,6 +8798,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -9082,6 +9119,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -9335,6 +9373,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -9586,6 +9625,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -9660,6 +9700,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -9980,6 +10021,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -10335,6 +10377,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -10472,6 +10515,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -10647,6 +10691,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -10784,6 +10829,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -11037,6 +11083,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -11290,6 +11337,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -11543,6 +11591,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -11796,6 +11845,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -12079,6 +12129,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12189,6 +12240,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12311,6 +12363,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12437,6 +12490,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12646,6 +12700,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12760,6 +12815,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12877,6 +12933,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -12994,6 +13051,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -13142,6 +13200,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -13290,6 +13349,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -13444,6 +13504,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -13602,6 +13663,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -13739,6 +13801,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -13992,6 +14055,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -14245,6 +14309,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -14554,6 +14619,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -14624,6 +14690,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -14696,6 +14763,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -14766,6 +14834,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -15103,6 +15172,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -15177,6 +15247,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -15296,6 +15367,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -15355,6 +15427,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -15528,6 +15601,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -15721,6 +15795,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 9223372036854775807,
               "minimum": 0,
               "default": 0,
               "title": "Offset"
@@ -15734,6 +15809,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -15998,6 +16074,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
@@ -16137,6 +16214,7 @@
               "anyOf": [
                 {
                   "type": "integer",
+                  "maximum": 9223372036854775807,
                   "minimum": 1
                 },
                 {
