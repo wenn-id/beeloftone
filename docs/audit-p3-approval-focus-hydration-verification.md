@@ -98,10 +98,12 @@ order, dan itu memang yang dilaporkannya.
 | `node tests/test_client.mjs` | **PASS** (escaping, tanggal, retry, POST read-only, header auth, actor, error terstruktur, CSV, batas tanggal) |
 | Reproduksi baseline vs tree perbaikan | tabel di atas: dua test gagal di baseline, lulus sesudah perbaikan |
 
-Suite browser Playwright tidak dijalankan di lingkungan ini karena browser Playwright tidak
-terpasang. Perubahan ini tidak menyentuh `beeloft/static/` maupun berkas UI lain — hanya
-`beeloft/brain.py` dan `beeloft/store.py` — sehingga modul browser tidak terpengaruh; CI repositori
-tetap menjalankannya.
+Suite browser Playwright tidak dijalankan di lingkungan pengembangan ini karena browser Playwright
+tidak terpasang. Perubahan ini tidak menyentuh `beeloft/static/` maupun berkas UI lain — hanya
+`beeloft/brain.py` dan `beeloft/store.py` — sehingga modul browser tidak terpengaruh. CI repositori
+menjalankannya dan kedua job hijau pada
+[run 35592599810](https://github.com/wenn-id/beeloftone/actions/runs/35592599810): `Core tests`
+**success** dan `Browser acceptance` **success**.
 
 Test baru, seluruhnya di `tests/test_ai_focus_hydration.py`:
 
