@@ -1,0 +1,720 @@
+{
+  "contract_revision": "F02-draft-1",
+  "baseline_commit": "efe1156c4557e0f4b69f0000d674ce74fdc4ae0c",
+  "status": "DRAFT_NOT_BUSINESS_ACCEPTED",
+  "synthetic": true,
+  "sign_off": {
+    "A0": null,
+    "A1": null,
+    "A2": null,
+    "A3": null,
+    "business_owners": null
+  },
+  "baseline_models": [
+    {
+      "model": "OrderLine",
+      "base": {
+        "product_id": "DEMO-PRODUCT"
+      },
+      "cases": [
+        {
+          "id": "QTY-PCS-01",
+          "input": {
+            "quantity": 1
+          },
+          "expected": {
+            "quantity": 1
+          }
+        },
+        {
+          "id": "QTY-PCS-MAX",
+          "input": {
+            "quantity": 1000000000
+          },
+          "expected": {
+            "quantity": 1000000000
+          }
+        },
+        {
+          "id": "QTY-PCS-ZERO",
+          "input": {
+            "quantity": 0
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-PCS-NEGATIVE",
+          "input": {
+            "quantity": -1
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-PCS-BOOL",
+          "input": {
+            "quantity": true
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-PCS-STRING",
+          "input": {
+            "quantity": "12"
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-PCS-FRACTION",
+          "input": {
+            "quantity": 1.5
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-PCS-OVERFLOW",
+          "input": {
+            "quantity": 1000000001
+          },
+          "error": 422
+        }
+      ]
+    },
+    {
+      "model": "MaterialQuantity",
+      "base": {},
+      "cases": [
+        {
+          "id": "QTY-MAT-01",
+          "input": {
+            "quantity": "2.125"
+          },
+          "expected": {
+            "quantity": "2.125"
+          }
+        },
+        {
+          "id": "QTY-MAT-PAD",
+          "input": {
+            "quantity": "2"
+          },
+          "expected": {
+            "quantity": "2.000"
+          }
+        },
+        {
+          "id": "QTY-MAT-MAX",
+          "input": {
+            "quantity": "1000000"
+          },
+          "expected": {
+            "quantity": "1000000.000"
+          }
+        },
+        {
+          "id": "QTY-MAT-SCALE",
+          "input": {
+            "quantity": "2.1251"
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-MAT-NUMBER",
+          "input": {
+            "quantity": 2.125
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-MAT-EXPONENT",
+          "input": {
+            "quantity": "2e3"
+          },
+          "error": 422
+        },
+        {
+          "id": "QTY-MAT-OVERFLOW",
+          "input": {
+            "quantity": "1000000.001"
+          },
+          "error": 422
+        }
+      ]
+    },
+    {
+      "model": "PurchasePrice",
+      "base": {
+        "material_id": "DEMO-MATERIAL"
+      },
+      "cases": [
+        {
+          "id": "MONEY-01",
+          "input": {
+            "unit_price": "12.3"
+          },
+          "expected": {
+            "unit_price": "12.30"
+          }
+        },
+        {
+          "id": "MONEY-SCALE",
+          "input": {
+            "unit_price": "12.345"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-FLOAT",
+          "input": {
+            "unit_price": 12.3
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-NAN",
+          "input": {
+            "unit_price": "NaN"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-INFINITY",
+          "input": {
+            "unit_price": "Infinity"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-EXPONENT",
+          "input": {
+            "unit_price": "1e2"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-COMMA",
+          "input": {
+            "unit_price": "1,000.00"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-ZERO",
+          "input": {
+            "unit_price": "0"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-NEGATIVE",
+          "input": {
+            "unit_price": "-1"
+          },
+          "error": 422
+        },
+        {
+          "id": "MONEY-MAX",
+          "input": {
+            "unit_price": "1000000000"
+          },
+          "expected": {
+            "unit_price": "1000000000.00"
+          }
+        },
+        {
+          "id": "MONEY-OVERFLOW",
+          "input": {
+            "unit_price": "1000000000.01"
+          },
+          "error": 422
+        }
+      ]
+    },
+    {
+      "model": "SewingJobCreate",
+      "base": {
+        "reference": "DEMO-JOB",
+        "assignment_type": "internal",
+        "assignee": "DEMO-EMPLOYEE",
+        "quantity_out": 13,
+        "sent_date": "2026-09-01",
+        "reason": "Fixture sintetis; bukan tarif upah"
+      },
+      "cases": [
+        {
+          "id": "CHARGE-BASELINE-01",
+          "input": {
+            "cost": "160"
+          },
+          "expected": {
+            "cost": "160.00",
+            "quantity_out": 13
+          }
+        },
+        {
+          "id": "CHARGE-BASELINE-ZERO",
+          "input": {
+            "cost": "0"
+          },
+          "expected": {
+            "cost": "0.00"
+          }
+        },
+        {
+          "id": "CHARGE-BASELINE-SCALE",
+          "input": {
+            "cost": "160.001"
+          },
+          "error": 422
+        }
+      ]
+    },
+    {
+      "model": "PayrollApprovalDecision",
+      "base": {
+        "status": "approved",
+        "reason": "Fixture sintetis"
+      },
+      "cases": [
+        {
+          "id": "REV-01",
+          "input": {
+            "expected_revision": 7
+          },
+          "expected": {
+            "expected_revision": 7
+          }
+        },
+        {
+          "id": "REV-ZERO",
+          "input": {
+            "expected_revision": 0
+          },
+          "error": 422
+        },
+        {
+          "id": "REV-BOOL",
+          "input": {
+            "expected_revision": true
+          },
+          "error": 422
+        }
+      ]
+    },
+    {
+      "model": "MekariPayrollAccounting",
+      "base": {
+        "status": "posted",
+        "journal_reference": "DEMO-JOURNAL",
+        "posting_date": "2026-09-30",
+        "debit_total": "100",
+        "credit_total": "99",
+        "updated_at": "2026-09-30T11:00:00+07:00"
+      },
+      "cases": [
+        {
+          "id": "POST-EXTERNAL-UNBALANCED",
+          "input": {},
+          "expected": {
+            "debit_total": "100.00",
+            "credit_total": "99.00",
+            "updated_at": "2026-09-30T04:00:00Z"
+          }
+        },
+        {
+          "id": "POST-EXTERNAL-NO-DATE",
+          "input": {
+            "posting_date": null
+          },
+          "error": 422
+        },
+        {
+          "id": "POST-EXTERNAL-DRAFT",
+          "input": {
+            "status": "draft",
+            "posting_date": null
+          },
+          "expected": {
+            "status": "draft"
+          }
+        },
+        {
+          "id": "TIME-NO-ZONE",
+          "input": {
+            "updated_at": "2026-09-30T11:00:00"
+          },
+          "error": 422
+        },
+        {
+          "id": "TIME-UTC-OVERFLOW",
+          "input": {
+            "updated_at": "0001-01-01T00:00:00+14:00"
+          },
+          "error": 422
+        }
+      ]
+    }
+  ],
+  "baseline_material_storage": [
+    {
+      "id": "QTY-MILLI-01",
+      "quantity": "2.125",
+      "unit": "m",
+      "expected": 2125
+    },
+    {
+      "id": "QTY-MILLI-KG",
+      "quantity": "0.001",
+      "unit": "kg",
+      "expected": 1
+    },
+    {
+      "id": "QTY-MILLI-PCS",
+      "quantity": "12.000",
+      "unit": "pcs",
+      "expected": 12000
+    },
+    {
+      "id": "QTY-MILLI-PCS-FRACTION",
+      "quantity": "1.001",
+      "unit": "pcs",
+      "error": 422
+    },
+    {
+      "id": "QTY-MILLI-SCALE",
+      "quantity": "0.0001",
+      "unit": "m",
+      "error": 422
+    }
+  ],
+  "review_scenarios": [
+    {
+      "id": "SRC-01",
+      "status": "PROPOSED",
+      "decisions": [
+        "D18",
+        "D19"
+      ],
+      "input": {
+        "sources": [
+          {
+            "namespace": [
+              "mekari",
+              "DEMO-A",
+              "payroll"
+            ],
+            "id": "42"
+          },
+          {
+            "namespace": [
+              "mekari",
+              "DEMO-B",
+              "payroll"
+            ],
+            "id": "42"
+          },
+          {
+            "namespace": [
+              "mekari",
+              "DEMO-A",
+              "payable"
+            ],
+            "id": "42"
+          }
+        ]
+      },
+      "expected_invariant": "Tiga identitas berbeda; tidak boleh bentrok hanya karena source_id sama."
+    },
+    {
+      "id": "SRC-02",
+      "status": "PROPOSED",
+      "decisions": [
+        "D18",
+        "D19"
+      ],
+      "input": {
+        "canonical_transaction_id": "DEMO-TXN-1",
+        "authority": "native",
+        "records": [
+          {
+            "id": "DEMO-NATIVE",
+            "kind": "native",
+            "amount": "100.00"
+          },
+          {
+            "id": "DEMO-SNAPSHOT-1",
+            "kind": "external_snapshot",
+            "batch": "DEMO-B1",
+            "amount": "100.00"
+          },
+          {
+            "id": "DEMO-SNAPSHOT-2",
+            "kind": "external_snapshot",
+            "batch": "DEMO-B2",
+            "amount": "100.00"
+          }
+        ]
+      },
+      "expected": {
+        "contributing_ids": [
+          "DEMO-NATIVE"
+        ],
+        "total": "100.00"
+      },
+      "expected_invariant": "Dengan mapping dan authority contoh ini, dua snapshot bukan tambahan uang."
+    },
+    {
+      "id": "SRC-03",
+      "status": "PROPOSED",
+      "decisions": [
+        "D18",
+        "D19"
+      ],
+      "input": {
+        "namespace": [
+          "jubelio",
+          "DEMO-A",
+          "sale"
+        ],
+        "source_id": "42",
+        "source_revision": "DEMO-V1",
+        "deliveries": [
+          {
+            "batch": "DEMO-B1",
+            "key": "DEMO-KEY-1"
+          },
+          {
+            "batch": "DEMO-B2",
+            "key": "DEMO-KEY-2"
+          }
+        ]
+      },
+      "expected": {
+        "economic_effect_count": 1
+      },
+      "expected_invariant": "Identitas sumber deduplikasi tetap sama walau key HTTP/batch berbeda."
+    },
+    {
+      "id": "SRC-04",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D18",
+        "D19"
+      ],
+      "input": {
+        "native_amount": "100.00",
+        "snapshot_amount": "100.00",
+        "canonical_mapping": null,
+        "authority": null
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Total gabungan unresolved, bukan 200.00 atau asumsi satu sumber menang."
+    },
+    {
+      "id": "SRC-05",
+      "status": "PROPOSED",
+      "decisions": [
+        "D19"
+      ],
+      "input": {
+        "scope": "DEMO-AR",
+        "cutoff": "2026-09-30",
+        "opening_balance": "100.00",
+        "historical_outstanding": "100.00"
+      },
+      "expected_invariant": "Pilih opening balance atau replay histori untuk scope/cutoff sama, jangan 200.00."
+    },
+    {
+      "id": "QTY-RATE-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D01",
+        "D04"
+      ],
+      "input": {
+        "qty_pcs_cases": [
+          1,
+          11,
+          12,
+          13
+        ],
+        "rate_per_dozen": "120.00",
+        "rounding_mode": null,
+        "rounding_stage": null
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Qty fisik tetap pcs asal; payable units dan uang belum boleh dihitung."
+    },
+    {
+      "id": "RATE-02",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D04"
+      ],
+      "input": {
+        "sent_date": "2026-09-15",
+        "completed_date": "2026-09-16",
+        "rates": [
+          {
+            "id": "DEMO-R1",
+            "from": "2026-09-01",
+            "to": "2026-09-16",
+            "amount": "120.00"
+          },
+          {
+            "id": "DEMO-R2",
+            "from": "2026-09-16",
+            "to": null,
+            "amount": "144.00"
+          }
+        ],
+        "date_basis": null
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Pilih tanggal basis dahulu; uji tepat batas, missing dan overlap. Histori menyimpan rate revision."
+    },
+    {
+      "id": "CHARGE-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D05",
+        "D13"
+      ],
+      "input": {
+        "job_id": "DEMO-JOB",
+        "target_qty": 20,
+        "quantity_out": 13,
+        "completed_qty": 10,
+        "defect_qty": 2,
+        "missing_qty": 1,
+        "rework_round": 2,
+        "legacy_sewing_cost": "160.00",
+        "candidate_charge_id": "DEMO-CHARGE"
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Outcome 10+2+1=13; payable tidak disimpulkan dari completed. Sewing cost dan charge untuk jasa sama tidak dijumlah dua kali."
+    },
+    {
+      "id": "PAYROLL-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D04",
+        "D05",
+        "D06",
+        "D07"
+      ],
+      "input": {
+        "employee_id": "DEMO-EMPLOYEE",
+        "period": [
+          "2026-09-01",
+          "2026-09-30"
+        ],
+        "charge_ids": [
+          "DEMO-CHARGE"
+        ],
+        "component_types": [
+          "premium",
+          "transport",
+          "bonus",
+          "deduction"
+        ],
+        "candidate_overlapping_period": [
+          "2026-09-15",
+          "2026-10-15"
+        ]
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Satu charge aktif tidak dibayar di dua payroll; formula komponen, cutoff dan overlap belum disahkan."
+    },
+    {
+      "id": "LOAN-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D08"
+      ],
+      "input": {
+        "loan_id": "DEMO-LOAN",
+        "balance": "25.00",
+        "scheduled_installment": "30.00",
+        "payroll_net_before_installment": "20.00",
+        "concurrent_direct_repayment": "5.00"
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Jangan overdraw saldo atau menebak batas potongan; payroll dan cicilan atomik, reversal memulihkan keduanya."
+    },
+    {
+      "id": "PAY-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D07",
+        "D11",
+        "D12"
+      ],
+      "input": {
+        "obligation_id": "DEMO-INVOICE",
+        "amount_due": "100.00",
+        "payments": [
+          "40.00",
+          "70.00"
+        ],
+        "return_requested": "10.00"
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Partial/overpayment/refund/void perlu kebijakan; approval bukan cash effect dan retry bukan payment baru."
+    },
+    {
+      "id": "POST-01",
+      "status": "PROPOSED",
+      "decisions": [
+        "D14"
+      ],
+      "input": {
+        "source_event_id": "DEMO-PAYROLL-APPROVED",
+        "approval_status": "approved",
+        "payment_evidence": null,
+        "posting_evidence": null
+      },
+      "expected": {
+        "paid": false,
+        "posted": false
+      },
+      "expected_invariant": "Tidak mengklaim paid/posted tanpa bukti; ini bukan larangan accrual sebelum pembayaran."
+    },
+    {
+      "id": "POST-02",
+      "status": "PROPOSED",
+      "decisions": [
+        "D14"
+      ],
+      "input": {
+        "currency": "IDR",
+        "debit_total": "100.00",
+        "credit_total": "99.00"
+      },
+      "expected": {
+        "native_posting": "reject_unbalanced",
+        "external_snapshot": "retain_for_reconciliation"
+      },
+      "expected_invariant": "Validasi jurnal native tidak menghapus bukti selisih dari snapshot eksternal."
+    },
+    {
+      "id": "PERIOD-01",
+      "status": "BLOCKED_F01",
+      "decisions": [
+        "D15",
+        "D17"
+      ],
+      "input": {
+        "original_journal": "DEMO-JOURNAL",
+        "original_posting_date": "2026-09-30",
+        "period_state": "closed",
+        "correction_requested_at": "2026-10-01T03:00:00Z",
+        "concurrent_operations": [
+          "close_period",
+          "post_journal"
+        ]
+      },
+      "expected_business_result": null,
+      "expected_invariant": "Tidak mengubah jurnal asal; post/close serialize. Tanggal reversal/reopen dan approver harus disahkan."
+    }
+  ]
+}

@@ -1,0 +1,371 @@
+kind,object,owner_proposed,packages,reviewer_proposed,source
+table,ai_action_proposal_events,A3,O01/O02/X01/R01,A0,beeloft/ai_action_proposals.sql
+table,ai_action_proposals,A3,O01/O02/X01/R01,A0,beeloft/ai_action_proposals.sql
+table,ai_investigation_actions,A3,O01/O02/X01/R01,A0,beeloft/ai_investigations.sql
+table,ai_investigation_feedback,A3,O01/O02/X01/R01,A0,beeloft/ai_investigations.sql
+table,ai_investigations,A3,O01/O02/X01/R01,A0,beeloft/ai_investigations.sql
+table,audit_events,A3,O01/O02/X01/R01,A0,beeloft/audit_trail.sql
+table,balances,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
+table,bom_revisions,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bom.sql
+table,browser_sessions,A3,O01/O02/X01/R01,A0,beeloft/browser_sessions.sql
+table,bundle_handoff_acceptances,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
+table,bundle_handoff_cancellations,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
+table,bundle_handoffs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
+table,bundle_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
+table,bundles,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
+table,cutting_run_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
+table,cutting_runs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
+table,final_qc_record_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
+table,final_qc_records,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
+table,finished_goods_adjustment_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
+table,finished_goods_adjustments,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
+table,finished_goods_receipt_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/finished_goods.sql
+table,finished_goods_receipts,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/finished_goods.sql
+table,finished_goods_stock_count_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/inventory_reconciliation.sql
+table,finished_goods_stock_counts,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/inventory_reconciliation.sql
+table,finishing_record_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/finishing.sql
+table,finishing_records,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/finishing.sql
+table,integration_sync_runs,A3,O01/O02/X01/R01,A0,beeloft/integration_sync.sql
+table,issues,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/issues.sql
+table,jubelio_listing_quarantine_records,A3,X01,A1/A2,beeloft/jubelio_listing_snapshots.sql
+table,jubelio_listing_snapshot_batches,A3,X01,A1/A2,beeloft/jubelio_listing_snapshots.sql
+table,jubelio_listing_snapshot_records,A3,X01,A1/A2,beeloft/jubelio_listing_snapshots.sql
+table,jubelio_order_quarantine_records,A3,X01,A1/A2,beeloft/jubelio_order_snapshots.sql
+table,jubelio_order_snapshot_batches,A3,X01,A1/A2,beeloft/jubelio_order_snapshots.sql
+table,jubelio_order_snapshot_lines,A3,X01,A1/A2,beeloft/jubelio_order_snapshots.sql
+table,jubelio_order_snapshot_orders,A3,X01,A1/A2,beeloft/jubelio_order_snapshots.sql
+table,jubelio_return_quarantine_records,A3,X01,A1/A2,beeloft/jubelio_return_snapshots.sql
+table,jubelio_return_snapshot_batches,A3,X01,A1/A2,beeloft/jubelio_return_snapshots.sql
+table,jubelio_return_snapshot_lines,A3,X01,A1/A2,beeloft/jubelio_return_snapshots.sql
+table,jubelio_return_snapshot_records,A3,X01,A1/A2,beeloft/jubelio_return_snapshots.sql
+table,jubelio_stock_quarantine_items,A3,X01,A1/A2,beeloft/jubelio_stock_snapshots.sql
+table,jubelio_stock_snapshot_batches,A3,X01,A1/A2,beeloft/jubelio_stock_snapshots.sql
+table,jubelio_stock_snapshot_items,A3,X01,A1/A2,beeloft/jubelio_stock_snapshots.sql
+table,marketing_budget_request_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketing_budget_approvals.sql
+table,marketing_budget_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketing_budget_approvals.sql
+table,marketplace_pack_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_packing.sql
+table,marketplace_packs,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_packing.sql
+table,marketplace_pick_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_picking.sql
+table,marketplace_picks,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_picking.sql
+table,marketplace_reservation_releases,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_reservations.sql
+table,marketplace_reservations,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_reservations.sql
+table,marketplace_return_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
+table,marketplace_returns,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
+table,marketplace_sale_settlement_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_sale_settlements.sql
+table,marketplace_sale_settlements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_sale_settlements.sql
+table,marketplace_shipment_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_shipping.sql
+table,marketplace_shipments,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_shipping.sql
+table,material_batches,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/materials.sql
+table,material_consumption,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/consumption.sql
+table,material_movements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/materials.sql
+table,material_reservation_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/reservations.sql
+table,materials,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/materials.sql
+table,mekari_finance_snapshot_batches,A3,X01,A1/A2,beeloft/mekari_finance_snapshots.sql
+table,mekari_finance_snapshot_periods,A3,X01,A1/A2,beeloft/mekari_finance_snapshots.sql
+table,mekari_payable_snapshot_batches,A3,X01,A1/A2,beeloft/mekari_payable_snapshots.sql
+table,mekari_payable_snapshot_records,A3,X01,A1/A2,beeloft/mekari_payable_snapshots.sql
+table,mekari_payroll_snapshot_batches,A3,X01,A1/A2,beeloft/mekari_payroll_snapshots.sql
+table,mekari_payroll_snapshot_periods,A3,X01,A1/A2,beeloft/mekari_payroll_snapshots.sql
+table,mekari_payroll_snapshot_postings,A3,X01,A1/A2,beeloft/payroll_accounting.sql
+table,mekari_receivable_snapshot_batches,A3,X01,A1/A2,beeloft/mekari_receivable_snapshots.sql
+table,mekari_receivable_snapshot_records,A3,X01,A1/A2,beeloft/mekari_receivable_snapshots.sql
+table,movements,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
+table,oidc_identities,A3,O01/O02/X01/R01,A0,beeloft/oidc_sso.sql
+table,oidc_login_attempts,A3,O01/O02/X01/R01,A0,beeloft/oidc_sso.sql
+table,order_changes,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/order_changes.sql
+table,order_lines,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
+table,orders,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
+table,payroll_approval_request_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/payroll_approvals.sql
+table,payroll_approval_requests,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/payroll_approvals.sql
+table,product_external_mapping_events,A3,O01/O02/X01/R01,A0,beeloft/product_external_mappings.sql
+table,production_capacity_calendar_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/production_capacity.sql
+table,production_change_request_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/unified_approvals.sql
+table,production_change_requests,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/unified_approvals.sql
+table,production_routing_standard_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/production_capacity.sql
+table,production_work_center_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/production_capacity.sql
+table,production_work_centers,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/production_capacity.sql
+table,products,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
+table,purchase_order_approval_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_order_approvals.sql
+table,purchase_order_cancellations,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
+table,purchase_order_closures,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_returns.sql
+table,purchase_order_receipts,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/po_receipts.sql
+table,purchase_orders,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
+table,purchase_request_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_requests.sql
+table,purchase_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_requests.sql
+table,qc_decisions,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/incoming_qc.sql
+table,qc_intake_cancellations,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/incoming_qc.sql
+table,qc_intakes,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/incoming_qc.sql
+table,request_key_conflicts,A0,F02/O02,A3,beeloft/request_keys.sql
+table,requests,A0,F02/O02,A3,beeloft/schema.sql
+table,rework_completion_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/rework_completions.sql
+table,rework_completions,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/rework_completions.sql
+table,sewing_job_results,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
+table,sewing_job_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
+table,sewing_jobs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
+table,supplier_payment_request_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
+table,supplier_payment_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
+table,supplier_returns,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_returns.sql
+table,suppliers,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
+table,users,A3,O01/O02/X01/R01,A0,beeloft/schema.sql
+table,warehouse_movement_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
+table,warehouse_movements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
+table,workforce_attendance_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/workforce.sql
+table,workforce_attendance_records,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/workforce.sql
+table,workforce_employee_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/workforce.sql
+table,workforce_employees,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/workforce.sql
+table,workforce_request_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/workforce_approvals.sql
+table,workforce_requests,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/workforce_approvals.sql
+endpoint,GET /,A3,O02,A0,beeloft/api.py#dashboard
+endpoint,GET /health,A3,O02,A0,beeloft/api.py#health
+endpoint,POST /api/session,A3,O01,A0,beeloft/api.py#create_session
+endpoint,GET /api/sso,A3,O01,A0,beeloft/api.py#sso_status
+endpoint,GET /api/sso/login,A3,O01,A0,beeloft/api.py#sso_login
+endpoint,GET /api/sso/callback,A3,O01,A0,beeloft/api.py#sso_callback
+endpoint,POST /api/session/logout,A3,O01,A0,beeloft/api.py#close_session
+endpoint,GET /api/me,A3,O01,A0,beeloft/api.py#me
+endpoint,GET /api/users,A3,O01,A0,beeloft/api.py#users
+endpoint,GET /api/command-center,A3,R01,A1/A2,beeloft/api.py#command_center
+endpoint,GET /api/audit-events,A3,O02,A0,beeloft/api.py#audit_events
+endpoint,GET /api/audit-events/{event_id},A3,O02,A0,beeloft/api.py#audit_event
+endpoint,GET /api/approvals,A3,O01,A1/A2,beeloft/api.py#approvals
+endpoint,GET /api/approvals/summary,A3,O01,A1/A2,beeloft/api.py#approvals_summary
+endpoint,GET /api/ai/action-proposals,A3,R01,A1/A2,beeloft/api.py#ai_action_proposals
+endpoint,POST /api/ai/action-proposals,A3,R01,A1/A2,beeloft/api.py#create_ai_action_proposal
+endpoint,GET /api/ai/action-proposals/{proposal_id},A3,R01,A1/A2,beeloft/api.py#ai_action_proposal
+endpoint,POST /api/ai/action-proposals/{proposal_id}/decisions,A3,R01,A1/A2,beeloft/api.py#decide_ai_action_proposal
+endpoint,GET /api/marketing-budget-requests,A2,B02,A3,beeloft/api.py#marketing_budget_requests
+endpoint,POST /api/marketing-budget-requests,A2,B02,A3,beeloft/api.py#create_marketing_budget_request
+endpoint,GET /api/marketing-budget-requests/{request_id},A2,B02,A3,beeloft/api.py#marketing_budget_request
+endpoint,POST /api/marketing-budget-requests/{request_id}/decisions,A2,B02,A3,beeloft/api.py#decide_marketing_budget_request
+endpoint,GET /api/stages,A1,P02/P03,A2,beeloft/api.py#stages
+endpoint,POST /api/ai/investigate,A3,R01,A1/A2,beeloft/api.py#ai_investigate
+endpoint,GET /api/ai/investigations,A3,R01,A1/A2,beeloft/api.py#ai_investigations
+endpoint,POST /api/ai/investigations,A3,R01,A1/A2,beeloft/api.py#create_ai_investigation
+endpoint,GET /api/ai/investigations/{investigation_id},A3,R01,A1/A2,beeloft/api.py#ai_investigation
+endpoint,POST /api/ai/investigations/{investigation_id}/feedback,A3,R01,A1/A2,beeloft/api.py#create_ai_investigation_feedback
+endpoint,GET /api/integrations,A3,X01,A1/A2,beeloft/api.py#integrations
+endpoint,GET /api/integration-sync-runs,A3,X01,A1/A2,beeloft/api.py#integration_sync_runs
+endpoint,POST /api/integration-sync-runs,A3,X01,A1/A2,beeloft/api.py#create_integration_sync_run
+endpoint,GET /api/integration-sync-runs/{run_id},A3,X01,A1/A2,beeloft/api.py#integration_sync_run
+endpoint,POST /api/integrations/jubelio/finished-goods-snapshots,A3,X01,A1/A2,beeloft/api.py#import_jubelio_stock_snapshot
+endpoint,GET /api/integrations/jubelio/finished-goods-snapshots,A3,X01,A1/A2,beeloft/api.py#jubelio_stock_snapshots
+endpoint,GET /api/integrations/jubelio/finished-goods-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#jubelio_stock_snapshot
+endpoint,GET /api/integrations/jubelio/finished-goods-reconciliation,A3,X01,A1/A2,beeloft/api.py#jubelio_stock_reconciliation
+endpoint,POST /api/integrations/jubelio/order-snapshots,A3,X01,A1/A2,beeloft/api.py#import_jubelio_order_snapshot
+endpoint,GET /api/integrations/jubelio/order-snapshots,A3,X01,A1/A2,beeloft/api.py#jubelio_order_snapshots
+endpoint,GET /api/integrations/jubelio/order-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#jubelio_order_snapshot
+endpoint,GET /api/integrations/jubelio/order-summary,A3,X01,A1/A2,beeloft/api.py#jubelio_order_summary
+endpoint,POST /api/integrations/jubelio/return-snapshots,A3,X01,A1/A2,beeloft/api.py#import_jubelio_return_snapshot
+endpoint,GET /api/integrations/jubelio/return-snapshots,A3,X01,A1/A2,beeloft/api.py#jubelio_return_snapshots
+endpoint,GET /api/integrations/jubelio/return-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#jubelio_return_snapshot
+endpoint,GET /api/integrations/jubelio/return-summary,A3,X01,A1/A2,beeloft/api.py#jubelio_return_summary
+endpoint,POST /api/integrations/jubelio/listing-snapshots,A3,X01,A1/A2,beeloft/api.py#import_jubelio_listing_snapshot
+endpoint,GET /api/integrations/jubelio/listing-snapshots,A3,X01,A1/A2,beeloft/api.py#jubelio_listing_snapshots
+endpoint,GET /api/integrations/jubelio/listing-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#jubelio_listing_snapshot
+endpoint,GET /api/integrations/jubelio/listing-summary,A3,X01,A1/A2,beeloft/api.py#jubelio_listing_summary
+endpoint,POST /api/integrations/mekari/finance-snapshots,A3,X01,A1/A2,beeloft/api.py#import_mekari_finance_snapshot
+endpoint,GET /api/integrations/mekari/finance-snapshots,A3,X01,A1/A2,beeloft/api.py#mekari_finance_snapshots
+endpoint,GET /api/integrations/mekari/finance-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#mekari_finance_snapshot
+endpoint,GET /api/integrations/mekari/finance-summary,A3,X01,A1/A2,beeloft/api.py#mekari_finance_summary
+endpoint,POST /api/integrations/mekari/payable-snapshots,A3,X01,A1/A2,beeloft/api.py#import_mekari_payable_snapshot
+endpoint,GET /api/integrations/mekari/payable-snapshots,A3,X01,A1/A2,beeloft/api.py#mekari_payable_snapshots
+endpoint,GET /api/integrations/mekari/payable-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#mekari_payable_snapshot
+endpoint,GET /api/integrations/mekari/payables-summary,A3,X01,A1/A2,beeloft/api.py#mekari_payables_summary
+endpoint,POST /api/integrations/mekari/receivable-snapshots,A3,X01,A1/A2,beeloft/api.py#import_mekari_receivable_snapshot
+endpoint,GET /api/integrations/mekari/receivable-snapshots,A3,X01,A1/A2,beeloft/api.py#mekari_receivable_snapshots
+endpoint,GET /api/integrations/mekari/receivable-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#mekari_receivable_snapshot
+endpoint,GET /api/integrations/mekari/receivables-summary,A3,X01,A1/A2,beeloft/api.py#mekari_receivables_summary
+endpoint,POST /api/integrations/mekari/payroll-snapshots,A3,X01,A1/A2,beeloft/api.py#import_mekari_payroll_snapshot
+endpoint,GET /api/integrations/mekari/payroll-snapshots,A3,X01,A1/A2,beeloft/api.py#mekari_payroll_snapshots
+endpoint,GET /api/integrations/mekari/payroll-snapshots/{batch_id},A3,X01,A1/A2,beeloft/api.py#mekari_payroll_snapshot
+endpoint,GET /api/integrations/mekari/payroll-summary,A3,X01,A1/A2,beeloft/api.py#mekari_payroll_summary
+endpoint,POST /api/integrations/mekari/payroll-periods/{period_id}/approval-requests,A1,H01,A2/A3,beeloft/api.py#create_payroll_approval_request
+endpoint,GET /api/payroll-approval-requests,A1,P03/H01/H02,A2,beeloft/api.py#payroll_approval_requests
+endpoint,GET /api/payroll-approval-requests/{request_id},A1,P03/H01/H02,A2,beeloft/api.py#payroll_approval_request
+endpoint,POST /api/payroll-approval-requests/{request_id}/decisions,A1,P03/H01/H02,A2,beeloft/api.py#decide_payroll_approval_request
+endpoint,GET /api/payroll-payment-reconciliation,A2,A01/A02,A1/A3,beeloft/api.py#payroll_payment_reconciliation
+endpoint,GET /api/payroll-accounting-reconciliation,A2,A01/A02,A1/A3,beeloft/api.py#payroll_accounting_reconciliation
+endpoint,POST /api/products,A1,M01,A2,beeloft/api.py#create_product
+endpoint,GET /api/products,A1,M01,A2,beeloft/api.py#products
+endpoint,GET /api/work-centers,A1,P02,A3,beeloft/api.py#work_centers
+endpoint,GET /api/workforce/employees,A2,M02,A1,beeloft/api.py#employees
+endpoint,POST /api/workforce/employees,A2,M02,A1,beeloft/api.py#create_employee
+endpoint,GET /api/workforce/employees/{employee_id},A2,M02,A1,beeloft/api.py#employee
+endpoint,POST /api/workforce/employees/{employee_id}/changes,A2,M02,A1,beeloft/api.py#change_employee
+endpoint,GET /api/workforce/employees/{employee_id}/history,A2,M02,A1,beeloft/api.py#employee_history
+endpoint,GET /api/workforce/attendance,A1,P03/H01/H02,A2,beeloft/api.py#attendance_records
+endpoint,POST /api/workforce/employees/{employee_id}/attendance,A1,P03/H01/H02,A2,beeloft/api.py#save_attendance
+endpoint,GET /api/workforce/attendance/{attendance_id}/history,A1,P03/H01/H02,A2,beeloft/api.py#attendance_history
+endpoint,GET /api/workforce/requests,A1,P03/H01/H02,A2,beeloft/api.py#workforce_requests
+endpoint,POST /api/workforce/requests,A1,P03/H01/H02,A2,beeloft/api.py#create_workforce_request
+endpoint,GET /api/workforce/requests/{request_id},A1,P03/H01/H02,A2,beeloft/api.py#workforce_request
+endpoint,POST /api/workforce/requests/{request_id}/decisions,A1,P03/H01/H02,A2,beeloft/api.py#decide_workforce_request
+endpoint,POST /api/work-centers,A1,P02,A3,beeloft/api.py#create_work_center
+endpoint,POST /api/work-centers/{work_center_id}/changes,A1,P02,A3,beeloft/api.py#change_work_center
+endpoint,GET /api/routing-standards,A1,P02,A3,beeloft/api.py#routing_standards
+endpoint,GET /api/products/{product_id}/routing-standards/{stage},A1,P02,A3,beeloft/api.py#routing_standard
+endpoint,POST /api/products/{product_id}/routing-standards/{stage},A1,P02,A3,beeloft/api.py#save_routing_standard
+endpoint,GET /api/work-centers/{work_center_id}/calendar,A1,P02,A3,beeloft/api.py#capacity_calendar
+endpoint,POST /api/work-centers/{work_center_id}/calendar,A1,P02,A3,beeloft/api.py#save_capacity_calendar
+endpoint,GET /api/product-external-mappings,A3,X01,A1/A2,beeloft/api.py#product_external_mappings
+endpoint,GET /api/products/{product_id}/external-mappings/{system},A3,X01,A1/A2,beeloft/api.py#product_external_mapping
+endpoint,POST /api/products/{product_id}/external-mappings/{system},A3,X01,A1/A2,beeloft/api.py#save_product_external_mapping
+endpoint,GET /api/products/{product_id}/external-mappings/{system}/history,A3,X01,A1/A2,beeloft/api.py#product_external_mapping_history
+endpoint,GET /api/products/{product_id}/bom,A1,P01,A2,beeloft/api.py#bom
+endpoint,POST /api/products/{product_id}/bom,A1,P01,A2,beeloft/api.py#save_bom
+endpoint,GET /api/products/{product_id}/bom-history,A1,P01,A2,beeloft/api.py#bom_history
+endpoint,GET /api/orders/{order_id}/material-requirements,A1,P01,A2,beeloft/api.py#material_requirements
+endpoint,GET /api/orders/{order_id}/production-cost,A2,I01/S02,A1,beeloft/api.py#production_cost
+endpoint,GET /api/suppliers,A2,B01,A1,beeloft/api.py#suppliers
+endpoint,POST /api/suppliers,A2,B01,A1,beeloft/api.py#create_supplier
+endpoint,GET /api/purchase-orders,A2,B01,A1,beeloft/api.py#purchase_orders
+endpoint,GET /api/purchase-orders/{order_id},A2,B01/B02,A1/A3,beeloft/api.py#purchase_order
+endpoint,POST /api/purchase-orders,A2,B01,A1,beeloft/api.py#create_purchase_order
+endpoint,POST /api/purchase-orders/{order_id}/decisions,A2,B01/B02,A1/A3,beeloft/api.py#decide_purchase_order
+endpoint,GET /api/purchase-orders/{order_id}/payment-requests,A2,B01/B02,A1/A3,beeloft/api.py#supplier_payment_requests
+endpoint,POST /api/purchase-orders/{order_id}/payment-requests,A2,B01/B02,A1/A3,beeloft/api.py#create_supplier_payment_request
+endpoint,GET /api/supplier-payment-requests/{request_id},A2,B02,A3,beeloft/api.py#supplier_payment_request
+endpoint,POST /api/supplier-payment-requests/{request_id}/decisions,A2,B02,A3,beeloft/api.py#decide_supplier_payment_request
+endpoint,POST /api/purchase-orders/{order_id}/cancel,A2,B01/B02,A1/A3,beeloft/api.py#cancel_purchase_order
+endpoint,POST /api/purchase-orders/{order_id}/close,A2,B01/B02,A1/A3,beeloft/api.py#close_purchase_order
+endpoint,POST /api/qc-intakes/{intake_id}/returns,A2,B01/I01,A1,beeloft/api.py#return_supplier
+endpoint,POST /api/supplier-returns/{return_id}/reverse,A2,B01/I01,A1,beeloft/api.py#reverse_supplier_return
+endpoint,POST /api/purchase-orders/{order_id}/receipts,A2,B01/B02,A1/A3,beeloft/api.py#receive_purchase_order
+endpoint,POST /api/purchase-orders/{order_id}/qc-intakes,A2,B01/B02,A1/A3,beeloft/api.py#create_quality_intake
+endpoint,GET /api/qc-intakes/{intake_id},A2,B01/I01,A1,beeloft/api.py#quality_intake
+endpoint,POST /api/qc-intakes/{intake_id}/decisions,A2,B01/I01,A1,beeloft/api.py#decide_quality
+endpoint,POST /api/qc-decisions/{decision_id}/reverse,A2,B01/I01,A1,beeloft/api.py#reverse_quality
+endpoint,POST /api/qc-intakes/{intake_id}/cancel,A2,B01/I01,A1,beeloft/api.py#cancel_quality_intake
+endpoint,POST /api/purchase-requests,A2,B01,A1,beeloft/api.py#create_purchase_request
+endpoint,GET /api/purchase-requests,A2,B01,A1,beeloft/api.py#purchase_requests
+endpoint,GET /api/purchase-requests/{request_id},A2,B01,A1,beeloft/api.py#purchase_request
+endpoint,POST /api/purchase-requests/{request_id}/decisions,A2,B01,A1,beeloft/api.py#decide_purchase_request
+endpoint,POST /api/materials,A1,M01,A2,beeloft/api.py#create_material
+endpoint,GET /api/materials,A1,M01,A2,beeloft/api.py#materials
+endpoint,POST /api/material-batches,A2,I01,A1,beeloft/api.py#receive_material
+endpoint,GET /api/material-batches,A2,I01,A1,beeloft/api.py#material_batches
+endpoint,GET /api/material-batches/scan,A2,I01,A1,beeloft/api.py#scan_material_batch
+endpoint,GET /api/material-batches/{batch_id}/label.svg,A2,I01,A1,beeloft/api.py#material_batch_label
+endpoint,POST /api/material-reservations,A1,P02/P03,A2,beeloft/api.py#reserve_material
+endpoint,POST /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#create_cutting_run
+endpoint,GET /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#cutting_runs
+endpoint,GET /api/cutting-runs/{run_id},A1,P02,A2,beeloft/api.py#cutting_run
+endpoint,POST /api/cutting-runs/{run_id}/reverse,A1,P02,A2,beeloft/api.py#reverse_cutting_run
+endpoint,POST /api/cutting-runs/{run_id}/bundles,A1,P02/P03,A2,beeloft/api.py#create_bundle
+endpoint,GET /api/orders/{order_id}/bundles,A1,P02/P03,A2,beeloft/api.py#bundles
+endpoint,GET /api/bundles/scan,A1,P02/P03,A2,beeloft/api.py#scan_bundle
+endpoint,GET /api/bundles/{bundle_id},A1,P02/P03,A2,beeloft/api.py#bundle
+endpoint,GET /api/bundles/{bundle_id}/label.svg,A1,P02/P03,A2,beeloft/api.py#bundle_label
+endpoint,GET /api/bundles/{bundle_id}/handoffs,A1,P02/P03,A2,beeloft/api.py#bundle_handoffs
+endpoint,POST /api/bundles/{bundle_id}/handoffs,A1,P02/P03,A2,beeloft/api.py#create_bundle_handoff
+endpoint,POST /api/bundle-handoffs/{handoff_id}/accept,A1,P02/P03,A2,beeloft/api.py#accept_bundle_handoff
+endpoint,POST /api/bundle-handoffs/{handoff_id}/cancel,A1,P02/P03,A2,beeloft/api.py#cancel_bundle_handoff
+endpoint,POST /api/bundles/{bundle_id}/reverse,A1,P02/P03,A2,beeloft/api.py#reverse_bundle
+endpoint,POST /api/bundles/{bundle_id}/sewing-jobs,A1,P03,A2,beeloft/api.py#create_sewing_job
+endpoint,GET /api/orders/{order_id}/sewing-jobs,A1,P03,A2,beeloft/api.py#sewing_jobs
+endpoint,GET /api/sewing-jobs/{job_id},A1,P03,A2,beeloft/api.py#sewing_job
+endpoint,POST /api/sewing-jobs/{job_id}/complete,A1,P03,A2,beeloft/api.py#complete_sewing_job
+endpoint,POST /api/sewing-jobs/{job_id}/reverse,A1,P03,A2,beeloft/api.py#reverse_sewing_job
+endpoint,POST /api/sewing-jobs/{job_id}/finishing-records,A1,P03,A2,beeloft/api.py#create_finishing_record
+endpoint,GET /api/orders/{order_id}/finishing-records,A1,P03,A2,beeloft/api.py#finishing_records
+endpoint,GET /api/finishing-records/{record_id},A1,P03,A2,beeloft/api.py#finishing_record
+endpoint,POST /api/finishing-records/{record_id}/reverse,A1,P03,A2,beeloft/api.py#reverse_finishing_record
+endpoint,POST /api/finishing-records/{record_id}/qc-records,A1,P03,A2,beeloft/api.py#create_final_qc_record
+endpoint,GET /api/orders/{order_id}/final-qc-records,A1,P03,A2,beeloft/api.py#final_qc_records
+endpoint,GET /api/final-qc-records/{record_id},A1,P03,A2,beeloft/api.py#final_qc_record
+endpoint,POST /api/final-qc-records/{record_id}/reverse,A1,P03,A2,beeloft/api.py#reverse_final_qc_record
+endpoint,POST /api/final-qc-records/{record_id}/rework-completions,A1,P03,A2,beeloft/api.py#create_rework_completion
+endpoint,GET /api/final-qc-records/{record_id}/rework-completions,A1,P03,A2,beeloft/api.py#final_qc_rework_completions
+endpoint,GET /api/orders/{order_id}/rework-completions,A1,P03,A2,beeloft/api.py#rework_completions
+endpoint,GET /api/rework-completions/{completion_id},A1,P03,A2,beeloft/api.py#rework_completion
+endpoint,POST /api/rework-completions/{completion_id}/qc-records,A1,P03,A2,beeloft/api.py#create_rework_reinspection_record
+endpoint,POST /api/rework-completions/{completion_id}/reverse,A1,P03,A2,beeloft/api.py#reverse_rework_completion
+endpoint,POST /api/final-qc-records/{record_id}/finished-goods-receipts,A2,I01,A1,beeloft/api.py#create_finished_goods_receipt
+endpoint,GET /api/orders/{order_id}/finished-goods-receipts,A2,I01,A1,beeloft/api.py#finished_goods_receipts
+endpoint,GET /api/finished-goods-receipts/scan,A2,I01,A1,beeloft/api.py#scan_finished_goods_receipt
+endpoint,GET /api/finished-goods-receipts/{receipt_id},A2,I01,A1,beeloft/api.py#finished_goods_receipt
+endpoint,GET /api/finished-goods-receipts/{receipt_id}/traceability,A2,I01,A1,beeloft/api.py#finished_goods_traceability
+endpoint,GET /api/finished-goods-receipts/{receipt_id}/label.svg,A2,I01,A1,beeloft/api.py#finished_goods_receipt_label
+endpoint,POST /api/finished-goods-receipts/{receipt_id}/reverse,A2,I01,A1,beeloft/api.py#reverse_finished_goods_receipt
+endpoint,GET /api/finished-goods-inventory,A2,I01,A1,beeloft/api.py#finished_goods_inventory
+endpoint,POST /api/finished-goods-receipts/{receipt_id}/warehouse-movements,A2,I01,A1,beeloft/api.py#create_warehouse_movement
+endpoint,GET /api/orders/{order_id}/warehouse-movements,A2,I01,A1,beeloft/api.py#warehouse_movements
+endpoint,GET /api/warehouse-movements/{movement_id},A2,I01,A1,beeloft/api.py#warehouse_movement
+endpoint,POST /api/warehouse-movements/{movement_id}/reverse,A2,I01,A1,beeloft/api.py#reverse_warehouse_movement
+endpoint,GET /api/warehouse-inventory,A2,I01,A1,beeloft/api.py#warehouse_inventory
+endpoint,POST /api/finished-goods-receipts/{receipt_id}/marketplace-reservations,A2,S01/S02,A3,beeloft/api.py#create_marketplace_reservation
+endpoint,GET /api/orders/{order_id}/marketplace-reservations,A2,S01/S02,A3,beeloft/api.py#marketplace_reservations
+endpoint,GET /api/marketplace-reservations/{reservation_id},A2,S01/S02,A3,beeloft/api.py#marketplace_reservation
+endpoint,POST /api/marketplace-reservations/{reservation_id}/release,A2,S01/S02,A3,beeloft/api.py#release_marketplace_reservation
+endpoint,POST /api/marketplace-reservations/{reservation_id}/picks,A2,S01/S02,A3,beeloft/api.py#create_marketplace_pick
+endpoint,GET /api/orders/{order_id}/marketplace-picks,A2,S01/S02,A3,beeloft/api.py#marketplace_picks
+endpoint,GET /api/marketplace-picks/{pick_id},A2,S01/S02,A3,beeloft/api.py#marketplace_pick
+endpoint,POST /api/marketplace-picks/{pick_id}/reverse,A2,S01/S02,A3,beeloft/api.py#reverse_marketplace_pick
+endpoint,POST /api/marketplace-picks/{pick_id}/packs,A2,S01/S02,A3,beeloft/api.py#create_marketplace_pack
+endpoint,GET /api/orders/{order_id}/marketplace-packs,A2,S01/S02,A3,beeloft/api.py#marketplace_packs
+endpoint,GET /api/marketplace-packs/{pack_id},A2,S01/S02,A3,beeloft/api.py#marketplace_pack
+endpoint,POST /api/marketplace-packs/{pack_id}/reverse,A2,S01/S02,A3,beeloft/api.py#reverse_marketplace_pack
+endpoint,POST /api/marketplace-packs/{pack_id}/shipments,A2,S01/S02,A3,beeloft/api.py#create_marketplace_shipment
+endpoint,GET /api/orders/{order_id}/marketplace-shipments,A2,S01/S02,A3,beeloft/api.py#marketplace_shipments
+endpoint,GET /api/marketplace-shipments/{shipment_id},A2,S01/S02,A3,beeloft/api.py#marketplace_shipment
+endpoint,POST /api/marketplace-shipments/{shipment_id}/reverse,A2,S01/S02,A3,beeloft/api.py#reverse_marketplace_shipment
+endpoint,POST /api/marketplace-shipments/{shipment_id}/sale-settlements,A2,I01/S02,A1,beeloft/api.py#create_marketplace_sale_settlement
+endpoint,GET /api/orders/{order_id}/sale-settlements,A2,I01/S02,A1,beeloft/api.py#marketplace_sale_settlements
+endpoint,GET /api/marketplace-sale-settlements/{settlement_id},A2,I01/S02,A1,beeloft/api.py#marketplace_sale_settlement
+endpoint,POST /api/marketplace-sale-settlements/{settlement_id}/reverse,A2,I01/S02,A1,beeloft/api.py#reverse_marketplace_sale_settlement
+endpoint,GET /api/orders/{order_id}/contribution-margin,A2,I01/S02,A1,beeloft/api.py#contribution_margin
+endpoint,GET /api/demand-forecast,A3,R01,A1/A2,beeloft/api.py#demand_forecast
+endpoint,GET /api/return-insights,A3,R01,A1/A2,beeloft/api.py#return_insights
+endpoint,GET /api/size-demand-insights,A3,R01,A1/A2,beeloft/api.py#size_demand_insights
+endpoint,GET /api/dead-stock-insights,A3,R01,A1/A2,beeloft/api.py#dead_stock_insights
+endpoint,GET /api/stock-adjustment-insights,A3,R01,A1/A2,beeloft/api.py#stock_adjustment_insights
+endpoint,GET /api/supplier-performance-insights,A3,R01,A1/A2,beeloft/api.py#supplier_performance_insights
+endpoint,GET /api/material-price-insights,A3,R01,A1/A2,beeloft/api.py#material_price_insights
+endpoint,GET /api/purchase-commitment-insights,A3,R01,A1/A2,beeloft/api.py#purchase_commitment_insights
+endpoint,GET /api/wip-ageing-insights,A1,P02/P03,A2,beeloft/api.py#wip_ageing_insights
+endpoint,GET /api/capacity-plan,A1,P02,A3,beeloft/api.py#capacity_plan
+endpoint,GET /api/production-quality-insights,A1,P02/P03,A2,beeloft/api.py#production_quality_insights
+endpoint,GET /api/replenishment-recommendations,A3,R01,A1/A2,beeloft/api.py#replenishment_recommendations
+endpoint,POST /api/marketplace-shipments/{shipment_id}/returns,A2,S01/S02,A3,beeloft/api.py#create_marketplace_return
+endpoint,GET /api/orders/{order_id}/marketplace-returns,A2,S01/S02,A3,beeloft/api.py#marketplace_returns
+endpoint,GET /api/marketplace-returns/{return_id},A2,S01/S02,A3,beeloft/api.py#marketplace_return
+endpoint,POST /api/marketplace-returns/{return_id}/reverse,A2,S01/S02,A3,beeloft/api.py#reverse_marketplace_return
+endpoint,POST /api/finished-goods-receipts/{receipt_id}/adjustments,A2,I01,A1,beeloft/api.py#create_finished_goods_adjustment
+endpoint,GET /api/orders/{order_id}/finished-goods-adjustments,A2,I01,A1,beeloft/api.py#finished_goods_adjustments
+endpoint,GET /api/finished-goods-adjustments/{adjustment_id},A2,I01,A1,beeloft/api.py#finished_goods_adjustment
+endpoint,POST /api/finished-goods-adjustments/{adjustment_id}/reverse,A2,I01,A1,beeloft/api.py#reverse_finished_goods_adjustment
+endpoint,POST /api/finished-goods-receipts/{receipt_id}/stock-counts,A2,I01,A1,beeloft/api.py#create_finished_goods_stock_count
+endpoint,GET /api/orders/{order_id}/finished-goods-stock-counts,A2,I01,A1,beeloft/api.py#finished_goods_stock_counts
+endpoint,GET /api/finished-goods-stock-counts/{count_id},A2,I01,A1,beeloft/api.py#finished_goods_stock_count
+endpoint,POST /api/finished-goods-stock-counts/{count_id}/reverse,A2,I01,A1,beeloft/api.py#reverse_finished_goods_stock_count
+endpoint,POST /api/material-consumption,A1,P02/P03,A2,beeloft/api.py#consume_material
+endpoint,POST /api/material-consumption/{consumption_id}/reverse,A1,P02/P03,A2,beeloft/api.py#reverse_consumption
+endpoint,GET /api/orders/{order_id}/material-consumption,A1,P02/P03,A2,beeloft/api.py#order_consumption
+endpoint,GET /api/orders/{order_id}/consumption-history,A1,P02/P03,A2,beeloft/api.py#consumption_history
+endpoint,GET /api/orders/{order_id}/material-reservations,A1,P02/P03,A2,beeloft/api.py#order_reservations
+endpoint,GET /api/orders/{order_id}/reservation-history,A1,P02/P03,A2,beeloft/api.py#reservation_history
+endpoint,GET /api/material-batches/{batch_id},A2,I01,A1,beeloft/api.py#material_batch
+endpoint,GET /api/material-batches/{batch_id}/traceability,A2,I01,A1,beeloft/api.py#material_batch_traceability
+endpoint,POST /api/material-issues,A2,I01,A1,beeloft/api.py#issue_material
+endpoint,POST /api/material-movements/{movement_id}/reverse,A2,I01,A1,beeloft/api.py#reverse_material
+endpoint,GET /api/material-batches/{batch_id}/movements,A2,I01,A1,beeloft/api.py#batch_material_history
+endpoint,GET /api/orders/{order_id}/material-movements,A2,I01,A1,beeloft/api.py#order_material_history
+endpoint,POST /api/orders,A1,P02/P03,A2,beeloft/api.py#create_order
+endpoint,GET /api/orders,A1,P02/P03,A2,beeloft/api.py#orders
+endpoint,GET /api/production-board,A1,P02/P03,A2,beeloft/api.py#production_board
+endpoint,GET /api/orders/{order_id},A1,P02/P03,A2,beeloft/api.py#order
+endpoint,GET /api/orders/{order_id}/movements,A1,P02/P03,A2,beeloft/api.py#history
+endpoint,POST /api/movements,A1,P02/P03,A2,beeloft/api.py#move
+endpoint,POST /api/movements/{movement_id}/reverse,A1,P02/P03,A2,beeloft/api.py#reverse
+endpoint,GET /api/orders/{order_id}/issues,A1,P02,A3,beeloft/api.py#issues
+endpoint,POST /api/issues,A1,P02,A3,beeloft/api.py#create_issue
+endpoint,POST /api/issues/{issue_id}/resolve,A1,P02,A3,beeloft/api.py#resolve_issue
+endpoint,POST /api/orders/{order_id}/changes,A1,P02/P03,A2,beeloft/api.py#change_order
+endpoint,GET /api/orders/{order_id}/changes,A1,P02/P03,A2,beeloft/api.py#order_changes
+endpoint,POST /api/orders/{order_id}/change-requests,A1,P02,A3,beeloft/api.py#create_production_change_request
+endpoint,GET /api/orders/{order_id}/change-requests,A1,P02,A3,beeloft/api.py#production_change_requests
+endpoint,GET /api/production-change-requests/{request_id},A1,P02,A3,beeloft/api.py#production_change_request
+endpoint,POST /api/production-change-requests/{request_id}/decisions,A1,P02,A3,beeloft/api.py#decide_production_change_request
+endpoint,GET /api/activity,A3,R01,A1/A2,beeloft/api.py#activity
+endpoint,GET /api/activity.csv,A3,R01,A1/A2,beeloft/api.py#export_activity
+endpoint,GET /api/backup,A3,O02,A0,beeloft/api.py#download_backup
