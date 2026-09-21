@@ -559,17 +559,31 @@ function enterWorkspace(me,workflow) {
   $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
 }
-$('login-form').onsubmit = async event => {
-  event.preventDefault(); const button = event.currentTarget.querySelector('button');
+// Satu login lokal dalam penerbangan pada satu waktu, seperti logoutRequest: submit kedua selama
+// percobaan pertama berjalan tidak boleh mengirim penukaran session kedua yang berlomba
+// menggantikan cookie. Guard ini juga menutup implicit submission lewat Enter, yang tetap
+// dijalankan browser ketika tombol submit sudah dinonaktifkan.
+let loginRequest = null;
+$('login-form').onsubmit = event => {
+  event.preventDefault();
+  if (loginRequest) return;
+  // Tombol SSO berada di form yang sama dan posisinya lebih dahulu, jadi pemilihan lewat
+  // querySelector('button') mengunci tombol provider dan membiarkan tombol submit tetap aktif —
+  // termasuk saat SSO tersembunyi. Yang dikunci dan diberi label proses hanya tombol submit, dan
+  // hanya label tombol itu yang dipulihkan; label provider tidak pernah disentuh alur ini.
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  const label = button.textContent;
   button.disabled = true; button.textContent = 'Memeriksa akses…'; message('login-error', '');
   const key=$('access-key').value.trim(),version=++epoch;
-  try {
-    await api.post('/api/session',{api_key:key});
-    const [me, workflow] = await Promise.all([api.get('/api/me'), api.get('/api/stages')]);
-    if (version !== epoch) return;
-    enterWorkspace(me,workflow);
-  } catch (error) { if (version === epoch) message('login-error', error.message, true); }
-  finally { button.disabled = false; button.textContent = 'Buka ruang produksi'; }
+  loginRequest = (async () => {
+    try {
+      await api.post('/api/session',{api_key:key});
+      const [me, workflow] = await Promise.all([api.get('/api/me'), api.get('/api/stages')]);
+      if (version !== epoch) return;
+      enterWorkspace(me,workflow);
+    } catch (error) { if (version === epoch) message('login-error', error.message, true); }
+    finally { loginRequest = null; button.disabled = false; button.textContent = label; }
+  })();
 };
 
 async function restoreSession() {
