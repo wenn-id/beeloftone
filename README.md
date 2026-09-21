@@ -206,6 +206,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
   penerimaan kontrak menunggu keputusan F01 dan sign-off A1/A2/A3 serta A0/pemilik bisnis.
 - [Handoff audit teknis F03](docs/f03-technical-audit.md) — status #26–#37,
   commit perbaikan, regresi scope AI, bukti uji dan batas penerimaan #42.
+- [Kesiapan master produk, bahan dan satuan M01](docs/m01-master-readiness.md)
+  untuk #43: gap terhadap HEAD dan bukti baseline; implementasi menunggu penerimaan F02.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
