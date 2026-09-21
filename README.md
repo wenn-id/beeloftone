@@ -208,6 +208,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
   commit perbaikan, regresi scope AI, bukti uji dan batas penerimaan #42.
 - [Kesiapan master produk, bahan dan satuan M01](docs/m01-master-readiness.md)
   untuk #43: gap terhadap HEAD dan bukti baseline; implementasi menunggu penerimaan F02.
+- [Kesiapan unit usaha, lokasi, pihak dan employee M02](docs/m02-master-readiness.md)
+  untuk #44: pemetaan gap identitas dan migrasi; implementasi menunggu penerimaan F02.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
