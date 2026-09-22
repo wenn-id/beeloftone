@@ -17,10 +17,14 @@ module.exports = async ({page, login, admin, viewer, work}) => {
     };
     window.cancelAnimationFrame = id => { pending.delete(id); cancel.call(window, id); };
   });
+  // A3 gave the lens physics, so "aligned" now means it has arrived *and* stopped: the target
+  // rectangle plus the released compositor hint the controller only holds while a spring runs.
+  // Every geometry assertion below therefore still describes the resting decoration A2 owns.
   const aligned = async id => {
     await page.waitForFunction(id => {
       const lens = document.getElementById('nav-selection-lens'), target = document.getElementById(id);
       if (lens.hidden || target.getAttribute('aria-current') !== 'page') return false;
+      if (getComputedStyle(lens).willChange !== 'auto') return false;
       const a = lens.getBoundingClientRect(), b = target.getBoundingClientRect();
       return ['x','y','width','height'].every(key => Math.abs(a[key] - b[key]) < 1);
     }, id).catch(async error => {
@@ -66,7 +70,9 @@ module.exports = async ({page, login, admin, viewer, work}) => {
   for (const id of ['wip-ageing-insights','capacity-plan','production-quality-insights']) {
     await open(id);
     assert.equal(await page.locator('.workspace-main>section:not([hidden])').getAttribute('id'), 'analytics-view');
-    analyticsY.push(await page.locator('#nav-selection-lens').evaluate(node => node.style.top));
+    // A3 moves the lens with a transform rather than an inline `top`, so the resting position is
+    // read from the rendered rectangle instead of the declaration that used to carry it.
+    analyticsY.push(await page.locator('#nav-selection-lens').evaluate(node => Math.round(node.getBoundingClientRect().y)));
   }
   assert.equal(new Set(analyticsY).size, 3, 'same analytics host has three distinct lens targets');
   await page.locator('.nav-summary').click();
@@ -164,11 +170,17 @@ module.exports = async ({page, login, admin, viewer, work}) => {
       return [...document.querySelectorAll('#app-sidebar [aria-current]')].map(node => node.id);
     });
     assert.deepEqual(finalSelection, ['command-center'], 'semantics settle synchronously before presentation frames');
-    assert.equal(await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
+    // Four destinations in one task still coalesce into one measurement of the *final* selection;
+    // the lens is never walked through the three that were never rendered. Under reduced motion
+    // that measurement is also the finished geometry; otherwise A3's spring travels to it and
+    // `aligned` below is what proves it arrives exactly. Travel itself is covered by
+    // browser_navigation_spring.cjs.
+    const onNextFrame = await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
       const a = document.getElementById('nav-selection-lens').getBoundingClientRect();
       const b = document.getElementById('command-center').getBoundingClientRect();
       resolve(['x','y','width','height'].every(key => Math.abs(a[key] - b[key]) < 1));
-    }))), true, 'final geometry is present on the next frame, without travel');
+    })));
+    if (reducedMotion === 'reduce') assert.equal(onNextFrame, true, 'reduced motion has no travel at all');
     await aligned('command-center');
     await settle();
     const before = await page.evaluate(() => ({executed:window.lensFrames.executed,pending:window.lensFrames.pending.size}));

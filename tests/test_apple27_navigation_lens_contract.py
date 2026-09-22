@@ -1,4 +1,13 @@
-"""A2 owns one inert decoration and instant geometry, not navigation or physics."""
+"""A2 owns one inert decoration, its geometry and its visibility — not navigation.
+
+A3 took over the final presentation step at the seam A2 reserved for it, so the renderer named
+here is now `retargetNavigationLens` and a second frame handle exists beside the measurement
+one. Everything else this module asserts is still A2's: one empty non-interactive node, the
+scoped legacy fallback, measurement that rejects invalid targets, semantics written before
+presentation is asked for, and a measurement frame that runs once and stops. The spring itself
+— its configuration, velocity, integrator, settling and idle cost — is asserted in
+`test_apple27_navigation_spring_contract.py`.
+"""
 import re
 import unittest
 from html.parser import HTMLParser
@@ -60,7 +69,9 @@ class NavigationLensTest(unittest.TestCase):
                         active.index('scheduleNavigationLensSync()'))
         self.assertIn('querySelector(\'[aria-current="page"]\')', LENS)
         self.assertNotRegex(LENS, r'setAttribute\([\'"]aria-current|activateWorkspace\(|\.focus\(|api\.|epoch|Request\+\+')
-        for name in ('measureNavigationTarget', 'applyNavigationLensGeometry', 'hideNavigationLens',
+        # A3 replaced the instant apply seam with `retargetNavigationLens`, exactly where A2
+        # reserved it. Measurement, visibility and scheduling still belong to A2 and stay here.
+        for name in ('measureNavigationTarget', 'retargetNavigationLens', 'hideNavigationLens',
                      'syncNavigationLens', 'scheduleNavigationLensSync'):
             self.assertIn('function ' + name + '(', LENS)
         for coordinate in ('context.clientLeft', 'context.clientTop', 'context.scrollLeft', 'context.scrollTop'):
@@ -69,15 +80,32 @@ class NavigationLensTest(unittest.TestCase):
                          'details:not([open])'):
             self.assertIn(validity, LENS)
 
-    def test_bounded_scheduler_has_no_physics_or_idle_loop(self):
-        self.assertEqual(LENS.count('requestAnimationFrame('), 1)
-        self.assertIn('navigationLensFrame === null', LENS)
+    def test_measurement_is_still_a_bounded_one_shot_frame(self):
+        """A2's measurement contract, unchanged by A3's physics.
+
+        A3 added an integrator with its own handle; that loop and its constants are the subject
+        of `test_apple27_navigation_spring_contract.py`. What is asserted here is that the
+        measurement layer did not become part of it: one scheduling site, one nullable handle
+        cleared at callback entry, no self-scheduling, and no timer or polling mechanism
+        anywhere in the lens region.
+        """
+        self.assertEqual(LENS.count('requestAnimationFrame(syncNavigationLens)'), 1)
+        self.assertIn('navigationLensSyncFrame === null', LENS)
         sync = LENS[LENS.index('function syncNavigationLens()'):LENS.index('function scheduleNavigationLensSync()')]
+        self.assertIn('navigationLensSyncFrame = null;', sync)
         self.assertNotIn('requestAnimationFrame', sync)
         self.assertNotIn('scheduleNavigationLensSync', sync)
-        self.assertNotRegex(LENS, r'setInterval|setTimeout|\.animate\(|velocity|spring|integrat|\bwhile\s*\(')
+        # The measurement handle and the motion handle are distinct names, so neither job can
+        # silently cancel or inherit the other's frame.
+        self.assertIn('let navigationLensSyncFrame = null, navigationLensMotionFrame = null;', LENS)
+        self.assertNotRegex(LENS, r'setInterval|setTimeout|\.animate\(|requestIdleCallback'
+                                  r'|\bwhile\s*\(\s*true\b')
         for lifecycle in ('clearWorkspace', 'enterWorkspace'):
             self.assertRegex(JS, rf'function {lifecycle}\([^)]*\)\s*\{{\s*hideNavigationLens\(\);')
+        # Teardown cancels both frames and discards the physical history with them.
+        hide = LENS[LENS.index('function hideNavigationLens()'):LENS.index('function syncNavigationLens()')]
+        self.assertIn('cancelNavigationLensMotion(true)', hide)
+        self.assertIn('cancelAnimationFrame(navigationLensSyncFrame)', hide)
 
 
 if __name__ == '__main__':

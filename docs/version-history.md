@@ -2794,3 +2794,34 @@ dapat ditampilkan. Tidak ada spring, animasi perjalanan, glass, perubahan bisnis
 atau migrasi. Versi aplikasi 0.100.0; schema tetap 55.
 
 Bukti dan kontrak: [Apple-27 navigation lens](apple27-navigation-lens.md).
+
+## Apple-27 A3: spring dan pengendali kecepatan navigasi (v0.101)
+
+Satu lens A2 yang sama sekarang bergerak secara fisik. Pengendali spring
+requestAnimationFrame memindahkan pusat dan dimensinya dengan mass 1, stiffness 520,
+damping 40 (rasio redaman 0.877), memakai timestamp frame dalam detik dengan langkah
+integrasi maksimum 1/120 detik, batas 32ms per frame, dan jeda di atas 200ms
+diselesaikan tepat di target alih-alih diintegrasikan. Mengganti tujuan hanya mengganti
+targetnya: kecepatan dibiarkan utuh, jadi klik beruntun terasa satu benda yang membelok,
+bukan animasi yang dimulai ulang. Regangan kecil turunan kecepatan dibatasi 7% dan nol
+saat berhenti. Perpindahan konteks approval mengonversi koordinat, bukan memulai gerak
+baru. Gerak dikurangi menempatkan lens seketika dan membatalkan perjalanan yang sedang
+berlangsung. Saat diam tidak ada satu pun frame yang berjalan.
+
+Navigasi semantik, aria-current, fokus, penutupan drawer, request dan state transaksi
+tetap seketika dan tidak pernah menunggu gerak. Token gerak M1–M6, playEntryMotion,
+dialog, notice, refresh, scanner dan tema tidak diubah. Tidak ada glass, backdrop-filter,
+blur, refraksi, renderer GPU, navigasi bawah, perubahan endpoint/skema/bisnis atau migrasi.
+Versi aplikasi 0.101.0; schema tetap 55.
+
+Rilis ini juga memperbaiki drift metadata versi yang ditinggalkan A2: PR #90 menaikkan
+`pyproject.toml` ke 0.100.0 sementara `beeloft/api.py` dan `docs/openapi.json` tetap di
+0.99.0, dan tidak ada test yang gagal karena kontrak tersimpan hanya diikat ke runtime
+yang sama-sama tertinggal. Ketiganya sekarang 0.101.0, `docs/openapi.json` diregenerasi
+dengan `python scripts/regenerate_openapi.py`, dan satu-satunya perbedaan kontrak
+terhadap main adalah `info.version` 0.99.0 → 0.101.0: 221 path, 253 operasi, 85 skema
+komponen, securitySchemes, security, tags dan servers identik. `test_openapi_contract.py`
+sekarang mengikat paket, runtime dan kontrak tersimpan ke satu nilai, jadi milestone
+berikutnya tidak bisa menaikkan hanya salah satunya.
+
+Bukti dan kontrak: [Apple-27 navigation spring](apple27-navigation-spring.md).

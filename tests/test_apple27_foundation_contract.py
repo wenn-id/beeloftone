@@ -96,11 +96,20 @@ class Apple27FoundationTest(unittest.TestCase):
                 for role in ('focus', 'control-border'):
                     self.assertGreaterEqual(contrast(theme['--color-' + role], theme['--color-' + surface]), 3)
 
-    def test_no_glass_spring_or_external_font_assets(self):
+    def test_no_glass_gpu_renderer_or_external_font_assets(self):
         source = '\n'.join(p.read_text(encoding='utf-8') for p in STATIC.iterdir()
                            if p.suffix in ('.css', '.mjs', '.html'))
         self.assertNotRegex(CSS, r'backdrop-filter|filter\s*:[^;}]*blur\(|@import|@font-face')
-        self.assertNotRegex(source, r'springController|SpringController|navigator\.gpu|getContext\([\"\x27]webgl')
+        self.assertNotRegex(source, r'navigator\.gpu|getContext\([\"\x27]webgl')
+        # A1 forbade physics outright. A3 authorised one spring, for the navigation lens only, so
+        # the exclusion is now a containment check: the integrator and its state stay inside the
+        # lens region and no second animation engine appears beside it.
+        script = (STATIC / 'app.mjs').read_text(encoding='utf-8')
+        lens = script[script.index('const navigationSurface ='):script.index('// Drawer mobile.')]
+        outside = script.replace(lens, '')
+        self.assertNotRegex(outside, r'stiffness|damping|navigationLensSpring|velocity')
+        self.assertEqual(len(re.findall(r'const navigationLensSpring = \{', script)), 1,
+                         'one spring configuration exists in the whole application')
         self.assertNotRegex(source, r'fonts\.googleapis|fonts\.gstatic|use\.typekit|prefers-reduced-transparency')
         self.assertEqual([p.name for p in STATIC.rglob('*') if p.suffix.lower() in
                           ('.woff', '.woff2', '.otf', '.ttf', '.png', '.jpg', '.webp', '.svg')], [])

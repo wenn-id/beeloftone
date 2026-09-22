@@ -415,18 +415,22 @@ Post-audit publication validation compares this branch to `f6fd7d173662bc406d081
 
 ## 17. Recommended sequence and phase gates
 
-Current programme update (A2, baseline `f8040e97df2fd4dec6def0cafa1bcf268907e01a`):
-A1 merged in PR #89. A2 implementation and validation are recorded in
-[the navigation lens contract](apple27-navigation-lens.md). The historical A0
-measurements and post-audit resolution above retain their original baselines.
+Current programme update (A3, baseline `52546b924d44697cf97278c695f812a67a91588d`):
+A1 merged in PR #89, A2 in PR #90. A2 implementation and validation are recorded in
+[the navigation lens contract](apple27-navigation-lens.md); A3's spring controller in
+[the navigation spring contract](apple27-navigation-spring.md). A3 implements the section 9
+recommendation — option C, a small cancellable RAF integrator constrained to the one lens — with
+the substep and settle tolerances proposed there, and adds the reduced-motion `change`
+subscription section 7 identified as missing. The historical A0 measurements and post-audit
+resolution above retain their original baselines.
 
 | Phase | Bounded deliverable / exit gate |
 |---|---|
 | A0 | **COMPLETE** — this evidence, current-status note, exact-baseline tests and limitations; documentation-only publication. |
 | A0.1 | **COMPLETE / MERGED #87** — dialog interaction hotfix, separately implemented and verified; resolution in section 6. |
 | A1 | **COMPLETE / MERGED #89**: native-system type, semantic tokens, solid materials and shared primitives; see [A1 foundation](apple27-design-foundation.md). |
-| A2 | **COMPLETE / PR REVIEW**: one static shared selection decoration with geometry/visibility lifecycle, fallback and semantic integration tests; 585 Python tests and full browser/build validation pass. See [A2 contract](apple27-navigation-lens.md). |
-| A3 | Add the small cancellable RAF spring to the A2 node; prove velocity continuity, convergence, rapid retarget, reduced-motion and zero idle work. |
+| A2 | **COMPLETE / MERGED #90**: one static shared selection decoration with geometry/visibility lifecycle, fallback and semantic integration tests; 585 Python tests and full browser/build validation passed at that baseline. See [A2 contract](apple27-navigation-lens.md). |
+| A3 | **COMPLETE / PR REVIEW**: the small cancellable RAF spring on the A2 node, with preserved velocity on retarget, bounded substeps, a stall guard, exact settling, render-only velocity deformation, cross-context rebase, reduced-motion snap and cancellation, and zero idle frames. Also repairs A2's version-metadata drift — package 0.100.0 against runtime/OpenAPI 0.99.0 — by moving all three to 0.101.0 with `info.version` as the single contract difference, and binds them with a regression test. 608 Python tests and full browser/build validation pass. See [A3 contract](apple27-navigation-spring.md). |
 | A4 | Apple-like shell and functional glass chrome with solid/forced-colors fallback and measured paint cost. Tablet/mobile composition reviewed separately. |
 | A5 | Command Center golden screen; preserve field meanings/real metrics, loading/empty/error and action destinations; populated synthetic visual/accessibility review. |
 | REVIEW GATE | Approve hierarchy, behavior, keyboard/assistive behavior, dark/light, 320px/200%, reduced motion/transparency and performance before propagation. |
@@ -438,7 +442,7 @@ measurements and post-audit resolution above retain their original baselines.
 | A11 | AI + Integrations + Utilities; preserve actor-bound recovery and scanner keyboard input. |
 | A12 | Final parity/accessibility/performance audit across supported browsers/devices, including idle-work and populated-data comparison. |
 
-A2 is intentionally geometry/static selection before A3 physical movement. This makes lens correctness independently reviewable; it does not ship a temporary second animation framework. No automatic A1 work follows A0.
+A2 was intentionally geometry/static selection before A3 physical movement. This made lens correctness independently reviewable; it did not ship a temporary second animation framework, and A3 replaced only A2's final presentation step rather than adding a parallel one. No automatic A1 work follows A0, and no automatic A4 work follows A3: glass rendering still requires its own phase authorization.
 
 ## 18. Risks and explicit non-goals
 
