@@ -415,12 +415,17 @@ Post-audit publication validation compares this branch to `f6fd7d173662bc406d081
 
 ## 17. Recommended sequence and phase gates
 
+Current programme update (A2, baseline `f8040e97df2fd4dec6def0cafa1bcf268907e01a`):
+A1 merged in PR #89. A2 implementation and validation are recorded in
+[the navigation lens contract](apple27-navigation-lens.md). The historical A0
+measurements and post-audit resolution above retain their original baselines.
+
 | Phase | Bounded deliverable / exit gate |
 |---|---|
 | A0 | **COMPLETE** — this evidence, current-status note, exact-baseline tests and limitations; documentation-only publication. |
 | A0.1 | **COMPLETE / MERGED #87** — dialog interaction hotfix, separately implemented and verified; resolution in section 6. |
-| A1 | **NEXT / NOT STARTED** — reconcile DESIGN.md with the approved Apple direction; define type/color/radius/elevation/material roles, light/dark and solid fallback contracts. Keep navigation/motion/business APIs intact; no glass renderer, lens or spring. Update existing visual token assertions only alongside intentional specification changes. |
-| A2 | One static shared selection decoration plus geometry/visibility lifecycle and semantic integration tests. Retain current selected styling as fallback; resolve analytics and approval CTA geometry first. |
+| A1 | **COMPLETE / MERGED #89**: native-system type, semantic tokens, solid materials and shared primitives; see [A1 foundation](apple27-design-foundation.md). |
+| A2 | **COMPLETE / PR REVIEW**: one static shared selection decoration with geometry/visibility lifecycle, fallback and semantic integration tests; 585 Python tests and full browser/build validation pass. See [A2 contract](apple27-navigation-lens.md). |
 | A3 | Add the small cancellable RAF spring to the A2 node; prove velocity continuity, convergence, rapid retarget, reduced-motion and zero idle work. |
 | A4 | Apple-like shell and functional glass chrome with solid/forced-colors fallback and measured paint cost. Tablet/mobile composition reviewed separately. |
 | A5 | Command Center golden screen; preserve field meanings/real metrics, loading/empty/error and action destinations; populated synthetic visual/accessibility review. |

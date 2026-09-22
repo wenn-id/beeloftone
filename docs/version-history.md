@@ -2783,3 +2783,14 @@ Tidak ada glass, lens, spring, perubahan API/bisnis atau migrasi database.
 Versi aplikasi 0.99.0; schema tetap 55.
 
 Bukti dan kontrak: [Apple-27 design foundation](apple27-design-foundation.md).
+
+## Apple-27 A2: satu selection lens navigasi (v0.100)
+
+Satu permukaan dekoratif mengikuti `aria-current` pada sidebar, anak Analitik,
+dan Inbox approval. Geometri diukur dari tombol yang sedang dirender, dengan
+penanganan scroll, resize, skala teks, disclosure, drawer, serta pergantian sesi
+dan role. Styling terpilih sebelumnya tetap menjadi fallback jika lens tidak
+dapat ditampilkan. Tidak ada spring, animasi perjalanan, glass, perubahan bisnis
+atau migrasi. Versi aplikasi 0.100.0; schema tetap 55.
+
+Bukti dan kontrak: [Apple-27 navigation lens](apple27-navigation-lens.md).

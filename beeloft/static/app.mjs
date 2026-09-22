@@ -95,6 +95,79 @@ function theme(value, animate = false) {
 try { theme(localStorage.getItem('beeloft.theme') || 'light'); } catch { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
 
+// The decoration reads aria-current; it never chooses a destination or holds session state.
+const navigationSurface = $('app-sidebar'), navigationLens = $('nav-selection-lens');
+let navigationLensFrame = null;
+function getActiveNavigationTarget() {
+  return navigationSurface.querySelector('[aria-current="page"]');
+}
+function measureNavigationTarget(target) {
+  if (!target?.isConnected || !navigationSurface.contains(target)
+      || target.closest('[hidden], [inert], details:not([open])')
+      || !target.getClientRects().length || getComputedStyle(target).visibility !== 'visible') return null;
+  const rect = target.getBoundingClientRect(), surface = navigationSurface.getBoundingClientRect();
+  if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+      || rect.width <= 0 || rect.height <= 0 || surface.width <= 0 || surface.height <= 0) return null;
+  const actions = navigationSurface.querySelector('.sidebar-actions');
+  const approval = target.id === 'approvals';
+  const bottom = approval ? surface.bottom - navigationSurface.clientTop
+    : Math.min(surface.bottom, actions.getBoundingClientRect().top);
+  if (rect.bottom <= surface.top + navigationSurface.clientTop || rect.top >= bottom
+      || rect.right <= surface.left || rect.left >= surface.right) return null;
+  // Sticky actions isolate paint. Reuse the same node inside the CTA to put its solid
+  // surface above the card background but below the original interactive button text.
+  const context = approval ? target.parentElement : navigationSurface;
+  const origin = context.getBoundingClientRect();
+  return {context, x:rect.left - origin.left - context.clientLeft + context.scrollLeft,
+    y:rect.top - origin.top - context.clientTop + context.scrollTop,
+    width:rect.width, height:rect.height};
+}
+function applyNavigationLensGeometry({context, x, y, width, height}) {
+  if (navigationLens.parentElement !== context) context.prepend(navigationLens);
+  Object.assign(navigationLens.style, {left:`${x}px`, top:`${y}px`, width:`${width}px`, height:`${height}px`});
+  navigationLens.hidden = false;
+  navigationSurface.classList.add('nav-lens-ready');
+}
+function hideNavigationLens() {
+  if (navigationLensFrame !== null) cancelAnimationFrame(navigationLensFrame);
+  navigationLensFrame = null;
+  navigationSurface.classList.remove('nav-lens-ready');
+  if (navigationLens) {
+    navigationLens.hidden = true;
+    navigationLens.removeAttribute('style');
+  }
+}
+function syncNavigationLens() {
+  navigationLensFrame = null;
+  try {
+    const geometry = measureNavigationTarget(getActiveNavigationTarget());
+    if (!navigationLens?.isConnected || !geometry) { hideNavigationLens(); return; }
+    applyNavigationLensGeometry(geometry);
+  } catch { hideNavigationLens(); }
+}
+function scheduleNavigationLensSync() {
+  try {
+    if ($('workspace').hidden || navigationSurface.inert) { hideNavigationLens(); return; }
+    if (navigationLensFrame === null) navigationLensFrame = requestAnimationFrame(syncNavigationLens);
+  } catch { hideNavigationLens(); }
+}
+navigationSurface.addEventListener('scroll', scheduleNavigationLensSync, {passive:true});
+for (const type of ['transitionend','transitioncancel']) navigationSurface.addEventListener(type, event => {
+  if (event.propertyName === 'scale' && event.target === getActiveNavigationTarget()) scheduleNavigationLensSync();
+});
+navigationSurface.querySelector('.nav-collapse').addEventListener('toggle', scheduleNavigationLensSync);
+window.addEventListener('resize', scheduleNavigationLensSync);
+// Only persistent navigation boxes are observed; lens writes cannot resize these boxes.
+try {
+  const resize = new ResizeObserver(scheduleNavigationLensSync);
+  for (const node of navigationSurface.querySelectorAll('.sidebar-nav,.sidebar-actions,.sidebar-cta,button')) resize.observe(node);
+  resize.observe(navigationSurface);
+  const visibility = new MutationObserver(records => {
+    if (records.some(record => record.target !== navigationLens)) scheduleNavigationLensSync();
+  });
+  visibility.observe(navigationSurface, {subtree:true, attributes:true, attributeFilter:['hidden','style']});
+} catch { hideNavigationLens(); }
+
 // Drawer mobile. Saat tertutup, panel ini tidak dirender (display), sehingga sudah keluar dari
 // pohon akses dan urutan Tab — itu mekanisme yang sudah terbukti di produk ini. `inert`
 // dipasang sebagai jaminan kedua supaya tidak pernah ada kontrol tersembunyi yang masih bisa
@@ -103,6 +176,7 @@ function syncSidebarInert() {
   const closed = !document.body.classList.contains('nav-open');
   if (closed && drawerQuery.matches) $('app-sidebar').setAttribute('inert','');
   else $('app-sidebar').removeAttribute('inert');
+  scheduleNavigationLensSync();
 }
 function sidebar(open,restoreFocus=false) {
   document.body.classList.toggle('nav-open',open);
@@ -118,6 +192,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.bo
 function activeNavigation(id) {
   for(const item of $('app-sidebar').querySelectorAll('[aria-current]'))item.removeAttribute('aria-current');
   if(id)$(id).setAttribute('aria-current','page');
+  scheduleNavigationLensSync();
 }
 // Registri tujuan workspace: item sidebar utama dipetakan ke section yang
 // dimilikinya. Tabel ini hanya mengoordinasikan aktivasi halaman — tidak memuat
@@ -418,6 +493,7 @@ function sessionWarning(text, retry = true) {
   $('session-retry').hidden = !text || !retry;
 }
 function clearWorkspace() {
+  hideNavigationLens();
   sessionWarning('');
   commandCenterRequest++; $('command-center-summary').replaceChildren();
   auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
@@ -549,6 +625,7 @@ function fail(error, target) {
   else message(target, error.message, true);
 }
 function enterWorkspace(me,workflow) {
+  hideNavigationLens();
   // Login yang berhasil menjadikan status session diketahui baik, jadi peringatan session apa pun
   // dari percobaan logout sebelumnya tidak boleh tertinggal di layar.
   sessionWarning('');
