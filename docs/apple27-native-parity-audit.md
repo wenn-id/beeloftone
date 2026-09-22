@@ -1,17 +1,20 @@
 # Apple-27 native-parity audit (A0)
 
 Date: 22 September 2026. Repository: `wenn-id/beeloftone`.
-Baseline: **`7a76b415e6750fc06a80a050fe801ec3a5c46613`** (`origin/main`, fetched during this audit).
+AUDIT BASELINE: **`7a76b415e6750fc06a80a050fe801ec3a5c46613`** (`origin/main` when the audit was performed; app 0.97.0, schema 55).
+POST-AUDIT RESOLUTION BASELINE / CURRENT MAIN: **`f6fd7d173662bc406d081f6e1cad64c97d367c8c`** (merged [PR #87](https://github.com/wenn-id/beeloftone/pull/87); app 0.98.0, schema 55).
 Branch: `docs/apple27-native-parity-a0`.
-Scope: current-state evidence and integration design. No A1 implementation.
+Scope: historical A0 evidence and integration design, with the explicitly separated post-audit resolution below. A0 is complete; A1 is not started.
 
 ## 1. Baseline, method, and limits
 
-The supplied baseline is still the latest fetched main. The original checkout was clean and 47 commits behind; this branch was created directly from `origin/main`, without resetting local main or discarding work. `gh pr list --state open` returned no open PRs. Recent main includes business-readiness documentation/tests through PR #86. Relevant merged frontend history is navigation A-G through `0efb111` (#17), M1 `65fb288` (#19), M2 `31447f6` (#20), M3 `49addbb` (#21), M4 `50b44a3` (#22), M5 `6806338` (#23), M6 `f8921e7` (#25), and the first-paint test correction `97815b8` (#69). These are history observations, not claims that old CI verifies this audit.
+At the time of A0, the supplied audit baseline was the latest fetched main. The original checkout was clean and 47 commits behind; this branch was created directly from `origin/main`, without resetting local main or discarding work. `gh pr list --state open` returned no open PRs. That main included business-readiness documentation/tests through PR #86. Relevant merged frontend history is navigation A-G through `0efb111` (#17), M1 `65fb288` (#19), M2 `31447f6` (#20), M3 `49addbb` (#21), M4 `50b44a3` (#22), M5 `6806338` (#23), M6 `f8921e7` (#25), and the first-paint test correction `97815b8` (#69). These are history observations, not claims that old CI verifies this audit.
+
+Publication update: the documentation branch was rebased onto the post-audit main above without changing product or test files. Original audit commit `f559d91083e310ab30a98f7251fa8d6160ee9363` is retained locally at `archive/apple27-a0-f559d91`. Unless explicitly marked as post-audit, the source descriptions, line numbers, gaps, measurements and test results below describe the historical AUDIT BASELINE. They have not been relabeled as new measurements of 0.98.0.
 
 | Fact | Evidence |
 |---|---|
-| App 0.97.0, Python >=3.12 | [pyproject.toml](../pyproject.toml), project metadata |
+| Audit app 0.97.0, Python >=3.12 | [Audit-baseline pyproject.toml](https://github.com/wenn-id/beeloftone/blob/7a76b415e6750fc06a80a050fe801ec3a5c46613/pyproject.toml); current [pyproject.toml](../pyproject.toml) is 0.98.0 after #87 |
 | Protected main | GitHub branch API returned `protected: true` and the same full baseline SHA during A0 |
 | Schema 55 | [rework_completions.sql](../beeloft/rework_completions.sql), final `PRAGMA user_version=55`; migration dispatch in `Store.__init__` |
 | FastAPI + vanilla HTML/CSS/ES modules | [api.py](../beeloft/api.py), the four static files below; no frontend framework/runtime dependency added |
@@ -159,6 +162,16 @@ Semantic state is authoritative. Motion observes state. Motion never owns busine
 There is no JS `reducedMotionQuery` change listener. CSS responds to live preference changes, but an already running progress interpolation can continue briefly and an already closing dialog/notice can wait for its fallback. These are audit findings and future test inputs, not repairs in A0. No existing helper writes a physical lens transform; reserve its node/transform exclusively for the future controller so page entry, control `scale`, and lens motion cannot overwrite each other.
 
 **Confirmed existing dialog-exit gap:** in the disposable browser fixture, open New Order, fill valid fields, let entry settle, press Escape, then immediately Enter. The native dialog remained `open: true`, `is-closing: true`, `inert: false`; the browser emitted one POST to `/api/orders`. The probe intercepted that request and fulfilled it with 422 before it reached the server, so it did not perform a mutation. `formDialog()` checks `modalBusy` before dispatch but checks its captured `dialogVersion` only after the response. Closing invalidates late rendering, but does not prevent this new keyboard-triggered submission. This is a potential unintended-write window in baseline behavior, not evidence of a server-side duplicate or authorization bypass. Resolve and regress it in a separately authorized fix before extending dialog exit/sheet presentation; A0 changes neither code nor tests.
+
+### Post-audit resolution — RESOLVED_POST_A0
+
+The preceding finding and its original recommendation are retained as historical A0 evidence from `7a76b415e6750fc06a80a050fe801ec3a5c46613`. The fix was implemented separately and merged in [PR #87 — Fix dialog interaction during animated close](https://github.com/wenn-id/beeloftone/pull/87), main commit [`f6fd7d173662bc406d081f6e1cad64c97d367c8c`](https://github.com/wenn-id/beeloftone/commit/f6fd7d173662bc406d081f6e1cad64c97d367c8c). Current application version is **0.98.0**; **PRAGMA user_version remains 55**, with no migration.
+
+Accepted closing now immediately sets the native dialog itself `inert`, ending keyboard, pointer and focus interaction while visual exit continues. A single capture-phase submit guard prevents default and stops propagation while inert, including `requestSubmit()`-style submission, before business handlers run. Native close cleanup and the next open reset inert alongside the existing motion state. Exit animation, native close/focus restoration, `dialogVersion`, and busy/unresolved protections remain intact. The separate regression changed the Escape/Enter request count from one intercepted POST to zero; it also checks focus re-entry, secondary actions, reduced motion, repeated reopening and normal confirmed writes. See the merged [hotfix verification](dialog-closing-keyboard-guard-verification.md) for its tests and environment limits. Those hotfix results are distinct from the original A0 measurements in section 16.
+
+**VISUAL EXIT AND SEMANTIC INTERACTIVITY ARE SEPARATE.** Once a close is accepted, semantic interaction ends immediately; presentation may animate briefly. Future Apple-style sheets, popovers, alerts, animated overlays and contextual menus must reuse this lifecycle rule. A7 must not reintroduce a visually closing but still interactive surface, or delay transaction/session state until an animation ends.
+
+Review of the #87 diff leaves the A0 recommendations unchanged: semantic navigation remains authoritative; one decorative shared lens follows semantic state; the recommended RAF spring preserves velocity on retarget and stops completely when settled; functional glass stays on chrome while business content remains primarily opaque; reduced-motion bypass remains mandatory. #87 changes dialog interactivity and regression coverage, not navigation ownership, lens geometry, spring requirements, or material composition.
 
 ## 7. Reduced-motion contract
 
@@ -371,7 +384,7 @@ Populated marketplace DOM cost, GPU memory, paint traces, mobile battery and Saf
 
 `logout()` deduplicates in-flight revocation and probes session identity after failures. Failed logout with same actor or unknown server outcome preserves the workspace with a persistent honest warning. A different active actor clears old workspace, does not revoke the new identity, and preserves old pending storage. Confirmed inactive session clears immediately. `clearWorkspace()` increments epoch/counters, clears identity/API actor binding, closes dialog, empties content, resets entry history, hides workspace/notice, closes drawer and focuses login. Existing finite cleanup limitations are listed in section 6; future spring cancellation must be immediate and must not weaken this session path.
 
-## 16. Verification record
+## 16. Historical A0 verification record
 
 Verification was started on the exact baseline before documentation edits. Product and test files remain identical to that baseline. Original environment failures are retained separately from the clean-environment verification.
 
@@ -398,19 +411,22 @@ Verification was started on the exact baseline before documentation edits. Produ
 
 The bundled Playwright 1.62.1 and Node 24 differ from CI's pinned Playwright 1.63.0 / Node 22. This is a local baseline run, not a CI success claim. A disposable environment under `%TEMP%/beeloft-a0-audit/venv` was created with the existing Python 3.12 runtime and `pip install -r requirements.txt`; no project dependencies or existing environments were modified. Its direct-script imports use repository-root `PYTHONPATH` rather than changing installed editable metadata. No browser results from older commits are substituted. Logs are under `%TEMP%/beeloft-a0-audit` (`unittest-default.log`, `unittest.log`, `security-repro.log`, `unittest-clean.log`, `browser.log`, `browser-clean.log`, `performance.json`).
 
+Post-audit publication validation compares this branch to `f6fd7d173662bc406d081f6e1cad64c97d367c8c`, not to the old audit baseline: only this document and the M0 inventory status note differ. Product, test and configuration files match current main. Local document links, Markdown tables, PR #87's merged state/SHA, preserved M0 evidence and `git diff --check` are checked before publication. No second full browser suite is run solely for these documentation changes; the historical results above and the separate hotfix verification remain attributed to their actual runs.
+
 ## 17. Recommended sequence and phase gates
 
 | Phase | Bounded deliverable / exit gate |
 |---|---|
-| A0 | This evidence, current-status note, exact-baseline tests and limitations; documentation-only commit. Stop here. |
-| A1 | Reconcile DESIGN.md with the approved Apple direction; define type/color/radius/elevation/material roles, light/dark and solid fallback contracts. Keep navigation/motion/business APIs intact; no glass renderer, lens or spring. Update existing visual token assertions only alongside intentional specification changes. |
+| A0 | **COMPLETE** — this evidence, current-status note, exact-baseline tests and limitations; documentation-only publication. |
+| A0.1 | **COMPLETE / MERGED #87** — dialog interaction hotfix, separately implemented and verified; resolution in section 6. |
+| A1 | **NEXT / NOT STARTED** — reconcile DESIGN.md with the approved Apple direction; define type/color/radius/elevation/material roles, light/dark and solid fallback contracts. Keep navigation/motion/business APIs intact; no glass renderer, lens or spring. Update existing visual token assertions only alongside intentional specification changes. |
 | A2 | One static shared selection decoration plus geometry/visibility lifecycle and semantic integration tests. Retain current selected styling as fallback; resolve analytics and approval CTA geometry first. |
 | A3 | Add the small cancellable RAF spring to the A2 node; prove velocity continuity, convergence, rapid retarget, reduced-motion and zero idle work. |
 | A4 | Apple-like shell and functional glass chrome with solid/forced-colors fallback and measured paint cost. Tablet/mobile composition reviewed separately. |
 | A5 | Command Center golden screen; preserve field meanings/real metrics, loading/empty/error and action destinations; populated synthetic visual/accessibility review. |
 | REVIEW GATE | Approve hierarchy, behavior, keyboard/assistive behavior, dark/light, 320px/200%, reduced motion/transparency and performance before propagation. |
 | A6 | Native-like reusable controls only where existing native elements/shared styles fall short. |
-| A7 | Sheet/popover/alert presentation using native capabilities, preserving modalBusy/unresolved/version/focus contracts. |
+| A7 | Sheet/popover/alert presentation using native capabilities, preserving modalBusy/unresolved/version/focus contracts. Reuse #87's immediate end of semantic interaction on accepted close, independently of visual exit; apply the same rule to animated overlays and contextual menus. |
 | A8 | Production conversion with existing transaction and progress regression suite. |
 | A9 | Materials + People. |
 | A10 | Approval + Analytics, retaining shared report host and exact approval semantics. |
@@ -421,6 +437,6 @@ A2 is intentionally geometry/static selection before A3 physical movement. This 
 
 ## 18. Risks and explicit non-goals
 
-Highest integration risks are dual navigation truth; transforms shared between entry and lens; analytics children mistaken for one destination; sticky approval CTA omitted by `.nav-item` queries; hidden/disconnected targets measured as real; old-identity frames surviving clear; the confirmed keyboard-submit window during dialog exit; modal exit delaying commit; CSS transparency without an opaque fallback; and existing visual assertions silently rewritten to permit an accidental regression. Section 6's bounded cleanup is not sufficient lifecycle infrastructure for a perpetual integrator.
+Highest integration risks identified at the audit baseline were dual navigation truth; transforms shared between entry and lens; analytics children mistaken for one destination; sticky approval CTA omitted by `.nav-item` queries; hidden/disconnected targets measured as real; old-identity frames surviving clear; the confirmed keyboard-submit window during dialog exit; modal exit delaying commit; CSS transparency without an opaque fallback; and existing visual assertions silently rewritten to permit an accidental regression. The keyboard-submit finding is now **RESOLVED_POST_A0** by #87; preserving that protection is a future-phase regression requirement. Section 6's bounded cleanup is not sufficient lifecycle infrastructure for a perpetual integrator.
 
-A0 does not change frontend markup/styles/behavior, backend APIs, schema/migrations, store/domain logic, money/production calculations, approval semantics, auth/session/OIDC, idempotency/actor binding/recovery, QC/rework, analytics formulas or business copy. It adds no glass, lens DOM, springs, page transitions, framework, animation library, speculative primitive package or future tests. No deployment, push, PR, merge, or business data modification is authorized by this audit. Only the requested documentation commit is in scope.
+A0 does not change frontend markup/styles/behavior, backend APIs, schema/migrations, store/domain logic, money/production calculations, approval semantics, auth/session/OIDC, idempotency/actor binding/recovery, QC/rework, analytics formulas or business copy. It adds no glass, lens DOM, springs, page transitions, framework, animation library, speculative primitive package or future tests. The original A0 scope authorized only a local documentation commit. The subsequent publication instruction authorizes updating this documentation, a normal branch push and a draft PR; it does not authorize merge, auto-merge, deployment, business data modification or starting A1.

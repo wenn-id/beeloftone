@@ -9,7 +9,11 @@ Date: 19 September 2026
 > **Current-status note (22 September 2026):** The metadata and evidence below describe
 > the historical M0 audit, not the current product. M1-M6 have since merged, including
 > M6 `f8921e7` (PR #25) and first-paint regression stabilization `97815b8` (PR #69).
-> Current merged main at A0 is `7a76b415e6750fc06a80a050fe801ec3a5c46613`.
+> Historical A0 baseline: `7a76b415e6750fc06a80a050fe801ec3a5c46613`.
+> M1-M6 remain complete. Dialog closing safety was subsequently strengthened by
+> [PR #87](https://github.com/wenn-id/beeloftone/pull/87): accepted close immediately
+> makes the dialog inert, with centralized submit protection during visual exit.
+> Current main is `f6fd7d173662bc406d081f6e1cad64c97d367c8c`, app 0.98.0, schema 55.
 > The product now has CSS motion tokens, workspace/drawer entry, dialog/notice motion,
 > refresh/replacement feedback, scanner/progress/theme feedback, and JS/CSS reduced-motion
 > paths. See the [Apple-27 A0 audit](apple27-native-parity-audit.md) for current ownership,
