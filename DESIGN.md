@@ -18,6 +18,17 @@ Solid rendering is the default and permanent fallback. A2 owns the navigation le
 A3 owns spring motion, and A4 may progressively enhance functional chrome. A1 adds
 none of those effects and assumes no browser transparency-preference query.
 
+A2 is implemented: one shared selection lens follows `aria-current`, recorded in
+[the navigation lens contract](docs/apple27-navigation-lens.md). A3 is implemented on top of it:
+[the navigation spring contract](docs/apple27-navigation-spring.md) records a small cancellable
+requestAnimationFrame integrator that moves that one lens physically and keeps its velocity when
+the destination changes. It is the single exception to the rule stated further below that every
+timing value comes from the shared motion tokens: the lens has no duration at all, because its
+travel is governed by spring constants and stops when it converges. Those six durations and three
+easings remain the authority for every other motion pattern, and none were retuned. Reduced
+motion removes lens travel entirely — the selection surface still appears, it simply does not
+move — and the lens performs no frame work once it has arrived. A4 remains unstarted.
+
 ## Historical Shopeers reconstruction
 
 The following records the previous visual baseline, **not the final visual specification**.

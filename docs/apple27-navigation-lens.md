@@ -201,4 +201,34 @@ on the `ui/apple27-a2-shared-selection-lens` branch for PR review; no merge or
 deployment occurred. The 13 changed/new files listed above contain only A2
 work. Final logs:
 `unittest-final.log`, `browser-final.log`, `build-final.log`, `package-final.log`
-and `package-schema-check.log` in the local artifact directory. A3 has not started.
+and `package-schema-check.log` in the local artifact directory. A3 had not started at the time of
+this record; see the handoff note below.
+
+## Post-A2 handoff to A3
+
+Everything above describes A2 as it was implemented and validated: instant geometry, measured on
+one coalesced frame, with no spring, velocity or animated travel. It is kept as the historical
+record and has not been rewritten as if it had been physical from the start.
+
+A3 is now implemented on `ui/apple27-a3-navigation-spring` and is recorded in
+[the navigation spring contract](apple27-navigation-spring.md). It took exactly the seam this
+document reserved for it and nothing else:
+
+- `applyNavigationLensGeometry()` no longer exists. `retargetNavigationLens()` replaced it and
+  decides between writing exact geometry and starting physical travel.
+- `getActiveNavigationTarget()`, `measureNavigationTarget()`, the validity and occlusion rules,
+  the two positioning contexts, the `.nav-lens-ready` fallback lifecycle and every trigger in the
+  table above are unchanged, including the context carried with the geometry.
+- The single measurement frame handle was renamed `navigationLensSyncFrame` and kept its bounded
+  one-shot contract. The integrator owns a second, separate handle. The claim in *Idle work and
+  phase boundary* that the lens block has one frame call site described A2; A3's contract now
+  asserts one *measurement* call site plus an integrator that stops when it settles, and the
+  idle-work guarantee itself — zero frames at rest under both motion preferences — is unchanged
+  and still asserted in both browser modules.
+- The lens moves with a transform over a `left:0; top:0` anchor instead of inline `left`/`top`.
+  The surface itself still declares `transition:none; animation:none`; travel is owned by physics.
+- Reduced motion still produces identical instant geometry, and A3 adds cancellation when the
+  preference changes mid-flight.
+
+A3 adds no Liquid Glass, blur, backdrop-filter, refraction, GPU renderer, bottom navigation,
+workspace redesign or new route. A4 remains unstarted and still requires its own authorization.

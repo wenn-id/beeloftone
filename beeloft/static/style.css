@@ -184,8 +184,11 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
   overflow:auto;border-right:1px solid var(--chrome-border);background:var(--material-functional-chrome-solid);
   scrollbar-width:thin;isolation:isolate;
 }
+/* left/top 0 menjangkarkan lens di tepi padding konteks posisinya, sehingga transform yang
+   ditulis pengendali gerak A3 adalah koordinat lokalnya sendiri. Perjalanan dimiliki fisika,
+   bukan CSS: tidak ada transition maupun animation di sini, dan A3 tidak menambahkannya. */
 .nav-selection-lens{
-  position:absolute;z-index:0;pointer-events:none;
+  position:absolute;left:0;top:0;z-index:0;pointer-events:none;
   background:var(--color-accent-soft);border:1px solid var(--color-separator-strong);
   border-radius:var(--radius-control);transition:none;animation:none;
 }

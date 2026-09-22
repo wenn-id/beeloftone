@@ -137,7 +137,7 @@ terinstal. Jalankan setiap kali versi naik atau endpoint berubah; `tests/test_op
 gagal bila kontrak tertinggal, dan `tests/test_readme_test_count.py` gagal bila jumlah
 test di README tidak lagi cocok dengan discovery.
 
-Suite Python berisi 585 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 606 test yang memakai database sementara serta API/CLI sungguhan; mencakup
 konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
 input tidak sah, guard bisnis, pembalikan, migrasi, dan backup. Tidak ada data bisnis nyata di dalam
 test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance

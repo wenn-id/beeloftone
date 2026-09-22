@@ -97,7 +97,46 @@ $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dar
 
 // The decoration reads aria-current; it never chooses a destination or holds session state.
 const navigationSurface = $('app-sidebar'), navigationLens = $('nav-selection-lens');
-let navigationLensFrame = null;
+// Dua handle frame yang terpisah, bukan satu yang dipakai dua kali. Yang pertama milik lapisan
+// pengukuran A2: sekali jalan, membaca aria-current terbaru, lalu berhenti. Yang kedua milik
+// integrator A3. Kalau digabung, satu sinkronisasi layout akan membatalkan gerak yang sedang
+// berjalan, dan gerak yang sedang berjalan akan menelan pengukuran yang tertunda.
+let navigationLensSyncFrame = null, navigationLensMotionFrame = null;
+// Satu konfigurasi spring untuk lens navigasi, di satu tempat. Ini nilai tuning Beeloft, bukan
+// konstanta Apple: rasio redaman c / (2*sqrt(k*m)) ≈ .88 memberi percepatan cepat dengan
+// overshoot di bawah setengah persen — terasa tiba dan selesai, bukan memantul.
+const navigationLensSpring = {mass:1, stiffness:520, damping:40};
+// Selesai diukur pada posisi DAN kecepatan, untuk keempat sumbu. Hanya jarak akan menghentikan
+// lens yang masih melaju; hanya kecepatan akan menghentikannya di tempat yang salah.
+const LENS_SETTLE_DISTANCE = .25, LENS_SETTLE_SPEED = 2;
+// Waktu dibaca dari timestamp frame dalam detik; 60Hz tidak diasumsikan. Satu langkah integrasi
+// dibatasi 1/120 detik supaya integrator tetap stabil, satu frame dibatasi 32ms supaya frame yang
+// terlewat hanya memperlambat sedikit, dan jeda di atas 200ms (tab latar belakang, long task,
+// layar terkunci) diselesaikan tepat di target alih-alih diintegrasikan sebagai satu lompatan
+// yang melahirkan kecepatan palsu.
+const LENS_MAX_SUBSTEP = 1/120, LENS_MAX_FRAME = .032, LENS_STALL = .2;
+// Deformasi adalah turunan render dari kecepatan, bukan timeline kedua: memanjang di sumbu
+// dominan, menyempit setengahnya di sumbu lain, dibatasi 7% dan mencapai batas itu pada
+// 3000 px/s. Acuan kecepatannya dipilih dari kecepatan puncak yang benar-benar terukur di
+// sidebar ini — lompatan sebelah mencapai ±400 px/s dan perjalanan terpanjang ±6000 px/s —
+// supaya regangannya benar-benar membaca kecepatan, bukan langsung menempel di batasnya.
+// Nol ketika kecepatan nol, jadi bentuk yang diam selalu persis kotak tujuan.
+const LENS_MORPH_MAX = .07, LENS_MORPH_SPEED = 3000;
+// Sumbu fisik: [nilai, kecepatan, target]. Satu daftar dipakai integrator, uji selesai, dan
+// penulisan akhir, supaya tidak ada sumbu yang diam-diam tertinggal di salah satunya.
+const LENS_AXES = [['cx','vx','targetCx'], ['cy','vy','targetCy'],
+  ['width','vWidth','targetWidth'], ['height','vHeight','targetHeight']];
+// Keadaan fisik lens: pusat dan dimensi dalam piksel CSS, kecepatan dalam piksel CSS per detik,
+// ditambah konteks posisi dan identitas tujuan yang sedang dituju. Pusat dipakai, bukan tepi
+// kiri-atas, supaya perubahan ukuran dan perpindahan posisi memakai satu pusat yang sama.
+// Tidak ada kebenaran navigasi di sini: `targetId` hanya catatan tujuan mana yang terakhir
+// diukur, bukan sumber pilihan.
+const navigationLensMotion = {
+  initialized:false, context:null, targetId:'', running:false, lastTimestamp:0,
+  cx:0, cy:0, width:0, height:0,
+  vx:0, vy:0, vWidth:0, vHeight:0,
+  targetCx:0, targetCy:0, targetWidth:0, targetHeight:0,
+};
 function getActiveNavigationTarget() {
   return navigationSurface.querySelector('[aria-current="page"]');
 }
@@ -122,15 +161,142 @@ function measureNavigationTarget(target) {
     y:rect.top - origin.top - context.clientTop + context.scrollTop,
     width:rect.width, height:rect.height};
 }
-function applyNavigationLensGeometry({context, x, y, width, height}) {
+// Objek fisik yang sama dalam sistem koordinat lain. A2 memakai dua konteks posisi yang memang
+// sudah ada: sidebar untuk tujuan biasa, kartu CTA ketika approval terpilih. Pusat fisik
+// dikonversi lewat koordinat viewport sebelum node dipindahkan, dan kecepatan dibiarkan utuh.
+// Ini bukan gerak baru — hanya basis koordinat baru untuk benda yang sedang melaju.
+function rebaseNavigationLensContext(context) {
+  const previous = navigationLensMotion.context;
+  if (previous !== context) {
+    if (navigationLensMotion.initialized && previous?.isConnected) {
+      const from = previous.getBoundingClientRect(), to = context.getBoundingClientRect();
+      const viewportX = from.left + previous.clientLeft - previous.scrollLeft + navigationLensMotion.cx;
+      const viewportY = from.top + previous.clientTop - previous.scrollTop + navigationLensMotion.cy;
+      navigationLensMotion.cx = viewportX - to.left - context.clientLeft + context.scrollLeft;
+      navigationLensMotion.cy = viewportY - to.top - context.clientTop + context.scrollTop;
+    }
+    navigationLensMotion.context = context;
+  }
   if (navigationLens.parentElement !== context) context.prepend(navigationLens);
-  Object.assign(navigationLens.style, {left:`${x}px`, top:`${y}px`, width:`${width}px`, height:`${height}px`});
+}
+// Satu penulisan gaya per frame, dari keadaan numerik ke presentasi. Posisi dipindahkan dengan
+// transform supaya perjalanannya bersahabat dengan compositor; lens dijangkarkan di left/top 0
+// oleh CSS, jadi transform inilah koordinat lokalnya. Morph dihitung di sini dan hanya di sini:
+// nilainya tidak pernah kembali ke target, spring, pengukuran, atau state semantik, sehingga
+// tidak ada umpan balik yang bisa lepas kendali. `will-change` hidup hanya selama gerak.
+function renderNavigationLensMotion() {
+  const {cx, cy, vx, vy, running} = navigationLensMotion;
+  const vertical = Math.abs(vy) >= Math.abs(vx);
+  const stretch = Math.min(LENS_MORPH_MAX,
+    Math.abs(vertical ? vy : vx) / LENS_MORPH_SPEED * LENS_MORPH_MAX);
+  const width = navigationLensMotion.width * (vertical ? 1 - stretch / 2 : 1 + stretch);
+  const height = navigationLensMotion.height * (vertical ? 1 + stretch : 1 - stretch / 2);
+  navigationLens.style.cssText = `transform:translate3d(${cx - width / 2}px,${cy - height / 2}px,0);`
+    + `width:${width}px;height:${height}px` + (running ? ';will-change:transform' : '');
   navigationLens.hidden = false;
   navigationSurface.classList.add('nav-lens-ready');
+  navigationLensMotion.initialized = true;
+}
+// Semi-implicit Euler: percepatan dibaca dari posisi sekarang, kecepatan diperbarui lebih dahulu,
+// lalu posisi memakai kecepatan yang baru itu. Stabil untuk langkah sekecil LENS_MAX_SUBSTEP.
+function navigationLensSpringStep(value, velocity, target, step) {
+  const {mass, stiffness, damping} = navigationLensSpring;
+  const acceleration = (-stiffness * (value - target) - damping * velocity) / mass;
+  const speed = velocity + acceleration * step;
+  return [value + speed * step, speed];
+}
+function navigationLensSettled() {
+  return LENS_AXES.every(([value, speed, target]) =>
+    Math.abs(navigationLensMotion[value] - navigationLensMotion[target]) < LENS_SETTLE_DISTANCE
+    && Math.abs(navigationLensMotion[speed]) < LENS_SETTLE_SPEED);
+}
+// Gerak dihentikan. `reset` membedakan dua hal yang sangat berbeda: menghentikan loop, dan
+// membuang riwayat fisiknya. Riwayat hanya dibuang ketika objeknya sendiri tidak valid lagi —
+// tersembunyi, terlepas, atau sesinya diganti. Retarget tidak pernah lewat jalur itu, jadi
+// kecepatan yang sedang berjalan tidak pernah hilang karena tujuan berubah.
+function cancelNavigationLensMotion(reset = false) {
+  if (navigationLensMotionFrame !== null) cancelAnimationFrame(navigationLensMotionFrame);
+  navigationLensMotionFrame = null;
+  navigationLensMotion.running = false;
+  navigationLensMotion.lastTimestamp = 0;
+  if (!reset) return;
+  Object.assign(navigationLensMotion, {initialized:false, context:null, targetId:'',
+    cx:0, cy:0, width:0, height:0, vx:0, vy:0, vWidth:0, vHeight:0,
+    targetCx:0, targetCy:0, targetWidth:0, targetHeight:0});
+}
+// Berhenti berarti berhenti: geometri target yang persis ditulis, seluruh kecepatan nol, handle
+// frame dibersihkan, dan promosi compositor dilepas. Tidak ada sisa pecahan piksel yang
+// ditinggalkan, dan tidak ada frame berikutnya yang dijadwalkan.
+function settleNavigationLensMotion() {
+  cancelNavigationLensMotion();
+  for (const [value, speed, target] of LENS_AXES) {
+    navigationLensMotion[value] = navigationLensMotion[target];
+    navigationLensMotion[speed] = 0;
+  }
+  renderNavigationLensMotion();
+}
+function startNavigationLensMotion() {
+  navigationLensMotion.running = true;
+  // Keadaan fisik tidak disentuh di sini; penulisan ini hanya memastikan lens terlihat pada
+  // posisinya yang sekarang, supaya perjalanan dimulai dari tempat benda itu benar-benar berada.
+  renderNavigationLensMotion();
+  if (navigationLensMotionFrame !== null) return;
+  // Frame pertama hanya menetapkan garis dasar waktu; tidak ada interval yang diintegrasikan.
+  navigationLensMotion.lastTimestamp = 0;
+  navigationLensMotionFrame = requestAnimationFrame(stepNavigationLensMotion);
+}
+// Loop fisika hanya mengonsumsi angka dan menulis presentasi. Tidak ada satu pun pengukuran
+// layout di sini: itu milik lapisan sinkronisasi yang terbatas di bawah.
+function stepNavigationLensMotion(timestamp) {
+  navigationLensMotionFrame = null;
+  try {
+    if (!navigationLensMotion.running) return;
+    if (!navigationLens.isConnected || navigationLens.hidden
+        || navigationLens.parentElement !== navigationLensMotion.context) { hideNavigationLens(); return; }
+    const previous = navigationLensMotion.lastTimestamp;
+    navigationLensMotion.lastTimestamp = timestamp;
+    let elapsed = previous ? (timestamp - previous) / 1000 : 0;
+    if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > LENS_STALL) { settleNavigationLensMotion(); return; }
+    elapsed = Math.min(elapsed, LENS_MAX_FRAME);
+    while (elapsed > 1e-6) {
+      const step = Math.min(elapsed, LENS_MAX_SUBSTEP);
+      for (const [value, speed, target] of LENS_AXES) {
+        [navigationLensMotion[value], navigationLensMotion[speed]] = navigationLensSpringStep(
+          navigationLensMotion[value], navigationLensMotion[speed], navigationLensMotion[target], step);
+      }
+      elapsed -= step;
+    }
+    // Nilai tak hingga atau dimensi yang tidak berguna berarti integrator keluar dari kontraknya;
+    // selesaikan tepat di target alih-alih menulis geometri yang tidak berarti.
+    if (!LENS_AXES.every(([value]) => Number.isFinite(navigationLensMotion[value]))
+        || navigationLensMotion.width <= 0 || navigationLensMotion.height <= 0
+        || navigationLensSettled()) { settleNavigationLensMotion(); return; }
+    renderNavigationLensMotion();
+    navigationLensMotionFrame = requestAnimationFrame(stepNavigationLensMotion);
+  } catch { hideNavigationLens(); }
+}
+// Satu titik keputusan presentasi. Tujuan semantik sudah berpindah sebelum ini dipanggil; di sini
+// hanya diputuskan apakah lens ditulis tepat di tempat atau berjalan secara fisik ke sana.
+// Tanpa riwayat fisik yang terlihat, dalam mode gerak dikurangi, atau ketika hanya layout yang
+// berubah untuk tujuan yang sama dan lens sudah diam: tulis geometri persis, tanpa perjalanan
+// dekoratif. Kalau lens masih melaju, targetnya diganti dan kecepatannya dibiarkan — inilah yang
+// membuat klik beruntun terasa satu benda yang membelok, bukan animasi yang dimulai ulang.
+function retargetNavigationLens(geometry, targetId) {
+  const sameTarget = navigationLensMotion.initialized && navigationLensMotion.targetId === targetId;
+  rebaseNavigationLensContext(geometry.context);
+  navigationLensMotion.targetId = targetId;
+  navigationLensMotion.targetCx = geometry.x + geometry.width / 2;
+  navigationLensMotion.targetCy = geometry.y + geometry.height / 2;
+  navigationLensMotion.targetWidth = geometry.width;
+  navigationLensMotion.targetHeight = geometry.height;
+  if (!navigationLensMotion.initialized || reducedMotion()
+      || (sameTarget && !navigationLensMotion.running)) { settleNavigationLensMotion(); return; }
+  startNavigationLensMotion();
 }
 function hideNavigationLens() {
-  if (navigationLensFrame !== null) cancelAnimationFrame(navigationLensFrame);
-  navigationLensFrame = null;
+  cancelNavigationLensMotion(true);
+  if (navigationLensSyncFrame !== null) cancelAnimationFrame(navigationLensSyncFrame);
+  navigationLensSyncFrame = null;
   navigationSurface.classList.remove('nav-lens-ready');
   if (navigationLens) {
     navigationLens.hidden = true;
@@ -138,19 +304,25 @@ function hideNavigationLens() {
   }
 }
 function syncNavigationLens() {
-  navigationLensFrame = null;
+  navigationLensSyncFrame = null;
   try {
-    const geometry = measureNavigationTarget(getActiveNavigationTarget());
+    const target = getActiveNavigationTarget(), geometry = measureNavigationTarget(target);
     if (!navigationLens?.isConnected || !geometry) { hideNavigationLens(); return; }
-    applyNavigationLensGeometry(geometry);
+    retargetNavigationLens(geometry, target.id);
   } catch { hideNavigationLens(); }
 }
 function scheduleNavigationLensSync() {
   try {
     if ($('workspace').hidden || navigationSurface.inert) { hideNavigationLens(); return; }
-    if (navigationLensFrame === null) navigationLensFrame = requestAnimationFrame(syncNavigationLens);
+    if (navigationLensSyncFrame === null) navigationLensSyncFrame = requestAnimationFrame(syncNavigationLens);
   } catch { hideNavigationLens(); }
 }
+// Preferensi yang berubah menjadi "reduce" di tengah perjalanan membatalkan gerak saat itu juga
+// dan meletakkan lens tepat di target terbaru. Ketika preferensinya kembali, perjalanan lama
+// tidak diputar ulang; navigasi semantik berikutnyalah yang boleh bergerak.
+reducedMotionQuery.addEventListener('change', () => {
+  if (reducedMotion() && navigationLensMotion.running) settleNavigationLensMotion();
+});
 navigationSurface.addEventListener('scroll', scheduleNavigationLensSync, {passive:true});
 for (const type of ['transitionend','transitioncancel']) navigationSurface.addEventListener(type, event => {
   if (event.propertyName === 'scale' && event.target === getActiveNavigationTarget()) scheduleNavigationLensSync();
