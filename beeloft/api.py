@@ -68,7 +68,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.97.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.98.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()

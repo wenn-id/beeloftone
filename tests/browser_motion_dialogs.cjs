@@ -188,6 +188,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
     'an unresolved write still cannot be dismissed');
   assert.deepEqual(markedClosing(await dialogLog()), [], 'a refused close never starts the exit');
   assert.equal(await dialogClasses(), '', 'a refused close adds no class');
+  assert.equal(await page.locator('#dialog').evaluate(dialog => dialog.inert), false,
+    'a refused unresolved close leaves recovery interactive');
   await page.getByRole('button', {name: 'Coba ulang penyimpanan', exact: true}).click();
   await dialogClosed();
   assert.equal(await page.evaluate(key => sessionStorage.getItem(key), storageKey), null,

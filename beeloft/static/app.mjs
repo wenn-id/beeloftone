@@ -1003,7 +1003,8 @@ function openDialog(title, content) {
   }
   dialogVersion++;
   $('dialog-title').textContent = title; $('dialog-content').innerHTML = content;
-  modalBusy = false; unresolved = false; if (!$('dialog').open) $('dialog').showModal();
+  modalBusy = false; unresolved = false;
+  if (!$('dialog').open) { resetDialogMotionState(); $('dialog').showModal(); }
 }
 
 const auditCategories = {master_data:'Master data',production:'Produksi',materials:'Bahan baku',
@@ -1100,19 +1101,19 @@ async function auditEventDialog(eventId) {
 // dari token yang sama dengan CSS-nya dan berada di bawah batas 160ms. Di mode gerak dikurangi
 // dialog ditutup seketika, tetapi tetap lewat `close()` yang sama, jadi fokus dan
 // dialogVersion tidak punya jalur kedua.
-// Pembersihan keadaan keluar di satu tempat, dipanggil dari listener `close` native. Delapan
-// tombol di dalam isi dialog memanggil close() langsung, dan tombol-tombol itu masih dapat
-// ditekan selama keluar beranimasi berjalan; tanpa pembersihan terpusat, timer serta kelasnya
-// akan tertinggal dan timer itu menutup dialog berikutnya yang dibuka dari jalur yang sama.
+// Close native dan pembukaan berikutnya membersihkan timer, kelas, serta inert bersama-sama;
+// jalur close lalu reopen dalam satu task tidak boleh menunggu event close yang masih antre.
 function resetDialogMotionState() {
   const dialog = $('dialog');
   if (dialogCloseTimer !== null) { clearTimeout(dialogCloseTimer); dialogCloseTimer = null; }
   if (dialogCloseListener !== null) { dialog.removeEventListener('transitionend', dialogCloseListener); dialogCloseListener = null; }
   dialog.classList.remove('motion-exit','is-closing');
+  dialog.inert = false;
 }
 function closeDialogAnimated() {
   const dialog = $('dialog');
   if (!dialog.open || dialogCloseTimer !== null) return;
+  dialog.inert = true;
   if (reducedMotion()) { dialog.close(); return; }
   const finish = () => dialog.close();
   dialogCloseListener = event => {
@@ -1147,6 +1148,11 @@ function closeDialog() {
   dialogVersion++; closeDialogAnimated();
 }
 $('close-dialog').onclick = closeDialog;
+// inert memblokir input pengguna; requestSubmit() tetap dapat mengirim event dari skrip.
+$('dialog').addEventListener('submit', event => {
+  if (!$('dialog').inert) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+}, true);
 $('dialog').addEventListener('cancel', event => {
   // Escape selalu ditangani di sini: tanpa preventDefault browser menutup dialog sendiri dan
   // melewati helper, sehingga keputusan yang sama tidak lagi berlaku untuk kedua jalur.
