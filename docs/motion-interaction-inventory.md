@@ -6,6 +6,15 @@ Baseline: `main` @ `0efb1115b099ae299a27d508a043ba550eb779d7` (PR #17)
 Branch: `ui/motion-audit-m0`
 Date: 19 September 2026
 
+> **Current-status note (22 September 2026):** The metadata and evidence below describe
+> the historical M0 audit, not the current product. M1-M6 have since merged, including
+> M6 `f8921e7` (PR #25) and first-paint regression stabilization `97815b8` (PR #69).
+> Current merged main at A0 is `7a76b415e6750fc06a80a050fe801ec3a5c46613`.
+> The product now has CSS motion tokens, workspace/drawer entry, dialog/notice motion,
+> refresh/replacement feedback, scanner/progress/theme feedback, and JS/CSS reduced-motion
+> paths. See the [Apple-27 A0 audit](apple27-native-parity-audit.md) for current ownership,
+> measured baseline and future integration seams. Original M0 findings remain unchanged below.
+
 This document is the M0 artefact required by §15 of the motion specification. It
 records the current motion and lifecycle surface so M1-M6 can be implemented
 against evidence rather than labels. It is an audit: no visible motion was added
