@@ -109,15 +109,37 @@ class SupplierReturnTest(TestCase):
     def test_close_requires_hold_and_rejected_material_resolved(self):
         po, body = self.setup_receipt()
         intake = self.intake(po, body | {'quantity':'2.125'})
+        self.assertEqual(self.detail(po)['payment_received_value'], '0.00')
         accepted = self.inspect(intake, quantity='1.125')['history'][0]
         self.close(po, status=409)
         self.inspect(intake, 'reject', '1')
         self.close(po, status=409)
         returned = self.returned(intake, quantity='1')
-        self.close(po)
+        before = self.detail(po)
+        self.assertEqual((before['payment_received_value'], before['payment_remaining']), ('13.88', '13.88'))
+        closed = self.close(po, key='close-qc-partial')
+        self.assertEqual(closed, self.close(po, key='close-qc-partial'))
+        self.assertEqual((closed['status'], closed['fulfillment'], closed['total']), ('closed', 'partial', '26.22'))
+        line = closed['lines'][0]
+        self.assertEqual([line[k] for k in ('received','remaining','held','rejected','returned','return_pending','receivable')],
+                         ['1.125','1.000','0.000','1.000','1.000','0.000','0.000'])
+        self.assertEqual((closed['payment_received_value'], closed['payment_remaining']), ('13.88', '13.88'))
+        payment_path = '/api/purchase-orders/'+po['id']+'/payment-requests'
+        payment = dict(reference='DEMO-PAY-QC', invoice_reference='DEMO-INV-QC',
+                       invoice_date='2026-10-16', due_date='2026-10-30', amount='13.88', reason='Penerimaan lolos QC')
+        self.post(payment_path, payment | {'amount':'13.89'}, status=409)
+        self.assertEqual(self.client.get(payment_path).json(), [])
+        request = self.post(payment_path, payment, key='pay-qc-partial')
+        self.assertEqual(request, self.post(payment_path, payment, key='pay-qc-partial'))
+        self.assertEqual(request['supplier'], po['supplier'])
+        self.assertEqual(len(self.client.get(payment_path).json()), 1)
+        detail = self.detail(po)
+        self.assertEqual([detail[k] for k in ('payment_received_value','payment_pending','payment_approved','payment_remaining')],
+                         ['13.88','13.88','0.00','0.00'])
         self.undo_return(returned['returns'][0], status=409)
         self.reverse_decision(accepted, status=409)
         self.assertEqual(self.qc(intake)['po_closed'], 1)
+        self.assertEqual(self.client.get('/api/material-batches/'+accepted['batch_id']).json()['balance'], '1.125')
 
     def test_return_validation_roles_and_atomic_rollback(self):
         po, body = self.setup_receipt()
