@@ -144,6 +144,15 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
         getComputedStyle(selected).color;
         return selected.getAnimations({subtree: true}).every(animation => animation.playState === 'finished');
       }, destination.nav);
+      // A4 made the chrome and the selection lens translucent where the engine supports it, so a
+      // computed `background-color` is no longer the colour a label actually sits on. Reading the
+      // declaration and ignoring its alpha would have quietly inflated every ratio below, so the
+      // ground is composited here instead: the lens tint over the material behind it, and — in the
+      // approval context, where that material is a gradient that cannot be sampled from a computed
+      // style — over *every* stop of that gradient, keeping whichever stop gives the worst result.
+      // That is deliberately more pessimistic than the real rendering. The authoritative
+      // pixel-level measurement lives in browser_functional_glass.cjs; this stays a cheap
+      // cross-check that covers all 27 destinations in both palettes.
       const material = await page.evaluate(nav => {
         const root = getComputedStyle(document.documentElement);
         const color = token => {
@@ -152,30 +161,79 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
           document.body.append(probe);
           const value = getComputedStyle(probe).color; probe.remove(); return value;
         };
+        const filterOf = style => style.backdropFilter && style.backdropFilter !== 'none'
+          ? style.backdropFilter : (style.webkitBackdropFilter || 'none');
         const selected = getComputedStyle(document.getElementById(nav));
         const lens = document.getElementById('nav-selection-lens');
-        const selectedGround = document.getElementById('app-sidebar').classList.contains('nav-lens-ready')
-          && !lens.hidden ? getComputedStyle(lens).backgroundColor : selected.backgroundColor;
-        const luminance = rgb => rgb.match(/[\d.]+/g).slice(0, 3).map(Number)
-          .map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
-          .reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
-        const [bright, dim] = [luminance(selected.color), luminance(selectedGround)].sort((a, b) => b - a);
+        const lensStyle = getComputedStyle(lens);
+        const chromeStyle = getComputedStyle(document.querySelector('.masthead'));
+        const railStyle = getComputedStyle(document.getElementById('app-sidebar'));
+        const inCta = lens.parentElement.classList.contains('sidebar-cta');
         return {
-          contrast: (bright + .05) / (dim + .05),
+          ready: document.getElementById('app-sidebar').classList.contains('nav-lens-ready') && !lens.hidden,
+          inCta,
           selected: selected.color, expectedLabel: color('--color-accent'),
-          selectedGround, expectedGround: color('--color-accent-soft'),
-          chrome: getComputedStyle(document.querySelector('.masthead')).backgroundColor,
+          selectedBackground: selected.backgroundColor,
+          lensGround: lensStyle.backgroundColor,
+          expectedGround: color(inCta ? '--lens-glass-cta-tint' : '--lens-glass-tint'),
+          expectedSolidGround: color('--color-accent-soft'),
+          chrome: chromeStyle.backgroundColor, chromeFilter: filterOf(chromeStyle),
+          rail: railStyle.backgroundColor,
           expectedChrome: color('--material-functional-chrome-solid'),
           canvas: getComputedStyle(document.querySelector('.workspace-main')).backgroundColor,
+          ctaStops: getComputedStyle(document.querySelector('.sidebar-cta')).backgroundImage
+            .match(/rgba?\([^)]*\)/g) || [],
         };
       }, destination.nav);
+      const parse = value => {
+        const parts = value.match(/[\d.]+/g).map(Number);
+        return {r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1};
+      };
+      const over = (top, bottom) => ({
+        r: top.r * top.a + bottom.r * (1 - top.a),
+        g: top.g * top.a + bottom.g * (1 - top.a),
+        b: top.b * top.a + bottom.b * (1 - top.a), a: 1,
+      });
+      const luminance = ({r, g, b}) => [r, g, b].map(value => value / 255)
+        .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+      const ratio = (a, b) => {
+        const [bright, dim] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (bright + .05) / (dim + .05);
+      };
+      const canvas = parse(material.canvas);
+      const glass = material.chromeFilter !== 'none';
+      // Behind the navigation column is the page canvas; behind the approval CTA is its gradient.
+      const backings = material.ready && material.inCta && material.ctaStops.length
+        ? material.ctaStops.map(parse)
+        : [over(parse(material.rail), canvas)];
+      const grounds = material.ready
+        ? backings.map(backing => over(parse(material.lensGround), backing))
+        : [over(parse(material.selectedBackground), over(parse(material.rail), canvas))];
+      const label = parse(material.selected);
+      const contrast = Math.min(...grounds.map(ground => ratio(label, ground)));
       if (destination.nav !== 'approvals' || await page.locator('#app-sidebar.nav-lens-ready').count()) {
         assert.equal(material.selected, material.expectedLabel, `${destination.label}: ${theme} selected label`);
-        assert.equal(material.selectedGround, material.expectedGround, `${destination.label}: ${theme} selected ground`);
+        // One shared selection surface, still driven by tokens rather than a per-destination colour:
+        // the glass tint where the enhancement applies, the A1 solid fill where it does not.
+        assert.equal(material.lensGround, glass ? material.expectedGround : material.expectedSolidGround,
+          `${destination.label}: ${theme} selected ground`);
       }
-      assert.ok(material.contrast >= 4.5, `${destination.label}: ${theme} selected text contrast ${material.contrast}`);
-      assert.equal(material.chrome, material.expectedChrome, `${theme} chrome uses the solid material`);
-      assert.notEqual(material.canvas, material.chrome, `${theme} canvas and chrome stay distinct`);
+      assert.ok(contrast >= 4.5,
+        `${destination.label}: ${theme} selected text contrast ${contrast.toFixed(3)}`
+        + ` on the composited selection surface (${JSON.stringify(grounds)})`);
+      if (glass) {
+        // The chrome is allowed to be translucent, but it must stay bounded and it must not dissolve
+        // into the content canvas it sits against.
+        const chrome = parse(material.chrome);
+        assert.ok(chrome.a > .6 && chrome.a < 1,
+          `${theme} chrome tint alpha ${chrome.a} is translucent but bounded`);
+        assert.match(material.chromeFilter, /blur\(/, `${theme} chrome blurs its backdrop`);
+        assert.notDeepEqual(over(chrome, canvas), canvas, `${theme} canvas and chrome stay distinct`);
+      } else {
+        assert.equal(material.chrome, material.expectedChrome, `${theme} chrome uses the solid material`);
+        assert.notEqual(material.canvas, material.chrome, `${theme} canvas and chrome stay distinct`);
+      }
       assert.ok(await overflow() <= 1, `${destination.label}: ${theme} desktop has no overflow`);
     }
     await page.locator('#theme').click();

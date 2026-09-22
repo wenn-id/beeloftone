@@ -64,8 +64,18 @@ class OneLensStillOwnsSelectionTest(unittest.TestCase):
             self.assertNotIn(fabrication, LENS)
         # Two rules, one class: the shared surface and the stacking level it needs inside the
         # approval CTA. Nothing declares a second indicator for the approval destination.
-        self.assertEqual(sorted(re.findall(r'([^\s{},]*\.nav-selection-lens)\s*\{', CSS)),
-                         ['.nav-selection-lens', '.sidebar-cta>.nav-selection-lens'])
+        # One class, two selector atoms: the shared surface and the stacking level it needs inside
+        # the approval CTA. A4 added optical declarations for both of those atoms and grouped them
+        # with the chrome in its fallback blocks, so the set is compared rather than the occurrence
+        # list — but the set itself is still exactly two, with no third indicator and no pseudo-element
+        # standing in for one.
+        lens_targets = set()
+        rules = re.sub(r'/\*.*?\*/', '', CSS, flags=re.S)
+        for group in re.findall(r'([^{}@]*\.nav-selection-lens[^{}]*)\{', rules):
+            for part in group.split(','):
+                if '.nav-selection-lens' in part:
+                    lens_targets.add(''.join(part.split()))
+        self.assertEqual(lens_targets, {'.nav-selection-lens', '.sidebar-cta>.nav-selection-lens'})
         self.assertIn('.sidebar-cta>.nav-selection-lens{z-index:1}', CSS,
                       'the approval context reuses the one lens instead of owning another')
         self.assertEqual(len(re.findall(r'nav-selection-lens', HTML)), 2, 'one id, one class')
@@ -298,12 +308,19 @@ class PresentationBoundaryTest(unittest.TestCase):
         # Physics owns travel. A CSS transition on the lens would fight the integrator.
         self.assertNotRegex(block, r'transition\s*:\s*(?!none)|animation\s*:\s*(?!none)|@keyframes')
         self.assertNotRegex(CSS, r'\.nav-selection-lens[^{]*\{[^}]*transition:[^n]')
-        # A3 is not A4: no Liquid Glass, blur, refraction or GPU renderer arrives with the spring.
-        self.assertNotRegex(CSS, r'backdrop-filter|filter\s*:[^;}]*blur\(')
+        # A3 forbade optical rendering outright; A4 owns it now. What has to stay true for the spring
+        # is narrower and more important: the lens's own rule is still solid and unfiltered, so the
+        # integrator is never writing into, or competing with, a material declaration. Glass is state
+        # applied by the stylesheet on top of the physics, not a second thing the physics drives.
+        self.assertNotIn('backdrop-filter', block)
+        self.assertNotRegex(CSS, r'(?:^|[^-\w])(?:-webkit-)?filter\s*:[^;}]*blur\(')
+        script = (STATIC / 'app.mjs').read_text(encoding='utf-8')
+        self.assertNotRegex(script, r'backdrop-?[fF]ilter|saturate\(|--lens-glass-|--chrome-',
+                            'no optical property is ever written by script')
         source = '\n'.join(p.read_text(encoding='utf-8') for p in STATIC.iterdir()
                            if p.suffix in ('.css', '.mjs', '.html'))
-        self.assertNotRegex(source, r'backdrop-filter|refract|chromatic|navigator\.gpu'
-                                    r'|getContext\([\'"]webg|WebGPU|createShader')
+        self.assertNotRegex(source, r'navigator\.gpu|getContext\([\'"]webg|WebGPU|createShader'
+                                    r'|refract\w*\s*[({=]|chromatic\w*\s*[({=]')
 
     def test_reduced_motion_snaps_instead_of_travelling(self):
         retarget = body('retargetNavigationLens')

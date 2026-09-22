@@ -529,3 +529,29 @@ refraction, chromatic aberration, dynamic optical distortion, shaders, WebGL and
 absent here and are asserted absent. A4 will also need the solid fallback, reduced-transparency
 and forced-colors paths the A0 audit specified, and should reuse this controller rather than
 introduce a second motion mechanism beside it.
+
+### Post-A3 handoff to A4
+
+A4 is now implemented on `ui/apple27-a4-functional-glass` and recorded in
+[the functional glass contract](apple27-functional-glass.md). It took the narrowest possible route:
+**it changed no JavaScript at all.** `beeloft/static/app.mjs` is byte-identical to this baseline, so
+everything above — the spring configuration, the settle and stall tolerances, the morph cap, velocity
+preservation on retarget, the cross-context rebase, the reduced-motion snap and cancellation, the two
+separate frame handles and the zero-idle-frame guarantee — is unchanged by construction rather than by
+agreement. The controller was reused exactly as this document asked; no second motion mechanism exists.
+
+The lens is no longer the solid A1/A2 material. Its stylesheet rule now also carries a translucent
+tint, a bounded 14px blur with saturation, an optical rim and one 1px inset specular, all inside A4's
+single feature gate, with the solid accent-soft fill remaining as the unconditional fallback. The
+surface still declares `transition:none; animation:none`, and the integrator still writes only
+`transform`, `width`, `height` and its temporary `will-change` — A4's contract asserts that no optical
+property is ever written by script, so appearance is state layered on top of the physics rather than
+something the physics drives.
+
+Two assertions in `test_apple27_navigation_spring_contract.py` were adapted: the blanket
+`backdrop-filter` exclusion became the narrower claim that the lens's *own* rule is unfiltered and that
+the script never touches an optical property, and the one-lens check now compares the set of lens
+selector atoms rather than their occurrence list, because A4 legitimately groups the lens with the
+chrome inside its fallback blocks. The set is still exactly two. Both adapted assertions were
+mutation-tested and still catch a retuned spring, a retuned morph cap, a CSS transition on the lens, a
+per-frame material write, a mouse-follow optical highlight and an animated shine.

@@ -56,6 +56,12 @@ class Apple27FoundationTest(unittest.TestCase):
                 self.assertRegex(theme[source], r'^#(?:[\da-f]{3}|[\da-f]{6})$')
         for role in ('tint', 'border', 'highlight', 'shadow'):
             self.assertIn('--chrome-' + role, self.light)
+        # A1 reserved the four optical roles and left them inert. A4 activated them, so `--chrome-tint`
+        # is now genuinely translucent — which is exactly why the opaque guarantee has to live in the
+        # `--material-*` roles above rather than in the optical ones. Those materials stay fully
+        # opaque, and they remain what every unconditional surface resolves to.
+        self.assertRegex(self.light['--chrome-tint'], r'^#[\da-f]{6}[\da-f]{2}$')
+        self.assertEqual(self.light['--chrome-border'], 'var(--color-separator)')
 
     def test_compatibility_aliases_have_no_private_palette(self):
         legacy = ('canvas app-bg bg surface surface-subtle surface-sunken ink ink-2 muted line '
@@ -96,10 +102,41 @@ class Apple27FoundationTest(unittest.TestCase):
                 for role in ('focus', 'control-border'):
                     self.assertGreaterEqual(contrast(theme['--color-' + role], theme['--color-' + surface]), 3)
 
-    def test_no_glass_gpu_renderer_or_external_font_assets(self):
+    def test_glass_stays_contained_and_no_gpu_renderer_or_external_font_assets(self):
         source = '\n'.join(p.read_text(encoding='utf-8') for p in STATIC.iterdir()
                            if p.suffix in ('.css', '.mjs', '.html'))
-        self.assertNotRegex(CSS, r'backdrop-filter|filter\s*:[^;}]*blur\(|@import|@font-face')
+        # A1 banned every optical effect outright. A4 authorised a bounded one, so this became a
+        # containment check rather than a removal. The A1 guarantee it still has to defend is that the
+        # solid materials above are what the product actually renders whenever the enhancement is not
+        # available — so no surface may be translucent *unconditionally*, and nothing may blur
+        # rendered content at all. The authorised-target list and the fallback hierarchy are owned by
+        # `test_apple27_functional_glass_contract.py`.
+        self.assertNotRegex(CSS, r'(?:^|[^-\w])(?:-webkit-)?filter\s*:[^;}]*blur\(|@import|@font-face')
+        gate = '@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)))'
+        self.assertEqual(CSS.count('@supports'), 1, 'one feature gate holds the entire optical layer')
+        start, depth = CSS.index(gate), 0
+        for index in range(start, len(CSS)):
+            if CSS[index] == '{':
+                depth += 1
+            elif CSS[index] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+        outside = CSS[:start] + CSS[index + 1:]
+        self.assertNotRegex(outside, r'backdrop-filter\s*:\s*(?!none)',
+                            'no surface is translucent outside the feature gate')
+        self.assertIn('background:var(--material-functional-chrome-solid)',
+                      re.search(r'\.masthead\s*\{([^}]*)\}', outside).group(1))
+        self.assertIn('background:var(--material-functional-chrome-solid)',
+                      re.search(r'\.app-sidebar\s*\{([^}]*)\}', outside).group(1))
+        # Content and business surfaces are never filtered, inside the gate or out.
+        for selector, declarations in re.findall(r'([^{}@]+)\{([^}]*backdrop-filter[^}]*)\}', CSS):
+            if 'none' in re.search(r'backdrop-filter\s*:\s*(\S+?)[;\s}]', declarations).group(1):
+                continue
+            with self.subTest(selector=selector.strip()[-60:]):
+                for forbidden in ('.workspace-main', '.card', 'dialog', '.notice', '.state',
+                                  '.summary', '.hero-panel', 'table', '.sidebar-cta{', 'body'):
+                    self.assertNotIn(forbidden, selector)
         self.assertNotRegex(source, r'navigator\.gpu|getContext\([\"\x27]webgl')
         # A1 forbade physics outright. A3 authorised one spring, for the navigation lens only, so
         # the exclusion is now a containment check: the integrator and its state stay inside the
@@ -110,7 +147,16 @@ class Apple27FoundationTest(unittest.TestCase):
         self.assertNotRegex(outside, r'stiffness|damping|navigationLensSpring|velocity')
         self.assertEqual(len(re.findall(r'const navigationLensSpring = \{', script)), 1,
                          'one spring configuration exists in the whole application')
-        self.assertNotRegex(source, r'fonts\.googleapis|fonts\.gstatic|use\.typekit|prefers-reduced-transparency')
+        self.assertNotRegex(source, r'fonts\.googleapis|fonts\.gstatic|use\.typekit')
+        # A1 excluded the transparency preference because a speculative query with nothing to switch
+        # off would have been dead code. A4 has something to switch off, so the exclusion becomes a
+        # usage rule: the query appears exactly once and only ever withdraws the enhancement, never
+        # enables it, so an engine that does not implement it still gets solid chrome from the gate.
+        self.assertEqual(CSS.count('prefers-reduced-transparency'), 1)
+        self.assertIn('@media(prefers-reduced-transparency:reduce)', CSS)
+        withdraw = CSS[CSS.index('@media(prefers-reduced-transparency:reduce)'):]
+        self.assertNotRegex(withdraw[:withdraw.index('@media(forced-colors:active)')],
+                           r'backdrop-filter\s*:\s*(?!none)')
         self.assertEqual([p.name for p in STATIC.rglob('*') if p.suffix.lower() in
                           ('.woff', '.woff2', '.otf', '.ttf', '.png', '.jpg', '.webp', '.svg')], [])
 
