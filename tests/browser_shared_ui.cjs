@@ -63,9 +63,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   });
   assert.equal(ladder.card, 20, 'primary surfaces stay at 20px');
   assert.equal(ladder.input, 12, 'inputs stay at 12px');
-  assert.equal(ladder.nav, 10, 'navigation rows stay at 10px');
+  assert.equal(ladder.nav, 12, 'navigation rows use the A1 control radius');
   assert.equal(ladder.chip, 8, 'chips and badges stay at 8px');
-  assert.ok(ladder.button >= ladder.buttonHeight / 2, 'buttons keep the pill treatment');
+  assert.equal(ladder.button, ladder.input, 'buttons and inputs share the A1 control radius');
 
   // ---- page heading, summary, filter toolbar, list, pagination are all present -------
   const boardShell = await page.evaluate(() => {
@@ -138,7 +138,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
       metricRows: dialog.querySelectorAll('.requirement-values>div').length,
     };
   });
-  assert.equal(dialogShell.radius, 20, 'dialogs use the primary surface radius');
+  assert.equal(dialogShell.radius, 24, 'floating dialogs use the prominent radius above content cards');
   assert.ok(dialogShell.headingRule > 0, 'the dialog heading is separated by a rule');
   assert.equal(dialogShell.withinViewport, true, 'the dialog stays inside the viewport');
   assert.equal(dialogShell.noInnerOverflow, true, 'the dialog does not scroll sideways');
@@ -348,6 +348,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.equal(mobileBoard.borderedRight, true,
     'KPI cards keep their right border when the grid collapses');
   assert.equal(mobileBoard.searchFitsToolbar, true, 'filter controls reflow inside the toolbar');
+  await page.waitForFunction(() => !document.querySelector('#board-view').classList.contains('motion-enter'));
   await page.screenshot({path: path.join(shots, 'shared-ui-board-mobile.png')});
 
   await openSidebarDestination('Kapasitas produksi');

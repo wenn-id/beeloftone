@@ -181,7 +181,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
     const expected=getComputedStyle(probe).color;probe.remove();
     return {actual:getComputedStyle(surface).backgroundColor,expected,canvas:root.getPropertyValue('--canvas').trim()};
   });
-  assert.equal(dark.actual,dark.expected);assert.equal(dark.canvas,'#0e121c');
+  assert.equal(dark.actual,dark.expected);assert.equal(dark.canvas,'#151517');
   await page.locator('#theme').click();
 
   let release;const gate=new Promise(resolve=>release=resolve);

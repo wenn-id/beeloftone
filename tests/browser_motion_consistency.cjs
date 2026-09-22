@@ -120,6 +120,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   };
 
   await login(admin);
+  if (await page.locator('#theme').textContent() === 'Mode terang') await page.locator('#theme').click();
 
   // ---- every destination, every responsive width --------------------------------------------
   // One navigation per destination, measured after each resize: the layout is what has to hold at
@@ -127,12 +128,56 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   for (const destination of DESTINATIONS) {
     await page.setViewportSize({width: 1440, height: 1000});
     await openDestination(destination.nav);
+    await page.mouse.move(0, 0);
     await page.waitForFunction(id => !document.getElementById(id).hasAttribute('hidden'), destination.section);
     await settle();
     assert.deepEqual(await activeDestinations(), [destination.nav],
       `${destination.label} must be the single active destination`);
     assert.deepEqual(await visibleSections(), [destination.section],
       `${destination.label} must show exactly its own section`);
+    // A1: the same selected destination and solid chrome must resolve in both palettes.
+    for (const theme of ['light', 'dark']) {
+      if (theme === 'dark') await page.locator('#theme').click();
+      await page.waitForFunction(() => !document.documentElement.classList.contains('is-theming'));
+      await page.waitForFunction(nav => {
+        const selected = document.getElementById(nav);
+        getComputedStyle(selected).color;
+        return selected.getAnimations({subtree: true}).every(animation => animation.playState === 'finished');
+      }, destination.nav);
+      const material = await page.evaluate(nav => {
+        const root = getComputedStyle(document.documentElement);
+        const color = token => {
+          const probe = document.createElement('span');
+          probe.style.color = root.getPropertyValue(token);
+          document.body.append(probe);
+          const value = getComputedStyle(probe).color; probe.remove(); return value;
+        };
+        const selected = getComputedStyle(document.getElementById(nav));
+        const luminance = rgb => rgb.match(/[\d.]+/g).slice(0, 3).map(Number)
+          .map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+          .reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
+        const [bright, dim] = [luminance(selected.color), luminance(selected.backgroundColor)].sort((a, b) => b - a);
+        return {
+          contrast: (bright + .05) / (dim + .05),
+          selected: selected.color, expectedLabel: color('--color-accent'),
+          selectedGround: selected.backgroundColor, expectedGround: color('--color-accent-soft'),
+          chrome: getComputedStyle(document.querySelector('.masthead')).backgroundColor,
+          expectedChrome: color('--material-functional-chrome-solid'),
+          canvas: getComputedStyle(document.querySelector('.workspace-main')).backgroundColor,
+        };
+      }, destination.nav);
+      // The existing approval CTA is a primary action, not a nav-item row; its composition stays in A1.
+      if (destination.nav !== 'approvals') {
+        assert.equal(material.selected, material.expectedLabel, `${destination.label}: ${theme} selected label`);
+        assert.equal(material.selectedGround, material.expectedGround, `${destination.label}: ${theme} selected ground`);
+      }
+      assert.ok(material.contrast >= 4.5, `${destination.label}: ${theme} selected text contrast ${material.contrast}`);
+      assert.equal(material.chrome, material.expectedChrome, `${theme} chrome uses the solid material`);
+      assert.notEqual(material.canvas, material.chrome, `${theme} canvas and chrome stay distinct`);
+      assert.ok(await overflow() <= 1, `${destination.label}: ${theme} desktop has no overflow`);
+    }
+    await page.locator('#theme').click();
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-theming'));
     for (const width of WIDTHS) {
       await page.setViewportSize({width, height: 900});
       const spill = await overflow();

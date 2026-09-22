@@ -1,9 +1,7 @@
-/* Foundation tokens live in ONE place: the reconstruction block below. The superseded
-   pre-reconstruction palette that used to sit here was removed because every token it
-   declared is redefined there, and the four it declared alone (--radius-control,
-   --radius-card, --space-1..6, --control-line) had no remaining references. */
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-size:1rem;line-height:1.5}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}a{color:var(--accent)}textarea{min-height:88px;resize:vertical}input::placeholder{color:var(--muted);opacity:1}label{display:block;font-size:.9375rem;font-weight:600}label>input,label>select,label>textarea{margin-top:.4rem}h1,h2,h3,p{margin-top:0}.account,.actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.workspace-nav{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 0 1.6rem;color:var(--muted);font-size:.875rem}.workspace-nav strong{color:var(--ink);font-weight:500}.search-field{flex:1}.filters label:not(.search-field){min-width:190px}.filters button{margin-bottom:0}.order-grid{display:grid;grid-template-columns:minmax(240px,2.1fr) minmax(115px,1fr) minmax(140px,1fr) minmax(180px,1.5fr) minmax(130px,.9fr);gap:1.2rem;align-items:center}.reference{font-size:.8125rem;color:var(--muted);font-weight:500;display:block;margin-bottom:.3rem}.cell{min-width:0;overflow-wrap:anywhere}.cell-label{display:none}.progress-note{display:flex;justify-content:space-between;font-size:.875rem;gap:.5rem;margin-bottom:.5rem}progress{display:block;width:100%;height:5px;border:0;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line)}progress::-webkit-progress-value{background:var(--accent)}.state button{margin-top:1rem}.error{overflow-wrap:anywhere}.notice{position:fixed;bottom:1.5rem;right:3.5%;max-width:min(440px,93vw);background:var(--ink);color:var(--surface);padding:1rem 1.3rem;border-radius:6px;z-index:4}.detail-top{display:flex;justify-content:space-between;gap:1rem;align-items:start}.detail-meta{display:flex;gap:2rem;flex-wrap:wrap;color:var(--muted);margin:1rem 0 1.8rem}.detail-meta strong{display:block;color:var(--ink);font-weight:600}.detail-meta span{font-size:.875rem}.stages{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--line);background:var(--surface);margin:1.5rem 0 .75rem}.stage{padding:1.2rem;border-right:1px solid var(--line)}.stage:last-child{border-right:0}.stage small{display:block;color:var(--muted);font-size:.875rem}.stage strong{font-size:1.75rem;font-weight:600;font-variant-numeric:tabular-nums}.stage-number{font-size:.75rem;color:var(--accent);margin-right:.4rem}.exceptions{display:flex;gap:2rem;flex-wrap:wrap;font-size:.9375rem;margin-bottom:2.2rem}.exceptions strong{font-variant-numeric:tabular-nums}.sku-block{padding:1.2rem;margin:1rem 0}.sku-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.sku-heading h3{margin:0}.sku-balances{display:flex;gap:.75rem 1.5rem;flex-wrap:wrap;margin-top:1rem;font-size:.875rem;color:var(--muted)}.sku-balances strong{color:var(--ink);margin-left:.4rem}.history-section{margin-top:2.5rem}.history-item{display:grid;grid-template-columns:140px 1fr auto;gap:1.2rem;padding:1rem 0;border-bottom:1px solid var(--line)}.history-item p{margin:.25rem 0}.history-item time{font-size:.875rem;color:var(--muted)}.history-item .reason{color:var(--muted);font-size:.9375rem;white-space:pre-wrap;overflow-wrap:anywhere}.history-action{align-self:start}.history-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.login-view{display:grid;grid-template-columns:1.2fr 1fr;gap:7%;align-items:center;min-height:70vh;max-width:1050px;margin:auto;padding:3rem 0}.login-intro h1{font-size:clamp(2.7rem,5vw,4.1rem);font-weight:500;line-height:1.15;margin:1.1rem 0 1.4rem}.login-intro h1 em{font:italic 1.08em Georgia,serif;color:var(--accent)}.login-intro>p:not(.eyebrow){max-width:370px;color:var(--muted)}.process-label{font-size:.875rem;padding-top:1.1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.6rem;color:var(--muted)}.process-label span{color:var(--accent)}.login-form{background:var(--surface);padding:2.1rem}.login-form>p{color:var(--muted)}.login-form .primary{width:100%;margin-top:.6rem}.login-form input{margin-top:.5rem}dialog{background:var(--surface);color:var(--ink);padding:1.5rem;width:min(650px,calc(100% - 2rem));max-height:90dvh}dialog::backdrop{background:#1119}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}.dialog-heading h2{margin:0}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.form-grid>*{min-width:0;overflow-wrap:anywhere}.form-grid .full{grid-column:1/-1}fieldset{padding:0;border:0;margin:0;min-width:0}.form-actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem}.form-info{background:var(--bg);padding:1rem;font-size:.9375rem;margin-bottom:1rem;white-space:pre-wrap}.line-input{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;gap:.5rem;align-items:end;margin:.75rem 0}.line-input>button{padding:.6rem}.product-list{max-height:260px;overflow:auto;margin-bottom:1.2rem}.product-item{display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--line);padding:.6rem 0;overflow-wrap:anywhere}.product-item strong{display:block}.skip-link{position:absolute;top:-80px;background:var(--surface);padding:1rem;z-index:10}.skip-link:focus{top:0}
-.check-field{display:flex;align-items:center;gap:.75rem;min-height:44px;padding:.55rem .7rem;border:1px solid var(--line);border-radius:4px}.check-field input{width:22px;min-height:22px;height:22px;margin:0;flex:0 0 22px;accent-color:var(--accent)}
+/* Foundation tokens live in the A1 block below. Existing layout rules consume
+   compatibility aliases; there is no separate legacy palette. */
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-size:1rem;line-height:1.5}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}a{color:var(--accent)}textarea{min-height:88px;resize:vertical}input::placeholder{color:var(--muted);opacity:1}label{display:block;font-size:.9375rem;font-weight:600}label>input,label>select,label>textarea{margin-top:.4rem}h1,h2,h3,p{margin-top:0}.account,.actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.workspace-nav{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 0 1.6rem;color:var(--muted);font-size:.875rem}.workspace-nav strong{color:var(--ink);font-weight:500}.search-field{flex:1}.filters label:not(.search-field){min-width:190px}.filters button{margin-bottom:0}.order-grid{display:grid;grid-template-columns:minmax(240px,2.1fr) minmax(115px,1fr) minmax(140px,1fr) minmax(180px,1.5fr) minmax(130px,.9fr);gap:1.2rem;align-items:center}.reference{font-size:.8125rem;color:var(--muted);font-weight:500;display:block;margin-bottom:.3rem}.cell{min-width:0;overflow-wrap:anywhere}.cell-label{display:none}.progress-note{display:flex;justify-content:space-between;font-size:.875rem;gap:.5rem;margin-bottom:.5rem}progress{display:block;width:100%;height:5px;border:0;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line)}progress::-webkit-progress-value{background:var(--accent)}.state button{margin-top:1rem}.error{overflow-wrap:anywhere}.notice{position:fixed;bottom:1.5rem;right:3.5%;max-width:min(440px,93vw);background:var(--ink);color:var(--surface);padding:1rem 1.3rem;border-radius:6px;z-index:4}.detail-top{display:flex;justify-content:space-between;gap:1rem;align-items:start}.detail-meta{display:flex;gap:2rem;flex-wrap:wrap;color:var(--muted);margin:1rem 0 1.8rem}.detail-meta strong{display:block;color:var(--ink);font-weight:600}.detail-meta span{font-size:.875rem}.stages{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--line);background:var(--surface);margin:1.5rem 0 .75rem}.stage{padding:1.2rem;border-right:1px solid var(--line)}.stage:last-child{border-right:0}.stage small{display:block;color:var(--muted);font-size:.875rem}.stage strong{font-size:1.75rem;font-weight:600;font-variant-numeric:tabular-nums}.stage-number{font-size:.75rem;color:var(--accent);margin-right:.4rem}.exceptions{display:flex;gap:2rem;flex-wrap:wrap;font-size:.9375rem;margin-bottom:2.2rem}.exceptions strong{font-variant-numeric:tabular-nums}.sku-block{padding:1.2rem;margin:1rem 0}.sku-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.sku-heading h3{margin:0}.sku-balances{display:flex;gap:.75rem 1.5rem;flex-wrap:wrap;margin-top:1rem;font-size:.875rem;color:var(--muted)}.sku-balances strong{color:var(--ink);margin-left:.4rem}.history-section{margin-top:2.5rem}.history-item{display:grid;grid-template-columns:140px 1fr auto;gap:1.2rem;padding:1rem 0;border-bottom:1px solid var(--line)}.history-item p{margin:.25rem 0}.history-item time{font-size:.875rem;color:var(--muted)}.history-item .reason{color:var(--muted);font-size:.9375rem;white-space:pre-wrap;overflow-wrap:anywhere}.history-action{align-self:start}.history-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.login-view{display:grid;grid-template-columns:1.2fr 1fr;gap:7%;align-items:center;min-height:70vh;max-width:1050px;margin:auto;padding:3rem 0}.login-intro h1{font-size:clamp(2.7rem,5vw,4.1rem);font-weight:500;line-height:1.15;margin:1.1rem 0 1.4rem}.login-intro h1 em{font:italic 1.08em var(--font-ui);color:var(--accent)}.login-intro>p:not(.eyebrow){max-width:370px;color:var(--muted)}.process-label{font-size:.875rem;padding-top:1.1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.6rem;color:var(--muted)}.process-label span{color:var(--accent)}.login-form{background:var(--surface);padding:2.1rem}.login-form>p{color:var(--muted)}.login-form .primary{width:100%;margin-top:.6rem}.login-form input{margin-top:.5rem}dialog{background:var(--surface);color:var(--ink);padding:1.5rem;width:min(650px,calc(100% - 2rem));max-height:90dvh}dialog::backdrop{background:#1119}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}.dialog-heading h2{margin:0}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.form-grid>*{min-width:0;overflow-wrap:anywhere}.form-grid .full{grid-column:1/-1}fieldset{padding:0;border:0;margin:0;min-width:0}.form-actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem}.form-info{background:var(--bg);padding:1rem;font-size:.9375rem;margin-bottom:1rem;white-space:pre-wrap}.line-input{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;gap:.5rem;align-items:end;margin:.75rem 0}.line-input>button{padding:.6rem}.product-list{max-height:260px;overflow:auto;margin-bottom:1.2rem}.product-item{display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--line);padding:.6rem 0;overflow-wrap:anywhere}.product-item strong{display:block}.skip-link{position:absolute;top:-80px;background:var(--surface);padding:1rem;z-index:10}.skip-link:focus{top:0}
+.check-field{display:flex;align-items:center;gap:.75rem;min-height:var(--touch-target-min);padding:.55rem .7rem;border:1px solid var(--line);border-radius:4px}.check-field input{width:22px;min-height:22px;height:22px;margin:0;flex:0 0 22px;accent-color:var(--accent)}
 @media(max-width:1000px){.order-grid{grid-template-columns:minmax(210px,2fr) 1fr 1fr 1.2fr}.order-grid>.status-cell{grid-column:1/-1}.table-head .status-cell{display:none}.order-row .status-cell{padding-top:.3rem}.stages{grid-template-columns:repeat(3,minmax(0,1fr))}.stage:nth-child(3){border-right:0}.stage:nth-child(-n+3){border-bottom:1px solid var(--line)}}
 @media(max-width:650px){.workspace-nav{padding:1rem 0;font-size:.8125rem}.page-heading>.actions{width:100%}.page-heading .primary{flex:1}.filters{display:grid;grid-template-columns:1fr auto}.search-field{grid-column:1/-1}.filters label:not(.search-field){min-width:0}.table-head{display:none}.order-grid{grid-template-columns:1fr 1fr;gap:.85rem 1rem}.order-row>.cell:first-child{grid-column:1/-1}.order-row>.status-cell{grid-column:auto}.order-row .progress-cell{grid-column:1/-1}.cell-label{display:block;color:var(--muted);font-size:.8125rem;margin-bottom:.15rem}.pagination{align-items:start;flex-direction:column}.pagination .actions{width:100%;justify-content:space-between}.detail-top{flex-direction:column}.detail-meta{gap:.8rem 1.5rem}.stage{padding:.75rem}.stage strong{font-size:1.5rem}.stage small{font-size:.8125rem}.stage-number{display:none}.sku-heading{align-items:start;flex-direction:column}.history-item{grid-template-columns:1fr;gap:.25rem}.history-action{justify-self:start}.history-heading{align-items:start;flex-direction:column}.login-view{grid-template-columns:1fr;gap:1.8rem;padding:2rem 0}.login-intro h1{font-size:2.4rem}.login-intro h1 br{display:none}.login-intro h1 br::after{content:' '}.login-intro h1 em{display:block}.login-form{padding:1.4rem}.login-intro>p:not(.eyebrow),.process-label{display:none}.form-grid{grid-template-columns:minmax(0,1fr)}.line-input{grid-template-columns:minmax(0,1fr) 80px auto}.line-input label{font-size:.8125rem}.line-input>button{font-size:.8125rem}dialog{padding:1rem}.form-actions button{flex:1}.form-actions{flex-wrap:wrap}.notice{bottom:1rem}.history-heading button{align-self:start}}
 
@@ -33,27 +31,52 @@
 
 
 /* ==========================================================================
-   Shopeers visual reconstruction. See DESIGN.md for the reference and how to
-   obtain it locally: dribbble.com/shots/26628350 (Dipa Inhouse).
-   Every value below is measured from that 1440px artboard: sidebar 256,
-   header 72, content padding 32, grid gap 22, card radius 16, KPI 263x130,
-   main grid 1.67fr/1fr, primary #2d5efb.
+   Apple-27 A1 foundation. DESIGN.md defines the current design authority.
+   Existing workspace composition retains the historical Shopeers layout.
+   Materials are solid by default; A4 may enhance functional chrome later.
    ========================================================================== */
 :root{
-  font-family:"Segoe UI",Inter,system-ui,-apple-system,"Noto Sans",sans-serif;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"Noto Sans",sans-serif;
+  font-family:var(--font-ui);
   color-scheme:light;font-synthesis:none;
-  --canvas:#f4f5f8;--app-bg:#f4f5f8;--bg:#f4f5f8;
-  --surface:#fff;--surface-subtle:#f5f6f9;--surface-sunken:#eff1f5;
-  --line:#ebecef;--line-strong:#e2e4ea;--edge:#c9cdd6;--control-line:#e2e4ea;
-  --ink:#0b0d17;--ink-2:#3b4252;--muted:#6b7385;
-  --primary:#2d5efb;--primary-hover:#1f4ae0;--primary-soft:#eef3fd;--primary-edge:#3c5dff;
-  --accent:#2d5efb;--accent-bg:#eef3fd;--focus:#2d5efb;
-  --danger:#c62828;--danger-bg:#fdecec;--danger-edge:#e05252;
-  --warning:#8a5300;--warning-bg:#fdf3e3;--warning-edge:#d99b3d;
-  --success:#15803d;--success-bg:#e9f8ef;--success-edge:#4faa72;
+  --type-page-title:1.75rem;--type-section-title:1.125rem;--type-card-title:1rem;
+  --type-body:.9375rem;--type-control:.875rem;--type-caption:.8125rem;
+  --type-data:2rem;--type-metadata:.75rem;
+  --color-canvas:#f5f5f7;--color-content:#fff;--color-content-subtle:#f0f0f3;
+  --color-content-raised:#fff;--color-content-sunken:#e9e9ee;
+  --color-label-primary:#1d1d1f;--color-label-secondary:#48484d;--color-label-tertiary:#63636b;
+  --color-separator:#dedee3;--color-separator-strong:#c4c4cc;--color-control-border:#85858f;
+  --color-accent:#0064d1;--color-accent-hover:#0055b3;--color-accent-soft:#e8f1ff;
+  --color-on-accent:#fff;--color-focus:#0064d1;
+  --color-danger:#b42326;--color-danger-soft:#fff0ef;--color-danger-edge:#c65353;
+  --color-warning:#805000;--color-warning-soft:#fff4df;--color-warning-edge:#aa7723;
+  --color-success:#216b3b;--color-success-soft:#eaf6ed;--color-success-edge:#44885a;
+  --material-canvas:var(--color-canvas);--material-content:var(--color-content);
+  --material-content-subtle:var(--color-content-subtle);--material-raised:var(--color-content-raised);
+  --material-functional-chrome-solid:var(--color-content);--material-floating-solid:var(--color-content-raised);
+  --chrome-tint:var(--color-content);--chrome-border:var(--color-separator);
+  --chrome-highlight:#ffffffb3;--chrome-shadow:var(--shadow-raised);
+  --radius-prominent:24px;--radius-content:20px;--radius-control:12px;
+  --radius-compact:8px;--radius-pill:999px;
+  --shadow-content:0 1px 2px #1d1d1f06;
+  --shadow-raised:0 2px 8px #1d1d1f08,0 8px 24px #1d1d1f06;
+  --shadow-floating:0 4px 12px #1d1d1f0d,0 20px 48px #1d1d1f1a;
+  --control-height:40px;--control-height-compact:36px;--touch-target-min:44px;
+  --control-radius:var(--radius-control);--control-padding-x:.875rem;
+  /* Compatibility aliases: selectors migrate by role without a second palette. */
+  --canvas:var(--material-canvas);--app-bg:var(--material-canvas);--bg:var(--material-canvas);
+  --surface:var(--material-content);--surface-subtle:var(--material-content-subtle);--surface-sunken:var(--color-content-sunken);
+  --line:var(--color-separator);--line-strong:var(--color-separator-strong);
+  --edge:var(--color-control-border);--control-line:var(--color-control-border);
+  --ink:var(--color-label-primary);--ink-2:var(--color-label-secondary);--muted:var(--color-label-tertiary);
+  --primary:var(--color-accent);--primary-hover:var(--color-accent-hover);--primary-soft:var(--color-accent-soft);--primary-edge:var(--color-accent);
+  --accent:var(--color-accent);--accent-bg:var(--color-accent-soft);--focus:var(--color-focus);
+  --danger:var(--color-danger);--danger-bg:var(--color-danger-soft);--danger-edge:var(--color-danger-edge);
+  --warning:var(--color-warning);--warning-bg:var(--color-warning-soft);--warning-edge:var(--color-warning-edge);
+  --success:var(--color-success);--success-bg:var(--color-success-soft);--success-edge:var(--color-success-edge);
   --sidebar-w:256px;--header-h:72px;--pad-x:32px;--gap:22px;
-  --r-card:20px;--r-nav:10px;--r-chip:8px;--r-pill:999px;
-  --shadow-sm:0 1px 2px #0b0d170a,0 1px 3px #0b0d1708;--shadow-md:0 6px 24px #0b0d1710;--shadow-lg:0 18px 48px #0b0d1718;
+  --r-card:var(--radius-content);--r-nav:var(--radius-control);--r-chip:var(--radius-compact);--r-pill:var(--radius-pill);
+  --shadow-sm:var(--shadow-content);--shadow-md:var(--shadow-raised);--shadow-lg:var(--shadow-floating);
   --shadow:var(--shadow-md);
   /* Motion tokens: the single source for every timing and easing in the product, so
      component rules never carry a raw 150ms/0.3s again. These are theme-invariant, so they
@@ -64,29 +87,32 @@
 }
 :root[data-theme=dark]{
   color-scheme:dark;
-  --canvas:#0e121c;--app-bg:#0e121c;--bg:#0e121c;
-  --surface:#161b28;--surface-subtle:#1d2331;--surface-sunken:#111621;
-  --line:#262d3d;--line-strong:#323a4d;--edge:#5c6478;--control-line:#323a4d;
-  --ink:#f2f4fa;--ink-2:#c9d0de;--muted:#98a1b4;
-  --primary:#7d9dff;--primary-hover:#a3bbff;--primary-soft:#1c2745;--primary-edge:#7d9dff;
-  --accent:#7d9dff;--accent-bg:#1c2745;--focus:#a3bbff;
-  --danger:#ff9f9a;--danger-bg:#3a1f22;--danger-edge:#b45a58;
-  --warning:#f0c47a;--warning-bg:#3a2e1a;--warning-edge:#9c7a3c;
-  --success:#7ed6a3;--success-bg:#14311f;--success-edge:#3f7d57;
-  --shadow-sm:0 1px 2px #0006;--shadow-md:0 6px 24px #0007;--shadow-lg:0 18px 48px #0008;
+  --color-canvas:#151517;--color-content:#202023;--color-content-subtle:#29292d;
+  --color-content-raised:#303034;--color-content-sunken:#19191c;
+  --color-label-primary:#f5f5f7;--color-label-secondary:#c6c6ce;--color-label-tertiary:#a6a6b0;
+  --color-separator:#3b3b42;--color-separator-strong:#53535d;--color-control-border:#82828d;
+  --color-accent:#78b4ff;--color-accent-hover:#a3ccff;--color-accent-soft:#22354e;
+  --color-on-accent:#151517;--color-focus:#a3ccff;
+  --color-danger:#ffaaa5;--color-danger-soft:#3c2426;--color-danger-edge:#c97673;
+  --color-warning:#edc17b;--color-warning-soft:#382e20;--color-warning-edge:#b18b49;
+  --color-success:#89d6a1;--color-success-soft:#20352a;--color-success-edge:#619c75;
+  --chrome-highlight:#ffffff14;
+  --shadow-content:0 1px 2px #0000001f;
+  --shadow-raised:0 2px 8px #00000024,0 8px 24px #0000001f;
+  --shadow-floating:0 4px 12px #00000033,0 20px 48px #0000004d;
 }
 
 /* ---------- base ---------- */
-body{margin:0;background:var(--bg);color:var(--ink);font-size:.9375rem;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:var(--type-body);line-height:1.5;-webkit-font-smoothing:antialiased}
 main{max-width:none;margin:0;padding:0}
 h1,h2,h3{color:var(--ink);letter-spacing:-.02em}
-h1{font-size:1.625rem;font-weight:700;line-height:1.2;letter-spacing:-.025em;margin-bottom:.25rem}
-h2{font-size:1.0625rem;font-weight:650;letter-spacing:-.015em;margin-bottom:.35rem}
-h3{font-size:1rem;font-weight:650;letter-spacing:-.01em}
-.hint{color:var(--muted);font-size:.8125rem}
-.eyebrow{margin-bottom:.22rem;color:var(--primary);font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+h1{font-size:var(--type-page-title);font-weight:700;line-height:1.2;letter-spacing:-.025em;margin-bottom:.25rem}
+h2{font-size:var(--type-section-title);font-weight:650;letter-spacing:-.015em;margin-bottom:.35rem}
+h3{font-size:var(--type-card-title);font-weight:650;letter-spacing:-.01em}
+.hint{color:var(--muted);font-size:var(--type-caption)}
+.eyebrow{margin-bottom:.22rem;color:var(--primary);font-size:var(--type-metadata);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 [hidden]{display:none!important}
-::selection{background:#2d5efb26}
+::selection{background:var(--color-accent-soft);color:var(--color-label-primary)}
 
 /* ---------- icon language: one 18px stroked set, 1.7 stroke, round joins ---------- */
 .icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
@@ -94,35 +120,31 @@ h3{font-size:1rem;font-weight:650;letter-spacing:-.01em}
 .icon-sm{width:15px;height:15px;stroke-width:1.8}
 .icon-lg{width:22px;height:22px;stroke-width:1.6}
 
-/* ---------- controls: pill buttons, 40px, measured from the reference toolbar ---------- */
+/* ---------- shared control geometry ---------- */
 button{
   display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
-  min-height:40px;padding:.5rem 1.05rem;
-  border:1px solid var(--line-strong);border-radius:var(--r-pill);
+  min-height:var(--control-height);padding:.5rem var(--control-padding-x);
+  border:1px solid var(--control-line);border-radius:var(--control-radius);
   background:var(--surface);color:var(--ink);
-  box-shadow:0 1px 1px #0b0d1705;
-  font-size:.875rem;font-weight:600;letter-spacing:-.005em;cursor:pointer;
+  box-shadow:var(--shadow-content);
+  font-size:var(--type-control);font-weight:600;letter-spacing:-.005em;cursor:pointer;
 }
 button:hover{border-color:var(--edge);background:var(--surface-subtle)}
 button:disabled{opacity:.45;cursor:not-allowed}
-.primary{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 1px 2px #2d5efb33}
-.primary:hover{background:var(--primary-hover);border-color:var(--primary-hover);color:#fff}
-:root[data-theme=dark] .primary{color:#0e121c}
+.primary{background:var(--primary);border-color:var(--primary);color:var(--color-on-accent);box-shadow:var(--shadow-content)}
+.primary:hover{background:var(--primary-hover);border-color:var(--primary-hover);color:var(--color-on-accent)}
 .quiet{border-color:transparent;background:transparent;box-shadow:none;color:var(--ink-2)}
 .quiet:hover{border-color:transparent;background:var(--surface-subtle);color:var(--ink)}
-/* The ring is intentionally instant: no transition touches `outline`, so keyboard focus is
-   visible on the first frame and never depends on an animation to appear. It also no longer
-   forces a radius — overriding `border-radius` here made every pill-shaped control snap to
-   the 10px nav radius while focused; the ring now follows the control's own shape. */
+/* Focus is immediate and follows each control's shape without changing its radius. */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 input,select,textarea{
-  width:100%;min-height:40px;padding:.5rem .8rem;
-  border:1px solid var(--line-strong);border-radius:12px;
-  background:var(--surface);color:var(--ink);font-size:.875rem;
+  width:100%;min-height:var(--control-height);padding:.5rem var(--control-padding-x);
+  border:1px solid var(--control-line);border-radius:var(--control-radius);
+  background:var(--surface);color:var(--ink);font-size:var(--type-control);
 }
-input:focus,select:focus,textarea:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px #2d5efb1f}
+input:focus,select:focus,textarea:focus{border-color:var(--focus);outline:2px solid var(--focus);outline-offset:2px;box-shadow:none}
 label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
-.icon-button{width:40px;height:40px;min-height:40px;padding:0;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--surface-subtle);color:var(--ink-2)}
+.icon-button{width:var(--control-height);height:var(--control-height);min-height:var(--control-height);padding:0;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--surface-subtle);color:var(--ink-2)}
 .icon-button:hover{background:var(--surface-sunken);border-color:var(--line-strong)}
 
 /* ---------- masthead: 72px, brand occupies the sidebar column with a shared rule ---------- */
@@ -130,13 +152,13 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
   position:sticky;top:0;z-index:20;
   display:grid;grid-template-columns:var(--sidebar-w) minmax(0,1fr) auto;
   align-items:stretch;gap:0;min-height:var(--header-h);padding:0;
-  border-bottom:1px solid var(--line);background:var(--surface);
+  border-bottom:1px solid var(--chrome-border);background:var(--material-functional-chrome-solid);
 }
 .masthead-brand{display:flex;align-items:center;gap:.5rem;padding:0 20px 0 24px;border-right:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;text-decoration:none;color:var(--ink)}
 .brand-mark{display:grid;place-items:center;width:26px;height:26px;flex:0 0 auto;border-radius:10px;background:var(--primary);color:#fff}
 .brand-mark .icon{width:16px;height:16px;stroke-width:2}
-.brand-word{font:700 1.3125rem/1 "Segoe UI",Inter,system-ui,sans-serif;letter-spacing:-.04em;white-space:nowrap}
+.brand-word{font:700 1.3125rem/1 var(--font-ui);letter-spacing:-.04em;white-space:nowrap}
 .brand-dot{color:var(--primary)}
 .brand small{display:none}
 .masthead-tools{display:flex;align-items:center;min-width:0;padding:0 1rem 0 var(--pad-x)}
@@ -159,7 +181,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
   position:sticky;top:var(--header-h);align-self:start;
   display:flex;flex-direction:column;gap:1rem;
   width:100%;height:calc(100dvh - var(--header-h));padding:14px 16px 16px;
-  overflow:auto;border-right:1px solid var(--line);background:var(--surface);
+  overflow:auto;border-right:1px solid var(--chrome-border);background:var(--material-functional-chrome-solid);
   scrollbar-width:thin;
 }
 .sidebar-nav{display:flex;flex-direction:column;gap:0}
@@ -228,7 +250,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 /* ---------- cards ---------- */
 .card,.sku-block{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
 .card{padding:22px}
-.card-raised{box-shadow:var(--shadow-md)}
+.card-raised{background:var(--material-raised);box-shadow:var(--shadow-raised)}
 .state{padding:2rem 1rem;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);color:var(--muted);text-align:center;font-size:.875rem}
 .state h3{margin-bottom:.35rem;color:var(--ink)}
 .error{border-radius:12px;background:var(--danger-bg);color:var(--danger);padding:.8rem 1rem;font-size:.875rem}
@@ -255,7 +277,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 }
 .summary dt{display:flex;align-items:center;justify-content:space-between;gap:.5rem;color:var(--ink);font-size:.9375rem;font-weight:650;letter-spacing:-.008em}
 .summary dt .icon{color:var(--primary)}
-.summary dd{margin:auto 0 0;font-size:2rem;font-weight:800;letter-spacing:-.035em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--ink)}
+.summary dd{margin:auto 0 0;font-size:var(--type-data);font-weight:800;letter-spacing:-.035em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--ink)}
 .summary dd small{margin-left:.3rem;color:var(--muted);font-size:.8125rem;font-weight:500;letter-spacing:0}
 .kpi-value{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .kpi-foot{margin:8px 0 0;color:var(--muted);font-size:.78125rem;line-height:1.4;overflow-wrap:anywhere}
@@ -337,11 +359,11 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .decision-row .decision-detail{margin:3px 0 0;color:var(--muted);font-size:.8125rem;line-height:1.4}
 .decision-row .status-label{flex:0 0 auto}
 .decision-action{justify-self:end}
-.decision-action button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+.decision-action button{min-height:var(--control-height-compact);padding:.35rem .85rem;font-size:.8125rem}
 
 /* ---------- snapshot cards ---------- */
 .command-snapshot.snapshot-card{min-width:0;padding:18px 20px;box-shadow:var(--shadow-sm)}
-.command-snapshot.snapshot-card h3{font-size:1rem}
+.command-snapshot.snapshot-card h3{font-size:var(--type-card-title)}
 .snapshot-card .card-head{margin-bottom:12px}
 .command-values{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:0;margin:0}
 .command-values dt,.command-values dd{padding:4px 0;font-size:.8125rem;min-width:0}
@@ -441,7 +463,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .issues-summary{width:100%;justify-content:flex-start;margin-bottom:var(--gap);border-color:var(--danger-edge);background:var(--danger-bg);color:var(--danger);text-align:left;white-space:normal}
 .pagination{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:16px}
 progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
-.notice{border-radius:12px;box-shadow:var(--shadow-lg)}
+.notice{border:1px solid var(--chrome-border);border-radius:var(--radius-control);background:var(--material-floating-solid);color:var(--ink);box-shadow:var(--shadow-floating)}
 /* State, not motion: a container whose data is being replaced in place stays readable while it
    is dimmed, and the dimming itself is the same in reduced-motion mode. The fade into and out of
    it lives with the other transitions below. */
@@ -450,7 +472,7 @@ progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
    declared here and stays visible with every transition disabled. Only its release is animated,
    in the `no-preference` query below. */
 .scan-result.is-scan-ok{background:var(--success-bg)}
-dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-lg)}
+dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominent);background:var(--material-floating-solid);box-shadow:var(--shadow-floating)}
 .stages{border-radius:var(--r-card);overflow:hidden}
 .login-form{border:1px solid var(--line);border-top:3px solid var(--primary);border-radius:var(--r-card);box-shadow:var(--shadow-md)}
 .login-view{padding:clamp(2rem,6vw,4rem) 4%}
@@ -475,14 +497,16 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .app-shell{grid-template-columns:minmax(0,1fr)}
   .app-sidebar{position:static;display:none;height:auto;padding:14px 16px 18px;border-right:0;border-bottom:1px solid var(--line)}
   .nav-open .app-sidebar{display:flex}
-  .nav-item{min-height:44px}
-  .nav-summary{min-height:44px}
-  .nav-children .nav-item{min-height:40px}
+  .nav-item{min-height:var(--touch-target-min)}
+  .nav-summary{min-height:var(--touch-target-min)}
+  .nav-children .nav-item{min-height:var(--touch-target-min)}
   .nav-item[aria-current=page]::before{left:-16px}
   .workspace-main{padding:20px var(--pad-x) 32px}
   .command-center-content{grid-template-columns:minmax(0,1fr)}
   .snapshot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
-  input,select,textarea{min-height:44px}
+  button,input,select,textarea{min-height:var(--touch-target-min)}
+  .account button,.menu-toggle:not([hidden]){min-height:var(--touch-target-min)}
+  .icon-button{width:var(--touch-target-min);height:var(--touch-target-min)}
 }
 @media(max-width:760px){
   .snapshot-grid{grid-template-columns:minmax(0,1fr)}
@@ -516,7 +540,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   .command-attention.decision-row{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:14px 0}
   .decision-mark{width:32px;height:32px}
   .decision-action{grid-column:2;justify-self:stretch}
-  .decision-action button{width:100%;min-height:44px}
+  .decision-action button{width:100%;min-height:var(--touch-target-min)}
   .pagination{align-items:flex-start}
   .ledger-heading{flex-direction:column;align-items:flex-start;gap:0}
   .barchart{height:126px}
@@ -705,7 +729,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 
 
 /* ==========================================================================
-   Marketplace business performance band. Same Shopeers card language; the page
+   Marketplace business performance band. Historical composition; the page
    now leads with Jubelio-sourced sales and demotes operations to a second band.
    ========================================================================== */
 .command-center-content{display:flex;flex-direction:column;gap:30px;align-items:stretch}
@@ -797,7 +821,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 @media(max-width:650px){
   .command-center-content{gap:20px}
   .band-heading{gap:.75rem}
-  .band-heading h2{font-size:1.0625rem}
+  .band-heading h2{font-size:var(--type-section-title)}
   .hero-split-grid{grid-template-columns:minmax(0,1fr)}
   .table-scroll{margin:0;padding:0}
   .rank-row{grid-template-columns:26px minmax(0,1fr) auto;gap:9px}
@@ -808,17 +832,9 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 /* ==========================================================================
    Shared surfaces for the operational sections.
 
-   The Command Center above owns the visual system. Every other section builds
-   its screens from a handful of vocabulary classes (material-event, form-info,
-   requirement-values, product-item, history-item, workforce-*, sku-block) that
-   predate that system and still rendered as flat rules on the canvas. This block
-   re-expresses those same classes in the Command Center language — one surface
-   token set, one radius ladder, one type scale — so no section needs a private
-   design system and no markup needs to change to inherit it.
-
-   Radius follows DESIGN.md's concentric rule: a top-level surface is --r-card
-   (20px), a surface nested inside one steps down to 14px, and small marks stay
-   at their own scale. Nothing here raises chips, inputs, or navigation rows.
+   These existing vocabulary classes consume the A1 foundation through aliases.
+   Workspace structure is unchanged. Nested surfaces keep their smaller 14px
+   radius inside 20px content cards; floating dialog shells use 24px.
    ========================================================================== */
 
 /* ---------- dialog chrome: same heading rhythm as a page heading ---------- */
@@ -826,7 +842,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
   align-items:flex-start;gap:1rem;margin:-2px 0 18px;padding-bottom:14px;
   border-bottom:1px solid var(--line);
 }
-.dialog-heading h2{font-size:1.25rem;font-weight:700;letter-spacing:-.02em}
+.dialog-heading h2{font-size:var(--type-section-title);font-weight:700;letter-spacing:-.02em}
 .dialog-heading .quiet{flex:0 0 auto}
 #dialog-content{min-width:0}
 #dialog-content>h3,.dialog-section-title{
@@ -892,7 +908,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 }
 .material-event>button,.material-event>.actions,.audit-event>button,
 .issue-item>button,.workforce-row-actions{margin-top:12px}
-.material-event>button,.audit-event>button,.issue-item>button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+.material-event>button,.audit-event>button,.issue-item>button{min-height:var(--control-height-compact);padding:.35rem .85rem;font-size:.8125rem}
 
 /* A surface nested inside a surface steps the radius down and sinks its ground,
    the same relationship the dashboard's breakdown panel has to its hero card. */
@@ -1030,7 +1046,7 @@ dialog{border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(-
 .workforce-row h3{margin-bottom:4px}
 .workforce-row .reference{margin-bottom:2px}
 .workforce-row-actions{margin-top:0;gap:8px}
-.workforce-row-actions button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+.workforce-row-actions button{min-height:var(--control-height-compact);padding:.35rem .85rem;font-size:.8125rem}
 
 /* ---------- filter toolbars inside dialogs ---------- */
 .filter-form{
@@ -1051,13 +1067,13 @@ label>input,label>select,label>textarea{margin-top:6px}
 }
 .check-field{
   gap:.7rem;min-height:40px;padding:.5rem .8rem;
-  border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);
+  border:1px solid var(--control-line);border-radius:var(--control-radius);background:var(--surface);
 }
 .line-input,.bom-line{
   gap:10px;margin:0 0 12px;padding:13px 15px;
   border:1px solid var(--line);border-radius:14px;background:var(--surface-subtle);
 }
-.line-input>button,.bom-line button{min-height:36px;padding:.35rem .85rem;font-size:.8125rem}
+.line-input>button,.bom-line button{min-height:var(--control-height-compact);padding:.35rem .85rem;font-size:.8125rem}
 
 /* ---------- AI surfaces ---------- */
 .ai-prompts{gap:8px;margin:0 0 var(--gap)}
@@ -1108,7 +1124,7 @@ label>input,label>select,label>textarea{margin-top:6px}
 }
 @media(max-width:650px){
   .dialog-heading{margin-bottom:14px;padding-bottom:12px}
-  .dialog-heading h2{font-size:1.0625rem}
+  .dialog-heading h2{font-size:var(--type-section-title)}
   .material-event,.audit-event,.issue-item,.product-item,.workforce-row{padding:14px 15px}
   .material-event .material-event,.material-event .product-item{padding:12px 13px}
   .detail-meta{grid-template-columns:minmax(0,1fr)}
@@ -1130,7 +1146,7 @@ label>input,label>select,label>textarea{margin-top:6px}
 
 /* ---------- action hierarchy inside dense toolbars ----------
    A .quiet control is borderless by design, which works for the isolated back link
-   and the dialog close. Inside a toolbar of pills it read as stray text between
+   and the dialog close. Inside a toolbar it read as stray text between
    buttons, so a low-emphasis control keeps an edge while staying clearly lighter
    than a default button and lighter still than .primary. */
 .actions>.quiet,.order-settings>.quiet{
@@ -1164,8 +1180,8 @@ label>input,label>select,label>textarea{margin-top:6px}
 #board-view #summary .production-wip{background:var(--primary-soft);border-color:var(--primary-edge)}
 #board-view #summary .production-wip dt .icon{background:var(--surface);box-shadow:0 0 0 7px var(--surface)}
 #board-view .issues-summary{
-  width:auto;max-width:100%;min-height:44px;margin:0 0 20px;padding:10px 14px;
-  border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);
+  width:auto;max-width:100%;min-height:var(--touch-target-min);margin:0 0 20px;padding:10px 14px;
+  border:1px solid var(--control-line);border-radius:var(--control-radius);background:var(--surface);
   color:var(--ink-2);box-shadow:none;font-size:.8125rem;font-weight:500;gap:10px;
 }
 #board-view .issues-summary>.icon{color:var(--success)}
@@ -1201,7 +1217,7 @@ label>input,label>select,label>textarea{margin-top:6px}
 #board-view .table-head>.status-cell{display:block;grid-column:auto}
 #board-view .order-row{margin:0;padding:16px 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;font-size:.8125rem}
 #board-view .order-row:hover,#board-view .order-row:focus-within{background:var(--surface-subtle)}
-#board-view .order-title{font-size:.875rem;line-height:1.4;min-height:44px;border-radius:4px}
+#board-view .order-title{font-size:.875rem;line-height:1.4;min-height:var(--touch-target-min);border-radius:4px}
 #board-view .reference{font-size:.6875rem;font-weight:600;letter-spacing:.02em;margin-bottom:4px}
 #board-view .cell>.hint{display:block;font-size:.75rem;margin-top:4px}
 #board-view .progress-note{font-size:.75rem;font-variant-numeric:tabular-nums;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
@@ -1218,7 +1234,7 @@ label>input,label>select,label>textarea{margin-top:6px}
   #board-view .order-row>.status-cell{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}
 }
 @container (max-width:30rem){
-  #board-view h1{font-size:1.625rem}
+  #board-view h1{font-size:var(--type-page-title)}
   #board-view .page-heading{align-items:flex-start;gap:14px;margin-bottom:16px}
   #board-view .page-heading .actions{width:100%;margin-left:0}
   #board-view #summary{gap:10px}
@@ -1236,7 +1252,7 @@ label>input,label>select,label>textarea{margin-top:6px}
   #board-view .order-row{padding:16px 14px}
   #board-view .pagination{padding:14px;gap:10px}
   #board-view .pagination .actions{flex-wrap:wrap}
-  #board-view button{min-height:44px}
+  #board-view button{min-height:var(--touch-target-min)}
 }
 @container (max-width:19rem){
   #board-view #summary{grid-template-columns:minmax(0,1fr)}
