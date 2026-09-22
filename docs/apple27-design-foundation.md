@@ -114,3 +114,36 @@ radius/palette expectations change. Populated synthetic QA covers all 27 destina
 1440 light/dark, 1024, 768, 390, 320 and 320 at 200% text, including reduced motion and
 the closing-dialog regression. Review screenshots and logs are local temporary artifacts,
 not repository assets. Final run results are recorded after verification.
+
+
+## Post-A4 handoff note
+
+Everything above describes A1 as it was implemented and validated, and is kept as the historical
+record. Two of its statements were true of A1 and are no longer true of the product; neither is
+rewritten above, because A1 genuinely shipped that way.
+
+- *"A1 adds no `backdrop-filter`, blur, refraction, WebGL/WebGPU, or speculative transparency
+  preference query."* Still exactly what A1 added. A4 added the first and the last of those, bounded to
+  functional chrome, and is recorded in [the functional glass contract](apple27-functional-glass.md).
+  Refraction, WebGL and WebGPU remain absent and are still asserted absent.
+- *"`--chrome-tint`, `--chrome-border`, `--chrome-highlight` and `--chrome-shadow` establish optical
+  roles for A4. Tint and highlight do not activate an optical renderer in A1."* A4 activated them
+  rather than replacing them. `--chrome-border` keeps its A1 meaning as the opaque structural edge
+  shared with the notice and the dialog, so A4's translucent boundary is a separate
+  `--chrome-glass-edge` role. `--chrome-highlight` and `--chrome-shadow` are consumed exactly as
+  declared here. `--chrome-tint` is now genuinely translucent, which is why the opaque guarantee this
+  document describes lives in the `--material-*` roles and not in the optical ones.
+
+**The solid materials above remain the product's baseline, not a fallback bolted on afterwards.** Every
+unconditional declaration still resolves to an opaque `--material-*` colour; A4's translucency exists
+only inside one `@supports` group, and is withdrawn again under reduced transparency and forced colours.
+An engine without backdrop filtering renders exactly the A1 shell this document specifies.
+
+`tests/test_apple27_foundation_contract.py` was adapted accordingly: its blanket `backdrop-filter` ban
+became a containment check — one feature gate, nothing translucent outside it, and no content or dialog
+surface among the filtered selectors — and its `prefers-reduced-transparency` exclusion became a usage
+rule that the query may only withdraw the enhancement. `filter: blur`, `@import`, `@font-face`, external
+font assets and GPU renderers stay banned outright. The A1 contrast, token-ownership, alias-direction,
+geometry and elevation assertions are unchanged.
+
+A5 has not started and requires its own phase authorization.

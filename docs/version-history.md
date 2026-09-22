@@ -2825,3 +2825,56 @@ sekarang mengikat paket, runtime dan kontrak tersimpan ke satu nilai, jadi miles
 berikutnya tidak bisa menaikkan hanya salah satunya.
 
 Bukti dan kontrak: [Apple-27 navigation spring](apple27-navigation-spring.md).
+
+
+## Apple-27 A4: material glass pada chrome fungsional (v0.102)
+
+Rencana dan bukti: [Apple-27 functional glass](apple27-functional-glass.md).
+
+Chrome fungsional kini boleh menjadi material tembus pandang yang terbatas, sementara konten bisnis
+tetap opak. Yang mendapat perlakuan optik hanya `.masthead`, `.app-sidebar`, tint pelat approval yang
+sticky, dan satu lens seleksi A2/A3 — tidak ada yang lain. `.workspace-main`, card, KPI, tabel, chart,
+form, baris produksi, hasil scan, surface status, dialog, notice dan `.sidebar-cta` tidak pernah
+diberi `backdrop-filter`, dan tidak ada `filter:blur` pada konten mana pun.
+
+Arsitekturnya solid lebih dahulu. Deklarasi solid A1 adalah dasar tanpa syarat, dan seluruh lapisan
+optik berada di dalam satu `@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)))`
+yang menyebut kedua properti. Mesin tanpa dukungan backdrop filtering tidak pernah membaca blok itu,
+jadi ia merender shell A1 yang utuh — bukan versi yang rusak. Di dalam blok itu ada penarikan kembali
+untuk `prefers-reduced-transparency: reduce`, dan di luarnya ada kontrak `forced-colors: active` yang
+mematikan filter serta dekorasi, memakai warna sistem, dan mempertahankan seleksi sebagai outline
+2px `Highlight` sehingga label tetap memakai foreground sistem. Preferensi transparansi sengaja bukan
+gerbangnya, karena ketersediaannya terbatas.
+
+Token optik meneruskan empat peran A1 tanpa membuat palet kedua: `--chrome-tint` (α .82),
+`--chrome-tint-dense`, `--chrome-glass-edge`, `--chrome-blur:20px`, `--chrome-saturation:1.3`, serta
+keluarga `--lens-glass-*` dengan blur 14px, saturation 1.4, dan varian `-cta` yang lebih padat untuk
+konteks kartu approval. `--chrome-border`, `--chrome-highlight` dan `--chrome-shadow` dipakai persis
+seperti yang A1 deklarasikan. Setiap peran warna punya nilai gelap yang ditala sendiri, bukan hasil
+inversi; radius blur dan saturation sengaja tidak bergantung tema supaya pergantian tema tidak bisa
+merender ulang atau menyentak filter optik.
+
+Pelat approval yang sticky memakai tint padat dari keluarga yang sama, bukan surface opak, sehingga
+tidak muncul persegi putih yang membuat glass terlihat rusak; tidak ada lapisan `backdrop-filter`
+kedua di kolom itu. Lens approval tetap node DOM yang sama dengan hanya pertukaran tint — tanpa lens
+kedua, ghost, atau highlight duplikat — dan `.sidebar-cta` tetap gradien opaknya sendiri.
+
+**Tidak ada JavaScript yang berubah sama sekali.** `beeloft/static/app.mjs` dan `client.mjs` identik
+byte demi byte dengan baseline A3, jadi spring, konstanta morph, kelangsungan kecepatan, rebase
+konteks, pembatalan reduced-motion dan nol frame saat diam tidak tersentuh. Gerak dikurangi tetap
+menghilangkan perjalanan tanpa menghilangkan material: transparansi dan gerak adalah dua dimensi
+aksesibilitas yang berbeda.
+
+Blur dibuktikan nyata dan terbatas dengan piksel yang benar-benar dirender: sebaran luminansi pada
+pola garis 3px di belakang masthead 0.0069 saat difilter versus 0.2479 tanpa filter, dan label
+terkuyet di masthead tetap 5.20:1 di atas pola aksen selebar layar. Kontras label terpilih pada lens
+yang dirender 4.98:1 terang dan 5.51:1 gelap di kolom navigasi, 4.73:1 dan 5.73:1 di kartu approval.
+Pacing frame pada burst delapan destinasi identik dengan kontrol tanpa glass (median 16.7ms, tanpa
+jeda di atas 32ms, tanpa long task). Pergantian tema tidak menghasilkan satu frame opak pun dari 31
+frame yang diukur, dan string filter tidak berubah.
+
+Endpoint backend, schema, migrasi, formula bisnis, aritmetika uang, produksi, QC/rework, approval,
+auth/session/OIDC, idempotency, actor binding, pending recovery, guard respons basi, otorisasi role
+dan audit tidak berubah. Guard `inert` serta submit PR #87 tidak tersentuh. Versi aplikasi 0.102.0 di
+ketiga sumber yang mendeklarasikannya, dengan `docs/openapi.json` diregenerasi dan satu-satunya
+perbedaan leaf terhadap baseline adalah `info.version` 0.101.0 → 0.102.0; schema tetap 55.

@@ -61,7 +61,14 @@ class NavigationLensTest(unittest.TestCase):
         self.assertIn('.app-sidebar.nav-lens-ready .nav-item[aria-current=page]{background:transparent}', CSS)
         self.assertIn('.app-sidebar.nav-lens-ready #approvals[aria-current=page]', CSS)
         self.assertRegex(CSS, r'#approvals\[aria-current=page\]\s*\{\s*background:var\(--color-accent-soft\)')
-        self.assertNotRegex(CSS, r'backdrop-filter|filter\s*:[^;}]*blur\(')
+        # A2 required the lens to have no optical treatment at all. A4 gave it one, so what this
+        # assertion now defends is A2's actual guarantee: the solid accent-soft selection surface is
+        # unconditional, so a browser without backdrop filtering — or a user who has asked for less
+        # transparency — still sees a fully rendered selected destination. The glass itself lives
+        # inside the feature gate and is the subject of `test_apple27_functional_glass_contract.py`.
+        self.assertNotIn('backdrop-filter', block)
+        self.assertNotRegex(CSS, r'(?:^|[^-\w])(?:-webkit-)?filter\s*:[^;}]*blur\(')
+        self.assertNotRegex(CSS[:CSS.index('@supports')], r'backdrop-filter')
 
     def test_semantics_precede_decoration_and_geometry_is_separate(self):
         active = JS[JS.index('function activeNavigation('):JS.index('// Registri tujuan workspace')]

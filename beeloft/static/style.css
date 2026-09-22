@@ -54,8 +54,27 @@
   --material-canvas:var(--color-canvas);--material-content:var(--color-content);
   --material-content-subtle:var(--color-content-subtle);--material-raised:var(--color-content-raised);
   --material-functional-chrome-solid:var(--color-content);--material-floating-solid:var(--color-content-raised);
-  --chrome-tint:var(--color-content);--chrome-border:var(--color-separator);
+  /* A1 reserved four optical chrome roles; A4 activates them and adds only the parameters the
+     material actually needs. `--chrome-border` stays the opaque structural edge shared with the
+     notice and the dialog, so the translucent boundary is its own role rather than a redefinition.
+     `--chrome-tint` is now what its name always promised: the translucent foreground of functional
+     chrome. Nothing outside the @supports block below consumes it, so an engine without backdrop
+     filtering never sees a translucent surface. Every colour role here is tuned separately for
+     dark; the blur radius and saturation are deliberately theme-invariant, like the motion tokens,
+     so a theme change can never re-animate or snap the optical filter. These are Beeloft tuning
+     values, not Apple constants. */
+  --chrome-tint:#ffffffd1;--chrome-tint-dense:#ffffffeb;
+  --chrome-border:var(--color-separator);--chrome-glass-edge:#1d1d1f24;
   --chrome-highlight:#ffffffb3;--chrome-shadow:var(--shadow-raised);
+  --chrome-blur:20px;--chrome-saturation:1.3;
+  /* The selection lens is the one prominent glass object: a smaller surface that also moves, so
+     it gets a smaller blur budget and a stronger tint/edge than the chrome it sits on. The `-cta`
+     variants are the same material in a denser grade, for the one context whose backdrop is the
+     dark saturated approval gradient instead of the calm navigation plane. */
+  --lens-glass-tint:#e6f0ffd6;--lens-glass-edge:#0064d13d;
+  --lens-glass-highlight:#ffffffe0;--lens-glass-shadow:0 1px 2px #1d1d1f12,0 4px 12px #0064d114;
+  --lens-glass-blur:14px;--lens-glass-saturation:1.4;
+  --lens-glass-cta-tint:#eff5fff2;--lens-glass-cta-edge:#ffffff70;--lens-glass-cta-highlight:#ffffffe8;
   --radius-prominent:24px;--radius-content:20px;--radius-control:12px;
   --radius-compact:8px;--radius-pill:999px;
   --shadow-content:0 1px 2px #1d1d1f06;
@@ -96,7 +115,15 @@
   --color-danger:#ffaaa5;--color-danger-soft:#3c2426;--color-danger-edge:#c97673;
   --color-warning:#edc17b;--color-warning-soft:#382e20;--color-warning-edge:#b18b49;
   --color-success:#89d6a1;--color-success-soft:#20352a;--color-success-edge:#619c75;
+  /* Dark glass is tuned, not inverted. The tint is the dark content colour held slightly off full
+     opacity so the canvas reads through it as depth rather than as smoke; the edge and highlight
+     flip to light hairlines because that is how a dark material catches light, and the lens keeps a
+     genuinely blue body so it stays distinct from both the hover state and the chrome it sits on. */
+  --chrome-tint:#202023d1;--chrome-tint-dense:#202023f0;--chrome-glass-edge:#ffffff24;
   --chrome-highlight:#ffffff14;
+  --lens-glass-tint:#2a3f5ccc;--lens-glass-edge:#78b4ff52;
+  --lens-glass-highlight:#ffffff1f;--lens-glass-shadow:0 1px 2px #00000033,0 4px 12px #00000040;
+  --lens-glass-cta-tint:#22354ef0;--lens-glass-cta-edge:#ffffff4d;--lens-glass-cta-highlight:#ffffff52;
   --shadow-content:0 1px 2px #0000001f;
   --shadow-raised:0 2px 8px #00000024,0 8px 24px #0000001f;
   --shadow-floating:0 4px 12px #00000033,0 20px 48px #0000004d;
@@ -567,6 +594,122 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
   .command-values{grid-template-columns:minmax(0,1fr)}
   .command-values dd{text-align:left;padding-top:0}
   .command-values dt{padding-bottom:1px}
+}
+
+/* ---------- A4 functional glass: progressive enhancement over the solid A1 chrome ----------
+   Everything above is the baseline and stays the baseline. The solid declarations on `.masthead`,
+   `.app-sidebar`, `.sidebar-actions` and `.nav-selection-lens` are not conditional on anything and
+   are a finished, intentional rendering on their own; an engine that cannot filter a backdrop
+   simply never reads this section. That order matters: defining translucency first and patching it
+   afterwards would make the fallback the accident instead of the foundation.
+
+   This block sits after the responsive rules on purpose, so the drawer's own geometry at <=980px is
+   already settled before the material lands on top of it, and it is the *whole* runtime optical
+   system — there is no JavaScript renderer, no optical animation frame, no pointer tracking and no
+   canvas. The A3 spring moves the lens; A4 only decides what the moving object is made of.
+
+   The gate names both the standard and the -webkit property, because `or` here is a support test
+   rather than a vendor preference, and both properties are then declared on every glassed surface.
+
+   What this is not: this is a CSS approximation of a translucent optical material. It is not
+   Apple's compositor, not the Liquid Glass renderer, and there is no refraction, dispersion or
+   chromatic aberration anywhere in it. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  /* The thin translucent plane at the top of the shell. Sticky, z-index, grid, height and every
+     control inside it are untouched: only the material changes. It is the one glass surface with a
+     genuinely changing backdrop, because workspace content scrolls underneath it. */
+  .masthead{
+    background:var(--chrome-tint);border-bottom-color:var(--chrome-glass-edge);
+    -webkit-backdrop-filter:blur(var(--chrome-blur)) saturate(var(--chrome-saturation));
+    backdrop-filter:blur(var(--chrome-blur)) saturate(var(--chrome-saturation));
+    box-shadow:inset 0 1px 0 var(--chrome-highlight),var(--chrome-shadow);
+  }
+  /* One material container for the whole navigation column — not one material per row. Hover stays
+     a local, opaque-token affordance and the selected state stays the lens. The sidebar's backing
+     surface is the neutral canvas, so this reads more quietly than the masthead; that is the honest
+     result of the application's real painting hierarchy and no wallpaper is invented to hide it.
+     It carries no separation shadow: it is flush against the content column, where a shadow would
+     be noise rather than depth. The inset highlight sits just inside its own right edge, so the
+     boundary reads as material thickness instead of a drawn line. */
+  .app-sidebar{
+    background:var(--chrome-tint);border-right-color:var(--chrome-glass-edge);
+    -webkit-backdrop-filter:blur(var(--chrome-blur)) saturate(var(--chrome-saturation));
+    backdrop-filter:blur(var(--chrome-blur)) saturate(var(--chrome-saturation));
+    box-shadow:inset -1px 0 0 var(--chrome-highlight);
+  }
+  /* The sticky approval plate. Its solid `var(--surface)` was invisible against solid chrome and
+     would read as a broken opaque rectangle against glass, so it becomes the dense grade of the
+     same tint — and so does the short fade above it, which is the same declaration it always was
+     with the same colour role substituted. Deliberately *no* second backdrop-filter: one blurred
+     surface per column. The dense tint is what keeps scrolled navigation labels from showing
+     through the approval area, which is the whole reason this plate exists. */
+  .sidebar-actions{background:var(--chrome-tint-dense)}
+  .sidebar-actions::before{background:linear-gradient(to bottom,transparent,var(--chrome-tint-dense))}
+  /* The prominent glass object. Still the same single node the A2 measurement and the A3 integrator
+     own, still anchored at left/top 0, still `transition:none; animation:none` — appearance is
+     state here, never a second movement system, and nothing below is written per frame by script.
+     Its backdrop root is the sidebar, so in the navigation column the blur samples a flat tint and
+     the tint, edge and highlight are what actually carry the material; inside the approval card the
+     same blur has the CTA gradient and its dot texture to work with. That asymmetry is real and is
+     left visible rather than compensated for. */
+  .nav-selection-lens{
+    background:var(--lens-glass-tint);border-color:var(--lens-glass-edge);
+    -webkit-backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
+    backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
+    box-shadow:inset 0 1px 0 var(--lens-glass-highlight),var(--lens-glass-shadow);
+  }
+  /* Same lens, same physics, one scoped material. The approval CTA keeps its own opaque gradient
+     because it is business content inside the chrome, so the lens that travels into it needs a
+     denser grade of its material to keep the selected label at 4.5:1 over a dark saturated
+     backdrop. This is a tint swap on the existing node: no duplicate lens, no ghost, no second
+     highlight object. */
+  .sidebar-cta>.nav-selection-lens{
+    background:var(--lens-glass-cta-tint);border-color:var(--lens-glass-cta-edge);
+    box-shadow:inset 0 1px 0 var(--lens-glass-cta-highlight),var(--lens-glass-shadow);
+  }
+  @media(max-width:980px){
+    /* The drawer is a horizontal panel rather than a column, so the same 1px highlight moves to the
+       edge that now reads as its lit top. Its open/close lifecycle, display-driven visibility,
+       inert synchronisation and focus handling are untouched: the material only exists while the
+       panel is painted, exactly as before. */
+    .app-sidebar{box-shadow:inset 0 1px 0 var(--chrome-highlight)}
+  }
+  /* Transparency and motion are separate accessibility dimensions, and this is the transparency
+     one: where the preference is available it returns every surface above to the A1 solid
+     materials. It is deliberately not the only way to get solid chrome — availability is limited,
+     so the real guarantee is the unconditional baseline outside this @supports block. */
+  @media(prefers-reduced-transparency:reduce){
+    .masthead,.app-sidebar{
+      background:var(--material-functional-chrome-solid);
+      -webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;
+    }
+    .masthead{border-bottom-color:var(--chrome-border)}
+    .app-sidebar{border-right-color:var(--chrome-border)}
+    .sidebar-actions{background:var(--surface)}
+    .sidebar-actions::before{background:linear-gradient(to bottom,transparent,var(--surface))}
+    .nav-selection-lens,.sidebar-cta>.nav-selection-lens{
+      background:var(--color-accent-soft);border-color:var(--color-separator-strong);
+      -webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;
+    }
+  }
+}
+/* Forced colours outrank the material entirely. Optical filters and every decorative highlight or
+   shadow are switched off, and the surfaces fall back to system colours so the chrome keeps real
+   boundaries. The selection lens survives as an outline rather than a fill: `aria-current` still
+   owns the semantics, the label keeps the system foreground it is given instead of sitting on a
+   forced Highlight block, and the focus ring stays the topmost indicator. This sits outside the
+   @supports block so it also corrects the solid baseline's decorative edges. */
+@media(forced-colors:active){
+  .masthead,.app-sidebar,.sidebar-actions,.nav-selection-lens,.sidebar-cta>.nav-selection-lens{
+    -webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;
+  }
+  .masthead,.app-sidebar,.sidebar-actions{background:Canvas}
+  .masthead{border-bottom:1px solid CanvasText}
+  .app-sidebar{border-right:1px solid CanvasText}
+  .sidebar-actions::before{background:none}
+  .nav-selection-lens,.sidebar-cta>.nav-selection-lens{background:transparent;border:2px solid Highlight}
+  .app-sidebar.nav-lens-ready .nav-item[aria-current=page],
+  .app-sidebar.nav-lens-ready #approvals[aria-current=page]{background:transparent;color:CanvasText}
 }
 /* Reduced motion is a first-class mode rather than a fallback, so this is the explicit
    no-motion path for the whole product. Every moving pattern lives inside the
