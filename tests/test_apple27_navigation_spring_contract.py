@@ -48,7 +48,12 @@ def body(name):
 class OneLensStillOwnsSelectionTest(unittest.TestCase):
     def test_physics_did_not_add_a_second_or_ghost_lens(self):
         class Markup(HTMLParser):
-            lenses = []
+            def __init__(self):
+                super().__init__()
+                # Per instance, not per class: a shared mutable default would accumulate across
+                # parses. The class is method-local so re-running this test is already safe, but
+                # collecting into instance state keeps that true if it is ever parsed twice here.
+                self.lenses = []
 
             def handle_starttag(self, tag, attrs):
                 attrs = dict(attrs)
