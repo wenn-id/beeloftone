@@ -104,15 +104,36 @@ class CuttingTest(TestCase):
         issue=self.issue(batch,multi,'3')
         for line in multi['lines']:
             self.post('/api/movements',dict(line_id=line['id'],from_stage='planned',to_stage='cutting',quantity=line['quantity']))
-        payload=body | dict(issue_id=issue['id'],outputs=[dict(line_id=l['id'],quantity=l['quantity']) for l in multi['lines']])
-        bad=payload | dict(outputs=[payload['outputs'][0],payload['outputs'][1] | dict(quantity=11)])
+        outputs=sorted([dict(line_id=l['id'],quantity=l['quantity']) for l in multi['lines']],key=lambda row:row['line_id'])
+        payload=body | dict(issue_id=issue['id'],outputs=outputs)
+        before=self.client.get('/api/orders/'+multi['id']).json()
+        consumption_path='/api/orders/'+multi['id']+'/material-consumption'
+        bad=payload | dict(outputs=[outputs[0],outputs[1] | dict(quantity=outputs[1]['quantity']+1)])
         self.cut(multi,bad,status=409)
-        self.assertEqual(self.client.get('/api/orders/'+multi['id']).json()['totals']['sewing'],0)
-        result=self.cut(multi,payload)
+        self.assertEqual(self.client.get('/api/orders/'+multi['id']).json(),before)
+        self.assertEqual(self.client.get(consumption_path).json()[0]['unreported'],'3.000')
+        self.assertEqual(self.client.get('/api/orders/'+multi['id']+'/cutting-runs').json(),[])
+        result=self.cut(multi,payload,key='mixed-cut')
+        self.assertEqual(result,self.cut(multi,payload,key='mixed-cut'))
         self.assertEqual(result['total_output'],40)
-        self.assertEqual({x['size'] for x in result['outputs']},{'M','L'})
-        self.reverse_cut(result)
-        self.assertEqual(self.client.get('/api/orders/'+multi['id']).json()['totals']['cutting'],40)
+        self.assertEqual({x['size']:x['quantity'] for x in result['outputs']},{'M':30,'L':10})
+        usage=self.client.get(consumption_path).json()[0]
+        self.assertEqual([usage[k] for k in ('issued','used','waste','unreported')],
+                         ['3.000','2.125','0.375','0.500'])
+        current=self.client.get('/api/orders/'+multi['id']).json()
+        for line in current['lines']:
+            self.assertEqual(line['balances']['sewing'],line['quantity'])
+            self.assertEqual(sum(line['balances'].values()),line['quantity'])
+        self.assertEqual(self.client.get('/api/material-batches/'+batch['id']).json()['balance'],'1.000')
+        reversed_run=self.reverse_cut(result,key='mixed-reverse')
+        self.assertEqual(reversed_run,self.reverse_cut(result,key='mixed-reverse'))
+        self.assertEqual(self.client.get('/api/orders/'+multi['id']).json(),before)
+        usage=self.client.get(consumption_path).json()[0]
+        self.assertEqual([usage[k] for k in ('issued','used','waste','unreported')],
+                         ['3.000','0.000','0.000','3.000'])
+        self.assertEqual(self.client.get('/api/material-batches/'+batch['id']).json()['balance'],'1.000')
+        self.assertEqual(self.detail(result)['total_output'],40)
+        self.assertTrue(all(output['reversed_by'] for output in self.detail(result)['outputs']))
 
     def test_race_cannot_overconsume_or_overdraw_cutting(self):
         _,order,_,body=self.prepare()
