@@ -216,6 +216,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
   sumber transaksi, batas snapshot/posting native dan keputusan accounting yang diperlukan.
 - [Drill pemulihan dan runbook O02](docs/o02-recovery-readiness.md) untuk #47:
   restore lokal terisolasi, batas bukti dan kebutuhan deployment/RPO/RTO.
+- [Kesiapan template bahan/jasa dan tarif P01](docs/p01-template-rate-readiness.md)
+  untuk #48: batas BOM/biaya/kapasitas dan skenario tarif; menunggu M01/M02 serta keputusan D04.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
