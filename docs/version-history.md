@@ -2754,3 +2754,18 @@ produk dapat dipakai seluruh varian SKU-nya, jadi daftar placeholder akan melewa
 `SQLITE_LIMIT_VARIABLE_NUMBER` pada katalog besar dan menjawab pertanyaan margin dengan HTTP 500.
 
 Bukti: [audit approval focus hydration verification](audit-p3-approval-focus-hydration-verification.md).
+
+## Perbaikan lifecycle dialog: blokir interaksi selama keluar (v0.98)
+
+Setelah Escape atau tombol tutup diterima, dialog menjadi `inert` seketika;
+animasi keluar tetap berjalan sebelum penutupan native. Sebelumnya
+`pointer-events: none` masih membiarkan Enter mengirim formulir yang sedang
+menutup. Satu listener submit capture juga memblokir `requestSubmit()` selama
+inert. Cleanup close dan pembukaan berikutnya memulihkan interaksi, tanpa
+mengubah guard busy/unresolved, transaksi, atau fokus kembali.
+
+Regresi browser membuktikan satu POST sebelum perbaikan menjadi nol setelahnya,
+menguji keyboard/pointer/fokus, reduced motion, buka ulang, serta penyimpanan
+normal yang tetap berhasil. Versi aplikasi 0.98.0; schema tetap 55, tanpa migrasi.
+
+Bukti: [dialog closing keyboard guard verification](dialog-closing-keyboard-guard-verification.md).
