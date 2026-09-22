@@ -159,7 +159,25 @@ Kontrak request tersedia di `docs/openapi.json` dan `/openapi.json`. Skema respo
 
 Backup memakai SQLite backup API sehingga konsisten meskipun server masih berjalan. File tujuan harus baru; file lama tidak ditimpa. Backup memuat data operasional serta hash API key, jadi simpan dengan akses terbatas.
 
-Untuk mencoba pemulihan: hentikan server, lalu jalankan `python -m beeloft --db data/backups/beeloft-2026-09-10.sqlite3 serve`. Periksa saldo/riwayat melalui API dengan key yang berlaku pada saat backup. Buat salinan backup jika hendak melanjutkan penulisan tanpa mengubah arsip. Jangan menyalin hanya file SQLite aktif secara manual karena ada file WAL pendamping.
+Selalu salin arsip backup ke lokasi pemulihan baru sebelum membuka aplikasi:
+startup dapat menjalankan migrasi, dan login/pengujian dapat menulis data.
+Contoh PowerShell berikut membuka salinan pada port terpisah, tanpa menimpa arsip
+atau database sumber:
+
+```powershell
+$recoveryDirectory = Join-Path 'data/recovery' ([guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $recoveryDirectory -ErrorAction Stop | Out-Null
+$recoveryDatabase = Join-Path $recoveryDirectory 'restored.sqlite3'
+Copy-Item -LiteralPath 'data/backups/beeloft-2026-09-10.sqlite3' -Destination $recoveryDatabase -ErrorAction Stop
+.\.venv\Scripts\python.exe -m beeloft --db $recoveryDatabase serve --port 8001
+```
+
+Gunakan versi aplikasi asal backup lebih dahulu dan akses terbatas. Periksa
+integritas/FK, saldo/riwayat dan retry dengan key yang berlaku pada saat backup.
+Jangan menyalin hanya file SQLite aktif secara manual karena ada file WAL
+pendamping. Drill ini bukan cutover production; database hasil restore dapat
+memuat kembali akun/session yang sudah dicabut setelah backup. Ikuti
+[runbook O02](o02-recovery-readiness.md) sebelum membuka akses pengguna.
 
 ## Pengujian
 

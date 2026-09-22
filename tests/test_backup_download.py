@@ -1,6 +1,9 @@
 import sqlite3
+import shutil
+from hashlib import sha256
 from contextlib import closing
 from pathlib import Path
+from time import perf_counter
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -47,6 +50,48 @@ class BackupDownloadTest(TestCase):
         self.assertEqual(self.client.get('/api/backup',headers={'X-API-Key':'bad'}).status_code,401)
         self.app.state.store.disable_user(self.admin['id'])
         self.assertEqual(self.client.get('/api/backup').status_code,401)
+
+    def test_isolated_restore_keeps_receipt_and_archive_unchanged(self):
+        order = self.order()
+        body = {'line_id':order['lines'][0]['id'], 'from_stage':'planned',
+                'to_stage':'cutting', 'quantity':20, 'reason':'DEMO recovery'}
+        # Model a committed request whose response never reached the caller.
+        committed = self.post('/api/movements', body, key='recovery-committed')
+        archive = Path(self.folder.name)/'archive.sqlite3'
+        self.app.state.store.backup(archive)
+        archive_hash = sha256(archive.read_bytes()).digest()
+        expected = self.detail(order)
+        restored_path = Path(self.folder.name)/'isolated'/'restored.sqlite3'
+        started = perf_counter()
+        restored_path.parent.mkdir()
+        shutil.copyfile(archive, restored_path)
+        with TestClient(create_app(restored_path)) as restored:
+            restored.headers['X-API-Key'] = self.admin['api_key']
+            self.assertEqual(restored.get('/health').json(), {'status':'ok'})
+            self.assertEqual(restored.get('/api/orders/'+order['id']).json(), expected)
+            with closing(sqlite3.connect(restored_path)) as db:
+                self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+                self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
+                before = {table:db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0]
+                          for table in ('movements', 'requests', 'audit_events')}
+            replay = restored.post('/api/movements', json=body,
+                                   headers={'Idempotency-Key':'recovery-committed'})
+            self.assertEqual(replay.status_code, 201, replay.text)
+            self.assertEqual(replay.json(), committed)
+            with closing(sqlite3.connect(restored_path)) as db:
+                for table, count in before.items():
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0], count)
+            self.assertEqual(restored.get('/api/orders/'+order['id']).json(), expected)
+            elapsed = perf_counter()-started
+            new = restored.post('/api/movements', json=body | {'quantity':5},
+                                headers={'Idempotency-Key':'recovery-new'})
+            self.assertEqual(new.status_code, 201, new.text)
+            self.assertEqual(restored.get('/api/orders/'+order['id']).json()
+                             ['lines'][0]['balances']['cutting'], 25)
+        self.assertEqual(self.detail(order), expected)
+        self.assertEqual(sha256(archive.read_bytes()).digest(), archive_hash)
+        print(f'Isolated synthetic restore + validation + replay: {elapsed:.3f}s '
+              '(in-process app reopen; no production RTO target)')
 
     def test_storage_failure_does_not_return_partial_backup(self):
         with patch.object(self.app.state.store,'backup',side_effect=OSError('Disk unavailable')):
