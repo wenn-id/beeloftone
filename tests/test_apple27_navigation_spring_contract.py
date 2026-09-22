@@ -275,10 +275,16 @@ class RenderOnlyDeformationTest(unittest.TestCase):
 
     def test_position_moves_with_a_compositor_friendly_transform(self):
         render = body('renderNavigationLensMotion')
-        self.assertIn('translate3d(', render)
         self.assertRegex(render, r'width:\$\{width\}px;height:\$\{height\}px')
-        # Compositor promotion exists only while the object is actually moving.
-        self.assertIn("running ? ';will-change:transform' : ''", render)
+        # Travel asks the compositor for help twice over, and both requests are withdrawn on
+        # settling: `will-change` is dropped *and* the 3D transform becomes a 2D one, because a
+        # lingering 3D transform is itself enough to hold a separate layer for ever.
+        travel, resting = re.search(r'running \? `([^`]*)`\s*:\s*`([^`]*)`', render).groups()
+        self.assertIn('translate3d(', travel)
+        self.assertIn('will-change:transform', travel)
+        self.assertIn('translate(', resting)
+        self.assertNotIn('translate3d', resting)
+        self.assertNotIn('will-change', resting)
         self.assertNotIn('will-change', CSS)
         self.assertNotRegex(LENS, r'contain\s*:|backface-visibility|translateZ\(\s*[1-9]')
 

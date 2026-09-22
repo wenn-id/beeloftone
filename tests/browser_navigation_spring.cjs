@@ -109,7 +109,14 @@ module.exports = async ({page, login, admin, viewer}) => {
   assert.ok(between.length >= 3, `intermediate positions exist (${between.length})`);
   assert.ok(spread(normal.samples) >= 8, `the lens is rendered at many distinct positions (${spread(normal.samples)})`);
   assert.equal(clean(normal.samples), true, 'no NaN, Infinity or non-positive dimension is ever written');
+  // Both compositor requests are live while travelling and both are withdrawn on settling, so no
+  // layer promotion outlives the motion that needed it.
+  assert.ok(normal.samples.some(sample => sample.style.includes('translate3d')
+    && sample.style.includes('will-change')), 'travel asks the compositor for a layer');
   await arrived('board-home');
+  const resting = await page.evaluate(() => window.springLens.getAttribute('style'));
+  assert.ok(!resting.includes('translate3d') && !resting.includes('will-change') && resting.includes('translate('),
+    `a settled lens keeps neither a 3D transform nor a compositor hint (${resting})`);
   assert.deepEqual(await rect(), await rect('board-home'), 'final geometry is the target geometry');
 
   // Deformation is measured between two destinations of identical size, so every pixel of excess

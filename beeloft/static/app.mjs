@@ -191,8 +191,13 @@ function renderNavigationLensMotion() {
     Math.abs(vertical ? vy : vx) / LENS_MORPH_SPEED * LENS_MORPH_MAX);
   const width = navigationLensMotion.width * (vertical ? 1 - stretch / 2 : 1 + stretch);
   const height = navigationLensMotion.height * (vertical ? 1 + stretch : 1 - stretch / 2);
-  navigationLens.style.cssText = `transform:translate3d(${cx - width / 2}px,${cy - height / 2}px,0);`
-    + `width:${width}px;height:${height}px` + (running ? ';will-change:transform' : '');
+  // Bergerak memakai translate3d dan will-change: keduanya meminta compositor menangani
+  // perjalanannya. Saat diam keduanya dilepas dan posisinya ditulis sebagai translate 2D, karena
+  // transform 3D sendiri sudah cukup membuat mesin menahan layer terpisah — melepas will-change
+  // tetapi meninggalkan translate3d berarti promosi itu tidak pernah benar-benar dilepas.
+  const travel = running ? `translate3d(${cx - width / 2}px,${cy - height / 2}px,0);will-change:transform`
+    : `translate(${cx - width / 2}px,${cy - height / 2}px)`;
+  navigationLens.style.cssText = `transform:${travel};width:${width}px;height:${height}px`;
   navigationLens.hidden = false;
   navigationSurface.classList.add('nav-lens-ready');
   navigationLensMotion.initialized = true;

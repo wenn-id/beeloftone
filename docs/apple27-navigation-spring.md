@@ -3,8 +3,10 @@
 Baseline: `52546b924d44697cf97278c695f812a67a91588d`, the fetched `origin/main` at the time this
 phase started, which merged A2 / [PR #90](https://github.com/wenn-id/beeloftone/pull/90). Main
 had not advanced past the supplied SHA. Branch: `ui/apple27-a3-navigation-spring`. Application
-**0.101.0**. Schema **55**, no migration. The repository advances the minor version for a visible
-milestone; 0.101 does not imply a release or a semantic-version promise.
+**0.101.0** in all three places that declare it — package, runtime and stored OpenAPI contract —
+which A3 also repairs; see *Version-metadata repair carried by A3* below. Schema **55**, no
+migration. The repository advances the minor version for a visible milestone; 0.101 does not imply
+a release or a semantic-version promise.
 
 A3 gives the single A2 lens physics. It adds no Liquid Glass, no `backdrop-filter`, no blur,
 refraction or GPU renderer, no bottom navigation, no new navigation structure, no page-transition
@@ -161,14 +163,29 @@ other's frame.
 ## Rendering and deformation
 
 The lens is anchored at `left:0; top:0` by CSS, so the transform the controller writes *is* its
-local coordinate. Position travels with `translate3d`, which is compositor-friendly; width and
-height are written as lengths so the 1px border and the A1 control radius stay crisp instead of
-being scaled. One `cssText` write per frame carries all of it, which also keeps the sidebar's
-existing attribute MutationObserver to a single ignored record per frame.
+local coordinate. Position moves with a transform rather than with `left`/`top`; width and height
+are written as lengths so the 1px border and the A1 control radius stay crisp instead of being
+scaled. One `cssText` write per frame carries all of it, which also keeps the sidebar's existing
+attribute MutationObserver to a single ignored record per frame.
 
-`will-change: transform` is applied only while the spring is running and released on settle. It
-exists nowhere in the stylesheet, so no compositor layer is promoted permanently. No containment
-or layer hack was added.
+Compositor promotion is requested only for the duration of the movement, and both halves of that
+request are withdrawn when the lens arrives:
+
+| State | Transform written | `will-change` |
+| --- | --- | --- |
+| Travelling | `translate3d(x, y, 0)` | `transform` |
+| Settled | `translate(x, y)` | absent |
+
+Dropping `will-change` alone would not have been enough. A 3D transform is itself a promotion
+heuristic in current engines, so a lens left at `translate3d(...)` at rest could hold its own
+layer indefinitely — which is exactly what releasing the hint was meant to prevent. Switching the
+resting position to a 2D `translate` closes that gap. This is a deliberately conservative choice
+based on documented engine behaviour, not on a measured layer count: an attempt to count layers
+through the CDP `LayerTree` domain produced no snapshot in this headless configuration, so no
+layer measurement is claimed here. What *is* asserted, in the browser module, is the observable
+behaviour: a travelling lens carries both the 3D transform and the hint, and a settled lens
+carries neither. `will-change` appears nowhere in the stylesheet, and no containment or layer hack
+was added.
 
 Deformation is derived from velocity, after physics, at render time only:
 
@@ -288,11 +305,64 @@ and rework, approval semantics, auth/session/OIDC, idempotency, actor binding, p
 stale-response protection, role authorization and audit behaviour are all untouched. Motion is
 presentation only. Schema remains `PRAGMA user_version = 55`.
 
-A pre-existing version divergence was observed and deliberately left alone: `pyproject.toml` was
-0.100.0 after A2 while `beeloft/api.py` and `docs/openapi.json` are still 0.99.0, because #90
-bumped only the package version. A3 bumps `pyproject.toml` to 0.101.0 in the same way and does
-not touch the API version string or the stored contract, since that would change API surface for
-a presentation-only phase. The programme owner should decide whether to realign them separately.
+`beeloft/api.py` is touched in exactly one place, and not for motion: the version string the
+application reports about itself, as part of the metadata repair recorded in the next section. No
+route, handler, dependency, guard, model or response changed.
+
+## Version-metadata repair carried by A3
+
+A3 also repairs a metadata drift that A2 introduced, as a separate bookkeeping change with no
+behavioural content.
+
+The repository announces its version in three places, and the convention through 0.98.0 was that
+all three move together. A2 ([PR #90](https://github.com/wenn-id/beeloftone/pull/90)) bumped only
+the first:
+
+| Source | After A2 (#90) | After A3 |
+| --- | --- | --- |
+| `pyproject.toml` `project.version` | 0.100.0 | **0.101.0** |
+| `beeloft/api.py` `FastAPI(version=…)` | 0.99.0 | **0.101.0** |
+| `docs/openapi.json` `info.version` | 0.99.0 | **0.101.0** |
+
+So the built package called itself 0.100.0 while the running API and its published contract both
+still called themselves 0.99.0 — a full minor version behind, and two versions behind by the time
+A3 started. No test failed, because `test_openapi_contract.py` only bound the stored document to
+the runtime; both were equally stale, so they agreed with each other.
+
+`beeloft/api.py` now declares 0.101.0 and `docs/openapi.json` was regenerated with
+`python scripts/regenerate_openapi.py`, which is the documented release step for it.
+
+**The regenerated contract differs from the contract on main in exactly one leaf value.** This was
+verified by walking both documents and collecting every leaf-level difference, not by reading the
+textual diff:
+
+```text
+total leaf differences: 1
+  $.info.version: '0.99.0' -> '0.101.0'
+```
+
+Checked independently by category, all identical: 221 paths, 253 operations (every method, path,
+`operationId`, parameter, request body and response), 85 component schemas, `securitySchemes`,
+top-level `security`, `tags`, `servers`, the OpenAPI version itself (3.1.0), the top-level key set,
+and every `info` field other than `version`. No endpoint, schema, operation, security or tag
+changed, and no request or response behaviour changed: the only thing A3 altered here is the
+version string the application reports about itself.
+
+`tests/test_openapi_contract.py` gains `VersionMetadataConsistencyTest`, which binds all three
+sources to one value and additionally requires each to be a full `major.minor.patch` triple so
+`0.101` and `0.101.0` cannot drift apart as strings. Five deliberate scenarios were each confirmed
+to fail it, including A2's exact one:
+
+| Scenario | Result |
+| --- | --- |
+| Package version bumped alone — A2's drift | FAIL |
+| Runtime version bumped alone | FAIL |
+| Stored contract bumped alone | FAIL |
+| Package and runtime bumped, regeneration forgotten | FAIL |
+| A two-component version such as `0.101` | FAIL |
+
+The pre-existing guard that the stored document's paths match the runtime is unchanged and still
+passes. A future visible milestone can therefore no longer bump one of the three alone.
 
 ## Verification
 
@@ -418,6 +488,35 @@ Recorded in the final report for this branch together with the environment used.
 from a disposable environment outside the repository; the browser suite uses the existing runner's
 temporary demo database and loopback server. All runtime records are disposable synthetic
 fixtures. These are local results, not CI, Safari or Firefox verification.
+
+### Pre-existing flake observed while validating, not introduced here
+
+Two full browser runs on this branch failed inside `browser_dialog_closing.cjs` — PR #87's
+regression module, which A3 does not modify and which runs *before* both lens modules. The
+assertions that tripped were `Escape/Space leaves no focus in the inert subtree` and
+`focus() cannot re-enter any closing control`, both inside the same loop.
+
+The mechanism is a race between the harness and the animated exit, not a product defect. That loop
+presses Escape, confirms the dialog is mid-exit and inert, then sends a second input that must be
+refused. The exit lasts `--motion-fast` (120ms) with a 180ms fallback. If the intervening CDP
+round-trip takes longer than that window, the exit has already completed and the native close has
+restored focus to the `#new-order` trigger, so Space activates that trigger and legitimately opens
+a fresh dialog — focus is then inside a dialog that is no longer closing, and the assertion fails
+even though the guard behaved correctly.
+
+It was attributed by measurement rather than assumption. Running that module alone, interleaved
+between this branch and a detached worktree at the unmodified baseline
+`52546b924d44697cf97278c695f812a67a91588d` under the same load, produced **4 failures in 6 runs on
+each side**, and the baseline reproduced the identical `Escape/Space` assertion. Under light load
+both sides pass. No lens motion is running at that point in the module — the only navigation
+happens once at its start, the loop itself never navigates, and every iteration waits 350ms before
+acting — so the spring adds no frame work to that window.
+
+A3 therefore leaves the module untouched: repairing another phase's test fragility is outside this
+scope and was not authorised. It is recommended as a small separate change, since it will redden CI
+intermittently on any loaded runner. The suggested fix is to assert against the state captured at
+the moment the input is delivered, or to hold the exit open for the duration of the probe, rather
+than to lengthen a timeout.
 
 ## A3 / A4 boundary
 

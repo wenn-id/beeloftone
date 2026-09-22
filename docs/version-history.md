@@ -2811,7 +2811,17 @@ berlangsung. Saat diam tidak ada satu pun frame yang berjalan.
 Navigasi semantik, aria-current, fokus, penutupan drawer, request dan state transaksi
 tetap seketika dan tidak pernah menunggu gerak. Token gerak M1–M6, playEntryMotion,
 dialog, notice, refresh, scanner dan tema tidak diubah. Tidak ada glass, backdrop-filter,
-blur, refraksi, renderer GPU, navigasi bawah, perubahan API/bisnis atau migrasi.
+blur, refraksi, renderer GPU, navigasi bawah, perubahan endpoint/skema/bisnis atau migrasi.
 Versi aplikasi 0.101.0; schema tetap 55.
+
+Rilis ini juga memperbaiki drift metadata versi yang ditinggalkan A2: PR #90 menaikkan
+`pyproject.toml` ke 0.100.0 sementara `beeloft/api.py` dan `docs/openapi.json` tetap di
+0.99.0, dan tidak ada test yang gagal karena kontrak tersimpan hanya diikat ke runtime
+yang sama-sama tertinggal. Ketiganya sekarang 0.101.0, `docs/openapi.json` diregenerasi
+dengan `python scripts/regenerate_openapi.py`, dan satu-satunya perbedaan kontrak
+terhadap main adalah `info.version` 0.99.0 → 0.101.0: 221 path, 253 operasi, 85 skema
+komponen, securitySchemes, security, tags dan servers identik. `test_openapi_contract.py`
+sekarang mengikat paket, runtime dan kontrak tersimpan ke satu nilai, jadi milestone
+berikutnya tidak bisa menaikkan hanya salah satunya.
 
 Bukti dan kontrak: [Apple-27 navigation spring](apple27-navigation-spring.md).
