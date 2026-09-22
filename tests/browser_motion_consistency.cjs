@@ -153,21 +153,23 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
           const value = getComputedStyle(probe).color; probe.remove(); return value;
         };
         const selected = getComputedStyle(document.getElementById(nav));
+        const lens = document.getElementById('nav-selection-lens');
+        const selectedGround = document.getElementById('app-sidebar').classList.contains('nav-lens-ready')
+          && !lens.hidden ? getComputedStyle(lens).backgroundColor : selected.backgroundColor;
         const luminance = rgb => rgb.match(/[\d.]+/g).slice(0, 3).map(Number)
           .map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
           .reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
-        const [bright, dim] = [luminance(selected.color), luminance(selected.backgroundColor)].sort((a, b) => b - a);
+        const [bright, dim] = [luminance(selected.color), luminance(selectedGround)].sort((a, b) => b - a);
         return {
           contrast: (bright + .05) / (dim + .05),
           selected: selected.color, expectedLabel: color('--color-accent'),
-          selectedGround: selected.backgroundColor, expectedGround: color('--color-accent-soft'),
+          selectedGround, expectedGround: color('--color-accent-soft'),
           chrome: getComputedStyle(document.querySelector('.masthead')).backgroundColor,
           expectedChrome: color('--material-functional-chrome-solid'),
           canvas: getComputedStyle(document.querySelector('.workspace-main')).backgroundColor,
         };
       }, destination.nav);
-      // The existing approval CTA is a primary action, not a nav-item row; its composition stays in A1.
-      if (destination.nav !== 'approvals') {
+      if (destination.nav !== 'approvals' || await page.locator('#app-sidebar.nav-lens-ready').count()) {
         assert.equal(material.selected, material.expectedLabel, `${destination.label}: ${theme} selected label`);
         assert.equal(material.selectedGround, material.expectedGround, `${destination.label}: ${theme} selected ground`);
       }
@@ -204,7 +206,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
     }));
     assert.deepEqual(leftovers.sections, [], `${destination.label} leaves no motion class on a section`);
     assert.deepEqual(leftovers.lists, [], `${destination.label} leaves no motion or busy state on a list`);
-    assert.equal(leftovers.sidebar.split(' ').every(name => ['app-sidebar', 'nav-open'].includes(name)), true,
+    assert.equal(leftovers.sidebar.split(' ').every(name => ['app-sidebar', 'nav-open', 'nav-lens-ready'].includes(name)), true,
       `${destination.label} leaves no motion class on the sidebar`);
   }
   await page.setViewportSize({width: 1440, height: 1000});

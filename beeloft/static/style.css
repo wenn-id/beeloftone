@@ -182,7 +182,12 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
   display:flex;flex-direction:column;gap:1rem;
   width:100%;height:calc(100dvh - var(--header-h));padding:14px 16px 16px;
   overflow:auto;border-right:1px solid var(--chrome-border);background:var(--material-functional-chrome-solid);
-  scrollbar-width:thin;
+  scrollbar-width:thin;isolation:isolate;
+}
+.nav-selection-lens{
+  position:absolute;z-index:0;pointer-events:none;
+  background:var(--color-accent-soft);border:1px solid var(--color-separator-strong);
+  border-radius:var(--radius-control);transition:none;animation:none;
 }
 .sidebar-nav{display:flex;flex-direction:column;gap:0}
 .nav-group{display:flex;flex-direction:column;gap:5px;padding:6px 0}
@@ -237,6 +242,16 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .sidebar-cta-button{position:relative;width:100%;margin-top:13px;background:#2f5efb;border-color:#2f5efb;box-shadow:0 2px 10px #0b0d1733}
 .sidebar-cta-button:hover{background:#4a74ff;border-color:#4a74ff;color:#fff}
 :root[data-theme=dark] .sidebar-cta-button{color:#fff}
+#approvals[aria-current=page]{
+  background:var(--color-accent-soft);border-color:var(--color-separator-strong);
+  color:var(--color-accent);font-weight:650;
+}
+.app-sidebar.nav-lens-ready .nav-item[aria-current=page]{background:transparent}
+.app-sidebar.nav-lens-ready .nav-item[aria-current=page]::before{content:none}
+.app-sidebar.nav-lens-ready #approvals[aria-current=page]{
+  background:transparent;border-color:transparent;box-shadow:none;z-index:2;
+}
+.sidebar-cta>.nav-selection-lens{z-index:1}
 
 /* ---------- content area ---------- */
 .workspace-main{min-width:0;width:100%;padding:24px var(--pad-x) 40px;background:var(--canvas)}
@@ -495,7 +510,7 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
   .menu-toggle:not([hidden]){display:inline-flex;min-height:38px;padding:.3rem .75rem}
   .masthead-tools{display:none}
   .app-shell{grid-template-columns:minmax(0,1fr)}
-  .app-sidebar{position:static;display:none;height:auto;padding:14px 16px 18px;border-right:0;border-bottom:1px solid var(--line)}
+  .app-sidebar{position:relative;top:auto;display:none;height:auto;padding:14px 16px 18px;border-right:0;border-bottom:1px solid var(--line)}
   .nav-open .app-sidebar{display:flex}
   .nav-item{min-height:var(--touch-target-min)}
   .nav-summary{min-height:var(--touch-target-min)}

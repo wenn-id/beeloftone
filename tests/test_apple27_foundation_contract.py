@@ -96,11 +96,11 @@ class Apple27FoundationTest(unittest.TestCase):
                 for role in ('focus', 'control-border'):
                     self.assertGreaterEqual(contrast(theme['--color-' + role], theme['--color-' + surface]), 3)
 
-    def test_no_glass_lens_spring_or_external_font_assets(self):
+    def test_no_glass_spring_or_external_font_assets(self):
         source = '\n'.join(p.read_text(encoding='utf-8') for p in STATIC.iterdir()
                            if p.suffix in ('.css', '.mjs', '.html'))
         self.assertNotRegex(CSS, r'backdrop-filter|filter\s*:[^;}]*blur\(|@import|@font-face')
-        self.assertNotRegex(source, r'nav-selection-lens|springController|SpringController|navigator\.gpu|getContext\([\"\x27]webgl')
+        self.assertNotRegex(source, r'springController|SpringController|navigator\.gpu|getContext\([\"\x27]webgl')
         self.assertNotRegex(source, r'fonts\.googleapis|fonts\.gstatic|use\.typekit|prefers-reduced-transparency')
         self.assertEqual([p.name for p in STATIC.rglob('*') if p.suffix.lower() in
                           ('.woff', '.woff2', '.otf', '.ttf', '.png', '.jpg', '.webp', '.svg')], [])
