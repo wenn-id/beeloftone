@@ -156,7 +156,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 }
 .masthead-brand{display:flex;align-items:center;gap:.5rem;padding:0 20px 0 24px;border-right:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;text-decoration:none;color:var(--ink)}
-.brand-mark{display:grid;place-items:center;width:26px;height:26px;flex:0 0 auto;border-radius:10px;background:var(--primary);color:#fff}
+.brand-mark{display:grid;place-items:center;width:26px;height:26px;flex:0 0 auto;border-radius:10px;background:var(--primary);color:var(--color-on-accent)}
 .brand-mark .icon{width:16px;height:16px;stroke-width:2}
 .brand-word{font:700 1.3125rem/1 var(--font-ui);letter-spacing:-.04em;white-space:nowrap}
 .brand-dot{color:var(--primary)}
@@ -1066,7 +1066,7 @@ label>input,label>select,label>textarea{margin-top:6px}
   gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);
 }
 .check-field{
-  gap:.7rem;min-height:40px;padding:.5rem .8rem;
+  gap:.7rem;min-height:var(--touch-target-min);padding:.5rem .8rem;
   border:1px solid var(--control-line);border-radius:var(--control-radius);background:var(--surface);
 }
 .line-input,.bom-line{
