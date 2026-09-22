@@ -2769,3 +2769,17 @@ menguji keyboard/pointer/fokus, reduced motion, buka ulang, serta penyimpanan
 normal yang tetap berhasil. Versi aplikasi 0.98.0; schema tetap 55, tanpa migrasi.
 
 Bukti: [dialog closing keyboard guard verification](dialog-closing-keyboard-guard-verification.md).
+
+## Apple-27 A1: fondasi visual dan material (v0.99)
+
+DESIGN.md menetapkan program Apple-27 sebagai arah aktif, dengan rekonstruksi Shopeers
+sebagai konteks historis. Satu fondasi semantik mengatur font sistem native, palet
+light/dark, material solid, radius, elevasi, dan geometri kontrol bersama. Alias lama
+tetap mengarah ke sumber yang sama. Dialog memakai radius prominent, tombol memakai
+radius kontrol, dan fokus/tepi formulir mengikuti tema.
+
+Komposisi workspace, SVG, JavaScript, gerak M1–M6 dan guard dialog #87 tetap utuh.
+Tidak ada glass, lens, spring, perubahan API/bisnis atau migrasi database.
+Versi aplikasi 0.99.0; schema tetap 55.
+
+Bukti dan kontrak: [Apple-27 design foundation](apple27-design-foundation.md).

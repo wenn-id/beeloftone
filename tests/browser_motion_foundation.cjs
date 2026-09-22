@@ -151,7 +151,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
   });
   assert.notEqual(focus.outlineStyle, 'none', 'keyboard focus shows a ring');
   assert.ok(focus.outlineWidth > 0, 'the focus ring has real weight');
-  assert.equal(focus.radius, 999, 'a focused pill keeps its own radius instead of snapping to the nav radius');
+  assert.equal(focus.radius, 12, 'focus preserves the A1 control radius');
   assert.ok(!focus.transitionProperty.split(',').map(value => value.trim()).includes('outline'),
     'focus visibility never depends on a transition');
 

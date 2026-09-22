@@ -1,8 +1,32 @@
 # Beeloft One / operations workspace
 
-Direction source: the Shopeers AI-powered B2B eCommerce analytics dashboard by Dipa Inhouse —
+## Current design authority: Apple-27 Native-Parity Program
+
+The [Apple-27 A0 audit](docs/apple27-native-parity-audit.md) is the architecture
+authority. Beeloft One should feel like a native current-generation Apple application
+adapted to an operational workspace, preserving Beeloft's business data, Indonesian
+language, workflows, permissions and identity. This is a perceptual direction, not a
+claim that browser rendering reproduces Apple's private renderer or constants.
+
+A1 establishes foundation tokens, solid material roles and existing shared primitives.
+[The A1 foundation contract](docs/apple27-design-foundation.md) records typography,
+light/dark colors, geometry, elevation, compatibility aliases and validation.
+Workspace composition remains the existing baseline. The business, icon ownership,
+keyboard, text zoom and reduced-motion requirements below remain applicable.
+
+Solid rendering is the default and permanent fallback. A2 owns the navigation lens,
+A3 owns spring motion, and A4 may progressively enhance functional chrome. A1 adds
+none of those effects and assumes no browser transparency-preference query.
+
+## Historical Shopeers reconstruction
+
+The following records the previous visual baseline, **not the final visual specification**.
+Its measured colors, typography and geometry are historical; A1 semantic tokens now
+govern shared primitives. Layout dimensions remain in use pending later phase approval.
+
+Previous direction source: the Shopeers AI-powered B2B eCommerce analytics dashboard by Dipa Inhouse —
 <https://dribbble.com/shots/26628350-Shopeers-AI-Powered-B2B-eCommerce-Analytics-Dashboard>.
-That shot is treated as the visual specification, not as inspiration. Antislop applies during implementation.
+That shot was the visual specification for the reconstruction. Antislop applies during implementation.
 
 The artwork itself is not redistributed in this repository. To compare against it locally, save the shot from
 the link above to `docs/reference/shopeers-dashboard-reference.png`, which is git-ignored.
@@ -19,10 +43,9 @@ ENERGY 2 / RHYTHM 2 / MOTION 1.
   16px, because softer corners were requested after review. Surfaces nested inside cards were raised to match
   (breakdown panel 14px, severity and rank tiles 11-12px, sidebar call to action 18px, small marks 10px) so the
   concentric curves stay consistent. Nothing else about the shape system changed.
-- The 20px primary surface radius is settled: it is the intended final direction, not a step toward anything.
-  Sidebar navigation rows (10px), chips and badges (8px), and inputs (12px) deliberately do **not** track it.
-  Their smaller radii are correct at their own scale, so the card-to-navigation ratio is intentionally not
-  preserved. Do not "harmonise" these three upward.
+- The previous settled radius decision was 20px for primary surfaces, with navigation rows at 10px,
+  chips at 8px and inputs at 12px. The claim that these were final is superseded by A1's semantic
+  hierarchy: prominent 24px, content 20px, controls/navigation 12px, compact badges 8px, pill 999px.
 - Frame: a 256px white sidebar and a 72px white header, separated from a `#f4f5f8` content canvas by 1px
   `#ebecef` rules. The header's brand cell occupies the sidebar column so the vertical rule runs unbroken from
   the top of the viewport, exactly as in the reference.
