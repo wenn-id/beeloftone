@@ -212,6 +212,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
   untuk #44: pemetaan gap identitas dan migrasi; implementasi menunggu penerimaan F02.
 - [Kesiapan izin per fungsi O01](docs/o01-permission-readiness.md) untuk #45:
   akses baseline, jalur data sensitif dan kebutuhan keputusan F02/M02/D17.
+- [Kesiapan ledger keuangan A01](docs/a01-ledger-readiness.md) untuk #46:
+  sumber transaksi, batas snapshot/posting native dan keputusan accounting yang diperlukan.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
