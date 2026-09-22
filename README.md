@@ -210,6 +210,8 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
   untuk #43: gap terhadap HEAD dan bukti baseline; implementasi menunggu penerimaan F02.
 - [Kesiapan unit usaha, lokasi, pihak dan employee M02](docs/m02-master-readiness.md)
   untuk #44: pemetaan gap identitas dan migrasi; implementasi menunggu penerimaan F02.
+- [Kesiapan izin per fungsi O01](docs/o01-permission-readiness.md) untuk #45:
+  akses baseline, jalur data sensitif dan kebutuhan keputusan F02/M02/D17.
 - [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
 - [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
   riwayat migrasi schema.
