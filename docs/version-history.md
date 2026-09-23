@@ -2859,6 +2859,15 @@ tidak muncul persegi putih yang membuat glass terlihat rusak; tidak ada lapisan 
 kedua di kolom itu. Lens approval tetap node DOM yang sama dengan hanya pertukaran tint — tanpa lens
 kedua, ghost, atau highlight duplikat — dan `.sidebar-cta` tetap gradien opaknya sendiri.
 
+Lens tembus pandang di kedua konteks, tetapi hanya *difilter* di dalam kartu approval. Di kolom
+navigasi lens berada di dalam sidebar yang sudah difilter, dan sidebar itu adalah backdrop root:
+filter di sana tidak menghasilkan blur yang terlihat sama sekali, tetapi memaksa seluruh kolom
+256px disampel ulang setiap frame lens bergerak. Biayanya terukur — satu frame terjatuh di awal
+setiap perjalanan, cukup untuk membuat pengukuran kelangsungan kecepatan A3 runtuh dari ~15px
+menjadi di bawah 1px, sehingga kontrak browser A3 sendiri yang menangkapnya. Setelah filter lens
+dibatasi ke konteks approval, empat kali jalan berturut-turut lulus tanpa kehilangan apa pun secara
+visual: satu permukaan blur per kolom, bukan blur bersarang.
+
 **Tidak ada JavaScript yang berubah sama sekali.** `beeloft/static/app.mjs` dan `client.mjs` identik
 byte demi byte dengan baseline A3, jadi spring, konstanta morph, kelangsungan kecepatan, rebase
 konteks, pembatalan reduced-motion dan nol frame saat diam tidak tersentuh. Gerak dikurangi tetap
@@ -2867,8 +2876,9 @@ aksesibilitas yang berbeda.
 
 Blur dibuktikan nyata dan terbatas dengan piksel yang benar-benar dirender: sebaran luminansi pada
 pola garis 3px di belakang masthead 0.0069 saat difilter versus 0.2479 tanpa filter, dan label
-terkuyet di masthead tetap 5.20:1 di atas pola aksen selebar layar. Kontras label terpilih pada lens
-yang dirender 4.98:1 terang dan 5.51:1 gelap di kolom navigasi, 4.73:1 dan 5.73:1 di kartu approval.
+paling redup di masthead tetap 5.20:1 di atas pola aksen selebar layar. Kontras label terpilih
+pada lens yang dirender 4.98:1 terang dan 5.51:1 gelap di kolom navigasi, 4.73:1 dan 5.73:1 di
+kartu approval.
 Pacing frame pada burst delapan destinasi identik dengan kontrol tanpa glass (median 16.7ms, tanpa
 jeda di atas 32ms, tanpa long task). Pergantian tema tidak menghasilkan satu frame opak pun dari 31
 frame yang diukur, dan string filter tidak berubah.

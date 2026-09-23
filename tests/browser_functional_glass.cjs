@@ -151,10 +151,17 @@ module.exports = async ({page, login, admin, work}) => {
   assert.ok(!/backdrop-filter/.test(baseline['.nav-selection-lens'].unguarded.join(' ')),
     'the lens has no unconditional backdrop filter');
   if (supported) {
-    for (const selector of ['.masthead', '.app-sidebar', '.nav-selection-lens']) {
+    for (const selector of ['.masthead', '.app-sidebar']) {
       assert.ok(baseline[selector].guarded.some(text => /backdrop-filter/.test(text)),
         `${selector} receives its optical treatment only inside a conditional group`);
     }
+    // The lens is translucent inside the gate too, just not filtered there.
+    assert.ok(baseline['.nav-selection-lens'].guarded.some(text => /--lens-glass-tint/.test(text)),
+      'the lens receives its translucent tint only inside a conditional group');
+    // Only a *withdrawal* may mention the property here: the reduced-transparency and forced-colors
+    // groups set it to none on this selector, which is exactly what they should do.
+    assert.ok(!baseline['.nav-selection-lens'].guarded.some(text => /backdrop-filter:[^;]*blur/.test(text)),
+      'and adds no nested blur inside the filtered sidebar');
   }
 
   // Both spellings are present, and the engine kept the reduced-transparency query it was given —
@@ -332,14 +339,24 @@ module.exports = async ({page, login, admin, work}) => {
         assert.equal(lens.filter, 'none', `${theme} ${id} lens is unfiltered without engine support`);
         assert.equal(lens.background, solidLens, `${theme} ${id} lens keeps the solid accent-soft fill`);
       } else {
-        assert.match(lens.filter, /blur\(/, `${theme} ${id} lens blurs its backdrop`);
-        const radius = Number(lens.filter.match(/blur\(([\d.]+)px\)/)[1]);
-        assert.ok(radius >= 8 && radius <= 18,
-          `${theme} ${id} lens keeps the smaller moving-surface blur budget (${radius}px)`);
-        assert.ok(radius < Number((await optics('#app-sidebar')).filter.match(/blur\(([\d.]+)px\)/)[1]),
-          'the moving lens blurs less than the static chrome it rides on');
+        // Translucent in both contexts, filtered only in the approval card. In the navigation
+        // column the lens sits inside the filtered sidebar, which is a backdrop root: a filter
+        // there would sample that root's flat tint, show no blur, and force the whole column to be
+        // re-sampled on every frame the lens moves — measurably dropping a frame per travel and
+        // collapsing A3's velocity-continuity measurement. One blurred surface per column.
         assert.ok(lens.alpha > 0 && lens.alpha < 1, `${theme} ${id} lens is translucent (alpha ${lens.alpha})`);
         assert.ok(lens.boxShadow.includes('inset'), `${theme} ${id} lens carries a specular highlight`);
+        if (inCta) {
+          assert.match(lens.filter, /blur\(/, `${theme} ${id} lens blurs the CTA gradient beneath it`);
+          const radius = Number(lens.filter.match(/blur\(([\d.]+)px\)/)[1]);
+          assert.ok(radius >= 8 && radius <= 18,
+            `${theme} ${id} lens keeps the smaller moving-surface blur budget (${radius}px)`);
+          assert.ok(radius < Number((await optics('#app-sidebar')).filter.match(/blur\(([\d.]+)px\)/)[1]),
+            'the moving lens blurs less than the static chrome it rides on');
+        } else {
+          assert.equal(lens.filter, 'none',
+            `${theme} ${id} lens adds no nested blur inside the filtered sidebar`);
+        }
       }
       // Readability and separation, from pixels: the selected label over the lens as painted, and
       // the lens itself distinguishable from both the hover affordance and the chrome behind it.
@@ -479,9 +496,10 @@ module.exports = async ({page, login, admin, work}) => {
   assert.equal(reduced.moved, 0, 'reduced motion produces no travel at all');
   assert.equal(reduced.willChange, 'auto', 'reduced motion never requests compositor promotion');
   if (supported) {
-    assert.match(reduced.filter, /blur\(/,
+    assert.ok(reduced.background.startsWith('rgba('),
       'reduced motion keeps the material: transparency and motion are separate preferences');
-    assert.ok(reduced.background.startsWith('rgba('), 'the reduced-motion lens is still translucent');
+    assert.match(await page.locator('.masthead').evaluate(node => getComputedStyle(node).backdropFilter),
+      /blur\(/, 'and the chrome is still filtered under reduced motion');
   }
   const idleReduced = await page.evaluate(() => ({executed: window.glassFrames.executed,
     pending: window.glassFrames.pending.size}));
@@ -493,29 +511,42 @@ module.exports = async ({page, login, admin, work}) => {
   // ---- reduced transparency: the solid material comes back ------------------------------------
   // Emulated through the devtools protocol where the harness exposes it, because the preference has
   // no scripted equivalent. The structural guarantee above does not depend on this being available.
+  // Only the *setup* may be tolerated. An assertion failure inside a catch would report itself as
+  // "not emulable" and let the module pass, which would make this the one check here that cannot
+  // fail; and leaving the emulation on would silently push every later assertion in this module —
+  // the drawer material, forced colours, the screenshots — into reduced-transparency mode. So the
+  // capability probe is caught, the assertions are not, and the emulation is always handed back.
   let reducedTransparencyChecked = false;
+  let session = null;
   try {
-    const session = await page.context().newCDPSession(page);
-    await session.send('Emulation.setEmulatedMedia', {features: [{name: 'prefers-reduced-transparency', value: 'reduce'}]});
-    await page.waitForTimeout(150);
-    const solidChrome = await tokenColor('--material-functional-chrome-solid');
-    const solidLens = await tokenColor('--color-accent-soft');
-    for (const [name, selector] of [['masthead', '.masthead'], ['sidebar', '#app-sidebar']]) {
-      const surface = await optics(selector);
-      assert.equal(surface.filter, 'none', `reduced transparency removes the ${name} filter`);
-      assert.equal(surface.background, solidChrome, `reduced transparency restores the ${name} solid material`);
-      assert.equal(surface.boxShadow, 'none', `reduced transparency drops the ${name} optical shadow`);
-    }
-    const lens = await optics('#nav-selection-lens');
-    assert.equal(lens.filter, 'none', 'reduced transparency removes the lens filter');
-    assert.equal(lens.background, solidLens, 'reduced transparency restores the solid selection fill');
-    await session.send('Emulation.setEmulatedMedia', {features: []});
-    await session.detach();
-    await page.waitForTimeout(150);
-    reducedTransparencyChecked = true;
+    session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setEmulatedMedia',
+      {features: [{name: 'prefers-reduced-transparency', value: 'reduce'}]});
   } catch (error) {
-    console.log('A4 reduced-transparency behaviour not emulable here; structural contract asserted instead: '
-      + error.message);
+    session = null;
+    console.log('A4 reduced-transparency behaviour not emulable here; structural contract asserted '
+      + 'instead: ' + error.message);
+  }
+  if (session) {
+    try {
+      await page.waitForTimeout(150);
+      const solidChrome = await tokenColor('--material-functional-chrome-solid');
+      const solidLens = await tokenColor('--color-accent-soft');
+      for (const [name, selector] of [['masthead', '.masthead'], ['sidebar', '#app-sidebar']]) {
+        const surface = await optics(selector);
+        assert.equal(surface.filter, 'none', `reduced transparency removes the ${name} filter`);
+        assert.equal(surface.background, solidChrome, `reduced transparency restores the ${name} solid material`);
+        assert.equal(surface.boxShadow, 'none', `reduced transparency drops the ${name} optical shadow`);
+      }
+      const lens = await optics('#nav-selection-lens');
+      assert.equal(lens.filter, 'none', 'reduced transparency removes the lens filter');
+      assert.equal(lens.background, solidLens, 'reduced transparency restores the solid selection fill');
+      reducedTransparencyChecked = true;
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', {features: []}).catch(() => {});
+      await session.detach().catch(() => {});
+      await page.waitForTimeout(150);
+    }
   }
   await page.emulateMedia({reducedMotion: 'no-preference', forcedColors: 'none'});
   await useTheme('light');

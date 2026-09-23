@@ -648,23 +648,32 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
   /* The prominent glass object. Still the same single node the A2 measurement and the A3 integrator
      own, still anchored at left/top 0, still `transition:none; animation:none` — appearance is
      state here, never a second movement system, and nothing below is written per frame by script.
-     Its backdrop root is the sidebar, so in the navigation column the blur samples a flat tint and
-     the tint, edge and highlight are what actually carry the material; inside the approval card the
-     same blur has the CTA gradient and its dot texture to work with. That asymmetry is real and is
-     left visible rather than compensated for. */
+
+     It deliberately carries NO backdrop filter in the navigation column, and that is a measured
+     decision rather than an omission. The sidebar above is itself a filtered surface, so it is a
+     backdrop root: a filter here would sample that root's flat tint and produce no visible blur at
+     all, while forcing the whole 256px column to be re-sampled on every frame the lens moves. That
+     cost was observable — it dropped one frame early in each travel, which was enough to collapse
+     A3's velocity-continuity measurement from ~15px of coast to under 1px. Removing it restored
+     that measurement in four consecutive runs and cost nothing visually, because the tint, the
+     optical edge, the inset highlight, the shadow and A3's velocity deformation are what give the
+     lens its material here. This is also what §25 of the phase brief asks for: one blurred surface
+     per column, not nested blur surfaces. */
   .nav-selection-lens{
     background:var(--lens-glass-tint);border-color:var(--lens-glass-edge);
-    -webkit-backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
-    backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
     box-shadow:inset 0 1px 0 var(--lens-glass-highlight),var(--lens-glass-shadow);
   }
-  /* Same lens, same physics, one scoped material. The approval CTA keeps its own opaque gradient
-     because it is business content inside the chrome, so the lens that travels into it needs a
-     denser grade of its material to keep the selected label at 4.5:1 over a dark saturated
-     backdrop. This is a tint swap on the existing node: no duplicate lens, no ghost, no second
+  /* Same lens, same physics, one scoped material — and the one place the lens is actually filtered.
+     The approval CTA keeps its own opaque gradient because it is business content inside the chrome,
+     so the lens that travels into it needs a denser grade of its material to keep the selected label
+     at 4.5:1 over a dark saturated backdrop. Here the blur has something real to work on: the lens
+     is painted after the CTA gradient and its dot texture, so it genuinely refracts them. This is a
+     tint swap plus a scoped filter on the existing node: no duplicate lens, no ghost, no second
      highlight object. */
   .sidebar-cta>.nav-selection-lens{
     background:var(--lens-glass-cta-tint);border-color:var(--lens-glass-cta-edge);
+    -webkit-backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
+    backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
     box-shadow:inset 0 1px 0 var(--lens-glass-cta-highlight),var(--lens-glass-shadow);
   }
   @media(max-width:980px){

@@ -86,8 +86,8 @@ family.
 | `--lens-glass-edge` | `#0064d13d` (24% accent) | `#78b4ff52` (32% accent) | optical rim |
 | `--lens-glass-highlight` | `#ffffffe0` | `#ffffff1f` | 1px inset specular |
 | `--lens-glass-shadow` | `0 1px 2px #1d1d1f12, 0 4px 12px #0064d114` | `0 1px 2px #00000033, 0 4px 12px #00000040` | restrained lift |
-| `--lens-glass-blur` | `14px` | — | smaller budget for a small moving surface |
-| `--lens-glass-saturation` | `1.4` | — | theme-invariant |
+| `--lens-glass-blur` | `14px` | — | smaller budget; applied in the approval context only (§7) |
+| `--lens-glass-saturation` | `1.4` | — | theme-invariant, approval context only |
 | `--lens-glass-cta-tint` | `#eff5fff2` (α .95) | `#22354ef0` (α .94) | denser grade for the approval card |
 | `--lens-glass-cta-edge` | `#ffffff70` | `#ffffff4d` | rim on a dark saturated backdrop |
 | `--lens-glass-cta-highlight` | `#ffffffe8` | `#ffffff52` | specular on that rim |
@@ -160,8 +160,6 @@ those two declarations fails it.
 ```css
 .nav-selection-lens{
   background:var(--lens-glass-tint);border-color:var(--lens-glass-edge);
-  -webkit-backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
-  backdrop-filter:blur(var(--lens-glass-blur)) saturate(var(--lens-glass-saturation));
   box-shadow:inset 0 1px 0 var(--lens-glass-highlight),var(--lens-glass-shadow);
 }
 ```
@@ -172,17 +170,27 @@ reads from its tint, its optical rim and one 1px inset specular, and the "liquid
 from A3's spring and velocity stretch. There is no travelling shine, and the contract asserts that if a
 pseudo-element is ever added it must be `pointer-events:none` with no animation.
 
-### An honest asymmetry
+### Why the travelling lens is translucent but not filtered
 
-`.app-sidebar` has a `backdrop-filter`, which makes it a **backdrop root**. The lens is inside it, so
-the lens's blur samples only what is painted beneath the lens *within* that root:
+`.app-sidebar` has a `backdrop-filter`, which makes it a **backdrop root**. A filter on the lens can
+therefore only sample what is painted beneath the lens *within* that root — which, in the navigation
+column, is the sidebar's own flat tint. So a filter there produces **no visible blur at all**, while
+still forcing the whole 256px column to be re-sampled on every frame the lens moves.
 
-- **in the navigation column** that is the sidebar's own flat tint, so the blur has nothing to smooth —
-  the tint, rim and highlight are what actually carry the material there;
-- **in the approval card** the lens is painted after the CTA gradient and its dot texture, so the blur
-  genuinely works on them.
+That cost was not theoretical. It dropped one frame early in each travel, and that was enough to
+collapse A3's velocity-continuity measurement from ~15px of coast to under 1px — which is how the
+regression was found: **A3's own browser contract failed.** The evidence is in §16.
 
-That asymmetry is real, it is left visible, and no wallpaper was introduced to disguise it.
+The lens is therefore translucent in both contexts and *filtered only inside the approval card*, where
+the blur has the CTA gradient and its dot texture to act on. Nothing was lost visually in the
+navigation column, because the tint, the optical rim, the inset highlight, the shadow and A3's
+velocity-derived deformation are what gave the lens its material there in the first place. This is also
+what the phase brief's performance rule asks for: **one blurred surface per column, not nested blur
+surfaces.**
+
+The asymmetry between the two contexts is real, it is left visible, and no wallpaper was introduced to
+disguise it. `test_no_filtered_surface_is_nested_inside_another_filtered_surface` now pins the rule so
+the nested filter cannot come back unnoticed.
 
 ### Approval context
 
@@ -319,8 +327,8 @@ Selected-label contrast on the painted lens, sampled from real pixels:
 
 | Destination | Light | Dark |
 | --- | --- | --- |
-| Command center (40px row) | 4.98:1 | 5.51:1 |
-| Kapasitas produksi (34px analytics child) | 4.98:1 | 5.51:1 |
+| Command center (40px row) | 4.98:1 | 5.60:1 |
+| Kapasitas produksi (34px analytics child) | 4.98:1 | 5.60:1 |
 | Inbox approval (reparented into the CTA) | 4.73:1 | 5.73:1 |
 
 `browser_motion_consistency.cjs` additionally re-checks all 27 destinations in both palettes against a
@@ -329,8 +337,55 @@ deliberately pessimistic composited model.
 ### Performance
 
 A4's rule is: blur large static chrome sparingly, blur the small moving lens modestly, never blur
-content trees. In practice that is two full-size static surfaces (1440×72 and 256×928) plus one
-224×40 surface that moves during spring travel.
+content trees, and never nest blur surfaces. In practice that is two full-size static surfaces
+(1440×72 and 256×928) plus one 224×40 surface that is filtered only in the approval context.
+
+#### The nested-filter regression, and how it was found
+
+The first published attempt filtered the lens in **both** contexts. `browser_navigation_spring.cjs`
+then failed its velocity-continuity assertion — `coast > 15` px — reporting 0.3–0.8px. That is A3's
+contract catching an A4 performance regression, which is exactly what it is for.
+
+Attributed by measurement rather than assumption. The module alone, alternating against a detached
+worktree at the unmodified baseline `bb29dac`:
+
+| Side | Result |
+| --- | --- |
+| A4 as first published | **3 failures / 3 runs** |
+| Baseline `bb29dac` (no `backdrop-filter` at all) | **3 passes / 3 runs** |
+
+Then isolating which surface was responsible, two runs each:
+
+| Configuration | Result |
+| --- | --- |
+| Chrome filter + lens filter (as first published) | fail, fail |
+| Lens filter removed, chrome filter kept | fail, pass |
+| Chrome filter removed, lens filter kept | pass, pass |
+
+And measuring the mechanism directly — one long travel, three samples per configuration:
+
+| Configuration | Median frame gap | Max frame gap | Coast (needs > 15px) |
+| --- | --- | --- | --- |
+| Chrome 20px + lens 14px | 16.7ms | **33.4ms** | 0.5 / 0.7 / 0.5px |
+| Chrome 16px + lens 12px | 16.7ms | 16.8–33.4ms | 15.1 / 15.3 / 0.7px |
+| Chrome 12px + lens 10px | 16.7ms | 16.8–33.3ms | 15.1 / 15.2 / 15.2px |
+| Sidebar filter off, masthead kept | 16.7ms | 16.8ms | 15.2 / 15.1 / 15.1px |
+| Lens filter off, chrome kept | 16.7ms | 16.7–33.3ms | 15.2 / 15.2 / 15.1px |
+| All filters off (control) | 16.7ms | 16.8ms | 15.2 / 15.1 / 15.1px |
+
+The median frame gap never moves: this is not a general frame-rate collapse. It is **exactly one
+dropped frame** early in the travel, and because A3's threshold sits at 15px with the measurement
+landing at 15.1–15.2px, a single dropped frame is enough to flip it. Two things follow, and both are
+worth recording:
+
+1. **A4's fix.** The lens's filter was doing no visible work in the navigation column anyway (it
+   samples the sidebar's flat backdrop root), so scoping it to the approval context removes the nested
+   filter from the common path at no visual cost. Four consecutive runs of the module then passed.
+   Simply shrinking the blur radii would have papered over the cause while weakening the material
+   everywhere, so it was rejected.
+2. **A pre-existing fragility worth a separate look.** A3's assertion has ~0.1–0.2px of margin above
+   its threshold in this environment, so it is sensitive to any single dropped frame from any cause.
+   That is not A4's to change here, and the assertion was left exactly as A3 wrote it.
 
 An eight-destination burst with a click every 45ms, measured with a `PerformanceObserver` on `longtask`
 and by frame-timestamp deltas:
@@ -404,6 +459,10 @@ reduced-transparency and forced-colors paths, the token families and their light
 bounded blur/saturation band, genuinely translucent tints, the absent GPU/refraction renderer, the
 unchanged A3 spring and morph constants, the pinned frame/timer inventory, and that the physics
 renderer still writes only `transform`/`width`/`height` plus its temporary compositor hint.
+
+It also pins the nested-filter rule from §16 in
+`test_no_filtered_surface_is_nested_inside_another_filtered_surface`: restoring the filter on the
+travelling lens fails four separate assertions.
 
 **Twenty-six deliberate mutations were each confirmed to fail it**, including: glass escaping the gate
 onto the base masthead; the `-webkit` path dropped; a card, and separately the dialog, becoming glass;
