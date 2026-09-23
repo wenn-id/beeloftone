@@ -466,6 +466,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_navigation_lens.cjs');
   await runModule('./browser_navigation_spring.cjs');
   await runModule('./browser_functional_glass.cjs');
+  await runModule('./browser_command_center_golden.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

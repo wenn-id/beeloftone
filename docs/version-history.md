@@ -2888,3 +2888,23 @@ auth/session/OIDC, idempotency, actor binding, pending recovery, guard respons b
 dan audit tidak berubah. Guard `inert` serta submit PR #87 tidak tersentuh. Versi aplikasi 0.102.0 di
 ketiga sumber yang mendeklarasikannya, dengan `docs/openapi.json` diregenerasi dan satu-satunya
 perbedaan leaf terhadap baseline adalah `info.version` 0.101.0 → 0.102.0; schema tetap 55.
+
+## Command Center golden conversion (v0.103.0, schema 55)
+
+Apple-27 A5 menyusun ulang Command Center menjadi KPI marketplace, hero penjualan
+kotor dengan tren snapshot, denyut exception yang langsung dapat ditindaklanjuti,
+antrean keputusan, ringkasan approval dan integrasi, lalu perbandingan marketplace
+dan konteks bisnis. Angka dan prioritas tetap berasal dari satu respons
+`/api/command-center`; tidak ada metrik kesehatan, pertumbuhan, atau aktivitas rekaan.
+Seluruh jenis approval memakai label yang sudah ada dan menampilkan jumlah agregat,
+nominal tercatat, serta pengajuan tanpa nominal.
+
+Latar kedalaman memakai gradien CSS statis khusus halaman ini. Kartu bisnis tetap
+opak; filter A4 dan spring A3 tidak berubah. Snapshot yang belum tersedia tidak
+ditampilkan sebagai pendapatan nol. Muat ulang mempertahankan laporan sebelumnya,
+respons basi tetap ditolak, dan kegagalan membersihkan seluruh host termasuk panel
+konteks baru. Tidak ada perubahan API bisnis, schema, migrasi, dispatcher, atau dialog.
+
+Versi pyproject, FastAPI, dan OpenAPI menjadi 0.103.0; OpenAPI hanya berubah pada
+`info.version`. Bukti visual, kontras, performa dan pengujian tersimpan dalam
+[laporan A5](apple27-command-center-golden.md). A6 belum dimulai.
