@@ -235,7 +235,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.unroute('**/api/approvals?**');
   await closeDialog();
 
-  // ---- Command Center is the reference and must not have moved -----------------------
+  // ---- A5 preserves the dashboard contracts while recomposing its sections ----------
   await page.setViewportSize({width: 1440, height: 900});
   await openSidebarDestination('Command center');
   await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
@@ -251,7 +251,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     return {
       kpis: document.querySelectorAll('#command-center-summary .kpi-card').length,
       kpiGlyphs: document.querySelectorAll('#command-center-summary dt svg').length,
-      bands: document.querySelectorAll('.band-heading .band-step').length,
+      sections: ['.command-overview','.operations-section','.business-section','.context-section']
+        .every(selector => document.querySelector('#command-center-view '+selector)),
       hero: Boolean(document.querySelector('#command-center-hero .hero-body')),
       channelTable: Boolean(document.querySelector('#command-center-channels .data-table')),
       snapshots: document.querySelectorAll('[data-command-snapshot]').length,
@@ -263,7 +264,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   });
   assert.equal(dashboard.kpis, 4, 'the dashboard keeps four KPI cards');
   assert.equal(dashboard.kpiGlyphs, 4, 'each dashboard KPI card keeps its glyph');
-  assert.equal(dashboard.bands, 2, 'both numbered bands survive');
+  assert.equal(dashboard.sections, true, 'A5 keeps sales, decisions, marketplace and business context');
   assert.equal(dashboard.hero, true);
   assert.equal(dashboard.channelTable, true);
   assert.ok(dashboard.snapshots > 0);
