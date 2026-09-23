@@ -115,14 +115,14 @@ painting. Auth teardown clears the new host alongside the old ones.
 
 ## Responsive layout and accessibility
 
-At 1440, four KPIs lead a wide hero and smaller pulse. At 1280/1024/981, KPI and
-context grids reduce to two columns. At 980, the hero and main sections become one
-column, with a two-column pulse and utility rail where space permits. At 768 these
-remain readable; below 760 the utility/context panels become single-column. At
-390, the pulse is compact, action buttons span their row, products wrap with their
-amounts below the title, and the order-status strip uses two columns. The
-marketplace table retains its labelled columns inside its own horizontal scroller.
-The existing mobile drawer is unchanged.
+At 1440 and 1280, four KPI columns lead a wide hero and smaller pulse. At 1200 and
+below, including 1024 and 981, the KPI and context grids reduce to two columns.
+At 980, the hero and main sections become one column, with a two-column pulse and
+utility rail where space permits. At 768 these remain readable; below 760 the
+utility/context panels become single-column. At 390, the pulse is compact, action
+buttons span their row, products wrap with their amounts below the title, and the
+order-status strip uses two columns. The marketplace table retains its labelled
+columns inside its own horizontal scroller. The existing mobile drawer is unchanged.
 
 KPI semantics remain `dl`; charts retain `role="img"` and meaningful source/date
 labels. Status always has text. Details and all actions remain native keyboard
