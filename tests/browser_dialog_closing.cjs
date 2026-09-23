@@ -268,21 +268,33 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
     // The accepted close is dispatched from inside the trusted keydown, so the key's own native
     // default action — activating the focused submit button — resolves while the dialog is already
     // inert. This is the exact path that used to emit a POST.
+    //
+    // Which event carries the activation differs by key: Chromium activates a button from Enter on
+    // `keydown`, but from Space on `keyup`. Binding the dismissal to the wrong one would put the
+    // activation in a LATER task than the dismissal, and the probe would then depend on that task
+    // arriving inside the 180ms window — exactly the coupling this module exists to remove. So the
+    // dismissal is dispatched from the capture phase of whichever event actually activates. Capture
+    // runs before the button's default handler, so the activation that follows is guaranteed to
+    // resolve against an already-inert dialog.
+    const activationEvent = key => key === ' ' ? 'keyup' : 'keydown';
     const trustedKeyDuringClose = async key => {
-      await page.evaluate(probeKey => {
+      await page.evaluate(({probeKey, closeOn}) => {
         window.closeAtKey = null;
         const dialog = document.getElementById('dialog');
         const once = event => {
           if (!event.isTrusted || event.key !== probeKey) return;
-          document.removeEventListener('keydown', once, true);
+          document.removeEventListener(closeOn, once, true);
           document.getElementById('close-dialog').click();
           window.closeAtKey = {open: dialog.open, inert: dialog.inert, classes: dialog.className,
             active: document.activeElement ? document.activeElement.id : ''};
         };
-        document.addEventListener('keydown', once, true);
-      }, key);
+        document.addEventListener(closeOn, once, true);
+      }, {probeKey: key, closeOn: activationEvent(key)});
       await drain();
-      await page.keyboard.press(key);
+      // The hold is not a wait for anything to settle: it is deliberately longer than the 180ms
+      // fallback, and the probe still lands inside the closing window because the dismissal and the
+      // activation share one event. How long a key is held cannot widen or narrow that window.
+      await page.keyboard.press(key, {delay: 220});
       return {dispatch: await page.evaluate(() => window.closeAtKey), log: await drain()};
     };
     for (const key of ['Enter', ' ']) {

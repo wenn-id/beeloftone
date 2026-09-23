@@ -105,6 +105,30 @@ Perwujudannya:
 - **Jumlah `close` native dihitung monoton**, supaya keluar yang belum selesai tidak tertukar dengan
   dialog yang sudah tertutup lalu dibuka lagi.
 
+### Dua kopling sisa yang ditemukan pada review
+
+Review otomatis (CodeRabbit pada PR #93) menemukan dua tempat yang masih memakai pola lama, dan
+keduanya diperbaiki dengan prinsip yang sama:
+
+- **Aktivasi Space terjadi pada `keyup`, bukan `keydown`.** `trustedKeyDuringClose()` semula selalu
+  memasang pembatalan dari `keydown`. Chromium mengaktifkan tombol dari Enter pada `keydown` tetapi
+  dari Space pada `keyup`, sehingga untuk Space aktivasinya berada di task **berikutnya** dan kembali
+  bergantung pada task itu tiba di dalam jendela 180ms. Pembatalan sekarang dipasang dari fase
+  capture event yang benar-benar mengaktifkan. Capture berjalan sebelum handler bawaan tombol, jadi
+  aktivasi yang menyusul pasti mengenai dialog yang sudah `inert`. Diverifikasi dengan penahanan
+  tombol 220ms — jauh melewati jendela 180ms — dan `click` serta `submit` tetap tercatat pada
+  `open + inert + is-closing`.
+- **Pemeriksaan entry pada kasus overlap terpisah dari penutupannya.** Menunggu `dialog-enter` lewat
+  `waitForFunction` lalu memanggil `page.evaluate` terpisah adalah balapan tersendiri: entry hanya
+  berumur `--motion-dialog` (260ms), jadi perjalanan yang lambat di antara keduanya tiba setelah
+  entry selesai dan menggagalkan produk yang benar. Pembukaan, penungguan, dan penutupan sekarang
+  berada dalam satu panggilan halaman; sesudah penungguan tidak ada `await` lagi, sehingga pembacaan
+  "entry berjalan" dan dispatch penutupan berbagi satu task.
+
+Review juga menemukan satu kekeliruan urutan: pemeriksaan entry tema gelap berjalan **sesudah** tema
+dikembalikan, sehingga assert-nya menguji tema semula. Pengembalian tema kini dilakukan setelah
+pemeriksaan itu, dan tema gelap diassert secara eksplisit saat pemeriksaan berjalan.
+
 Assert yang tetap menjadi tulang punggung: tidak ada `submit` yang lolos dari guard, tidak ada POST,
 fokus tidak bisa masuk kembali ke subtree yang menutup, `inert` dipasang seketika dan dibersihkan
 oleh `close` native, kelas menutup tidak tersisa, fokus kembali ke pemicu, penolakan penutupan saat
@@ -154,6 +178,9 @@ untuk memeriksa keadaan pada saat event tiba.
 | Setelah stabilisasi, tanpa beban | keduanya | 20 | 0 |
 | Setelah stabilisasi, 8 pembakar | keduanya | 20 | 0 |
 | Setelah stabilisasi, 16 pembakar (2× vCPU) | keduanya | 10 | 0 |
+
+Seluruh rangkaian di atas diulang sesudah perbaikan temuan review, dengan hasil sama: 20 tanpa beban,
+20 dengan 8 pembakar, dan 10 dengan 16 pembakar — 50/50 bersih.
 
 Kegagalan baseline seluruhnya jatuh pada dua assert di bagian "Mekanisme balapan" nomor 3
 (`leaves no focus in the inert subtree` dan `focus() cannot re-enter any closing control`), dan

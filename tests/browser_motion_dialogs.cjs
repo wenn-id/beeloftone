@@ -196,22 +196,25 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // backdrop still playing its entry would keep fading in behind it. Playwright's click waits
   // for the element to settle, so a human's immediate close is dispatched synthetically.
   //
-  // The dispatch and the reads around it share one page task, so "the entry was still running"
-  // and "the entry has been withdrawn and an opacity transition exists instead" are established
-  // without any margin: the entry cannot have ended on its own between the two reads.
+  // The open, the wait for the running entry, and the close all happen inside one page call. Waiting
+  // from Node and then dispatching in a second call would be a race in its own right: the entry only
+  // lasts --motion-dialog (260ms), so a slow round trip between the two calls arrives after it has
+  // already finished, leaving no running entry to overlap with and failing a correct product. Once
+  // the wait ends nothing is awaited again, so the "entry running" reading and the close dispatch
+  // share one task and the entry cannot end between them.
   await clearDialogLog();
-  await trigger.click();
-  await page.locator('dialog[open]').waitFor();
-  await page.waitForFunction(() => document.getElementById('dialog').getAnimations()
-    .some(animation => animation.animationName === 'dialog-enter'));
-  const overlapStart = await page.evaluate(() => {
+  const overlapStart = await page.evaluate(async () => {
     const dialog = document.getElementById('dialog');
-    const entryBefore = dialog.getAnimations()
+    const entry = () => dialog.getAnimations()
       .filter(animation => animation.animationName === 'dialog-enter')
       .map(animation => animation.playState);
+    document.getElementById('new-order').click();
+    const deadline = performance.now() + 10000;
+    while (!entry().length && performance.now() < deadline)
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    const entryBefore = entry();
     document.getElementById('close-dialog').click();
-    return {entryBefore, entryAfter: dialog.getAnimations()
-      .filter(animation => animation.animationName === 'dialog-enter').map(animation => animation.playState),
+    return {entryBefore, entryAfter: entry(),
       pointerEvents: getComputedStyle(dialog).pointerEvents};
   });
   await dialogClosed();
@@ -451,16 +454,20 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   const darkEnded = exitOutcome(darkLog, 'dark theme');
   await assertClosedCleanly('dark theme');
   console.log('Dialog exit outcome (dark theme):', darkEnded);
-  if (startTheme !== 'dark') await page.locator('#theme').click();
   // The entry in dark theme is checked on its own open, because the log above is reset right
-  // before the close so that the exit evidence belongs to that close alone.
+  // before the close so that the exit evidence belongs to that close alone. This runs while the
+  // dark theme is still applied; restoring the incoming theme first would check the entry in
+  // whatever theme the previous module left behind instead.
   await clearDialogLog();
   await trigger.click();
   await page.locator('dialog[open]').waitFor();
   await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark',
+    'the dark-theme entry is checked while the dark theme is applied');
   assert.ok(sawAnimation(await dialogLog(), 'animationend', 'dialog-enter'), 'the entry plays in dark theme');
   await page.keyboard.press('Escape');
   await dialogClosed();
+  if (startTheme !== 'dark') await page.locator('#theme').click();
 
   console.log('Dialog motion browser QA PASS: the native dialog and its backdrop play a CSS-only entry, '
     + 'the close button, Batal and Escape share one guarded close that creates a real opacity exit on an '
