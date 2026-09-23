@@ -41,10 +41,18 @@ def code(text):
 CODE = {'app.mjs': code(JS), 'client.mjs': code(CLIENT), 'style.css': CSS, 'index.html': code(HTML)}
 
 GATE = '@supports'
-# The surfaces §3 authorises. `.sidebar-actions` is deliberately absent: it is re-tinted so the
-# glass sidebar stays coherent, but it must never become a second blurred layer.
+# The surfaces §3 authorises to carry the optical material. `.sidebar-actions` is deliberately
+# absent: it is re-tinted so the glass sidebar stays coherent, but it must never become a second
+# blurred layer.
 AUTHORISED_GLASS = {'.masthead', '.app-sidebar', '.nav-selection-lens',
                     '.sidebar-cta>.nav-selection-lens'}
+# The subset that may actually declare a backdrop filter. The lens is translucent in both contexts,
+# but it is only *filtered* inside the approval card. In the navigation column it sits inside the
+# already-filtered sidebar, which is a backdrop root: a filter there would sample that root's flat
+# tint, produce no visible blur, and force the whole column to be re-sampled on every frame the lens
+# moves. That measurably dropped a frame per travel and collapsed A3's velocity-continuity
+# measurement, so it was removed. One blurred surface per column, no nested blur.
+FILTERED_GLASS = {'.masthead', '.app-sidebar', '.sidebar-cta>.nav-selection-lens'}
 # Content, business and floating surfaces that A4 must never filter.
 FORBIDDEN_GLASS = ('.workspace-main', '.card', '.sku-block', '.hero-panel', '.summary',
                    '.attention-panel', '.command-snapshot', '.command-center-content', 'dialog',
@@ -275,15 +283,15 @@ class FeatureGateTest(unittest.TestCase):
         standard = selectors(r'^backdrop-filter\s*:\s*(?!none)', gated)
         prefixed = selectors(r'^-webkit-backdrop-filter\s*:\s*(?!none)', gated)
         self.assertEqual(standard, prefixed, 'both spellings cover the same surfaces')
-        self.assertEqual(standard, AUTHORISED_GLASS - {'.sidebar-cta>.nav-selection-lens'},
-                         'the scoped approval lens inherits the filter from the shared lens rule')
+        self.assertEqual(standard, FILTERED_GLASS)
 
     def test_only_authorised_functional_chrome_becomes_glass(self):
         touched = selectors(r'backdrop-filter\s*:\s*(?!none)')
         self.assertTrue(touched <= AUTHORISED_GLASS, f'unauthorised glass targets: {touched - AUTHORISED_GLASS}')
+        self.assertEqual(touched, FILTERED_GLASS)
         self.assertIn('.masthead', touched)
         self.assertIn('.app-sidebar', touched)
-        self.assertIn('.nav-selection-lens', touched)
+        self.assertIn('.sidebar-cta>.nav-selection-lens', touched)
         # One blurred surface per column: the sticky plate is re-tinted, never re-filtered.
         gated = lambda context: any(part.startswith(GATE) for part in context) \
             and not any('prefers-reduced-transparency' in part for part in context)
@@ -296,11 +304,20 @@ class FeatureGateTest(unittest.TestCase):
 
 class ContentStaysOpaqueTest(unittest.TestCase):
     def test_no_content_business_or_dialog_surface_is_a_filter_target(self):
-        touched = selectors(r'backdrop-filter\s*:\s*(?!none)')
-        for forbidden in FORBIDDEN_GLASS:
-            for selector in touched:
-                with self.subTest(forbidden=forbidden, selector=selector):
-                    self.assertNotIn(forbidden, selector)
+        """A forbidden surface may be an *ancestor* of a filtered element, never the filtered one.
+
+        `.sidebar-cta > .nav-selection-lens` is the case that makes the distinction matter: the CTA
+        is content and stays unfiltered, while the lens that travels into it is authorised. So the
+        subject of the selector — the compound after the last combinator — is what gets checked.
+        """
+        for selector in selectors(r'backdrop-filter\s*:\s*(?!none)'):
+            subject = re.split(r'[>+~ ]', selector)[-1]
+            for forbidden in FORBIDDEN_GLASS:
+                with self.subTest(selector=selector, subject=subject, forbidden=forbidden):
+                    self.assertNotEqual(subject, forbidden)
+                    self.assertFalse(subject.startswith(forbidden + ':')
+                                     or subject.startswith(forbidden + '.')
+                                     or subject.startswith(forbidden + '['))
 
     def test_nothing_anywhere_blurs_rendered_content(self):
         for context, selector, declaration in DECLARATIONS:
@@ -437,14 +454,36 @@ class LensRemainsOnePhysicalObjectTest(unittest.TestCase):
         lens = block('.nav-selection-lens', gated)
         self.assertIn('background:var(--lens-glass-tint)', lens)
         self.assertIn('border-color:var(--lens-glass-edge)', lens)
-        self.assertIn('blur(var(--lens-glass-blur))', lens)
-        self.assertIn('saturate(var(--lens-glass-saturation))', lens)
         self.assertIn('inset 0 1px 0 var(--lens-glass-highlight)', lens)
         self.assertIn('var(--lens-glass-shadow)', lens)
+        # No nested blur inside the filtered sidebar: the moving lens is translucent here, not
+        # filtered. See FILTERED_GLASS above for the measurement that settled this.
+        self.assertNotIn('backdrop-filter', lens)
         scoped = block('.sidebar-cta>.nav-selection-lens', gated)
         self.assertIn('background:var(--lens-glass-cta-tint)', scoped)
         self.assertIn('border-color:var(--lens-glass-cta-edge)', scoped)
-        self.assertNotIn('backdrop-filter', scoped)
+        # The one context where the lens genuinely has something to refract.
+        self.assertIn('blur(var(--lens-glass-blur))', scoped)
+        self.assertIn('saturate(var(--lens-glass-saturation))', scoped)
+        self.assertIn('-webkit-backdrop-filter:blur(var(--lens-glass-blur))', scoped)
+
+    def test_no_filtered_surface_is_nested_inside_another_filtered_surface(self):
+        """The performance rule A3's spring test caught: one blurred surface per column.
+
+        A filtered element inside a filtered ancestor has to re-sample the ancestor's backdrop root
+        every frame it moves, which is exactly what the travelling lens does. The masthead and the
+        sidebar are siblings, and the only remaining filtered descendant is the approval-context
+        lens, whose ancestor chain inside the sidebar is the CTA — itself unfiltered.
+        """
+        filtered = selectors(r'backdrop-filter\s*:\s*(?!none)')
+        self.assertNotIn('.nav-selection-lens', filtered,
+                         'the lens travelling inside the filtered sidebar must not add a nested blur')
+        for selector in filtered:
+            with self.subTest(selector=selector):
+                self.assertFalse(selector.startswith('.app-sidebar ') or selector.startswith('.masthead '),
+                                 'no descendant-combinator filter nests inside filtered chrome')
+        # The sticky plate between the sidebar and the CTA lens stays a tint, never a filter.
+        self.assertNotIn('.sidebar-actions', filtered)
         # Paint order and the shared node are A2's and are unchanged.
         self.assertIn('.sidebar-cta>.nav-selection-lens{z-index:1}', CSS)
         self.assertIn('.app-sidebar.nav-lens-ready #approvals[aria-current=page]', CSS)

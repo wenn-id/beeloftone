@@ -144,6 +144,24 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
         getComputedStyle(selected).color;
         return selected.getAnimations({subtree: true}).every(animation => animation.playState === 'finished');
       }, destination.nav);
+      // The lens travels under A3's requestAnimationFrame integrator, and its surface declares
+      // `transition:none; animation:none`, so `getAnimations()` and `settle()` above cannot see that
+      // movement at all. Before A4 that did not matter here. It does now: the contrast measured
+      // below depends on which positioning context the lens is currently parented in and on the
+      // tint that context selects, and a lens still in transit would be read with the wrong one.
+      // So wait for it to be resting on the selected button rather than relying on the incidental
+      // timing of the round-trips above. A legitimately hidden lens needs no wait — the composite
+      // below falls back to the opaque selected background in that case.
+      await page.waitForFunction(nav => {
+        const lens = document.getElementById('nav-selection-lens');
+        const sidebar = document.getElementById('app-sidebar');
+        if (lens.hidden || !sidebar.classList.contains('nav-lens-ready')) return true;
+        if (getComputedStyle(lens).willChange !== 'auto') return false;
+        const target = document.getElementById(nav);
+        if (!target) return true;
+        const a = lens.getBoundingClientRect(), b = target.getBoundingClientRect();
+        return ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < 1);
+      }, destination.nav);
       // A4 made the chrome and the selection lens translucent where the engine supports it, so a
       // computed `background-color` is no longer the colour a label actually sits on. Reading the
       // declaration and ignoring its alpha would have quietly inflated every ratio below, so the
