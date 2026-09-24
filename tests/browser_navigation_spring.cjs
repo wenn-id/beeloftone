@@ -326,7 +326,17 @@ module.exports = async ({page, login, admin, viewer}) => {
   // ---- K. The preference changing mid-flight cancels and snaps -------------------------------
   await page.emulateMedia({reducedMotion:'no-preference'});
   await start('command-center');
-  const flight = await page.evaluate(() => {
+  const flight = await page.evaluate(async () => {
+    // A lens measurement frame can still be queued at this point: the preceding navigation, a
+    // sidebar transitionend, or a resize/mutation observer each schedule one, and while one is
+    // queued the click below schedules nothing. On the real clock that is harmless, because the
+    // queued frame still fires and reads the freshest aria-current. This clock is about to be
+    // replaced underneath that queued handle, though, so the click's schedule would be dropped and
+    // the spring would never start under the controlled clock. Force the condition, then drain the
+    // real clock to idle before taking it over.
+    window.dispatchEvent(new Event('resize'));
+    for (let index = 0; index < 10 && window.springFrames.pending.size > 0; index++)
+      await new Promise(resolve => requestAnimationFrame(resolve));
     const pending = [], nativeRaf = window.requestAnimationFrame, nativeCancel = window.cancelAnimationFrame;
     let nextId = 0;
     window.motionTestScheduler = {pending, nativeRaf, nativeCancel};
