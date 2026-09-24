@@ -74,10 +74,12 @@ module.exports = async ({page, login, admin, work}) => {
 
   const optics = selector => page.locator(selector).evaluate(node => {
     const computed = getComputedStyle(node);
+    const body = node.classList.contains('nav-selection-lens') ? getComputedStyle(node,'::before') : null;
+    const paint = body && body.content !== 'none' && body.display !== 'none' ? body : computed;
     const filter = computed.backdropFilter && computed.backdropFilter !== 'none'
       ? computed.backdropFilter : computed.webkitBackdropFilter || 'none';
-    const alpha = computed.backgroundColor.match(/[\d.]+/g);
-    return {filter, background: computed.backgroundColor, boxShadow: computed.boxShadow,
+    const alpha = paint.backgroundColor.match(/[\d.]+/g);
+    return {filter, background: paint.backgroundColor, boxShadow: paint.boxShadow,
       borderTopWidth: computed.borderTopWidth, borderTopColor: computed.borderTopColor,
       alpha: alpha && alpha.length > 3 ? Number(alpha[3]) : 1,
       transition: computed.transitionProperty, duration: computed.transitionDuration,
@@ -184,15 +186,19 @@ module.exports = async ({page, login, admin, work}) => {
     return found;
   });
   assert.equal(gates.supports.filter(text=>!text.startsWith('not ')).length, 1, 'one positive feature gate guards chrome');
-  assert.equal(gates.supports.filter(text=>text.startsWith('not ')).length, 1, 'unsupported filters have an explicit solid fallback');
+  assert.equal(gates.supports.filter(text=>text.startsWith('not ')).length, 2, 'workspace and liquid pseudo-elements have explicit solid fallbacks');
   assert.ok(/\bbackdrop-filter\b/.test(gates.supports[0]) && /-webkit-backdrop-filter/.test(gates.supports[0]),
     `the gate tests both the standard and the -webkit property: ${gates.supports[0]}`);
-  assert.equal(gates.reducedTransparency.length, 2, 'A4 material and A5.2 workspace reduced-transparency fallbacks exist');
+  assert.equal(gates.reducedTransparency.length, 3, 'A4 material, A5.2 workspace and A5.3 optics reduced-transparency fallbacks exist');
   assert.ok(gates.reducedTransparency[0].includes('var(--material-functional-chrome-solid)'),
     'the reduced-transparency fallback restores the A1 solid chrome');
-  assert.equal(gates.forcedColors.length, 2, 'A4 material and A5.2 workspace forced-colors contracts exist');
+  assert.ok(gates.reducedTransparency[2].includes('--liquid-fill: var(--color-accent-soft)'),
+    'the additional fallback supplies the liquid body with the solid selection material');
+  assert.equal(gates.forcedColors.length, 3, 'A4 material, A5.2 workspace and A5.3 optics forced-colors contracts exist');
   assert.ok(/backdrop-filter:\s*none/.test(gates.forcedColors[0]),
     'the forced-colors contract disables backdrop filtering');
+  assert.ok(/nav-selection-lens::before/.test(gates.forcedColors[2]) && /display:\s*none/.test(gates.forcedColors[2]),
+    'the additional forced-colors contract hides the liquid pseudo-elements');
 
   // One bounded background sheet softens the A5.2 landscape; business cards, tables and dialogs
   // retain the A4 boundary against per-surface filtering.
