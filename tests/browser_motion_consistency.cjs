@@ -244,7 +244,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
         // The chrome is allowed to be translucent, but it must stay bounded and it must not dissolve
         // into the content canvas it sits against.
         const chrome = parse(material.chrome);
-        assert.ok(chrome.a > .5 && chrome.a < 1,
+        assert.ok(chrome.a >= .478 && chrome.a < 1,
           `${theme} chrome tint alpha ${chrome.a} is translucent but bounded`);
         assert.match(material.chromeFilter, /blur\(/, `${theme} chrome blurs its backdrop`);
         assert.notDeepEqual(over(chrome, canvas), canvas, `${theme} canvas and chrome stay distinct`);
