@@ -1,0 +1,682 @@
+[
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "selected navigation",
+    "foreground": [
+      0,
+      75,
+      168
+    ],
+    "background": [
+      196,
+      220,
+      248,
+      255
+    ],
+    "ratio": 5.808981041833142
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "sidebar primary",
+    "foreground": [
+      19,
+      41,
+      67
+    ],
+    "background": [
+      210,
+      227,
+      241,
+      255
+    ],
+    "ratio": 11.219564532097298
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "sidebar secondary",
+    "foreground": [
+      24,
+      42,
+      67
+    ],
+    "background": [
+      151,
+      156,
+      154,
+      255
+    ],
+    "ratio": 5.194684095612216
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead brand at 0",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      202,
+      221,
+      240,
+      255
+    ],
+    "ratio": 11.4958785596665
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead primary at 0",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      213,
+      228,
+      243,
+      255
+    ],
+    "ratio": 12.339237300057178
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead metadata at 0",
+    "foreground": [
+      24,
+      42,
+      67
+    ],
+    "background": [
+      213,
+      228,
+      243,
+      255
+    ],
+    "ratio": 11.17848469172916
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead account at 0",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      222,
+      235,
+      248,
+      255
+    ],
+    "ratio": 13.194202926492759
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead brand at 600",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      201,
+      220,
+      240,
+      255
+    ],
+    "ratio": 11.394620708793
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead primary at 600",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      212,
+      227,
+      243,
+      255
+    ],
+    "ratio": 12.233085488085532
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead metadata at 600",
+    "foreground": [
+      24,
+      42,
+      67
+    ],
+    "background": [
+      212,
+      227,
+      243,
+      255
+    ],
+    "ratio": 11.082318585488636
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead account at 600",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      221,
+      234,
+      248,
+      255
+    ],
+    "ratio": 13.08337318048085
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead brand at 1200",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      201,
+      220,
+      240,
+      255
+    ],
+    "ratio": 11.394620708793
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead primary at 1200",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      212,
+      227,
+      243,
+      255
+    ],
+    "ratio": 12.233085488085532
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead metadata at 1200",
+    "foreground": [
+      24,
+      42,
+      67
+    ],
+    "background": [
+      212,
+      227,
+      243,
+      255
+    ],
+    "ratio": 11.082318585488636
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "masthead account at 1200",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      221,
+      234,
+      248,
+      255
+    ],
+    "ratio": 13.08337318048085
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "card body",
+    "foreground": [
+      16,
+      32,
+      69
+    ],
+    "background": [
+      250,
+      251,
+      252,
+      255
+    ],
+    "ratio": 15.418968808330122
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "card secondary",
+    "foreground": [
+      74,
+      96,
+      128
+    ],
+    "background": [
+      247,
+      248,
+      251,
+      255
+    ],
+    "ratio": 6.036226254308721
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "KPI context",
+    "foreground": [
+      74,
+      96,
+      128
+    ],
+    "background": [
+      242,
+      247,
+      251,
+      255
+    ],
+    "ratio": 5.944029870164667
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "critical status",
+    "foreground": [
+      180,
+      35,
+      38
+    ],
+    "background": [
+      255,
+      240,
+      239,
+      255
+    ],
+    "ratio": 5.909029846634082
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "label": "approval selected",
+    "foreground": [
+      0,
+      75,
+      168
+    ],
+    "background": [
+      237,
+      244,
+      255,
+      255
+    ],
+    "ratio": 7.381882214333481
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "selected navigation",
+    "foreground": [
+      224,
+      239,
+      255
+    ],
+    "background": [
+      51,
+      94,
+      139,
+      255
+    ],
+    "ratio": 5.766300497267812
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "sidebar primary",
+    "foreground": [
+      231,
+      239,
+      247
+    ],
+    "background": [
+      76,
+      101,
+      127,
+      255
+    ],
+    "ratio": 5.204676698637639
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "sidebar secondary",
+    "foreground": [
+      212,
+      226,
+      242
+    ],
+    "background": [
+      38,
+      63,
+      91,
+      255
+    ],
+    "ratio": 8.207896651608307
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead brand at 0",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      69,
+      97,
+      126,
+      255
+    ],
+    "ratio": 5.933004752409628
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead primary at 0",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      75,
+      102,
+      131,
+      255
+    ],
+    "ratio": 5.490202731890915
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead metadata at 0",
+    "foreground": [
+      212,
+      226,
+      242
+    ],
+    "background": [
+      75,
+      102,
+      131,
+      255
+    ],
+    "ratio": 4.524536301614385
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead account at 0",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      83,
+      107,
+      135,
+      255
+    ],
+    "ratio": 5.068783071380633
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead brand at 600",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      69,
+      96,
+      126,
+      255
+    ],
+    "ratio": 6.000523681819827
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead primary at 600",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      75,
+      102,
+      131,
+      255
+    ],
+    "ratio": 5.490202731890915
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead metadata at 600",
+    "foreground": [
+      212,
+      226,
+      242
+    ],
+    "background": [
+      74,
+      101,
+      131,
+      255
+    ],
+    "ratio": 4.585738607671444
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead account at 600",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      83,
+      107,
+      135,
+      255
+    ],
+    "ratio": 5.068783071380633
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead brand at 1200",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      69,
+      96,
+      126,
+      255
+    ],
+    "ratio": 6.000523681819827
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead primary at 1200",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      75,
+      102,
+      131,
+      255
+    ],
+    "ratio": 5.490202731890915
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead metadata at 1200",
+    "foreground": [
+      212,
+      226,
+      242
+    ],
+    "background": [
+      74,
+      101,
+      131,
+      255
+    ],
+    "ratio": 4.585738607671444
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "masthead account at 1200",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      83,
+      107,
+      135,
+      255
+    ],
+    "ratio": 5.068783071380633
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "card body",
+    "foreground": [
+      241,
+      246,
+      255
+    ],
+    "background": [
+      46,
+      67,
+      90,
+      255
+    ],
+    "ratio": 9.370864977367622
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "card secondary",
+    "foreground": [
+      192,
+      208,
+      228
+    ],
+    "background": [
+      48,
+      67,
+      89,
+      255
+    ],
+    "ratio": 6.456960034338606
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "KPI context",
+    "foreground": [
+      192,
+      208,
+      228
+    ],
+    "background": [
+      40,
+      60,
+      80,
+      255
+    ],
+    "ratio": 7.225167948074983
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "critical status",
+    "foreground": [
+      255,
+      170,
+      165
+    ],
+    "background": [
+      60,
+      36,
+      38,
+      255
+    ],
+    "ratio": 7.840709577672089
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "label": "approval selected",
+    "foreground": [
+      224,
+      239,
+      255
+    ],
+    "background": [
+      34,
+      54,
+      80,
+      255
+    ],
+    "ratio": 10.493628890489434
+  }
+]

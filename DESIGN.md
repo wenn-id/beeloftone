@@ -2,6 +2,23 @@
 
 ## Current design authority: Apple-27 Native-Parity Program
 
+A5.2 supersedes the historical full-bleed geometry below. Its approved reference is
+the user's `ChatGPT Image Sep 23, 2026, 06_20_23 PM.png`. The desktop uses a scenic
+environment, one floating rounded window, translucent toolbar/sidebar, compact
+Command Center modules, and the unchanged A2/A3 navigation object. One CSS-only
+sidebar optical rim is allowed to run continuously; reduced motion makes it static.
+Business semantics, pending recovery, session security and schema 55 remain frozen.
+The final composition retains the alpine scene, maps four KPIs to existing operational
+fields, and arranges approval, integrations, attention and capacity as four equal
+desktop cards. The CSS rim runs for 17 seconds with a transparent 35% rest interval.
+Source definitions and business rules are unchanged. A6 has not started.
+ENERGY 2 / RHYTHM 2 / MOTION 1, with the explicitly requested rim exception.
+
+The final polish hides sidebar group labels visually, softens toolbar borders,
+increases environmental pickup in both themes, and adds a static tonal FPY ring.
+Layout and data remain fixed. Human visual approval was granted on 2026-09-24.
+See [final review evidence](docs/apple27-a52-final-visual-polish.md).
+
 The [Apple-27 A0 audit](docs/apple27-native-parity-audit.md) is the architecture
 authority. Beeloft One should feel like a native current-generation Apple application
 adapted to an operational workspace, preserving Beeloft's business data, Indonesian

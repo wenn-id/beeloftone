@@ -1,4 +1,5 @@
 import {Api, escapeHTML as e, displayDate as date, formatMaterialQuantity as materialQty} from './client.mjs';
+import {createWorkspace} from './workspace.mjs';
 
 const $ = id => document.getElementById(id);
 const api = new Api();
@@ -676,7 +677,7 @@ function clearWorkspace() {
   auditFilters = {q:'',category:'all',actor_id:'',start_date:'',end_date:''};
   $('command-center-attention').replaceChildren(); $('command-center-snapshots').replaceChildren();
   for(const id of ['command-center-hero','command-center-channels','command-center-contribution',
-    'command-center-products','command-center-operations','command-center-context'])$(id).replaceChildren();
+    'command-center-products','command-center-operations','command-center-context','command-center-capacity'])$(id).replaceChildren();
   $('command-center-period').textContent='';
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   peopleRequest++; workforceFilters = {work_date:'',status:'all',q:''};
@@ -703,6 +704,7 @@ function clearWorkspace() {
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; api.actorId = ''; user = null; selected = null; boardData = null;
+  workspaceChrome.session(null);
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
   // Sesi berganti: tidak ada konteks sebelumnya untuk digantikan, dan tidak boleh ada kelas
   // gerak yang tertinggal dari akun sebelumnya. Kueri yang tercatat sebagai "sedang tampil" ikut
@@ -809,6 +811,7 @@ function enterWorkspace(me,workflow) {
   user=me;api.actorId=me.id;transitions=workflow.transitions;$('access-key').value='';
   $('account-name').textContent=`${me.name} · ${me.role}`;
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
+  workspaceChrome.session(me);
   $('menu-toggle').hidden=false;
   $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
@@ -856,6 +859,9 @@ async function loadLoginOptions() {
     $('sso-login').textContent=`Masuk dengan ${sso.label}`;$('sso-login').hidden=false;$('sso-separator').hidden=false;
   } catch {}
 }
+const workspaceChrome = createWorkspace({guardPending, busy:() => modalBusy || unresolved || Boolean(logoutRequest),
+  theme, showCommandCenter, syncLens:scheduleNavigationLensSync});
+workspaceChrome.session(null);
 loadLoginOptions();
 restoreSession();
 
@@ -967,7 +973,7 @@ function commandTrend(rows, caption) {
   const ticks = [...new Set(marks)].map(index =>
     `<span>${e(commandDay(rows[index].date))}</span>`).join('');
   return `<div class="trend"><p class="trend-peak">Puncak ${e(commandMoneyShort(String(peak)))}</p>`
-    + `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${e(caption)}">`
+    + `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${e(caption)}">`
     + `<defs><linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">`
     + `<stop offset="0" stop-color="var(--primary)" stop-opacity=".14"/>`
     + `<stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>`
@@ -977,15 +983,6 @@ function commandTrend(rows, caption) {
 }
 const ATTENTION_DOMAINS = {production:'Produksi',people:'People',inventory:'Stok',finance:'Finance',
   approval:'Approval',quality:'Kualitas',capacity:'Kapasitas',data_quality:'Data',integration:'Integrasi'};
-function attentionDomainRows(attention) {
-  const tally = new Map();
-  for (const row of attention) tally.set(row.kind, (tally.get(row.kind) || 0) + 1);
-  const rows = [...tally].map(([kind, value]) => ({label:ATTENTION_DOMAINS[kind] || kind, value}))
-    .sort((left, right) => right.value - left.value || left.label.localeCompare(left.label === right.label ? left.label : right.label));
-  if (rows.length <= 7) return rows;
-  const rest = rows.slice(6).reduce((total, row) => total + row.value, 0);
-  return [...rows.slice(0, 6), {label:'Lain', value:rest}];
-}
 async function showCommandCenter(refresh = false) {
   if(guardPending())return;
   activateWorkspace('command-center'); selected=null;
@@ -1008,79 +1005,59 @@ async function showCommandCenter(refresh = false) {
       mekari_payables:'mekari-payables-summary',
       mekari_receivables:'mekari-receivables-summary',integrations:'integrations'};
     const critical=report.status.critical_count,overdue=report.production.overdue_orders;
-    /* Marketplace business performance. Every figure below comes from the latest Jubelio order
-       snapshot batch, so it is labelled by that snapshot rather than by a calendar period. */
     const market=report.sales.marketplace,stat=market.summary,live=Boolean(market.snapshot_at);
-    const refunded=decimalValue(stat.refund_amount)>0,unmatched=stat.unmatched_refunds;
-    const away='Snapshot order Jubelio belum tersedia';
+    const unmatched=stat.unmatched_refunds;
     $('command-center-summary').innerHTML=[
-      ['Penjualan bersih',live?commandMoneyShort(stat.net_revenue):'—',live?'':'belum ada snapshot','wallet',
-        live?(refunded?{tone:'chip-warning',icon:'undo',text:`Refund ${commandMoneyShort(stat.refund_amount)}`}
-          :{tone:'chip-neutral',icon:'check-circle',text:'Tanpa refund cocok'}):null,
-        live?`${commandMoney(stat.net_revenue)} · kotor ${commandMoney(stat.gross_revenue)} dikurangi refund yang cocok`:away,
-        live?commandMoney(stat.net_revenue):''],
-      ['Total order',live?stat.orders:'—',live?'order':'belum ada snapshot','inbox',
-        live?{tone:'chip-primary',icon:'check-circle',text:`${n(stat.completed)} selesai`}:null,
-        live?`${n(stat.pending)} menunggu · ${n(stat.processing)} diproses · ${n(stat.cancelled)} batal`:away,''],
-      ['Unit terjual',live?stat.units:'—',live?'pcs':'belum ada snapshot','box',null,
-        live?`Dari ${n(stat.completed_orders)} order selesai · ${n(stat.marketplaces)} marketplace`:away,''],
-      ['AOV order selesai',live?commandMoneyShort(stat.average_order_value):'—',live?'/order':'belum ada snapshot','trend',null,
-        live?`${commandMoney(stat.average_order_value)} · kotor order selesai dibagi jumlah order selesai`:away,
-        live?commandMoney(stat.average_order_value):'']
-    ].map(([label,value,unit,glyph,chip,foot,exact])=>`<div class="kpi-card"><dt>${e(label)}${svgIcon(glyph)}</dt><dd><span class="kpi-value"${exact?` title="${e(exact)}"`:''}>${typeof value==='number'?n(value):e(value)}${unit?` <small>${e(unit)}</small>`:''}${chip?`<span class="chip ${chip.tone}">${svgIcon(chip.icon)}${e(chip.text)}</span>`:''}</span></dd><p class="kpi-foot">${e(foot)}</p></div>`).join('');
+      ['Order aktif',n(report.production.active_orders),'cart',`${n(overdue)} melewati target`],
+      ['Approval pending',n(report.approvals.pending_count),'inbox',`${n(report.approvals.pending_without_amount)} pengajuan tanpa nominal`],
+      ['Nilai approval pending',commandMoney(report.approvals.pending_amount),'wallet',`${n(report.approvals.pending_count-report.approvals.pending_without_amount)} pengajuan bernominal`],
+      ['Kendala terbuka',n(report.status.attention_count),'alert-triangle',`${n(critical)} kritis · ${n(report.status.attention_count-critical)} nonkritis`]
+    ].map(([label,value,glyph,foot])=>`<div class="kpi-card kpi-${glyph}"><dt>${e(label)}${svgIcon(glyph)}</dt><dd><span class="kpi-value">${e(value)}</span></dd><p class="kpi-foot">${e(foot)}</p></div>`).join('');
     $('command-center-summary').removeAttribute('aria-busy');
     $('command-center-period').textContent=live
       ?`Jubelio snapshot ${commandSource(market.snapshot_at).replace('Snapshot ','')}`
         +(market.period_start?` · order ${commandRange(market.period_start,market.period_end)}`:'')
       :'Snapshot order Jubelio belum tersedia';
     $('command-center-operations').innerHTML=[
-      ['Order aktif',`${n(report.production.active_orders)} order`,overdue?'is-alert':''],
-      ['Keputusan menunggu',`${n(report.approvals.pending_count)} pengajuan`,report.approvals.pending_count?'is-alert':''],
-      ['Exception',`${n(report.status.attention_count)} perlu perhatian`,critical?'is-alert':''],
-      ['Laba bersih',report.finance.current?commandMoney(report.finance.current.net_profit):'belum ada data','',
-        report.finance.current?`Mekari · ${commandRange(report.finance.current.period_start,report.finance.current.period_end)}`:'Snapshot keuangan belum tersedia']
+      ['Dalam proses',`${n(report.production.in_progress_quantity)} pcs`,'',`${n(report.production.active_orders)} order aktif`],
+      ['Rework',`${n(report.production.rework_quantity)} pcs`,report.production.rework_quantity?'is-alert':''],
+      ['Kendala produksi',`${n(report.production.open_issues)} terbuka`,report.production.open_issues?'is-alert':''],
+      ['Kehadiran',`${n(report.workforce.present)} / ${n(report.workforce.active_employees)} orang`,'',`Roster ${date(report.workforce.as_of)}`]
     ].map(([label,value,tone,source])=>`<div class="ops-stat ${tone}"><dt>${e(label)}</dt><dd>${e(value)}${source?`<small>${e(source)}</small>`:''}</dd></div>`).join('');
     const mark={critical:'alert-octagon',warning:'alert-triangle',info:'info'};
     $('command-center-attention').innerHTML=report.attention.length
-      ?report.attention.map(row=>`<article class="command-attention decision-row ${e(row.priority)}" data-command-attention="${e(row.id)}"><span class="decision-mark" aria-hidden="true">${svgIcon(mark[row.priority]||'info')}</span><div class="decision-body"><div class="decision-title"><h3>${e(row.title)}</h3><p class="status-label ${row.priority==='critical'?'late':''}">${row.priority==='critical'?'Kritis':row.priority==='info'?'Informasi':'Perlu perhatian'} · ${e(ATTENTION_DOMAINS[row.kind]||row.kind)}</p></div><p class="decision-detail">${e(row.detail)}</p></div><span class="decision-action"><button data-action="${e(action[row.action])}">${e(row.action_label)}</button></span></article>`).join('')
+      ?report.attention.map(row=>`<article class="command-attention decision-row ${e(row.priority)}" data-command-attention="${e(row.id)}"><span class="decision-mark" aria-hidden="true">${svgIcon(mark[row.priority]||'info')}</span><div class="decision-body"><div class="decision-title"><h3>${e(row.title)}</h3><p class="status-label ${row.priority==='critical'?'late':''}">${row.priority==='critical'?'Kritis':row.priority==='info'?'Informasi':'Perlu perhatian'} · ${e(ATTENTION_DOMAINS[row.kind]||row.kind)}</p></div><p class="decision-detail">${e(row.detail)}</p></div><span class="decision-action"><button data-action="${e(action[row.action])}" aria-label="${e(row.action_label)}" title="${e(row.action_label)}">${svgIcon('arrow-right')}</button></span></article>`).join('')
       :'<p class="state">Tidak ada exception aktif dari sumber yang sudah tersambung.</p>';
     const finance=report.finance.current;
-    const funnel=[
-      {label:'Menunggu',value:stat.pending,tone:'is-pending'},
-      {label:'Diproses',value:stat.processing,tone:'is-processing'},
-      {label:'Selesai',value:stat.completed,tone:'is-completed'},
-      {label:'Batal',value:stat.cancelled,tone:'is-cancelled'}
-    ];
-    const funnelSpan=Math.max(1,funnel.reduce((total,cell)=>total+cell.value,0));
-    const domainRows=attentionDomainRows(report.attention),firstAttention=report.attention[0];
-    $('command-center-hero').innerHTML=`<article class="hero-panel"><div class="card-head"><h2>Total penjualan</h2><span class="hint">Kotor · order selesai</span></div>`
-      +`<div class="hero-body"><div class="hero-figure"><p class="hero-value" title="${live?e(commandMoney(stat.gross_revenue)):''}">${live?e(commandMoneyShort(stat.gross_revenue)):'—'}</p>`
-      +`<div class="hero-meta">${live?`<span class="chip chip-primary">${svgIcon('check-circle')}${n(stat.completed_orders)} order selesai</span>`
-          +`<span class="chip chip-neutral">${svgIcon('box')}${n(stat.units)} pcs</span>`:''}</div>`
-      +`<p class="hero-caption">${live?`Bersih ${e(commandMoney(stat.net_revenue))} setelah refund yang cocok`
-          +(unmatched?` · ${n(unmatched)} refund lain (${e(commandMoneyShort(stat.unmatched_refund_amount))}) tidak cocok dengan order di snapshot ini`:'')
-        :'Belum ada snapshot order Jubelio yang tersambung.'}</p></div>`
-      +(market.daily.length?`<div class="hero-trendwrap">${commandTrend(market.daily,
-          `Penjualan order selesai · ${commandRange(market.trend_start,market.trend_end)}`)}</div>`
-        :'<p class="state">Belum ada order selesai pada snapshot ini.</p>')
+    const firstAttention=report.attention[0];
+    const inspected=report.quality.inspected_quantity, fpy=report.quality.first_pass_yield_percent;
+    $('command-center-hero').innerHTML=`<article class="hero-panel"><div class="hero-narrative" data-command-pulse><p>Denyut operasional</p>`
+      +`<h2>${report.status.attention_count?`${n(report.status.attention_count)} hal perlu perhatian.`:'Tidak ada exception aktif.'}</h2>`
+      +`<p class="pulse-critical">${n(critical)} kritis · ${n(report.production.active_orders)} order aktif</p>`
+      +(firstAttention?`<div class="pulse-next"><p>${e(firstAttention.title)}</p><button data-action="${e(action[firstAttention.action])}">${e(firstAttention.action_label)}</button></div>`
+        :'<p class="state">Berdasarkan sumber yang sudah tersambung.</p>')
       +'</div>'
-      +(live?`<div class="hero-split"><div class="hero-split-grid">${funnel.map(cell=>`<div class="hero-split-cell ${e(cell.tone)}"><p class="hero-split-value">${n(cell.value)}</p><p class="hero-split-label">${e(cell.label)}</p></div>`).join('')}</div>`
-        +`<div class="hero-split-bars" aria-hidden="true">${funnel.map(cell=>`<span class="hero-split-bar ${e(cell.tone)}" style="flex:${cell.value/funnelSpan}"></span>`).join('')}</div></div>`:'')
-      +`</article><aside class="pulse-panel card" data-command-pulse><h2>Denyut operasional</h2><dl class="pulse-total"><dt>exception aktif</dt><dd>${n(report.status.attention_count)}</dd></dl>`
-      +`<p class="pulse-critical ${critical?'is-critical':''}">${n(critical)} kritis · ${n(report.status.attention_count-critical)} lainnya</p>`
-      +(firstAttention?`<div class="pulse-next"><h3>${e(firstAttention.title)}</h3><p>${e(firstAttention.detail)}</p><button data-action="${e(action[firstAttention.action])}">${e(firstAttention.action_label)}</button></div>`
-        :'<p class="state">Belum ada exception aktif dari sumber yang sudah tersambung.</p>')
-      +`<p class="command-source">${domainRows.length?e(domainRows.map(row=>`${row.label} ${n(row.value)}`).join(' · ')):'Belum ada exception aktif.'}</p></aside>`;
-    $('command-center-channels').innerHTML=`<div class="card-head"><h3>Perbandingan performa marketplace</h3>${svgIcon('chart')}</div>`
-      +(market.marketplaces.length?`<div class="table-scroll"><table class="data-table channel-table"><thead><tr>`
+      +`<div class="hero-ring"><svg viewBox="0 0 120 120" role="img" aria-label="${inspected?`First-pass yield ${e(fpy)}%, dari ${n(inspected)} pcs diperiksa`:'First-pass yield belum tersedia'}"><defs><linearGradient id="command-fpy-spectrum" x1="0" y1="0" x2="1" y2="1"><stop class="ring-tone-start"/><stop class="ring-tone-light" offset=".48"/><stop class="ring-tone-end" offset="1"/></linearGradient></defs><circle class="ring-track" cx="60" cy="60" r="51"/><circle class="ring-value" cx="60" cy="60" r="51" pathLength="100" stroke-dasharray="${inspected?percentValue(fpy):0} 100"/></svg><strong>${inspected?`${e(fpy)}%`:'—'}<small>First-pass yield</small></strong></div>`
+      +'<div class="hero-trendwrap"><p class="hint">Penjualan kotor · order selesai</p>'
+      +(market.daily.length?commandTrend(market.daily,`Penjualan order selesai · ${commandRange(market.trend_start,market.trend_end)}`):'<p class="state">Belum ada order selesai pada snapshot ini.</p>')
+      +(unmatched?`<p class="hero-caption">${n(unmatched)} refund (${e(commandMoneyShort(stat.unmatched_refund_amount))}) tidak cocok dengan order di snapshot ini.</p>`:'')+'</div>'
+      +`<p class="hero-quality-source">FPY: ${n(inspected)} pcs diperiksa · ${date(report.quality.period_start)} sampai ${date(report.quality.as_of)}</p></article>`;
+    const salesPeak=Math.max(1,...market.daily.map(row=>decimalValue(row.gross_revenue)));
+    $('command-center-channels').innerHTML=`<div class="card-head"><h3>Marketplace &amp; penjualan</h3><span class="hint">${e(commandRange(market.period_start,market.period_end))}</span></div>`
+      +(market.marketplaces.length?`<div class="marketplace-overview"><div class="marketplace-chart"><p class="marketplace-total" title="${e(commandMoney(stat.gross_revenue))}">${e(commandMoneyShort(stat.gross_revenue))}</p><p class="hint">${n(stat.completed_orders)} order selesai · ${n(stat.units)} pcs</p>`
+        +(market.daily.length?`<div class="marketplace-bars${market.daily.length>7?' is-dense':''}" style="--daily-count:${market.daily.length}" role="img" aria-label="${e(market.daily.map(row=>`${commandDay(row.date)}: ${commandMoney(row.gross_revenue)}`).join('; '))}">`
+          +market.daily.map(row=>`<div class="marketplace-day" title="${e(commandDay(row.date)+' · '+commandMoney(row.gross_revenue))}"><span class="marketplace-bar" style="height:${(decimalValue(row.gross_revenue)/salesPeak*100).toFixed(2)}%"></span><span class="marketplace-date">${e(commandDay(row.date))}</span></div>`).join('')+'</div>'
+          :'<p class="state">Belum ada order selesai pada snapshot ini.</p>')+'</div><div class="marketplace-channels">'
+        +market.marketplaces.map(row=>`<article class="marketplace-channel"><span class="channel-emblem" aria-hidden="true">${e(row.marketplace.slice(0,1))}</span><div class="channel-identity"><strong class="channel-name">${e(row.marketplace)}</strong><span class="channel-flow">${e([[row.completed,'selesai'],[row.processing,'diproses'],[row.pending,'menunggu'],[row.cancelled,'batal']].filter(([count])=>count).map(([count,word])=>`${n(count)} ${word}`).join(' · ')||'belum ada order')}</span></div><div class="channel-revenue"><strong>${e(commandMoney(row.gross_revenue))}</strong><span>${e(row.contribution_percent)}% kontribusi</span></div><div class="channel-contribution"><span style="width:${percentValue(row.contribution_percent)}%"></span></div></article>`).join('')
+        +'</div></div><details class="marketplace-details"><summary>Rincian order, unit &amp; refund</summary><div class="table-scroll"><table class="data-table channel-table"><thead><tr>'
         +'<th scope="col">Marketplace</th><th scope="col">Order</th><th scope="col">Unit</th>'
         +'<th scope="col">AOV</th><th scope="col">Kontribusi</th><th scope="col">Penjualan</th></tr></thead><tbody>'
-        +market.marketplaces.map(row=>`<tr><td><span class="channel-name">${e(row.marketplace)}</span><span class="channel-flow">${e([[row.completed,'selesai'],[row.processing,'diproses'],[row.pending,'menunggu'],[row.cancelled,'batal']].filter(([count])=>count).map(([count,word])=>`${n(count)} ${word}`).join(' · ')||'belum ada order')}</span></td>`
+        +market.marketplaces.map(row=>`<tr><td><strong>${e(row.marketplace)}</strong></td>`
           +`<td class="is-num">${n(row.orders)}</td><td class="is-num">${n(row.units)}</td>`
           +`<td class="is-num">${e(commandMoney(row.average_order_value))}</td>`
           +`<td class="is-num"><span class="share"><span class="share-bar"><span style="width:${Math.min(100,decimalValue(row.contribution_percent)).toFixed(1)}%"></span></span>${e(row.contribution_percent)}%</span></td>`
           +`<td class="is-num"><strong>${e(commandMoney(row.gross_revenue))}</strong>${decimalValue(row.refund_amount)>0?`<span class="channel-net">bersih ${e(commandMoney(row.net_revenue))}</span>`:''}</td></tr>`).join('')
-        +'</tbody></table></div>'
+        +'</tbody></table></div></details>'
         :'<p class="state">Belum ada marketplace pada snapshot order Jubelio.</p>')
       +'<button data-action="jubelio-order-summary">Buka penjualan Jubelio</button>';
     $('command-center-contribution').innerHTML=`<div class="card-head"><h3>Kontribusi marketplace</h3>${svgIcon('plug')}</div>`
@@ -1100,12 +1077,16 @@ async function showCommandCenter(refresh = false) {
     const wip=report.production.in_progress_quantity,rework=report.production.rework_quantity;
     const required=report.capacity.required_minutes,available=report.capacity.available_minutes;
     const head=(title,glyph)=>`<div class="card-head"><h3>${title}</h3>${svgIcon(glyph)}</div>`;
-    $('command-center-context').innerHTML=`<section class="card approval-panel" aria-labelledby="command-approvals-title"><h2 id="command-approvals-title">Keputusan menunggu</h2>`
+    $('command-center-context').innerHTML=`<section class="card approval-panel" aria-labelledby="command-approvals-title"><h2 id="command-approvals-title">Approval yang perlu tindakan</h2>`
       +`<dl class="approval-total"><dt>pengajuan pending</dt><dd>${n(report.approvals.pending_count)}</dd></dl>`
       +`<p class="approval-amount">${e(commandMoney(report.approvals.pending_amount))}</p><p class="hint">Nominal tercatat · ${n(report.approvals.pending_without_amount)} pengajuan tanpa nominal</p>`
       +`<details class="approval-breakdown"><summary>Rincian jenis pengajuan</summary><dl class="command-values">${Object.entries(report.approvals.by_kind).map(([kind,count])=>`<dt>${e(approvalKind[kind]||'Jenis pengajuan lainnya')}</dt><dd>${n(count)}</dd>`).join('')}</dl></details>`
       +'<button data-action="approvals">Buka inbox approval</button></section>'
-      +`<section class="card integration-panel" data-command-snapshot="integrations"><h2>Kesehatan integrasi</h2><dl class="command-values">${report.integrations.systems.map(row=>`<dt>${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></section>`;
+      +`<section class="card integration-panel" data-command-snapshot="integrations"><h2>Integrasi &amp; sinkronisasi</h2><dl class="command-values integration-status">${report.integrations.systems.map(row=>`<div class="integration-row"><dt>${svgIcon('plug')}${e(row.label)}</dt><dd class="status-label ${row.health==='healthy'?'done':'late'}">${e(row.health==='healthy'?'Sehat':row.health==='failed'?'Gagal':row.health==='stale'?'Stale':row.health==='incomplete'?'Belum lengkap':'Belum sync')}</dd></div>`).join('')}</dl><button data-action="integrations">Buka kesehatan integrasi</button></section>`;
+    $('command-center-capacity').innerHTML=`${head('Kapasitas produksi','activity')}`
+      +commandMeter('Beban 14 hari',`${e(minuteQty(required))} / ${e(minuteQty(available))}`,available?required/available:(required?1:0),null,available&&required>available?'is-over':available&&required/available>0.85?'is-tight':'')
+      +`<dl class="command-values"><dt>Order berisiko</dt><dd>${n(report.capacity.at_risk_orders)}</dd><dt>Perlu perhatian</dt><dd>${n(report.capacity.attention_work_centers)} work center</dd></dl>`
+      +`<p class="command-source">${report.capacity.capacity_complete?'Standar lengkap':`${n(report.capacity.coverage_gaps)} kebutuhan tahap belum lengkap`} · sampai ${date(report.capacity.horizon_end)}</p><button data-action="capacity-plan">Lihat kapasitas</button>`;
     $('command-center-snapshots').innerHTML=`
       <article class="command-snapshot snapshot-card card" data-command-snapshot="production">${head('Produksi','layers')}${commandMeter('Rework dari WIP',`${n(rework)} / ${n(wip)} pcs`,wip?rework/wip:0,null,rework&&wip&&rework/wip>0.05?'is-over':'')}<dl class="command-values"><dt>Lewat target</dt><dd>${n(report.production.overdue_orders)} order</dd><dt>Dalam proses</dt><dd>${n(wip)} pcs</dd><dt>Rework</dt><dd>${n(rework)} pcs</dd></dl><button data-action="command-production-overdue">Buka papan produksi</button></article>
       <article class="command-snapshot snapshot-card card" data-command-snapshot="quality">${head('Kualitas produksi','shield')}${commandGauge(report.quality.first_pass_yield_percent,report.quality.attention_groups?'is-warn':'',`Periode ${date(report.quality.period_start)} sampai ${date(report.quality.as_of)}`)}<dl class="command-values"><dt>Diperiksa</dt><dd>${n(report.quality.inspected_quantity)} pcs</dd><dt>Yield</dt><dd>${e(report.quality.first_pass_yield_percent)}%</dd><dt>Rework + reject</dt><dd>${e(report.quality.nonconforming_rate_percent)}%</dd><dt>Perlu perhatian</dt><dd>${n(report.quality.attention_groups)} line/vendor</dd></dl><button data-action="production-quality-insights">Buka analisis kualitas</button></article>
@@ -1127,7 +1108,7 @@ async function showCommandCenter(refresh = false) {
     // tidak ikut dibersihkan dan karenanya masih memuat angka lama di samping pesan kesalahan.
     // Kontainernya disembunyikan, persis seperti sebelum perlakuan muat ulang ada, sehingga
     // percobaan berikutnya membaca keadaan "belum ada laporan" dan memakai keadaan memuat biasa.
-    settleRefreshing('command-center-content');$('command-center-content').hidden=true;commandCenterReport=false;$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations','command-center-attention','command-center-context','command-center-snapshots'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
+    settleRefreshing('command-center-content');$('command-center-content').hidden=true;commandCenterReport=false;$('command-center-summary').replaceChildren();$('command-center-summary').removeAttribute('aria-busy');for(const id of ['command-center-hero','command-center-channels','command-center-contribution','command-center-products','command-center-operations','command-center-attention','command-center-context','command-center-capacity','command-center-snapshots'])$(id).replaceChildren();$('command-center-period').textContent='';$('command-center-updated').textContent='';fail(error,'command-center-message');}}
 }
 // Tombol navigasi dan pintasan tindakan tidak meneruskan argumen apa pun: hanya kontrol "Muat
 // ulang" yang meminta perlakuan muat ulang, jadi handler-nya dipasang eksplisit sebagai arrow.

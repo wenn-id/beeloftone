@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,viewer,apiGet,work})=>{
+module.exports=async({page,login,admin,viewer,apiGet,work,openSidebarDestination})=>{
   async function post(url,body,key){
     const response=await fetch(process.env.BEELOFT_QA_BASE+url,{method:'POST',headers:{
       'Content-Type':'application/json','X-API-Key':admin,'Idempotency-Key':key
@@ -14,7 +14,7 @@ module.exports=async({page,login,admin,viewer,apiGet,work})=>{
     await login(key);
   }
   async function openOrder(reference,title){
-    await page.locator('#brand').click();
+    await openSidebarDestination('Produksi');
     await page.getByLabel('Cari order atau SKU').fill(reference);
     await page.getByRole('button',{name:'Cari order',exact:true}).click();
     const row=page.locator('.order-row').filter({hasText:reference});

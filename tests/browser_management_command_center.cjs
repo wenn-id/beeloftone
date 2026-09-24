@@ -26,7 +26,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.getByRole('button',{name:'Command center',exact:true}).click();
   await page.getByText('Command center sedang diperbarui',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Muat ulang',exact:true}).click();
-  await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Command center',exact:true}).waitFor();
   await page.locator('#command-center-summary dd').first().waitFor();
   await page.locator('[data-command-snapshot="production"]').waitFor();
   await page.locator('[data-command-snapshot="quality"]').getByText('Yield',{exact:true}).waitFor();
@@ -40,10 +40,11 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.locator('[data-command-snapshot="integrations"]').waitFor();
   assert.ok((await page.locator('[data-command-attention]').count())>0);
   const attentionPanel=page.locator('.attention-panel');
-  const snapshotPanel=page.locator('.snapshot-panel');
+  const snapshotPanel=page.locator('.approval-panel');
   await attentionPanel.waitFor();await snapshotPanel.waitFor();
   const attentionBox=await attentionPanel.boundingBox(),snapshotBox=await snapshotPanel.boundingBox();
-  assert.ok(attentionBox.width>snapshotBox.width,'Decision queue must remain the desktop focal point');
+  assert.ok(Math.abs(attentionBox.width-snapshotBox.width)<1 && Math.abs(attentionBox.y-snapshotBox.y)<1,
+    'Attention and approval share equal desktop columns');
   assert.equal(await page.getByRole('button',{name:'Command center',exact:true}).getAttribute('aria-current'),'page');
   await page.locator('[data-command-attention="production-capacity-risk"]')
     .getByRole('heading',{name:'Kapasitas produksi berisiko',exact:true}).waitFor();
@@ -131,7 +132,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   // The roster shortcut navigated away from the command center; the remaining
   // shortcuts live on the command center page, so re-enter it before using them.
   await page.getByRole('button',{name:'Command center',exact:true}).click();
-  await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Command center',exact:true}).waitFor();
   await page.locator('[data-command-attention="production-capacity-risk"]')
     .getByRole('heading',{name:'Kapasitas produksi berisiko',exact:true}).waitFor();
 
@@ -143,7 +144,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   // The capacity plan is a workspace page now, so it replaced the command center rather than
   // overlaying it; come back before using the remaining snapshots on that page.
   await page.getByRole('button',{name:'Command center',exact:true}).click();
-  await page.getByRole('heading',{name:'Apa yang perlu diputuskan hari ini.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Command center',exact:true}).waitFor();
 
   await page.locator('[data-command-snapshot="production"]').getByRole('button',{name:'Buka papan produksi'}).click();
   await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();

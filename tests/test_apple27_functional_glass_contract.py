@@ -334,12 +334,13 @@ class ContentStaysOpaqueTest(unittest.TestCase):
         self.assertNotIn('OffscreenCanvas', source)
         self.assertNotRegex(source, r'getContext\([\'"]2d')
         self.assertNotRegex(source, r'<canvas|createElement\([\'"]canvas')
-        # No wallpaper, scenic asset or decorative image was introduced to make the backdrop obvious.
+        # A5.2 explicitly adds two local scenic wallpapers, with a separate presentation stylesheet.
         # The one pre-existing `url(#…)` is an in-document SVG paint-server reference, not an asset.
         self.assertNotRegex(CSS, r'url\((?!#)|@import|@font-face|image-set\(')
         self.assertEqual(re.findall(r'url\([^)]*\)', CSS), ['url(#trend-fill)'])
         self.assertEqual([path.name for path in STATIC.rglob('*') if path.suffix.lower() in
-                          ('.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.mp4', '.woff', '.woff2')], [])
+                          ('.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.mp4', '.woff', '.woff2')],
+                         ['wallpaper-landscape.webp', 'wallpaper-mist.webp'])
 
 
 class FallbackHierarchyTest(unittest.TestCase):

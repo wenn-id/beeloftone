@@ -272,8 +272,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // The iteration count lives on the effect's timing, not on the Animation object: reading
   // `animation.iterations` would compare undefined and pass no matter what shipped.
   const endless = () => page.evaluate(() => document.getAnimations()
-    .filter(animation => (animation.effect?.getComputedTiming()?.iterations ?? 0) === Infinity).length);
-  assert.equal(await endless(), 0, 'nothing in the product animates forever');
+    .filter(animation => (animation.effect?.getComputedTiming()?.iterations ?? 0) === Infinity && animation.animationName !== 'sidebar-specular').length);
+  assert.equal(await endless(), 0, 'only the A5.2 sidebar optical rim may animate continuously');
 
   console.log('Microinteraction browser QA PASS: only the theme toggle arms a colour transition and it '
     + 'releases after one token, progress values interpolate only when the number changed and never '

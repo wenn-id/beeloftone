@@ -26,6 +26,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
     await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
     await page.getByRole('heading',{name:'Yang sedang dikerjakan.'}).waitFor();
     await page.locator('#summary dd').first().waitFor();
+    // Feature modules exercise every analytics destination; the shipped sidebar starts collapsed.
+    await page.locator('.nav-collapse').evaluate(node => { node.open = true; });
   }
   async function apiGet(url) {
     const response = await fetch(base+url,{headers:{'X-API-Key':admin}});
@@ -377,10 +379,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal(await page.locator('#activity-view [data-action="move"]').count(),0);
   const moduleContext={page,login,openSidebarDestination,admin,operator,viewer,apiGet,apiPost,work};
   async function runModule(path,extra={}){
-    // BEELOFT_QA_ONLY narrows a local run to the modules whose path contains its value, so a
+    // BEELOFT_QA_ONLY accepts comma-separated path fragments to narrow a local run, so a
     // single motion or feature module can be iterated on without replaying the whole suite.
     // CI never sets it, and an unset variable leaves the suite exactly as it was.
-    if(process.env.BEELOFT_QA_ONLY&&!path.includes(process.env.BEELOFT_QA_ONLY))return;
+    if(process.env.BEELOFT_QA_ONLY&&!process.env.BEELOFT_QA_ONLY.split(',').some(name=>path.includes(name.trim())))return;
     await page.setViewportSize({width:1440,height:1000});
     return require(path)({...moduleContext,...extra});
   }
@@ -467,6 +469,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_navigation_spring.cjs');
   await runModule('./browser_functional_glass.cjs');
   await runModule('./browser_command_center_golden.cjs');
+  await runModule('./browser_macos_workspace.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

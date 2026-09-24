@@ -76,7 +76,7 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   };
   const settle = () => page.waitForFunction(() => !document.querySelector('.motion-enter,.is-theming')
     && getComputedStyle(document.getElementById('nav-selection-lens')).willChange === 'auto'
-    && document.getAnimations().every(animation=>animation.playState==='finished'));
+    && document.getAnimations().every(animation=>animation.animationName==='sidebar-specular' || animation.playState==='finished'));
   const open = async () => {
     await openSidebarDestination('Command center');
     await page.locator('#command-center-content:not([hidden])').waitFor();
@@ -106,13 +106,22 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   await open();
   const kpis = await page.locator('#command-center-summary .kpi-card').allTextContents();
   assert.equal(kpis.length,4);
-  for (const [index,label,value] of [[0,'Penjualan bersih','Rp44.350.000,00'],[1,'Total order','212'],
-    [2,'Unit terjual','300'],[3,'AOV order selesai','Rp250.000,00']]) {
+  for (const [index,label,value] of [[0,'Order aktif','27'],[1,'Approval pending','12'],
+    [2,'Nilai approval pending','Rp18.750.000,50'],[3,'Kendala terbuka','4']]) {
     assert.ok(kpis[index].includes(label));
     assert.ok(kpis[index].includes(value),`${label} uses the response, including exact money`);
   }
-  assert.match(await page.locator('#command-center-operations').innerText(),/27 order[\s\S]*12 pengajuan[\s\S]*4 perlu perhatian/);
-  assert.equal(await page.locator('.pulse-total dd').innerText(),'4');
+  assert.deepEqual(await page.locator('#command-center-summary .kpi-foot').allTextContents(),
+    ['3 melewati target','3 pengajuan tanpa nominal','9 pengajuan bernominal','2 kritis · 2 nonkritis']);
+  assert.match(await page.locator('#command-center-operations').innerText(),/1.840 pcs[\s\S]*27 order aktif[\s\S]*42 pcs[\s\S]*2 terbuka[\s\S]*28 \/ 32 orang/);
+  assert.match(await page.locator('#command-center-capacity').innerText(),/7.200 menit \/ 9.600 menit/);
+  const lowerCards = await page.locator('.approval-panel,.integration-panel,.attention-panel,#command-center-capacity')
+    .evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));
+  assert.equal(lowerCards.length,4);
+  assert.ok(lowerCards.every(r=>Math.abs(r.y-lowerCards[0].y)<1 && Math.abs(r.w-lowerCards[0].w)<1 && Math.abs(r.h-lowerCards[0].h)<1),
+    'approval, integrations, attention and capacity share one equal four-card row');
+  assert.ok(lowerCards.every((r,i)=>!i||r.x>lowerCards[i-1].x),'lower cards retain the requested order');
+  assert.match(await page.locator('[data-command-pulse] h2').innerText(),/^4 hal/);
   assert.match(await page.locator('.pulse-critical').innerText(),/2 kritis/);
   assert.equal(await page.locator('.approval-total dd').innerText(),'12');
   assert.equal(await page.locator('.approval-amount').innerText(),'Rp18.750.000,50');
@@ -130,6 +139,13 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   assert.deepEqual(await page.locator('#command-center-channels .channel-name').allTextContents(),['Shopee','Tokopedia']);
   const channelText = await page.locator('#command-center-channels').innerText();
   assert.ok(channelText.includes('Rp31.500.000,00') && channelText.includes('70.00%'));
+  assert.deepEqual(await page.locator('.marketplace-bar').evaluateAll(nodes=>nodes.map(node=>parseFloat(node.style.height))),
+    report.sales.marketplace.daily.map(row=>Number((Number(row.gross_revenue)/9000000*100).toFixed(2))));
+  await page.locator('.marketplace-details summary').click();
+  const channelRows = await page.locator('.channel-table tbody tr').allTextContents();
+  assert.ok(channelRows[0].includes('150') && channelRows[0].includes('210') && channelRows[0].includes('Rp242.307,69') && channelRows[0].includes('Rp30.850.000,00'));
+  assert.match(await page.locator('.marketplace-details .table-scroll').evaluate(node=>getComputedStyle(node).backgroundColor), /^rgb\(/, 'dense table uses a solid surface');
+  await page.locator('.marketplace-details summary').click();
   assert.deepEqual(await page.locator('#command-center-products .rank-name').allTextContents(),
     report.sales.marketplace.products.map(row=>row.product_name));
   assert.equal(await page.locator('.trend-dot').count(),7);
@@ -163,7 +179,7 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   payload = report; await open();
   failNext = true; await refresh();
   assert.match(await page.locator('#command-center-message').innerText(),/Snapshot gagal dimuat/);
-  for (const id of ['summary','hero','channels','contribution','products','operations','attention','context','snapshots'])
+  for (const id of ['summary','hero','channels','contribution','products','operations','attention','context','capacity','snapshots'])
     assert.equal(await page.locator('#command-center-'+id).textContent(),'');
   assert.equal(await page.locator('#command-center-content').isHidden(),true);
   await refresh();
@@ -204,12 +220,13 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   payload.finance = {...report.finance,snapshot_at:null,current:null};
   await refresh();
   assert.equal(await page.locator('.trend svg').count(),0);
-  assert.match(await page.locator('#command-center-summary').innerText(),/Snapshot order Jubelio belum tersedia/);
-  assert.doesNotMatch(await page.locator('#command-center-summary').innerText(),/Rp|Tanpa refund cocok/);
+  assert.deepEqual(await page.locator('#command-center-summary .kpi-card').allTextContents(),kpis,
+    'operational KPIs remain available without a marketplace snapshot');
+  assert.match(await page.locator('#command-center-channels').innerText(),/Belum ada marketplace/);
   assert.doesNotMatch(await page.locator('[data-command-snapshot="sales"]').innerText(),/Rp0/);
   assert.match(await page.locator('[data-command-snapshot="finance"]').innerText(),/Snapshot keuangan belum tersedia/);
   assert.doesNotMatch(await page.locator('[data-command-snapshot="finance"]').innerText(),/Rp0/);
-  assert.equal(await page.locator('.pulse-total dd').innerText(),'4');
+  assert.match(await page.locator('[data-command-pulse] h2').innerText(),/^4 hal/);
   await page.screenshot({path:path.join(shots,'a5-empty-missing.png'),fullPage:true});
   payload = structuredClone(report); payload.attention = []; payload.status = {state:'clear',attention_count:0,critical_count:0};
   payload.approvals = {pending_count:0,pending_amount:'0.00',pending_without_amount:0,
@@ -218,7 +235,7 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   payload.integrations = {attention_count:0,systems:report.integrations.systems.map(row=>({...row,health:'healthy',attention_count:0}))};
   payload.quality.attention_groups=0; payload.inventory.at_risk=0; payload.inventory.mismatched=0;
   await refresh();
-  assert.equal(await page.locator('.pulse-total dd').innerText(),'0');
+  assert.equal(await page.locator('[data-command-pulse] h2').innerText(),'Tidak ada exception aktif.');
   assert.match(await page.locator('#command-center-attention').innerText(),/Tidak ada exception aktif dari sumber yang sudah tersambung/);
   await page.locator('.approval-breakdown summary').click();
   assert.deepEqual(await page.locator('.approval-breakdown dd').allTextContents(),Array(9).fill('0'));
@@ -327,12 +344,12 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
     for (const scroll of [0,600,1200]) {
       await page.evaluate(y=>window.scrollTo(0,y),scroll);
       await measure('masthead brand at '+scroll,'.brand-word');
-      await measure('masthead primary at '+scroll,'.top-context strong');
-      await measure('masthead metadata at '+scroll,'.top-context>span');
+      await measure('masthead primary at '+scroll,'#workspace-menu summary');
+      await measure('masthead metadata at '+scroll,'#workspace-menu .hint');
       await measure('masthead account at '+scroll,'#account-name');
     }
-    for (const [label,selector] of [['card body','.pulse-next h3'],['card secondary','.pulse-next p'],
-      ['warning chip','#command-center-summary .chip-warning'],['critical status','.decision-row.critical .status-label']])
+    for (const [label,selector] of [['card body','.hero-narrative h2'],['card secondary','.pulse-next p'],
+      ['KPI context','#command-center-summary .kpi-cart .kpi-foot'],['critical status','.decision-row.critical .status-label']])
       await measure(label,selector.startsWith('.decision')?'.decision-row.critical:first-child .status-label':selector);
     await openSidebarDestination('Inbox approval'); await settle();
     await measure('approval selected','#approvals');
@@ -384,7 +401,8 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   if(material.supported)assert.notEqual(material.chrome,'none');
   else assert.equal(material.chrome,'none');
   assert.equal(material.lens,'none');
-  assert.ok(material.content.every(row=>row.filter==='none' && !row.bg.startsWith('rgba')));
+  assert.ok(material.content.every(row=>row.filter==='none' && (!row.bg.startsWith('rgba') || Number(row.bg.match(/[\d.]+/g).at(-1)) >= .55)),
+    'Revision: secondary modules transmit the environment without adding per-card blur; rendered contrast is checked above');
   assert.equal(material.ambient,'none');
   // Optional local evidence serves saved baseline assets without modifying the checkout.
   if (process.env.BEELOFT_A5_BASELINE_DIR) {
@@ -419,6 +437,8 @@ module.exports = async ({page, login, admin, apiGet, openSidebarDestination, wor
   fs.writeFileSync(path.join(shots,'a5-optics.json'),JSON.stringify(optics,null,2));
   fs.writeFileSync(path.join(shots,'a5-performance.json'),JSON.stringify(performance,null,2));
   await theme('light');
+  if (process.env.BEELOFT_A52_VISUAL === '1')
+    await require('./browser_macos_workspace.cjs')({page,login,admin,apiGet,work,populated:true});
   await page.unroute('**/api/command-center');
   console.log('Command Center golden PASS: truth, actions, approvals, integrations, first load, refresh, stale/error, missing sources, themes, rendered contrast, 8 widths and 320 at 200%.');
 };

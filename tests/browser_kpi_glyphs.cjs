@@ -1,6 +1,5 @@
-// The board and activity summary cards carry the same blue glyph the Command Center KPI
-// cards do. This proves the glyphs render from the local sprite, stay decorative, and did
-// not change any metric value or accessible label.
+// Board/activity retain blue glyphs; A5.2 gives operational KPIs four semantic tiles.
+// All glyphs remain decorative and resolve from the local sprite.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
@@ -52,6 +51,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
   // login() resets the viewport to 1440x1000 unless told not to; keep 1440x900 so the desktop assertions and screenshots use the requested height.
   await login(admin, {resetViewport: false});
+  if (await page.locator('html').getAttribute('data-theme') === 'dark') await page.locator('#theme').click();
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
@@ -94,9 +94,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   assert.equal(new Set(boardGlyphs).size, boardGlyphs.length,
     'each board metric gets its own glyph');
 
-  // The dashboard KPI cards these copy must use the same treatment.
+  // A5.2 wraps the same glyph scale in a padded material tile.
   await openSidebarDestination('Command center');
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   await page.locator('#command-center-summary dd').first().waitFor();
   const dashboard = await readCards('#command-center-summary');
   assert.equal(dashboard.length, 4);
@@ -104,10 +104,13 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
     assert.equal(card.hasGlyph, true);
     assert.equal(card.ariaHidden, 'true');
   }
-  assert.equal(dashboard[0].glyphColour, board[0].glyphColour,
-    'board and dashboard KPI glyphs share one colour treatment');
-  assert.equal(dashboard[0].glyphBox, board[0].glyphBox,
-    'board and dashboard KPI glyphs share one scale');
+  assert.deepEqual(dashboard.map(card=>card.glyphHref),['#i-cart','#i-inbox','#i-wallet','#i-alert-triangle']);
+  assert.equal(new Set(dashboard.map(card=>card.glyphColour)).size,4,'operational KPIs have four semantic colours');
+  assert.ok(dashboard.every(card=>card.resolvesInSprite && card.focusable==='false'));
+  const tilePadding = await page.locator('#command-center-summary dt .icon').first()
+    .evaluate(node => parseFloat(getComputedStyle(node).paddingLeft) + parseFloat(getComputedStyle(node).paddingRight));
+  assert.equal(dashboard[0].glyphBox - tilePadding, 26,
+    '50px dashboard tile contains a 26px drawing and 12px padding');
 
   // The activity report uses the same summary grid and must match.
   await openSidebarDestination('Laporan aktivitas');
@@ -167,6 +170,6 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   await page.setViewportSize({width: 1440, height: 900});
 
   console.log('Board KPI glyph browser QA PASS: sprite-sourced decorative glyphs on board and '
-    + 'activity summaries, unchanged labels and values, dashboard-matched colour and scale, '
+    + 'activity summaries, unchanged labels and values, four semantic dashboard tiles, '
     + 'no emoji/CDN/image assets, dark mode, 390px at 200% text zoom.');
 };

@@ -25,7 +25,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   await page.setViewportSize({width: 1440, height: 1000});
 
   const destinations = [
-    {name: 'Command center', nav: 'command-center', section: 'command-center-view', heading: 'Apa yang perlu diputuskan hari ini.'},
+    {name: 'Command center', nav: 'command-center', section: 'command-center-view', heading: 'Command center'},
     {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Yang sedang dikerjakan.'},
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
@@ -199,7 +199,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   await page.getByRole('heading', {name: 'Audit trail', exact: true}).waitFor();
   await auditStarted;
   await page.getByRole('button', {name: 'Command center', exact: true}).click();
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   releaseAudit(); await auditFinished;
   await page.waitForTimeout(150);
   assert.deepEqual(await visibleSections(), ['command-center-view'],
@@ -229,7 +229,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   await page.getByRole('heading', {name: 'Satu antrean untuk setiap keputusan.', exact: true}).waitFor();
   await approvalsStarted;
   await page.getByRole('button', {name: 'Command center', exact: true}).click();
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   releaseApprovals(); await approvalsFinished;
   await page.waitForTimeout(150);
   assert.deepEqual(await visibleSections(), ['command-center-view'],
@@ -279,7 +279,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   await boardStarted;
   const boardListLength = await page.evaluate(() => document.getElementById('order-list').innerHTML.length);
   await page.getByRole('button', {name: 'Command center', exact: true}).click();
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   releaseBoard(); await boardFinished;
   await page.waitForTimeout(150);
   assert.deepEqual(await visibleSections(), ['command-center-view'], 'late board response must not repaint the command center');
@@ -294,7 +294,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   assert.equal(await menu.getAttribute('aria-expanded'), 'true');
   assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), true, 'drawer opens');
   await page.getByRole('button', {name: 'Command center', exact: true}).click();
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), false, 'drawer closes after navigation');
   assert.equal(await menu.getAttribute('aria-expanded'), 'false');
   assert.equal(await page.evaluate(() => {

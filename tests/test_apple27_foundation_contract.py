@@ -158,7 +158,8 @@ class Apple27FoundationTest(unittest.TestCase):
         self.assertNotRegex(withdraw[:withdraw.index('@media(forced-colors:active)')],
                            r'backdrop-filter\s*:\s*(?!none)')
         self.assertEqual([p.name for p in STATIC.rglob('*') if p.suffix.lower() in
-                          ('.woff', '.woff2', '.otf', '.ttf', '.png', '.jpg', '.webp', '.svg')], [])
+                          ('.woff', '.woff2', '.otf', '.ttf', '.png', '.jpg', '.webp', '.svg')],
+                         ['wallpaper-landscape.webp', 'wallpaper-mist.webp'])
 
 
 if __name__ == '__main__':
