@@ -183,7 +183,9 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
           ? style.backdropFilter : (style.webkitBackdropFilter || 'none');
         const selected = getComputedStyle(document.getElementById(nav));
         const lens = document.getElementById('nav-selection-lens');
-        const lensStyle = getComputedStyle(lens);
+        const lensBody = getComputedStyle(lens, '::before');
+        const lensStyle = lensBody.content !== 'none' && lensBody.display !== 'none'
+          ? lensBody : getComputedStyle(lens);
         const chromeStyle = getComputedStyle(document.querySelector('.masthead'));
         const railStyle = getComputedStyle(document.getElementById('app-sidebar'));
         const inCta = lens.parentElement.classList.contains('sidebar-cta');

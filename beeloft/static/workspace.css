@@ -212,4 +212,43 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 @media(prefers-reduced-transparency:reduce){:root[data-theme] .nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{background:var(--color-accent-soft);border-color:var(--color-separator-strong);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}.masthead,.app-sidebar,.sidebar-actions{box-shadow:none;background:var(--material-functional-chrome-solid);backdrop-filter:none;-webkit-backdrop-filter:none}.workspace-main:has(>#command-center-view:not([hidden])){background:var(--canvas);backdrop-filter:none;-webkit-backdrop-filter:none}:root[data-theme] :is(.sidebar-cta,.toolbar-menu>summary,.navigation-search,.account button,#connection-status,.command-center-view .card,.command-center-view .hero-panel,#command-center-summary>div){background:var(--surface)}.app-sidebar::after{display:none}}
 @media(forced-colors:active){:root[data-theme] .nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{background:transparent;border:2px solid Highlight;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}:root[data-theme] .app-sidebar :is(.nav-item,#approvals)[aria-current=page]{color:CanvasText}body::before,.app-sidebar::after{display:none}.workspace-main:has(>#command-center-view:not([hidden])){backdrop-filter:none;-webkit-backdrop-filter:none}.workspace-window,.masthead,.app-sidebar,.workspace-main,.sidebar-actions,.sidebar-cta,.workspace-launcher,.toolbar-menu>summary,.navigation-search,.account button{background:Canvas;color:CanvasText;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none}.workspace-window,.traffic-light,.navigation-search,.account button{border:1px solid ButtonText}.traffic-light::before{display:none}.traffic-light span{opacity:1;color:ButtonText}.hero-ring .ring-track{stroke:GrayText}.hero-ring .ring-value{stroke:Highlight}.command-center-view .card,.command-center-view .hero-panel{border:1px solid CanvasText}:root[data-theme] :is(.sidebar-cta,.toolbar-menu>summary,.navigation-search,.account button,.command-center-view .hero-panel){background:Canvas;color:CanvasText}#navigation-results [aria-selected=true]{outline:2px solid Highlight}#appearance-dialog,#account-panel{border:1px solid CanvasText}}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){:root[data-theme] .nav-selection-lens{background:var(--color-accent-soft)}.masthead,.app-sidebar{background:var(--material-functional-chrome-solid)}.workspace-main{background:var(--canvas)}:root[data-theme] .command-center-view :is(.card,.hero-panel,#command-center-summary>div){background:var(--surface)}}
+/* Keep one paint owner at rest and in flight: switching between the parent fill and a
+   promoted pseudo-element left stale capsules in Chromium's captured compositor frames. */
+.nav-selection-lens{--liquid-stretch:1;--liquid-bulge:1;--liquid-offset:0px;--liquid-taper:0px;--liquid-rim:0;--liquid-leading:50%;--liquid-radius:21px;--liquid-fill:linear-gradient(110deg,#ffffff4d,#9bcaff2b) var(--lens-glass-tint);--liquid-edge:transparent;--liquid-shadow:inset 0 1px 1px #ffffffa6,inset 1px 0 1px #d5e8ff85,0 4px 12px #4b84be08}
+:root[data-theme=dark] .nav-selection-lens{--liquid-fill:linear-gradient(110deg,#3e92ef22,#58a7ff22) var(--lens-glass-tint);--liquid-shadow:inset 0 1px 1px #cde5ff38,0 4px 12px #051a300e}
+:root[data-theme] .sidebar-cta>.nav-selection-lens{--liquid-radius:var(--radius-control);--liquid-fill:var(--lens-glass-cta-tint);--liquid-edge:var(--lens-glass-cta-edge);--liquid-shadow:inset 0 1px 0 var(--lens-glass-cta-highlight),var(--lens-glass-shadow)}
+@media(prefers-reduced-motion:no-preference){
+  :root[data-theme] .app-sidebar>.nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{background:transparent;border-color:transparent;box-shadow:none}
+  .nav-selection-lens::before,.nav-selection-lens::after{
+    content:"";position:absolute;inset:-1px;pointer-events:none;
+    border-radius:inherit;
+  }
+  .nav-selection-lens[style*="--liquid-stretch"]::before,.nav-selection-lens[style*="--liquid-stretch"]::after{
+    border-radius:calc(var(--liquid-radius) + var(--liquid-taper)) calc(var(--liquid-radius) + var(--liquid-taper)) calc(var(--liquid-radius) - var(--liquid-taper)) calc(var(--liquid-radius) - var(--liquid-taper));
+    transform:translateY(var(--liquid-offset)) scale(var(--liquid-bulge),var(--liquid-stretch));
+  }
+  .nav-selection-lens::before{background:var(--liquid-fill);border:1px solid var(--liquid-edge);box-shadow:var(--liquid-shadow)}
+  .nav-selection-lens::after{
+    padding:1.5px;opacity:var(--liquid-rim);
+    background:radial-gradient(ellipse at 50% var(--liquid-leading),#ffffff 0%,#d7faff 30%,transparent 72%),conic-gradient(from 35deg,#6fcaff88,transparent 18%,#ffe0bf70 27%,#edfaff 35%,transparent 52%,#6cbcff88 70%,#ffd3ce66 76%,transparent 87%,#6fcaff88);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+  }
+  /* The CTA used to clip the incoming lens until it arrived. Only an in-flight shared lens
+     opens that boundary; sidebar scrolling and the window perimeter keep their own clips. */
+  .sidebar-cta:has(>.nav-selection-lens[style*="--liquid-stretch"]){overflow:visible}
+  :root[data-theme] .sidebar-cta>.nav-selection-lens[style*="--liquid-stretch"]{backdrop-filter:none;-webkit-backdrop-filter:none}
+  .app-sidebar>.nav-selection-lens[style*="--liquid-stretch"]{z-index:1}
+}
+.nav-item,.nav-summary,.sidebar-cta-title,.sidebar-cta-copy,.sidebar-cta-mark{z-index:2}
+.nav-summary{position:relative}
+@media(prefers-reduced-transparency:reduce){
+  :root[data-theme] .nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{--liquid-fill:var(--color-accent-soft);--liquid-edge:var(--color-separator-strong);--liquid-shadow:none}
+  .nav-selection-lens::after{display:none}
+}
+@media(forced-colors:active){
+  .nav-selection-lens::before,.nav-selection-lens::after{display:none}
+  :root[data-theme] .app-sidebar>.nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{background:transparent;border:2px solid Highlight;box-shadow:none}
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){:root[data-theme] .nav-selection-lens,:root[data-theme] .sidebar-cta>.nav-selection-lens{--liquid-fill:var(--color-accent-soft);--liquid-edge:var(--color-separator-strong);--liquid-shadow:none}.nav-selection-lens::after{display:none}}
 @media print{body::before,.window-controls,.app-sidebar::after{display:none}.workspace-window{margin:0;height:auto;overflow:visible;box-shadow:none}.workspace-window #main{height:auto;overflow:visible}}

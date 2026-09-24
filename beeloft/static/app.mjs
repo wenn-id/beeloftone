@@ -185,6 +185,13 @@ function rebaseNavigationLensContext(context) {
 // oleh CSS, jadi transform inilah koordinat lokalnya. Morph dihitung di sini dan hanya di sini:
 // nilainya tidak pernah kembali ke target, spring, pengukuran, atau state semantik, sehingga
 // tidak ada umpan balik yang bisa lepas kendali. `will-change` hidup hanya selama gerak.
+function navigationLensOptics(vy, running) {
+  // Signed speed fades through zero on reversal; the target never chooses the leading side.
+  const drive = running && Number.isFinite(vy) ? Math.max(-1, Math.min(1, vy / 400)) : 0;
+  const amount = Math.abs(drive);
+  return {stretch:.35 * amount, bulge:.09 * amount, offset:.085 * drive,
+    taper:.25 * drive, rim:.80 * amount, leading:50 + 50 * drive};
+}
 function renderNavigationLensMotion() {
   const {cx, cy, vx, vy, running} = navigationLensMotion;
   const vertical = Math.abs(vy) >= Math.abs(vx);
@@ -198,7 +205,10 @@ function renderNavigationLensMotion() {
   // tetapi meninggalkan translate3d berarti promosi itu tidak pernah benar-benar dilepas.
   const travel = running ? `translate3d(${cx - width / 2}px,${cy - height / 2}px,0);will-change:transform`
     : `translate(${cx - width / 2}px,${cy - height / 2}px)`;
-  navigationLens.style.cssText = `transform:${travel};width:${width}px;height:${height}px`;
+  const optics = navigationLensOptics(vy, running);
+  // The empty suffix restores A5.2's exact resting paint and removes every dynamic property.
+  const optical = running ? `;--liquid-stretch:${1 + optics.stretch};--liquid-bulge:${1 + optics.bulge};--liquid-offset:${height * optics.offset}px;--liquid-taper:${height * optics.taper}px;--liquid-rim:${optics.rim};--liquid-leading:${optics.leading}%` : '';
+  navigationLens.style.cssText = `transform:${travel};width:${width}px;height:${height}px${optical}`;
   navigationLens.hidden = false;
   navigationSurface.classList.add('nav-lens-ready');
   navigationLensMotion.initialized = true;
