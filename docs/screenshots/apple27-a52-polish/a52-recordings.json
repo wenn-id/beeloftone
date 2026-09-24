@@ -1,0 +1,28 @@
+[
+  {
+    "theme": "light",
+    "output": "a52-shimmer-light.mp4",
+    "start": 3.471,
+    "seconds": 18,
+    "viewport": "1440x1000",
+    "crop": "260x1000",
+    "fixture": "browser_command_center_golden.cjs",
+    "shimmer": "17s CSS rim; active 65%, quiet 35%, -3s phase; transparent reset; no script animation",
+    "encodedSeconds": 18.0,
+    "frames": 450,
+    "rimUniqueFrames": 387
+  },
+  {
+    "theme": "dark",
+    "output": "a52-shimmer-dark.mp4",
+    "start": 3.244,
+    "seconds": 18,
+    "viewport": "1440x1000",
+    "crop": "260x1000",
+    "fixture": "browser_command_center_golden.cjs",
+    "shimmer": "17s CSS rim; active 65%, quiet 35%, -3s phase; transparent reset; no script animation",
+    "encodedSeconds": 17.96,
+    "frames": 449,
+    "rimUniqueFrames": 367
+  }
+]

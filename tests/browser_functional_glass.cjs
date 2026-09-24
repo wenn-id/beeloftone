@@ -91,7 +91,7 @@ module.exports = async ({page, login, admin, work}) => {
   }, token);
 
   const settle = () => page.waitForFunction(() => !document.querySelector('.motion-enter,.is-theming')
-    && document.getAnimations().every(animation => animation.playState === 'finished'));
+    && document.getAnimations().every(animation => animation.animationName === 'sidebar-specular' || animation.playState === 'finished'));
   const resting = id => page.waitForFunction(id => {
     const lens = document.getElementById('nav-selection-lens'), target = document.getElementById(id);
     if (lens.hidden || target.getAttribute('aria-current') !== 'page') return false;
@@ -183,25 +183,25 @@ module.exports = async ({page, login, admin, work}) => {
     for (const sheet of document.styleSheets) { try { visit(sheet.cssRules); } catch { /* ignore */ } }
     return found;
   });
-  assert.equal(gates.supports.length, 1, 'exactly one feature gate guards the optical layer');
+  assert.equal(gates.supports.filter(text=>!text.startsWith('not ')).length, 1, 'one positive feature gate guards chrome');
+  assert.equal(gates.supports.filter(text=>text.startsWith('not ')).length, 1, 'unsupported filters have an explicit solid fallback');
   assert.ok(/\bbackdrop-filter\b/.test(gates.supports[0]) && /-webkit-backdrop-filter/.test(gates.supports[0]),
     `the gate tests both the standard and the -webkit property: ${gates.supports[0]}`);
-  assert.equal(gates.reducedTransparency.length, 1, 'one reduced-transparency fallback exists');
+  assert.equal(gates.reducedTransparency.length, 2, 'A4 material and A5.2 workspace reduced-transparency fallbacks exist');
   assert.ok(gates.reducedTransparency[0].includes('var(--material-functional-chrome-solid)'),
     'the reduced-transparency fallback restores the A1 solid chrome');
-  assert.equal(gates.forcedColors.length, 1, 'one forced-colors contract exists');
+  assert.equal(gates.forcedColors.length, 2, 'A4 material and A5.2 workspace forced-colors contracts exist');
   assert.ok(/backdrop-filter:\s*none/.test(gates.forcedColors[0]),
     'the forced-colors contract disables backdrop filtering');
 
-  // ---- content stays opaque -------------------------------------------------------------------
-  // The core A4 boundary, checked against what the engine computed for real elements rather than
-  // against the stylesheet: no business or content surface is a filtered surface.
+  // One bounded background sheet softens the A5.2 landscape; business cards, tables and dialogs
+  // retain the A4 boundary against per-surface filtering.
   await open('command-center');
   await page.locator('#command-center-content:not([hidden])').waitFor();
   const contentSurfaces = await page.evaluate(() => {
     const seen = [];
     for (const node of document.querySelectorAll(
-      '.workspace-main, .workspace-main *, dialog, .notice, .state, .card, .hero-panel, .summary, table, .sidebar-cta')) {
+      '.workspace-main *, dialog, .notice, .state, .card, .hero-panel, .summary, table, .sidebar-cta')) {
       const computed = getComputedStyle(node);
       const filter = [computed.backdropFilter, computed.webkitBackdropFilter].filter(v => v && v !== 'none');
       const blur = /blur\(/.test(computed.filter || '') ? computed.filter : null;
@@ -211,7 +211,9 @@ module.exports = async ({page, login, admin, work}) => {
     }
     return seen;
   });
-  assert.deepEqual(contentSurfaces, [], 'no content, business or dialog surface is filtered');
+  assert.deepEqual(contentSurfaces, [], 'no business card, table or dialog surface is filtered');
+  const sceneFilter = await page.locator('.workspace-main').evaluate(node=>getComputedStyle(node).backdropFilter);
+  if(supported) assert.ok(Number(sceneFilter.match(/blur\(([\d.]+)px\)/)?.[1]) <= 16, 'one bounded scene filter');
 
   // ---- A + B: masthead and sidebar ------------------------------------------------------------
   const measurements = [];
@@ -644,5 +646,5 @@ module.exports = async ({page, login, admin, work}) => {
     + ` both contexts with 4.5:1 labels, one lens node across three contexts, A3 spring frames and`
     + ` exact settle preserved, zero idle frames, reduced motion keeps material,`
     + ` reduced transparency ${reducedTransparencyChecked ? 'restores solid' : 'structurally asserted'},`
-    + ` drawer lifecycle and forced colours intact, content unfiltered.`);
+    + ` drawer lifecycle and forced colours intact, business surfaces unfiltered with one bounded scene sheet.`);
 };

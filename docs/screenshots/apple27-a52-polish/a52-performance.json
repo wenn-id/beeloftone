@@ -1,0 +1,64 @@
+[
+  {
+    "action": "idle shimmer",
+    "seconds": 1.2092429999993328,
+    "taskMs": 13.529,
+    "jsRaf": 0,
+    "frames": 171,
+    "median": 6.900000000000091,
+    "p95": 7.199999999999818,
+    "max": 14
+  },
+  {
+    "action": "idle static rim",
+    "seconds": 1.2157920000008744,
+    "taskMs": 1.5879999999999783
+  },
+  {
+    "action": "minimize/restore",
+    "elapsedMs": 130.6059999988065,
+    "taskMs": 80.94999999999996,
+    "layoutMs": 10.831
+  },
+  {
+    "action": "fullscreen/restore",
+    "elapsedMs": 389.89500000025146,
+    "taskMs": 240.35599999999997,
+    "layoutMs": 33.534
+  },
+  {
+    "action": "search",
+    "elapsedMs": 99.64200000104029,
+    "taskMs": 50.90399999999995,
+    "layoutMs": 4.852999999999996
+  },
+  {
+    "action": "theme",
+    "elapsedMs": 400.3240000001824,
+    "taskMs": 327.77899999999994,
+    "layoutMs": 7.087000000000003
+  },
+  {
+    "action": "scroll",
+    "elapsedMs": 127.66800000099465,
+    "taskMs": 118.19500000000005,
+    "layoutMs": 0.9129999999999971
+  },
+  {
+    "action": "nav spring",
+    "elapsedMs": 656.0829999998532,
+    "taskMs": 367.9539999999999,
+    "layoutMs": 28.004
+  },
+  {
+    "action": "background switch",
+    "elapsedMs": 355.0390000000334,
+    "taskMs": 220.46200000000016,
+    "layoutMs": 5.099999999999993
+  },
+  {
+    "action": "navigation",
+    "domContentLoadedMs": 146.2999999988824,
+    "loadMs": 151.2999999988824
+  }
+]

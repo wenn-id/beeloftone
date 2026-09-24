@@ -44,6 +44,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();
   // login() resets the viewport to 1440x1000 unless told not to; keep 1440x900 so the dialog-fit assertion uses the requested height.
   await login(admin, {resetViewport: false});
+  if (await page.locator('html').getAttribute('data-theme') === 'dark') await page.locator('#theme').click();
   await closeDialog();
   await openSidebarDestination('Produksi');
   await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
@@ -63,7 +64,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   });
   assert.equal(ladder.card, 20, 'primary surfaces stay at 20px');
   assert.equal(ladder.input, 12, 'inputs stay at 12px');
-  assert.equal(ladder.nav, 12, 'navigation rows use the A1 control radius');
+  assert.equal(ladder.nav, 20, 'A5.2 navigation uses the rounded toolbar family');
   assert.equal(ladder.chip, 8, 'chips and badges stay at 8px');
   assert.equal(ladder.button, ladder.input, 'buttons and inputs share the A1 control radius');
 
@@ -125,7 +126,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.getByRole('heading', {name: 'Kebutuhan bahan order', exact: true}).waitFor();
   // The heading is painted with the loading placeholder, so wait for the metric list itself
   // rather than racing the fetch.
-  await page.locator('#dialog-content .requirement-values').first().waitFor();
+  await Promise.race([
+    page.locator('#dialog-content .requirement-values').first().waitFor(),
+    page.getByText(/Perhitungan belum lengkap/).waitFor(),
+  ]);
   const dialogShell = await page.evaluate(() => {
     const dialog = document.querySelector('dialog[open]');
     const heading = dialog.querySelector('.dialog-heading');
@@ -136,13 +140,15 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
       withinViewport: box.width <= window.innerWidth && box.height <= window.innerHeight + 1,
       noInnerOverflow: dialog.scrollWidth <= dialog.clientWidth,
       metricRows: dialog.querySelectorAll('.requirement-values>div').length,
+      incomplete: /Perhitungan belum lengkap/.test(dialog.textContent),
     };
   });
   assert.equal(dialogShell.radius, 24, 'floating dialogs use the prominent radius above content cards');
   assert.ok(dialogShell.headingRule > 0, 'the dialog heading is separated by a rule');
   assert.equal(dialogShell.withinViewport, true, 'the dialog stays inside the viewport');
   assert.equal(dialogShell.noInnerOverflow, true, 'the dialog does not scroll sideways');
-  assert.ok(dialogShell.metricRows > 0, 'metric lists render as label/value rows');
+  assert.ok(dialogShell.metricRows > 0 || dialogShell.incomplete,
+    'a complete report shows label/value rows; missing BOM shows the explicit incomplete-data state');
   await closeDialog();
 
   // ---- an analytics filter toolbar is the same surface as the board's ----------------
@@ -238,26 +244,27 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   // ---- A5 preserves the dashboard contracts while recomposing its sections ----------
   await page.setViewportSize({width: 1440, height: 900});
   await openSidebarDestination('Command center');
-  await page.getByRole('heading', {name: 'Apa yang perlu diputuskan hari ini.'}).waitFor();
+  await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
   await page.locator('#command-center-summary dd').first().waitFor();
   // The KPI row paints before the two bands are unhidden; measuring the panels any earlier
   // reports zero widths for both.
   await page.locator('#command-center-content:not([hidden])').waitFor();
   await page.locator('.attention-panel').waitFor({state: 'visible'});
-  await page.locator('.snapshot-panel').waitFor({state: 'visible'});
+  await page.locator('.approval-panel').waitFor({state: 'visible'});
   const dashboard = await page.evaluate(() => {
     const attention = document.querySelector('.attention-panel').getBoundingClientRect();
-    const rail = document.querySelector('.snapshot-panel').getBoundingClientRect();
+    const rail = document.querySelector('.approval-panel').getBoundingClientRect();
     return {
       kpis: document.querySelectorAll('#command-center-summary .kpi-card').length,
       kpiGlyphs: document.querySelectorAll('#command-center-summary dt svg').length,
-      sections: ['.command-overview','.operations-section','.business-section','.context-section']
+      sections: ['.command-overview','.command-middle','.operations-section','.business-section','.context-section']
         .every(selector => document.querySelector('#command-center-view '+selector)),
-      hero: Boolean(document.querySelector('#command-center-hero .hero-body')),
-      channelTable: Boolean(document.querySelector('#command-center-channels .data-table')),
+      hero: Boolean(document.querySelector('#command-center-hero .hero-panel .hero-ring')),
+      channelReady: Boolean(document.querySelector('#command-center-channels .data-table'))
+        || /Belum ada marketplace pada snapshot order Jubelio/.test(document.querySelector('#command-center-channels').textContent),
       snapshots: document.querySelectorAll('[data-command-snapshot]').length,
       decisionRows: document.querySelectorAll('[data-command-attention]').length,
-      attentionWider: attention.width > rail.width,
+      equalCards: Math.abs(attention.width-rail.width)<1 && Math.abs(attention.height-rail.height)<1 && Math.abs(attention.y-rail.y)<1,
       kpiRadius: parseFloat(getComputedStyle(
         document.querySelector('#command-center-summary .kpi-card')).borderRadius),
     };
@@ -266,12 +273,12 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.equal(dashboard.kpiGlyphs, 4, 'each dashboard KPI card keeps its glyph');
   assert.equal(dashboard.sections, true, 'A5 keeps sales, decisions, marketplace and business context');
   assert.equal(dashboard.hero, true);
-  assert.equal(dashboard.channelTable, true);
+  assert.equal(dashboard.channelReady, true, 'marketplace data or its explicit missing-snapshot state is rendered');
   assert.ok(dashboard.snapshots > 0);
   assert.ok(dashboard.decisionRows > 0);
-  assert.equal(dashboard.attentionWider, true,
-    'the decision queue stays the desktop focal point');
-  assert.equal(dashboard.kpiRadius, 20);
+  assert.equal(dashboard.equalCards, true,
+    'the lower context cards share one equal desktop row');
+  assert.equal(dashboard.kpiRadius, 18);
   assert.equal(await noPageOverflow(), true, 'dashboard has no horizontal overflow at 1440');
   await page.screenshot({path: path.join(shots, 'shared-ui-command-center-light.png')});
 

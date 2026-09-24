@@ -25,7 +25,7 @@ class CommandCenterGoldenTest(unittest.TestCase):
 
         parsed = Markup()
         parsed.feed(HTML)
-        for name in ['view', 'context', *HOSTS]:
+        for name in ['view', 'context', 'capacity', *HOSTS]:
             self.assertEqual(parsed.ids.count('command-center-' + name), 1)
         self.assertEqual(JS.count("'command-center':'command-center-view'"), 1)
         self.assertIn('<dl id="command-center-summary"', HTML)
@@ -42,8 +42,10 @@ class CommandCenterGoldenTest(unittest.TestCase):
         failure = RENDER[RENDER.index('}catch(error)'):]
         self.assertIn('commandCenterReport=false', failure)
         self.assertIn("'command-center-context'", failure)
+        self.assertIn("'command-center-capacity'", failure)
         teardown = JS[JS.index('function clearWorkspace('):JS.index('const LOGOUT_FAILED')]
         self.assertIn("'command-center-context'", teardown)
+        self.assertIn("'command-center-capacity'", teardown)
         self.assertEqual(re.findall(r'api\.\w+\([^\n;]+', RENDER), ["api.get('/api/command-center')"])
 
     def test_ambient_layer_is_static_css_and_scoped_to_the_active_page(self):
@@ -61,7 +63,9 @@ class CommandCenterGoldenTest(unittest.TestCase):
         self.assertEqual(selectors(r'backdrop-filter\s*:\s*(?!none)'), FILTERED_GLASS)
         self.assertEqual(CSS.count('@supports'), 1)
         self.assertNotRegex(CSS, r'@font-face|@import|https?://')
-        self.assertNotRegex(HTML, r'<(?:img|video|canvas)\b')
+        self.assertNotRegex(HTML, r'<(?:video|canvas)\b')
+        self.assertEqual(re.findall(r'<img[^>]+src="([^"]+)"', HTML),
+                         ['/static/wallpaper-landscape.webp', '/static/wallpaper-mist.webp'])
 
     def test_existing_truth_fields_and_priority_order_drive_the_new_panels(self):
         for field in ('pending_count','pending_amount','pending_without_amount','by_kind'):
@@ -74,7 +78,7 @@ class CommandCenterGoldenTest(unittest.TestCase):
         self.assertNotIn('report.attention.sort', RENDER)
         self.assertIn('report.status.attention_count', RENDER)
         self.assertNotRegex(RENDER, r'health.score|health.percent|Math\.random|Rp[1-9]')
-        for field in ('net_revenue','orders','units','average_order_value'):
+        for field in ('gross_revenue','completed_orders','units','unmatched_refunds'):
             self.assertIn('stat.' + field, RENDER)
 
     def test_no_new_idle_work_or_replacement_physics(self):

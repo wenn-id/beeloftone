@@ -6,7 +6,9 @@
   <meta name="color-scheme" content="light dark">
   <title>Produksi · Beeloft One</title>
   <link rel="icon" href="data:,">
+  <script src="/static/appearance.js"></script>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/workspace.css">
   <script type="module" src="/static/app.mjs"></script>
 </head>
 <body>
@@ -54,15 +56,21 @@
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9.4 12 15.4l6-6"/></symbol>
     <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8.2 4.2h7.6v4.6a3.8 3.8 0 0 1-7.6 0V4.2Z"/><path d="M8.2 5.8H5.8a2.4 2.4 0 0 0 2.4 4.2"/><path d="M15.8 5.8h2.4a2.4 2.4 0 0 1-2.4 4.2"/><path d="M12 12.6v2.8"/><path d="M9.4 19.8h5.2l-.5-4.4h-4.2l-.5 4.4Z"/></symbol>
   </defs></svg>
+  <div id="workspace-window" class="workspace-window">
   <header class="masthead">
     <div class="masthead-brand">
+      <div class="window-controls" aria-label="Kontrol ruang kerja">
+        <button id="window-close" type="button" class="traffic-light red" aria-label="Close workspace" title="Close workspace"><span aria-hidden="true">×</span></button>
+        <button id="window-minimize" type="button" class="traffic-light yellow" aria-label="Minimize workspace" title="Minimize workspace"><span aria-hidden="true">−</span></button>
+        <button id="window-fullscreen" type="button" class="traffic-light green" aria-label="Enter fullscreen" title="Enter fullscreen"><span aria-hidden="true">⤢</span></button>
+      </div>
       <button id="menu-toggle" class="quiet menu-toggle" type="button" aria-controls="app-sidebar" aria-expanded="false" hidden>Menu</button>
-      <a class="brand" href="#" id="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg></span><span class="brand-word">beeloft<span class="brand-dot">.</span></span></a>
     </div>
     <div class="masthead-tools">
-      <div class="top-context"><span>Workspace</span><strong>Operasional</strong></div>
+      <details id="workspace-menu" class="toolbar-menu"><summary><span class="hint">Workspace</span>Beeloft One</summary><div class="toolbar-popover"><button id="workspace-home" type="button">Buka Command center</button><button id="workspace-appearance" type="button">Tampilan &amp; latar</button></div></details>
+      <div class="navigation-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="navigation-search" type="search" role="combobox" aria-label="Cari halaman" aria-controls="navigation-results" aria-autocomplete="list" aria-expanded="false" autocomplete="off" placeholder="Cari halaman…"><div id="navigation-results" role="listbox" aria-label="Halaman" hidden></div></div>
     </div>
-    <div class="account"><span id="account-name"></span><button id="theme" class="quiet" type="button">Mode gelap</button><button id="logout" class="quiet" type="button" hidden>Keluar</button><span class="avatar" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user"/></svg></span></div>
+    <div class="account"><span id="connection-status" role="status">Belum masuk</span><button id="workspace-attention" class="quiet icon-button" type="button" aria-label="Perlu perhatian" title="Perlu perhatian" disabled><svg class="icon" aria-hidden="true"><use href="#i-alert-triangle"/></svg></button><button id="account-control" type="button" aria-label="Akun saat ini" popovertarget="account-panel"><span class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span><span id="account-name"></span></button><button id="logout" class="quiet" type="button" hidden>Keluar</button><button id="theme" class="quiet" type="button">Mode gelap</button><button id="appearance" class="quiet icon-button" type="button" aria-label="Tampilan dan latar" title="Tampilan dan latar"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg></button></div>
   </header>
   <main id="main" tabindex="-1" aria-busy="true">
     <div id="session-warning" class="session-warning" role="alert" hidden><p id="session-warning-text"></p><button id="session-retry" type="button">Coba keluar lagi</button></div>
@@ -72,20 +80,23 @@
     </section>
     <section id="workspace" class="app-shell" hidden>
       <aside id="app-sidebar" class="app-sidebar" aria-label="Navigasi utama">
+        <a class="brand sidebar-brand" href="#" id="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg></span><span class="brand-word">Beeloft<small>Ruang kerja operasional</small></span></a>
         <span id="nav-selection-lens" class="nav-selection-lens" aria-hidden="true" hidden></span>
         <nav class="sidebar-nav">
           <div class="nav-group">
+            <p class="nav-section-label">Workspace</p>
             <button id="command-center" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-gauge"/></svg>Command center</button>
             <button id="board-home" class="nav-item" type="button" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-layers"/></svg>Produksi</button>
           </div>
           <div class="nav-group">
+            <p class="nav-section-label">Operasional</p>
             <button id="materials" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-box"/></svg>Bahan baku</button>
             <button id="workforce" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg>People</button>
             <button id="scan-bundle" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg>Scan bundle</button>
             <button id="scan-finished-goods" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-barcode"/></svg>Scan barang jadi</button>
             <button id="products" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-tag"/></svg>Master SKU</button>
           </div>
-          <details class="nav-group nav-collapse" open>
+          <details class="nav-group nav-collapse">
             <summary class="nav-summary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span>Analitik</span><svg class="icon nav-caret" aria-hidden="true" focusable="false"><use href="#i-chevron-down"/></svg></summary>
             <div class="nav-children">
               <button id="wip-ageing-insights" class="nav-item" type="button">WIP ageing</button>
@@ -103,6 +114,7 @@
             </div>
           </details>
           <div class="nav-group">
+            <p class="nav-section-label">Sistem</p>
             <button id="ai-brain" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sparkles"/></svg>Tanya Beeloft</button>
             <button id="integrations" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plug"/></svg>Integrasi</button>
             <button id="activity" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-list"/></svg>Laporan aktivitas</button>
@@ -110,6 +122,7 @@
             <button id="backup" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-database"/></svg>Cadangan data</button>
           </div>
           <div class="nav-group nav-group-tail">
+            <p class="nav-section-label">Bisnis</p>
             <button id="purchase-requests" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-cart"/></svg>Permintaan pembelian</button>
             <button id="marketing-budgets" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-megaphone"/></svg>Budget marketing</button>
           </div>
@@ -126,25 +139,28 @@
       <div class="workspace-main">
       <section id="command-center-view" class="command-center-view" hidden>
         <button id="command-center-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading dashboard-heading"><div><p class="eyebrow">Management command center</p><h1>Apa yang perlu diputuskan hari ini.</h1></div><div class="actions"><span id="command-center-updated" class="hint"></span><button id="command-center-refresh" type="button">Muat ulang</button></div></div>
-        <dl id="command-center-summary" class="summary kpi-grid" aria-label="Ringkasan bisnis"></dl>
+        <div class="page-heading dashboard-heading"><div><h1>Command center</h1><p class="eyebrow">Pantau operasi, persetujuan, dan sinyal bisnis.</p></div><div class="actions"><span id="command-center-updated" class="hint"></span><button id="command-center-refresh" type="button">Muat ulang</button></div></div>
+        <dl id="command-center-summary" class="summary kpi-grid" aria-label="Ringkasan operasional"></dl>
         <p id="command-center-message" class="state" role="status" hidden></p>
         <div id="command-center-content" class="command-center-content" hidden>
           <div class="command-overview">
             <p id="command-center-period" class="hint"></p>
             <div id="command-center-hero" class="command-hero-grid"></div>
-            <dl id="command-center-operations" class="ops-stats" aria-label="Ringkasan operasional"></dl>
           </div>
+          <section class="command-middle" aria-label="Operasi dan marketplace">
+            <div class="card operations-summary"><h2>Operasi hari ini</h2><dl id="command-center-operations" class="ops-stats" aria-label="Ringkasan operasional"></dl></div>
+            <div id="command-center-channels" class="card channel-panel"></div>
+          </section>
           <section class="operations-section" aria-label="Keputusan operasional">
             <div class="operations-grid">
-              <section class="attention-panel card" aria-labelledby="attention-title"><div class="section-heading"><h2 id="attention-title">Perlu perhatian</h2><span class="hint">Urutan kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
               <div id="command-center-context" class="snapshot-panel command-context"></div>
+              <section class="attention-panel card" aria-labelledby="attention-title"><div class="section-heading"><h2 id="attention-title" tabindex="-1">Atensi utama</h2><span class="hint">Kritis lebih dulu</span></div><div id="command-center-attention" class="decision-list"></div></section>
+              <section id="command-center-capacity" class="card capacity-context" aria-label="Konteks kapasitas"></section>
             </div>
           </section>
           <section class="business-section" aria-labelledby="business-title">
             <div class="band-heading"><div><h2 id="business-title">Performa marketplace</h2><p class="hint">Perbandingan kanal dan produk dari snapshot Jubelio.</p></div></div>
             <div class="business-grid">
-              <div id="command-center-channels" class="card channel-panel"></div>
               <div class="business-rail">
                 <div id="command-center-contribution" class="card"></div>
                 <div id="command-center-products" class="card"></div>
@@ -320,6 +336,10 @@
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
   </main>
+  </div>
+  <section id="workspace-launcher" class="workspace-launcher" aria-labelledby="launcher-title" hidden><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-layers"/></svg></span><div><h1 id="launcher-title">Beeloft One</h1><p id="launcher-description">Ruang kerja ditutup.</p></div><button id="window-restore" class="primary" type="button">Open Beeloft One</button></section>
+  <div id="account-panel" popover><h2>Akun saat ini</h2><p id="account-detail">Belum masuk</p></div>
+  <section id="appearance-dialog" popover role="dialog" aria-labelledby="appearance-title"><div class="dialog-heading"><h2 id="appearance-title">Tampilan &amp; latar</h2><button id="appearance-close" type="button" aria-label="Tutup tampilan">Tutup</button></div><fieldset><legend>Tema</legend><label><input type="radio" name="appearance-theme" value="light"> Terang</label><label><input type="radio" name="appearance-theme" value="dark"> Gelap</label></fieldset><fieldset><legend>Latar ruang kerja</legend><div class="wallpaper-presets"><button type="button" data-wallpaper="landscape"><img src="/static/wallpaper-landscape.webp" alt="">Danau Alpen</button><button type="button" data-wallpaper="mist"><img src="/static/wallpaper-mist.webp" alt="">Danau berkabut</button></div><label for="wallpaper-upload">Gambar sendiri (JPEG, PNG, WebP, maks. 8 MB)</label><input id="wallpaper-upload" type="file" accept="image/jpeg,image/png,image/webp"><p class="hint">Disimpan hanya di browser ini.</p><button id="wallpaper-reset" type="button">Reset ke latar default</button><p id="appearance-message" role="status"></p></fieldset></section>
   <dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="quiet" type="button" aria-label="Tutup dialog">Tutup</button></div><div id="dialog-content"></div></dialog>
   <noscript>Aktifkan JavaScript untuk membuka dashboard produksi.</noscript>
 </body>

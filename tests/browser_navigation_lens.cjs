@@ -62,7 +62,7 @@ module.exports = async ({page, login, admin, viewer, work}) => {
     await aligned(id);
   };
   const settle = () => page.waitForFunction(() => !document.querySelector('.motion-enter,.is-theming')
-    && document.getAnimations().every(animation => animation.playState === 'finished'));
+    && document.getAnimations().every(animation => animation.animationName === 'sidebar-specular' || animation.playState === 'finished'));
   await page.locator('#board-home').scrollIntoViewIfNeeded();
   await aligned('board-home');
   for (const id of ['command-center','board-home','materials','workforce']) await open(id);

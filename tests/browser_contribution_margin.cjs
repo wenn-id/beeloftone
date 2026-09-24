@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
 
-module.exports=async({page,login,admin,operator,viewer,apiGet,work,costOrder,costRun})=>{
+module.exports=async({page,login,admin,operator,viewer,apiGet,work,costOrder,costRun,openSidebarDestination})=>{
   async function post(url,body,key,expected=201,apiKey=admin){
     const response=await fetch(process.env.BEELOFT_QA_BASE+url,{method:'POST',headers:{
       'Content-Type':'application/json','X-API-Key':apiKey,'Idempotency-Key':key
@@ -10,7 +10,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,costOrder,cos
   }
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){
-    await page.locator('#brand').click();
+    await openSidebarDestination('Produksi');
     await page.getByLabel('Cari order atau SKU').fill(costOrder.reference);
     await page.getByRole('button',{name:'Cari order',exact:true}).click();
     await page.locator('.order-row').filter({hasText:costOrder.reference}).getByRole('button').click();

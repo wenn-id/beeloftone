@@ -326,19 +326,50 @@ module.exports = async ({page, login, admin, viewer}) => {
   // ---- K. The preference changing mid-flight cancels and snaps -------------------------------
   await page.emulateMedia({reducedMotion:'no-preference'});
   await start('command-center');
-  await page.locator('#replenishment').click();
-  await page.waitForTimeout(60);
-  const flying = await rect();
+  const flight = await page.evaluate(async () => {
+    // A lens measurement frame can still be queued at this point: the preceding navigation, a
+    // sidebar transitionend, or a resize/mutation observer each schedule one, and while one is
+    // queued the click below schedules nothing. On the real clock that is harmless, because the
+    // queued frame still fires and reads the freshest aria-current. This clock is about to be
+    // replaced underneath that queued handle, though, so the click's schedule would be dropped and
+    // the spring would never start under the controlled clock. Force the condition, then drain the
+    // real clock to idle before taking it over.
+    window.dispatchEvent(new Event('resize'));
+    for (let index = 0; index < 10 && window.springFrames.pending.size > 0; index++)
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    const pending = [], nativeRaf = window.requestAnimationFrame, nativeCancel = window.cancelAnimationFrame;
+    let nextId = 0;
+    window.motionTestScheduler = {pending, nativeRaf, nativeCancel};
+    window.requestAnimationFrame = callback => { const id = ++nextId; pending.push({id,callback}); return id; };
+    window.cancelAnimationFrame = id => {
+      const index = pending.findIndex(frame => frame.id === id);
+      if (index >= 0) pending.splice(index,1);
+    };
+    const frame = timestamp => { for (const item of pending.splice(0)) item.callback(timestamp); };
+    document.getElementById('replenishment').click();
+    frame(1000); frame(1016); frame(1032);
+    const lens = window.springLens.getBoundingClientRect();
+    const target = document.getElementById('replenishment').getBoundingClientRect();
+    return {distance:Math.abs(lens.y-target.y), style:window.springLens.getAttribute('style'), pending:pending.length};
+  });
+  assert.ok(flight.distance > 20 && flight.style.includes('will-change') && flight.pending > 0,
+    `the controlled browser clock leaves the real spring in flight (${JSON.stringify(flight)})`);
   const destination = await rect('replenishment');
-  assert.ok(Math.abs(flying.y - destination.y) > 20, 'the spring really is still in flight');
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.waitForFunction(() => {
     const a = window.springLens.getBoundingClientRect(), b = document.getElementById('replenishment').getBoundingClientRect();
     return ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < .05);
   }, null, {timeout:1000});
   assert.equal(await page.evaluate(() => getComputedStyle(window.springLens).willChange), 'auto');
-  await page.waitForTimeout(200);
-  assert.equal((await frames()).pending, 0, 'the cancelled spring leaves no pending frame');
+  const cancelled = await page.evaluate(() => {
+    const test = window.motionTestScheduler, queue = test.pending.length;
+    window.requestAnimationFrame = test.nativeRaf;
+    window.cancelAnimationFrame = test.nativeCancel;
+    delete window.motionTestScheduler;
+    return queue;
+  });
+  assert.equal(cancelled, 0, 'the preference cancels the controlled spring frame');
+  assert.equal((await frames()).pending, 0, 'the cancelled spring leaves no browser frame');
   assert.deepEqual(await rect(), destination, 'it snapped to the latest target, not to where it happened to be');
   // Returning the preference replays nothing; only the next navigation may move.
   await page.emulateMedia({reducedMotion:'no-preference'});
