@@ -338,8 +338,8 @@ class ContentStaysOpaqueTest(unittest.TestCase):
         # The one pre-existing `url(#…)` is an in-document SVG paint-server reference, not an asset.
         self.assertNotRegex(CSS, r'url\((?!#)|@import|@font-face|image-set\(')
         self.assertEqual(re.findall(r'url\([^)]*\)', CSS), ['url(#trend-fill)'])
-        self.assertEqual([path.name for path in STATIC.rglob('*') if path.suffix.lower() in
-                          ('.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.mp4', '.woff', '.woff2')],
+        self.assertEqual(sorted(path.name for path in STATIC.rglob('*') if path.suffix.lower() in
+                                ('.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.mp4', '.woff', '.woff2')),
                          ['wallpaper-landscape.webp', 'wallpaper-mist.webp'])
 
 
