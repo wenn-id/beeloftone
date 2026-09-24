@@ -94,7 +94,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   const clean = samples => samples.every(sample => !/NaN|Infinity/.test(sample.style)
     && sample.width > 0 && sample.height > 0);
 
-  const start = async id => { await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  const start = async id => { await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
     await page.locator('#' + id).click(); await arrived(id); };
 
   // ---- A. Normal travel: semantics immediately, presentation physically ----------------------
@@ -193,7 +193,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   assert.deepEqual(await rect(), await rect('approvals'));
   // Reaching marketing-budgets scrolled the sidebar; the return destination has to be on screen
   // for the reparent to be about coordinates rather than about an unmeasurable target.
-  await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
   await arrived('approvals');
   const outOfCta = await travel('command-center', 45);
   assert.equal(outOfCta.samples[0].parent, 'app-sidebar', 'and back into the sidebar context');
@@ -227,7 +227,7 @@ module.exports = async ({page, login, admin, viewer}) => {
 
   // ---- G. Sidebar scroll stays exact, it does not spring behind the content ------------------
   const scrolled = await page.evaluate(async () => {
-    const lens = window.springLens, sidebar = document.getElementById('app-sidebar'), samples = [];
+    const lens = window.springLens, sidebar = document.querySelector('.sidebar-nav'), samples = [];
     sidebar.scrollTop += 60;
     for (let index = 0; index < 5; index++) {
       await new Promise(resolve => requestAnimationFrame(resolve));
@@ -239,7 +239,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   assert.ok(scrolled.every(offset => offset < .05),
     `scrolling keeps the lens exactly on its button, with no chase (${JSON.stringify(scrolled)})`);
   assert.equal((await frames()).pending, 0, 'a scroll correction starts no spring');
-  await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
   await arrived('capacity-plan');
 
   // ---- H. Resize corrects geometry without decorative travel ---------------------------------
@@ -273,7 +273,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   await page.locator('#command-center').click();
   await hidden();
   await page.locator('#menu-toggle').click();
-  await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
   await arrived('command-center');
   const drawer = await travel('workforce', 6);
   assert.equal(drawer.semantic.drawer, false, 'the drawer still closes immediately; it does not wait for the lens');
@@ -387,7 +387,7 @@ module.exports = async ({page, login, admin, viewer}) => {
     'logout clears geometry, velocity and the compositor hint together');
   assert.equal((await frames()).pending, 0, 'and cancels both the measurement and the motion frame');
   await login(viewer);
-  await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
   const fresh = await page.evaluate(async () => {
     const lens = window.springLens, samples = [];
     for (let index = 0; index < 6; index++) {
@@ -402,7 +402,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   assert.equal(await page.locator('#audit-trail').isHidden(), true, 'and the admin-only destinations are gone');
   await arrived('board-home');
   await login(admin);
-  await page.evaluate(() => { document.getElementById('app-sidebar').scrollTop = 0; });
+  await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });
   await arrived('board-home');
 
   // ---- L. Idle: nothing runs once the object has arrived -------------------------------------

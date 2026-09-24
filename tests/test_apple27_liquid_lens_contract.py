@@ -31,7 +31,7 @@ class LiquidLensContractTest(unittest.TestCase):
                             'const LENS_SETTLE_DISTANCE = .25, LENS_SETTLE_SPEED = 2;'):
             self.assertIn(declaration, LENS)
         self.assertEqual(LENS.count('requestAnimationFrame('), 3)
-        self.assertEqual(LENS.count('cancelAnimationFrame('), 2)
+        self.assertEqual(LENS.count('cancelAnimationFrame('), 3)
         self.assertNotRegex(LENS, r'setTimeout|setInterval|\.animate\(')
         self.assertEqual(re.findall(r'@keyframes\s+([\w-]+)', CSS), ['sidebar-specular'])
         mapper = LENS[LENS.index('function navigationLensOptics'):LENS.index('function navigationLensSpringStep')]

@@ -35,7 +35,7 @@ module.exports = async ({page, login, admin}) => {
     assert.deepEqual(rest, {count:1,same:true,dynamic:false,rest:['1','1','0px','0px','0','50%'],pseudo:await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)?'none':'""',pointer:'none',aria:'true'});
   };
   const start = async id => {
-    await page.evaluate(() => {document.getElementById('app-sidebar').scrollTop=0;});
+    await page.evaluate(() => {document.querySelector('.sidebar-nav').scrollTop=0;});
     if (!await page.locator('#app-sidebar').isVisible()) await page.locator('#menu-toggle').click();
     await page.locator('#'+id).click();
     if (!await page.locator('#app-sidebar').isVisible()) await page.locator('#menu-toggle').click();
@@ -130,7 +130,7 @@ module.exports = async ({page, login, admin}) => {
   await travel(['production-quality-insights']);
   assert.equal(await page.locator('#analytics-view').evaluate(node=>node.classList.contains('motion-enter')),false,
     'analytics children do not replay their common host entry');
-  await page.locator('#app-sidebar').evaluate(node=>{node.scrollTop+=25;});await arrived('production-quality-insights');
+  await page.locator('.sidebar-nav').evaluate(node=>{node.scrollTop+=25;});await arrived('production-quality-insights');
   await start('materials');
   await page.locator('#materials').focus();await page.keyboard.press('Enter');
   assert.equal(await page.locator('#materials').evaluate(node=>getComputedStyle(node).outlineStyle),'solid');

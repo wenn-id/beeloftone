@@ -150,11 +150,13 @@ function measureNavigationTarget(target) {
       || rect.width <= 0 || rect.height <= 0 || surface.width <= 0 || surface.height <= 0) return null;
   const actions = navigationSurface.querySelector('.sidebar-actions');
   const approval = target.id === 'approvals';
+  const nav = navigationSurface.querySelector('.sidebar-nav').getBoundingClientRect();
+  const top = approval ? surface.top + navigationSurface.clientTop : nav.top;
   const bottom = approval ? surface.bottom - navigationSurface.clientTop
-    : Math.min(surface.bottom, actions.getBoundingClientRect().top);
-  if (rect.bottom <= surface.top + navigationSurface.clientTop || rect.top >= bottom
+    : Math.min(nav.bottom, actions.getBoundingClientRect().top);
+  if (rect.bottom <= top || rect.top >= bottom
       || rect.right <= surface.left || rect.left >= surface.right) return null;
-  // Sticky actions isolate paint. Reuse the same node inside the CTA to put its solid
+  // The pinned card isolates paint. Reuse the same node inside the CTA to put its solid
   // surface above the card background but below the original interactive button text.
   const context = approval ? target.parentElement : navigationSurface;
   const origin = context.getBoundingClientRect();
@@ -339,7 +341,10 @@ function scheduleNavigationLensSync() {
 reducedMotionQuery.addEventListener('change', () => {
   if (reducedMotion() && navigationLensMotion.running) settleNavigationLensMotion();
 });
-navigationSurface.addEventListener('scroll', scheduleNavigationLensSync, {passive:true});
+navigationSurface.addEventListener('scroll', () => {
+  if (navigationLensSyncFrame !== null) cancelAnimationFrame(navigationLensSyncFrame);
+  syncNavigationLens();
+}, {passive:true,capture:true});
 for (const type of ['transitionend','transitioncancel']) navigationSurface.addEventListener(type, event => {
   if (event.propertyName === 'scale' && event.target === getActiveNavigationTarget()) scheduleNavigationLensSync();
 });
