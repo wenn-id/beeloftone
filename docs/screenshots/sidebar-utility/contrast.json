@@ -1,0 +1,42 @@
+[
+  {
+    "theme": "light",
+    "ratios": [
+      {
+        "label": "Antrean approval",
+        "color": "rgb(16, 32, 69)",
+        "minContrast": 10.980561922452324
+      },
+      {
+        "label": "Tinjau permintaan yang menunggu keputusan.",
+        "color": "rgb(24, 42, 67)",
+        "minContrast": 10.026495471620896
+      },
+      {
+        "label": "Inbox approval",
+        "color": "rgb(19, 41, 67)",
+        "minContrast": 11.108431319188515
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "ratios": [
+      {
+        "label": "Antrean approval",
+        "color": "rgb(241, 246, 255)",
+        "minContrast": 7.406311421489552
+      },
+      {
+        "label": "Tinjau permintaan yang menunggu keputusan.",
+        "color": "rgb(212, 226, 242)",
+        "minContrast": 5.872527379618843
+      },
+      {
+        "label": "Inbox approval",
+        "color": "rgb(231, 239, 247)",
+        "minContrast": 5.952558053914196
+      }
+    ]
+  }
+]

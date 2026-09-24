@@ -86,7 +86,7 @@ class CommandCenterGoldenTest(unittest.TestCase):
         self.assertIn('const LENS_SETTLE_DISTANCE = .25, LENS_SETTLE_SPEED = 2;', JS)
         self.assertIn('const LENS_MAX_SUBSTEP = 1/120, LENS_MAX_FRAME = .032, LENS_STALL = .2;', JS)
         self.assertIn('const LENS_MORPH_MAX = .07, LENS_MORPH_SPEED = 3000;', JS)
-        for call, count in [('requestAnimationFrame',6),('cancelAnimationFrame',3),('setTimeout',7),('setInterval',0)]:
+        for call, count in [('requestAnimationFrame',6),('cancelAnimationFrame',4),('setTimeout',7),('setInterval',0)]:
             self.assertEqual(len(re.findall(r'\b' + call + r'\(', JS)), count)
 
 

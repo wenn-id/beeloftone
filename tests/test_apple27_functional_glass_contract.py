@@ -511,10 +511,10 @@ class PhysicsIsUntouchedTest(unittest.TestCase):
                                                 r'|--chrome-|--lens-glass-|webkitBackdrop')
                 self.assertNotRegex(CODE[name], r'mousemove|pointermove|setInterval|requestIdleCallback'
                                                 r'|DeviceOrientation|matchMedia\([\'"]\(prefers-reduced-trans')
-        # The frame and timer inventory is A3's exactly. A later phase that legitimately adds frame
-        # work must change these numbers deliberately rather than by accident.
+        # Scheduling remains A3's; nested nav scrolling cancels one queued measurement
+        # before synchronizing immediately, so the lens cannot lag behind the scroller.
         self.assertEqual(len(re.findall(r'requestAnimationFrame\(', JS)), 6)
-        self.assertEqual(len(re.findall(r'cancelAnimationFrame\(', JS)), 3)
+        self.assertEqual(len(re.findall(r'cancelAnimationFrame\(', JS)), 4)
         self.assertEqual(len(re.findall(r'setTimeout\(', JS)), 7)
         self.assertEqual(len(re.findall(r'setInterval\(', JS)), 0)
 

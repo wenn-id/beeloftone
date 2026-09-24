@@ -81,16 +81,16 @@ module.exports = async ({page, login, admin, viewer, work}) => {
   await page.locator('.nav-summary').click();
   await aligned('production-quality-insights');
 
-  // Scroll the sidebar, including the sticky CTA, rather than the document.
+  // Navigation scrolls independently above the pinned CTA.
   for (const id of ['command-center','capacity-plan','marketing-budgets','approvals']) {
     await open(id);
-    await page.locator('#app-sidebar').evaluate(node => { node.scrollTop += node.scrollTop ? -20 : 20; });
+    await page.locator('.sidebar-nav').evaluate(node => { node.scrollTop += node.scrollTop ? -20 : 20; });
     await aligned(id);
   }
   await open('command-center');
-  await page.locator('#app-sidebar').evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await page.locator('.sidebar-nav').evaluate(node => { node.scrollTop = node.scrollHeight; });
   await hidden();
-  await page.locator('#app-sidebar').evaluate(node => { node.scrollTop = 0; });
+  await page.locator('.sidebar-nav').evaluate(node => { node.scrollTop = 0; });
   await aligned('command-center');
   await page.locator('#materials').hover();
   await aligned('command-center');
@@ -101,11 +101,11 @@ module.exports = async ({page, login, admin, viewer, work}) => {
 
   // Border offsets and horizontal scrolling are measured, not assumed to be zero.
   await page.locator('#app-sidebar').evaluate(node => {
-    node.style.border = '3px solid'; node.querySelector('.sidebar-nav').style.minWidth = '300px'; node.scrollLeft = 20;
+    node.style.border = '3px solid'; node.querySelector('.nav-group').style.minWidth = '300px'; node.querySelector('.sidebar-nav').scrollLeft = 20;
   });
   await aligned('materials');
   await page.locator('#app-sidebar').evaluate(node => {
-    node.style.border = ''; node.querySelector('.sidebar-nav').style.minWidth = ''; node.scrollLeft = 0;
+    node.style.border = ''; node.querySelector('.nav-group').style.minWidth = ''; node.querySelector('.sidebar-nav').scrollLeft = 0;
   });
   await aligned('materials');
 
@@ -164,7 +164,7 @@ module.exports = async ({page, login, admin, viewer, work}) => {
 
   for (const reducedMotion of ['reduce','no-preference']) {
     await page.emulateMedia({reducedMotion});
-    await page.locator('#app-sidebar').evaluate(node => { node.scrollTop = 0; });
+    await page.locator('.sidebar-nav').evaluate(node => { node.scrollTop = 0; });
     const finalSelection = await page.evaluate(() => {
       for (const id of ['board-home','workforce','capacity-plan','command-center']) document.getElementById(id).click();
       return [...document.querySelectorAll('#app-sidebar [aria-current]')].map(node => node.id);

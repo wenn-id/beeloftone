@@ -14,7 +14,7 @@ module.exports = async ({page, login, admin, apiGet, work, populated = false}) =
     await page.locator('#command-center-summary:not([aria-busy])').waitFor();
     await page.locator('#command-center-content:not([hidden])').waitFor();
     await page.locator('.nav-collapse').evaluate(node => { node.open = false; });
-    await page.evaluate(() => { document.querySelector('#main').scrollTop = 0; window.scrollTo(0,0); });
+    await page.evaluate(() => { document.querySelector('.workspace-main').scrollTop = 0; window.scrollTo(0,0); });
     await settle();
   };
   const capture = name => page.screenshot({path:path.join(shots,`a52-${name}.png`)});
@@ -162,7 +162,7 @@ module.exports = async ({page, login, admin, apiGet, work, populated = false}) =
     ['fullscreen/restore',async()=>{await page.locator('#window-fullscreen').click();await page.locator('#window-fullscreen').click();}],
     ['search',async()=>{await search.fill('Produksi');await search.press('Escape');await search.fill('');await search.press('Escape');}],
     ['theme',async()=>{await page.locator('#theme').click();}],
-    ['scroll',async()=>{await page.evaluate(()=>document.querySelector('#main').scrollTo(0,700));await page.evaluate(()=>document.querySelector('#main').scrollTo(0,0));}],
+    ['scroll',async()=>{await page.evaluate(()=>document.querySelector('.workspace-main').scrollTo(0,700));await page.evaluate(()=>document.querySelector('.workspace-main').scrollTo(0,0));}],
     ['nav spring',async()=>{await page.locator('#workforce').click();await open();}],
     ['background switch',async()=>{await page.locator('#appearance').click();await page.locator('[data-wallpaper=mist]').click();await page.waitForFunction(()=>document.documentElement.dataset.wallpaper==='mist');await page.locator('[data-wallpaper=landscape]').click();await page.waitForFunction(()=>document.documentElement.dataset.wallpaper==='landscape');await page.locator('#appearance-close').click();}]]) {
     const a=await metrics();await run();await settle();const b=await metrics();
@@ -181,7 +181,7 @@ module.exports = async ({page, login, admin, apiGet, work, populated = false}) =
   for(const width of [1440,1280,1024,981,980,768,390,320]){
     await page.setViewportSize({width,height:width<650?844:1000});await settle();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`overflow at ${width}`);
-    await page.evaluate(()=>{window.scrollTo(0,0);document.querySelector('#main').scrollTop=0;});
+    await page.evaluate(()=>{window.scrollTo(0,0);document.querySelector('.workspace-main').scrollTop=0;});
     await capture(width+'-light');
     if(width===390){await page.locator('#theme').click();await settle();await capture('390-dark');await page.locator('#theme').click();}
   }
