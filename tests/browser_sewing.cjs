@@ -25,7 +25,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     quantity:20,reason:'CONTOH bundle sewing'},'sew-bundle');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-SEWING/}).click();await page.getByRole('heading',{name:'CONTOH job sewing',exact:true}).waitFor();}
-  async function openJobs(){await page.locator('.order-settings').getByRole('button',{name:'Sewing / makloon',exact:true}).click();}
+  async function openJobs(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Sewing / makloon',exact:true}).click();}
 
   await role(operator);await openOrder();
   let failList=true;
@@ -39,7 +39,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByText('Belum ada job sewing untuk order ini.',{exact:false}).waitFor();
   await page.unroute('**/api/orders/*/sewing-jobs?*');
   await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Bundle',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Bundle',exact:true}).click();
   await page.getByRole('button',{name:'Rincian SEW-BDL',exact:true}).click();
   await page.getByRole('button',{name:'Kirim ke sewing',exact:true}).click();
   await page.getByLabel('Referensi job',{exact:true}).fill('SEW-UI-001');
@@ -80,7 +80,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   assert.deepEqual([totals.sewing,totals.finishing,totals.reject],[8,10,2]);
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-sewing-mobile.png')});
   await page.keyboard.press('Escape');await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Bundle',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Bundle',exact:true}).click();
   await page.getByRole('button',{name:'Rincian SEW-BDL',exact:true}).click();
   await page.getByRole('button',{name:'Kirim ke sewing',exact:true}).click();
   await page.keyboard.press('Escape');await page.locator('dialog').waitFor({state:'hidden'});

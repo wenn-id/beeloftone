@@ -11,7 +11,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-FINISHED-GOODS/}).click();await page.getByRole('heading',{name:'CONTOH penerimaan barang jadi',exact:true}).waitFor();}
   async function openReceipt(){
-    await page.locator('.order-settings').getByRole('button',{name:'Barang jadi',exact:true}).click();
+    await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Barang jadi',exact:true}).click();
     await page.getByRole('button',{name:'Rincian FG-WH-SOURCE',exact:true}).click();
   }
 
@@ -21,7 +21,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
     if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar reservasi sedang sibuk'})});}
     else await route.continue();
   });
-  await page.locator('.order-settings').getByRole('button',{name:'Reservasi jual',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Reservasi jual',exact:true}).click();
   await page.getByText('Daftar reservasi sedang sibuk',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada reservasi marketplace untuk order ini.',{exact:true}).waitFor();
@@ -62,12 +62,12 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
   assert.equal((await apiGet('/api/orders/'+order.id)).totals.warehouse,20);
 
   await role(viewer);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Reservasi jual',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Reservasi jual',exact:true}).click();
   await page.getByRole('button',{name:'Rincian MKT-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Lepaskan reservasi',exact:true}).count(),0);
 
   await role(operator);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Reservasi jual',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Reservasi jual',exact:true}).click();
   await page.getByRole('button',{name:'Rincian MKT-UI-001',exact:true}).click();
   await page.getByRole('button',{name:'Lepaskan reservasi',exact:true}).click();
   await page.getByLabel('Tanggal pelepasan',{exact:true}).fill('2026-09-21');

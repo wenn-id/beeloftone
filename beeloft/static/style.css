@@ -15,7 +15,7 @@
 
 #activity-form{flex-wrap:wrap}.activity-item{grid-template-columns:135px minmax(0,1fr)}@media(max-width:600px){.activity-item{grid-template-columns:1fr}}
 
-#search-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end}#search-form .search-field{grid-column:1/-1}#search-form label{min-width:0}@media(max-width:650px){#search-form{grid-template-columns:repeat(2,minmax(0,1fr))}#search-form label:last-of-type{grid-column:1/-1}#search-form button{width:100%}}
+/* A6.1: the Produksi filter form was a three-column stacked grid here. It is removed rather than overridden because `#search-form` is an id and would have out-specified the A6 `.command-bar` it is now composed from, keeping the old grid alive underneath the command bar. Every selector in the deleted block was scoped to `#search-form`, which only the Produksi board has ever used. */
 .material-balance{display:block;font-size:1.75rem;font-variant-numeric:tabular-nums}.material-event{padding:1rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.material-event p{margin:.4rem 0}.material-event .reason{white-space:pre-wrap}#batch-list .sku-block{overflow-wrap:anywhere}
 .ai-prompts{margin:1rem 0}.ai-prompts button{font-size:.875rem}.ai-assumptions{margin:1rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:.75rem 0}.ai-assumptions summary{cursor:pointer;font-weight:600}.ai-assumptions .form-grid{margin-top:1rem}.ai-answer{margin:1.5rem 0;padding:1.2rem;background:var(--accent-bg);border-top:3px solid var(--accent);overflow-wrap:anywhere}.ai-answer h3{margin-bottom:.35rem}.ai-answer p:last-child{margin-bottom:0}
 .command-attention{border-left:3px solid var(--edge);padding:1rem 0 1rem 1.2rem;overflow-wrap:anywhere}.command-attention.critical{border-left-color:var(--danger)}.command-attention.warning{border-left-color:var(--accent)}.command-attention p{margin:.35rem 0}.command-snapshot{min-width:0}.command-snapshot h3{margin-bottom:.35rem}.command-values dt{color:var(--muted);min-width:0}.command-values dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}@media(max-width:650px){#command-center-summary{grid-template-columns:minmax(0,1fr)}#command-center-summary dd{overflow-wrap:anywhere}.command-values{grid-template-columns:minmax(0,1fr)}.command-values dd{text-align:left}}
@@ -1377,100 +1377,145 @@ label>input,label>select,label>textarea{margin-top:6px}
 .history-action:hover,.history-action.quiet:hover{
   border-color:var(--danger);background:var(--danger-bg);color:var(--danger);
 }
+/* ==========================================================================
+   A6.1 · Produksi containment.
 
-/* Production is the bounded operational working surface; other workspaces keep their composition. */
-#board-view{max-width:1360px;margin-inline:auto;container-type:inline-size;--muted:var(--ink-2)}
-#board-view .page-heading{align-items:center;flex-wrap:wrap;gap:12px 24px;margin-bottom:20px}
-#board-view h1{font-size:1.875rem;line-height:1.2;overflow-wrap:anywhere}
-#board-view .page-heading>div{min-width:0}
-#board-view .page-heading .actions{margin-left:auto}
-#board-view #summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
-#board-view #summary>div{min-height:108px;padding:18px 24px 16px 18px;gap:14px}
-#board-view #summary dt{font-size:.8125rem;font-weight:600;gap:18px;line-height:1.4}
-/* The tile surrounds the existing 18px glyph without changing its shared scale or alignment. */
-#board-view #summary dt .icon{background:var(--primary-soft);box-shadow:0 0 0 7px var(--primary-soft);border-radius:4px}
-#board-view #summary dd{font-size:2rem;line-height:1.1;overflow-wrap:anywhere}
-#board-view #summary dd small{display:inline-block;margin-left:.2rem;font-size:.75rem}
-#board-view #summary .production-wip{background:var(--primary-soft);border-color:var(--primary-edge)}
-#board-view #summary .production-wip dt .icon{background:var(--surface);box-shadow:0 0 0 7px var(--surface)}
-#board-view .issues-summary{
-  width:auto;max-width:100%;min-height:var(--touch-target-min);margin:0 0 20px;padding:10px 14px;
-  border:1px solid var(--control-line);border-radius:var(--control-radius);background:var(--surface);
-  color:var(--ink-2);box-shadow:none;font-size:.8125rem;font-weight:500;gap:10px;
+   Produksi is the first workspace migrated onto the A6.0 primitives, so the
+   board's and the order detail's presentation now live in
+   `workspace-primitives.css`. The premium-UI block that used to sit here - a
+   `#board-view`-scoped redesign of `.summary`, `#search-form`, `.order-grid`,
+   `.table-head`, `.progress-note` and their three container queries - is
+   DELETED rather than overridden. Two reasons, both structural:
+
+     - every selector in it was scoped to `#board-view`, so removing it cannot
+       change any other page; and
+     - an id out-specifies a class, so `#board-view #search-form` and
+       `#board-view #summary` would have kept the stacked filter grid and the
+       old KPI card alive underneath the command bar and the metric strip. That
+       is the override war A6.1 is required not to start.
+
+   What remains is only what a shared primitive must not own:
+
+     - the bounded column the workspace was approved with;
+     - the grouping element's own stacking rhythm;
+     - narrow neutralisations that stop a legacy rule still shipped for OTHER
+       pages (`.state`, `button`, `.order-title`) from styling migrated markup.
+
+   Nothing here is a component. The legacy vocabulary itself - `.summary`,
+   `.filters`, `.order-grid`, `.order-row`, `.table-head`, `.status-label`,
+   `.stages`, `.stage`, `.sku-block`, `.sku-balances`, `.history-item`,
+   `.issue-item`, `.detail-meta`, `.list-host`, `.state` - is deliberately left
+   intact above, because Command Center, Bahan baku, People, Aktivitas, Audit,
+   the approval queues and every production child dialog still render with it.
+   A6.1 contains its migration instead of widening it.
+   ========================================================================== */
+#board-view,#detail-view{max-width:1360px;margin-inline:auto}
+/* The board's grouping element. It deliberately carries no material of its own: under
+   A6/(S)53 the near-opaque surface is the data surface, and a second card wrapped around it
+   would put two borders and two shadows between the wallpaper and the table. */
+.production-work{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+/* Both state hosts keep their id, their `role="status"` and their `.state` class, because
+   the request lifecycle, `fail()` and the M4 motion contract all address them by exactly
+   those - the motion module asserts that `#board-message.className` returns to `state`
+   after the empty-state fade. Their BOX, though, now comes from the A6 state primitive
+   rendered inside them, so the legacy `.state` card is withdrawn here; without this every
+   loading, empty and error state would draw a second bordered panel around the first. */
+#board-message,#detail-message{padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit}
+/* The open-issue summary is an A6 attention note that happens to be a <button>. It needs
+   the element resets the primitive has no reason to carry, and its hover must not fall back
+   to the generic button hover, which would drop the semantic tint the state is carried by. */
+#issues-summary{width:100%;min-height:0;box-shadow:none;font-weight:500}
+#issues-summary:hover{background:var(--attention-tint);border-color:var(--attention-ink)}
+/* The CLEARED state is a different weight of message from the raised one, and it was being given
+   the same one: a full-width, two-line, green-bordered panel announcing that nothing is wrong. An
+   all-clear should be confirmable at a glance and then ignored, so it collapses to a single
+   shrink-wrapped row - icon, count, reason - with the green kept in the tint and the check rather
+   than in a callout edge. The raised state below is untouched and stays prominent.
+   Only the layout changes: the same element, the same DOM, the same click behaviour, and the same
+   `has-issues` / `attention-note-success` state classes the lifecycle already toggles. */
+#issues-summary.attention-note-success{
+  width:auto;max-width:100%;align-self:flex-start;
+  align-items:center;gap:.45rem;padding:5px 11px;
+  border-color:var(--workspace-edge);
 }
-#board-view .issues-summary>.icon{color:var(--success)}
-#board-view .issues-summary strong{font-weight:650;font-variant-numeric:tabular-nums}
-#board-view .issues-summary:hover{background:var(--surface-subtle);border-color:var(--edge)}
-#board-view .issues-summary.has-issues{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-edge)}
-#board-view .issues-summary.has-issues>.icon{color:var(--warning)}
-#board-view .issues-summary.has-issues:hover{border-color:var(--warning)}
-#board-view .issue-link{font-weight:500}
-#board-view .ledger-heading{gap:8px 16px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px}
-#board-view .ledger-heading h2{margin:0;font-size:1.125rem}
-#board-view #updated{font-size:.75rem}
-#board-view .production-work{min-width:0;border:1px solid var(--line-strong);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
-#board-view #search-form{
-  grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;
-  padding:18px;margin:0;border-color:transparent;border-bottom-color:var(--line);
-  background:transparent;box-shadow:none;
+#issues-summary.attention-note-success>.attention-note-copy{
+  flex:0 1 auto;flex-direction:row;align-items:baseline;flex-wrap:wrap;gap:0 .35rem;
 }
-#board-view #search-form .search-field{grid-column:1/4}
-#board-view #search-form label{font-size:.75rem;color:var(--ink-2)}
-#board-view #search-form .search-field{font-size:.8125rem;color:var(--ink);font-weight:650}
-#board-view #search-form label:last-of-type{grid-column:auto}
-#board-view #search-form input,#board-view #search-form select{margin-top:5px}
-#board-view input:focus-visible,#board-view select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-#board-view #search-form .production-search{background:var(--primary-soft);border-color:var(--primary-soft);color:var(--primary);box-shadow:none}
-#board-view #search-form .production-search:hover{border-color:var(--primary)}
-#board-view #reset-board{font-size:.75rem;font-weight:500}
-#board-view #production-filter-hint{margin:0;padding:12px 18px;font-size:.75rem}
-#board-view #board-message{margin:0 18px 16px;padding:24px 16px;background:var(--surface-subtle);border-radius:12px}
-#board-view #board-message.error{background:var(--danger-bg);color:var(--danger)}
-#board-view .order-grid{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,.9fr);gap:18px}
-#board-view .table-head{margin:0;border:0;border-block:1px solid var(--line);border-radius:0;padding:12px 18px;font-size:.6875rem;letter-spacing:.035em;color:var(--ink-2)}
-#board-view .table-head>.status-cell{display:block;grid-column:auto}
-#board-view .order-row{margin:0;padding:16px 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;font-size:.8125rem}
-#board-view .order-row:hover,#board-view .order-row:focus-within{background:var(--surface-subtle)}
-#board-view .order-title{font-size:.875rem;line-height:1.4;min-height:var(--touch-target-min);border-radius:4px}
-#board-view .reference{font-size:.6875rem;font-weight:600;letter-spacing:.02em;margin-bottom:4px}
-#board-view .cell>.hint{display:block;font-size:.75rem;margin-top:4px}
-#board-view .progress-note{font-size:.75rem;font-variant-numeric:tabular-nums;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
-#board-view .progress-note strong{margin-left:auto;color:var(--ink);font-weight:700}
-#board-view .order-row>.status-cell{grid-column:auto;padding:0;display:flex;align-items:flex-start;flex-direction:column;gap:6px}
-#board-view .pagination{margin:0;padding:14px 18px;flex-wrap:wrap}
-#board-view .pagination .hint{font-size:.75rem;font-variant-numeric:tabular-nums}
-@container (max-width:48rem){
-  #board-view #summary{grid-template-columns:repeat(2,minmax(0,1fr))}
-  #board-view .table-head{display:none}
-  #board-view .order-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px}
-  #board-view .order-row>.cell:first-child,#board-view .order-row>.progress-cell{grid-column:1/-1}
-  #board-view .cell-label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:3px}
-  #board-view .order-row>.status-cell{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}
+#issues-summary.attention-note-success .attention-note-title{font-size:var(--type-metadata);font-weight:650}
+#issues-summary.attention-note-success .attention-note-reason{color:var(--muted);font-size:var(--type-metadata)}
+/* The separator is decorative punctuation between two runs of text, so it is drawn rather than
+   written: it must not enter the accessible name or the element's text content. */
+#issues-summary.attention-note-success .attention-note-reason::before{content:"·";margin-right:.35rem;color:var(--color-separator-strong)}
+#issues-summary.attention-note-success>.icon{margin-top:0}
+/* Secondary information, not a panel. The stage-filter explanation keeps every word and keeps its
+   `aria-describedby` relationship, but it no longer needs a filled surface and its own padding to
+   say "read me after the command bar" - size and position already say it. Withdrawing the panel is
+   what buys the order list its place higher in the first viewport. */
+#production-filter-hint{padding:1px 0 0;border-radius:0;background:none;font-size:var(--type-metadata);line-height:1.4}
+/* M4's refresh dim stays authoritative on this list. `markRefreshing()` sets BOTH `.is-refreshing`
+   and `aria-busy`, and A6 dims a busy data surface to .6 while M4 documents .78 - and A6 wins on
+   specificity and load order. The migrated board keeps the documented M4 value, because the
+   refresh treatment here is an existing, reviewed behaviour that A6.1 is not re-opening. The
+   transition itself is still the one declared in the reduced-motion gate of `style.css`. */
+#order-list.is-refreshing{opacity:.78}
+/* Back to the board. `.workspace-page` is a flex column, so a full-width stretch plus the
+   foundation's `button{justify-content:center}` was parking "Semua order" near the middle of the
+   page, reading as a floating control that belonged to nothing. Shrink-wrapped and left-aligned,
+   it sits directly above the order identity and reads as part of it - which is also why the
+   section gap here is tighter than the page's own rhythm. Behaviour and focus restoration are
+   untouched; this is alignment only. */
+#detail-view{gap:10px}
+#detail-view>#back{align-self:flex-start;justify-content:flex-start;margin:0}
+/* ---------- A6.1 order-detail utility rows ----------
+   An action that OPENS something is not an action that DOES something, and the order detail is
+   mostly the former: of its 27 actions, 24 open a record, a history or a list. Rendering all of
+   them as equally loud capsules produced a wall that dominated the page and flattened the three
+   things that are real commands.
+
+   So navigational actions become rows in a grouped utility list - label, then a chevron that says
+   "this opens a page" - and only genuine commands stay button-shaped. The grammar is A6.0's own
+   `.record-row`; what is declared here is purely the <button> element resets that primitive has no
+   reason to carry, which is the same containment already used for `#issues-summary`. No action was
+   removed, no `data-action` changed, and no popover or menu architecture was introduced.
+
+   Deliberately denser than a data row: a utility list is navigation, not content, so it uses its
+   own compact step instead of `--workspace-row-height`. The `max-width:980px` touch floor above
+   still lifts every one of these to 44px on a narrow viewport. */
+#detail-content .utility-rows{display:flex;flex-direction:column;min-width:0}
+#detail-content .utility-rows>.record-row{
+  min-height:36px;padding:5px 6px;
+  border:0;border-bottom:1px solid var(--workspace-divider);border-radius:0;
+  background:none;box-shadow:none;color:var(--ink);
+  justify-content:flex-start;text-align:left;gap:.6rem;
+  font-size:var(--type-control);font-weight:500;letter-spacing:0;
 }
-@container (max-width:30rem){
-  #board-view h1{font-size:var(--type-page-title)}
-  #board-view .page-heading{align-items:flex-start;gap:14px;margin-bottom:16px}
-  #board-view .page-heading .actions{width:100%;margin-left:0}
-  #board-view #summary{gap:10px}
-  #board-view #summary>div{padding:16px 20px 14px 14px;gap:16px;min-height:0}
-  #board-view #summary dt{font-size:.75rem;gap:12px}
-  #board-view #summary dd{font-size:1.875rem}
-  #board-view .issues-summary{margin-bottom:18px}
-  #board-view #search-form{grid-template-columns:minmax(0,1fr);padding:14px;gap:12px}
-  #board-view #search-form .search-field,#board-view #reset-board{grid-column:auto}
-  #board-view #search-form .production-search{justify-self:start;width:auto}
-  #board-view #search-form label{display:grid;grid-template-columns:6rem minmax(0,1fr);gap:8px;align-items:center}
-  #board-view #search-form .search-field{display:block}
-  #board-view #search-form select{margin:0}
-  #board-view #production-filter-hint{padding:12px 14px}
-  #board-view .order-row{padding:16px 14px}
-  #board-view .pagination{padding:14px;gap:10px}
-  #board-view .pagination .actions{flex-wrap:wrap}
-  #board-view button{min-height:var(--touch-target-min)}
+#detail-content .utility-rows>.record-row:last-child{border-bottom:0}
+/* The generic `button:hover` would repaint the row with the control surface and its edge, which
+   is exactly the capsule look these rows exist to leave behind. */
+#detail-content .utility-rows>.record-row:hover{background:var(--workspace-hover);border-color:var(--workspace-divider);color:var(--ink)}
+#detail-content .utility-rows>.record-row>.icon{color:var(--muted)}
+#detail-content .utility-rows>.record-row:hover>.icon{color:var(--ink-2)}
+/* A position holding nothing is still stated, with its real number, and simply reads quieter than
+   a position holding stock. This is emphasis, not filtering: no quantity is hidden or altered. */
+#detail-content .balance-idle>dd{color:var(--muted);font-weight:500}
+/* The product's own narrow-width touch floor, restored for the migrated controls that
+   legitimately out-specify it. `button,input,select,textarea{min-height:44px}` is declared
+   globally at this breakpoint, but a class beats a bare element selector, so A6's compact
+   control height (and `.order-title`'s shared `min-height:auto` reset, which cannot be changed
+   at the source because Aktivitas renders it too) would silently drop these below 44px on a
+   narrow viewport. A6.0's `pointer:coarse` step is ADDITIVE to that policy, not a replacement
+   for it: this page may not lose a target size it already guaranteed. */
+@media(max-width:980px){
+  #board-view button,#detail-view button,
+  #board-view .command-filter,#board-view .command-filter>select,
+  #board-view .command-search input{min-height:var(--touch-target-min)}
 }
-@container (max-width:19rem){
-  #board-view #summary{grid-template-columns:minmax(0,1fr)}
-  #board-view #search-form label{display:block}
-  #board-view #search-form select{margin-top:5px}
-  #board-view .order-row{grid-template-columns:minmax(0,1fr)}
+/* A phone cannot fit the cleared note's count and its reason on one line, so it stops pretending
+   to: the two runs stack and the separator is withdrawn rather than left to orphan at the start of
+   the wrapped line. Still the quiet treatment - small type, soft tint, no callout edge - just over
+   two lines instead of one. */
+@media(max-width:650px){
+  #issues-summary.attention-note-success{width:100%;align-items:flex-start}
+  #issues-summary.attention-note-success>.attention-note-copy{flex-direction:column;gap:.1rem}
+  #issues-summary.attention-note-success .attention-note-reason::before{content:none;margin:0}
 }

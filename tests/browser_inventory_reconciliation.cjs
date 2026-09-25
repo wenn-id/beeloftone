@@ -17,13 +17,13 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
     if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar stock opname sedang sibuk'})});}
     else await route.continue();
   });
-  await page.locator('.order-settings').getByRole('button',{name:'Stock opname',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Stock opname',exact:true}).click();
   await page.getByText('Daftar stock opname sedang sibuk',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada stock opname barang jadi untuk order ini.',{exact:true}).waitFor();
   await page.unroute('**/api/orders/*/finished-goods-stock-counts?*');await page.keyboard.press('Escape');
 
-  await page.locator('.order-settings').getByRole('button',{name:'Barang jadi',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Barang jadi',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FG-WH-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat stock opname',exact:true}).click();
   await page.getByLabel('Referensi stock opname',{exact:true}).fill('COUNT-UI-001');
@@ -63,12 +63,12 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,receipt
     {reason:'Adjustment stock opname harus dikoreksi dari sumber'},'stock-count-adjustment-blocked',409);
 
   await role(viewer);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Stock opname',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Stock opname',exact:true}).click();
   await page.getByRole('button',{name:'Rincian COUNT-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi stock opname',exact:true}).count(),0);
 
   await role(admin);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Adjustment',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Adjustment',exact:true}).click();
   await page.getByText('Dibuat otomatis dari stock opname.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Rincian COUNT-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi adjustment',exact:true}).count(),0);

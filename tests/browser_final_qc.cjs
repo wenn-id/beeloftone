@@ -31,7 +31,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     completed_date:'2026-09-13',reason:'CONTOH finishing lengkap'},'fqc-finishing');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-FINAL-QC/}).click();await page.getByRole('heading',{name:'CONTOH inspeksi final',exact:true}).waitFor();}
-  async function openQc(){await page.locator('.order-settings').getByRole('button',{name:'Final QC',exact:true}).click();}
+  async function openQc(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Final QC',exact:true}).click();}
 
   await role(operator);await openOrder();
   let failList=true;
@@ -43,7 +43,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada catatan final QC untuk order ini.',{exact:false}).waitFor();
   await page.unroute('**/api/orders/*/final-qc-records?*');await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Finishing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Finishing',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FQC-FIN',exact:true}).click();
   await page.getByRole('button',{name:'Catat final QC',exact:true}).click();
   await page.getByLabel('Referensi final QC',{exact:true}).fill('FQC-UI-001');
@@ -79,7 +79,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   assert.deepEqual([totals.qc,totals.warehouse,totals.rework,totals.reject],[7,10,2,1]);
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-final-qc-mobile.png')});
   await page.keyboard.press('Escape');await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Finishing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Finishing',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FQC-FIN',exact:true}).click();
   await page.getByRole('button',{name:'Catat final QC',exact:true}).click();
   await page.keyboard.press('Escape');await page.locator('dialog').waitFor({state:'hidden'});

@@ -147,7 +147,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.getByRole('heading',{name:'Command center',exact:true}).waitFor();
 
   await page.locator('[data-command-snapshot="production"]').getByRole('button',{name:'Buka papan produksi'}).click();
-  await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Produksi',exact:true}).waitFor();
   await page.getByRole('button',{name:'Command center',exact:true}).click();
   await page.locator('[data-command-snapshot="integrations"]').getByRole('button',{name:'Buka kesehatan integrasi'}).click();
   // Milestone D: tombol ini sekarang mengaktifkan halaman integrations-view, bukan dialog.

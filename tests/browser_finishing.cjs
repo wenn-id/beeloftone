@@ -29,7 +29,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     returned_date:'2026-09-15',reason:'CONTOH sewing selesai'},'fin-sewing-complete');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-FINISHING/}).click();await page.getByRole('heading',{name:'CONTOH proses finishing',exact:true}).waitFor();}
-  async function openFinishing(){await page.locator('.order-settings').getByRole('button',{name:'Finishing',exact:true}).click();}
+  async function openFinishing(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Finishing',exact:true}).click();}
 
   await role(operator);await openOrder();
   let failList=true;
@@ -43,7 +43,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByText('Belum ada catatan finishing untuk order ini.',{exact:false}).waitFor();
   await page.unroute('**/api/orders/*/finishing-records?*');
   await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Sewing / makloon',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Sewing / makloon',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FIN-SEW',exact:true}).click();
   await page.getByRole('button',{name:'Catat finishing',exact:true}).click();
   await page.getByLabel('Referensi finishing',{exact:true}).fill('FIN-UI-001');
@@ -75,7 +75,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   assert.deepEqual([totals.finishing,totals.qc,totals.reject],[10,6,4]);
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-finishing-mobile.png')});
   await page.keyboard.press('Escape');await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Sewing / makloon',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Sewing / makloon',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FIN-SEW',exact:true}).click();
   await page.getByRole('button',{name:'Catat finishing',exact:true}).click();
   await page.keyboard.press('Escape');await page.locator('dialog').waitFor({state:'hidden'});

@@ -101,7 +101,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- progress values interpolate only when the number really changed ----------------------
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await page.locator('#order-list .order-row').first().waitFor();
   const board = await apiGet('/api/production-board?' + new URLSearchParams({q: '', status: 'all',
     owner_id: '', stage: 'all', limit: '25', offset: '0'}));
@@ -249,7 +249,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- chips, disclosure and the absence of continuous animation ----------------------------
   const chip = await page.evaluate(() => {
-    const node = document.querySelector('.status-label, .badge');
+    // A6.1 renders the Produksi board's statuses as A6 chips; the legacy classes are still the
+    // right target on every page this module also visits.
+    const node = document.querySelector('.status-chip, .status-label, .badge');
     const style = getComputedStyle(node);
     return {property: style.transitionProperty, transform: style.transform};
   });

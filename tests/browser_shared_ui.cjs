@@ -26,7 +26,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   async function openDemoOrder() {
     await closeDialog();
     await openSidebarDestination('Produksi');
-    await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
+    await page.getByRole('heading', {name: 'Produksi', exact: true}).waitFor();
     await page.locator('#search').fill('DEMO-PROD-001');
     await page.getByRole('button', {name: 'Cari order', exact: true}).click();
     const row = page.getByRole('button', {name: /DEMO-PROD-001/}).first();
@@ -47,57 +47,77 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   if (await page.locator('html').getAttribute('data-theme') === 'dark') await page.locator('#theme').click();
   await closeDialog();
   await openSidebarDestination('Produksi');
-  await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
+  await page.getByRole('heading', {name: 'Produksi', exact: true}).waitFor();
   await page.locator('#summary dd').first().waitFor();
 
-  // ---- the radius ladder from DESIGN.md must survive the shared layer ----------------
+  // ---- the radius ladder, now read against the A6 workspace scale on a migrated page ----
+  // A6.1 moved Produksi onto the A6.0 content primitives, and A6.0's approved scale for inner
+  // workspace content deliberately sits just INSIDE the shell's own (data surface 16, panel 12,
+  // control 10) so a table reads as content within the window rather than as a second window.
+  // The shell itself is untouched, which is why the navigation row is still asserted at 20.
   const ladder = await page.evaluate(() => {
-    const radius = node => node ? parseFloat(getComputedStyle(node).borderRadius) : null;
+    const radius = selector => {
+      const node = document.querySelector(selector);
+      return node ? parseFloat(getComputedStyle(node).borderRadius) : null;
+    };
     return {
-      card: radius(document.querySelector('#summary>div')),
-      input: radius(document.querySelector('#search')),
-      nav: radius(document.querySelector('#board-home')),
-      chip: radius(document.querySelector('#order-list .status-label')),
-      button: parseFloat(getComputedStyle(document.querySelector('#refresh')).borderRadius),
-      buttonHeight: document.querySelector('#refresh').getBoundingClientRect().height,
+      dataSurface: radius('#order-list'),
+      panel: radius('#summary>div'),
+      input: radius('#search'),
+      nav: radius('#board-home'),
+      chip: radius('#order-list .status-chip'),
+      button: radius('#refresh'),
+      commandBar: radius('#search-form'),
     };
   });
-  assert.equal(ladder.card, 20, 'primary surfaces stay at 20px');
-  assert.equal(ladder.input, 12, 'inputs stay at 12px');
-  assert.equal(ladder.nav, 20, 'A5.2 navigation uses the rounded toolbar family');
-  assert.equal(ladder.chip, 8, 'chips and badges stay at 8px');
-  assert.equal(ladder.button, ladder.input, 'buttons and inputs share the A1 control radius');
+  assert.equal(ladder.dataSurface, 16, 'the primary data surface uses the A6 surface radius');
+  assert.equal(ladder.panel, 12, 'metric cards and utility panels use the A6 panel radius');
+  assert.equal(ladder.input, 10, 'workspace controls use the A6 control radius');
+  assert.equal(ladder.nav, 20, 'A5.2 navigation is untouched and keeps the rounded toolbar family');
+  assert.ok(ladder.chip >= 100, 'status chips are pills, so the label length never changes the shape');
+  assert.equal(ladder.button, ladder.input, 'buttons and inputs share one control radius');
+  assert.equal(ladder.commandBar, ladder.input, 'the command bar is a control surface, not a card');
 
-  // ---- page heading, summary, filter toolbar, list, pagination are all present -------
+  // ---- page heading, metric strip, command bar, data surface, pagination are all present ----
   const boardShell = await page.evaluate(() => {
     const surface = node => {
       const style = getComputedStyle(node);
       return {radius: parseFloat(style.borderRadius), border: parseFloat(style.borderTopWidth)};
     };
     return {
-      eyebrow: document.querySelector('#board-view .eyebrow').textContent.trim(),
-      headingActions: document.querySelectorAll('#board-view .page-heading .actions button').length,
+      title: document.querySelector('#board-view .workspace-title').textContent.trim(),
+      subtitle: document.querySelector('#board-view .workspace-subtitle').textContent.trim(),
+      headingActions: document.querySelectorAll('#board-view .workspace-heading .workspace-actions button').length,
       kpis: document.querySelectorAll('#summary>div').length,
-      filter: surface(document.querySelector('#search-form')),
-      tableHead: Boolean(document.querySelector('#order-list .table-head')),
+      metricCards: document.querySelectorAll('#summary .metric-card').length,
+      commandBar: surface(document.querySelector('#search-form')),
+      filters: document.querySelectorAll('#search-form .command-filter').length,
+      tableHead: Boolean(document.querySelector('#order-list .data-header')),
+      columns: document.querySelectorAll('#order-list .data-header th').length,
       rows: document.querySelectorAll('#order-list .order-row').length,
+      rowsAreTableRows: [...document.querySelectorAll('#order-list .order-row')]
+        .every(row => row.tagName === 'TR'),
       pagination: Boolean(document.querySelector('#board-view .pagination')),
     };
   });
-  assert.ok(boardShell.eyebrow.length > 0, 'page heading keeps its eyebrow');
+  assert.equal(boardShell.title, 'Produksi', 'the page identity is the workspace name');
+  assert.ok(boardShell.subtitle.length > 0, 'the page heading keeps a subtitle');
   assert.ok(boardShell.headingActions >= 1);
   assert.equal(boardShell.kpis, 4);
-  assert.equal(boardShell.filter.radius, 20, 'the board filter toolbar is a 20px surface');
-  assert.ok(boardShell.filter.border > 0, 'the filter toolbar is a bordered surface');
+  assert.equal(boardShell.metricCards, 4, 'the four real board metrics are A6 metric cards');
+  assert.ok(boardShell.commandBar.border > 0, 'the command bar is a bordered surface');
+  assert.equal(boardShell.filters, 3, 'status, PIC and stage are compact command-bar filters');
   assert.equal(boardShell.tableHead, true);
+  assert.equal(boardShell.columns, 6);
   assert.ok(boardShell.rows > 0);
+  assert.equal(boardShell.rowsAreTableRows, true, 'the order list is a semantic table');
   assert.equal(boardShell.pagination, true);
 
   // ---- status chips must shrink-wrap, never stretch to fill their slot ---------------
   await openDemoOrder();
   const chip = await page.evaluate(() => {
-    const node = document.querySelector('.detail-meta .status-label');
-    const slot = node.parentElement;
+    const node = document.querySelector('#detail-content .detail-grid .status-chip');
+    const slot = node.closest('.detail-field');
     return {
       display: getComputedStyle(node).display,
       chipWidth: node.getBoundingClientRect().width,
@@ -108,17 +128,22 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.ok(chip.chipWidth < chip.slotWidth - 20,
     `status chip must not fill its slot (${chip.chipWidth} vs ${chip.slotWidth})`);
 
-  // ---- order detail metadata and history read as surfaces ---------------------------
+  // ---- order detail metadata, stage balances and SKU records read as A6 surfaces -----
   const detail = await page.evaluate(() => ({
-    metaRadius: parseFloat(getComputedStyle(document.querySelector('.detail-meta')).borderRadius),
-    metaCells: document.querySelectorAll('.detail-meta>div').length,
-    stages: document.querySelectorAll('.stages .stage').length,
-    skuCards: document.querySelectorAll('#detail-content .sku-block').length,
+    metaCells: document.querySelectorAll('#detail-content>.detail-grid>.detail-field').length,
+    stages: document.querySelectorAll('#detail-content .detail-grid-compact .detail-field').length,
+    skuCards: document.querySelectorAll('#detail-content .utility-panel').length,
+    actionGroups: document.querySelectorAll('#detail-content .panel-grid>.utility-panel').length,
+    panelRadius: parseFloat(getComputedStyle(document.querySelector('#detail-content .utility-panel')).borderRadius),
+    timeline: document.querySelectorAll('#history-list.timeline .timeline-item').length,
   }));
-  assert.ok(detail.metaRadius >= 14, 'order metadata sits on a rounded surface');
-  assert.equal(detail.metaCells, 4);
-  assert.ok(detail.stages >= 6);
+  assert.equal(detail.metaCells, 4, 'the four order facts stay four fields');
+  // Six flow positions plus rework and reject, then eight more for every SKU line.
+  assert.ok(detail.stages >= 8, `stage balances are still enumerated (${detail.stages})`);
   assert.ok(detail.skuCards > 0);
+  assert.equal(detail.actionGroups, 3, 'the flat action list is three workflow groups');
+  assert.equal(detail.panelRadius, 12, 'detail panels use the A6 panel radius');
+  assert.ok(detail.timeline > 0, 'movement history is an A6 timeline');
 
   // ---- dialog chrome: rounded surface, ruled heading, fits inside the viewport -------
   await page.getByRole('button', {name: 'Kebutuhan bahan', exact: true}).click();
@@ -331,7 +356,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   // ---- mobile: toolbars reflow, nothing overflows, dialogs stay usable ---------------
   await page.setViewportSize({width: 390, height: 844});
   await openSidebarDestination('Produksi');
-  await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
+  await page.getByRole('heading', {name: 'Produksi', exact: true}).waitFor();
   assert.equal(await noPageOverflow(), true, 'no horizontal overflow at 390px');
   const mobileBoard = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('#summary>div')].map(n => n.getBoundingClientRect());
@@ -409,8 +434,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
       editOrder: labels.some(l => l === 'Ubah tenggat / PIC'),
       correction: labels.some(l => l === 'Koreksi'),
       // The surfaces themselves are unchanged for a viewer.
-      metaCells: document.querySelectorAll('.detail-meta>div').length,
-      chipDisplay: getComputedStyle(document.querySelector('.detail-meta .status-label')).display,
+      metaCells: document.querySelectorAll('#detail-content>.detail-grid>.detail-field').length,
+      chipDisplay: getComputedStyle(document.querySelector('#detail-content .detail-grid .status-chip')).display,
+      // A6.1 regrouped the actions; a viewer still gets the same three groups, only emptier.
+      actionGroups: document.querySelectorAll('#detail-content .panel-grid>.utility-panel').length,
     };
   });
   assert.equal(readOnly.recordMovement, false, 'a viewer cannot record movements');
@@ -418,6 +445,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.equal(readOnly.correction, false, 'a viewer cannot post corrections');
   assert.equal(readOnly.metaCells, 4, 'a viewer sees the same metadata surface');
   assert.equal(readOnly.chipDisplay, 'inline-flex');
+  assert.equal(readOnly.actionGroups, 3, 'a viewer sees the same workflow grouping');
   await page.screenshot({path: path.join(shots, 'shared-ui-order-detail-viewer.png')});
 
   await page.getByRole('button', {name: 'Keluar', exact: true}).click();

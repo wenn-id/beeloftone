@@ -105,7 +105,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
 
   // ---- Produksi first: the board's own controls ----------------------------------------
   await openSidebarDestination('Produksi');
-  await page.getByRole('heading', {name: 'Yang sedang dikerjakan.', exact: true}).waitFor();
+  await page.getByRole('heading', {name: 'Produksi', exact: true}).waitFor();
   await page.locator('#summary dd').first().waitFor();
 
   const boardPress = await whilePressed(page.locator('#refresh'), async () => {
@@ -151,7 +151,18 @@ module.exports = async ({page, login, openSidebarDestination, admin, work}) => {
   });
   assert.notEqual(focus.outlineStyle, 'none', 'keyboard focus shows a ring');
   assert.ok(focus.outlineWidth > 0, 'the focus ring has real weight');
-  assert.equal(focus.radius, 12, 'focus preserves the A1 control radius');
+  // Read from the token rather than pinned to a number. A6.1 migrated this page onto the A6
+  // content primitives, whose approved control radius sits just inside the shell's own, so the
+  // assertion that matters is that focus does not reshape the control - not which scale it is on.
+  const controlRadius = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.borderRadius = 'var(--workspace-control-radius)';
+    document.body.appendChild(probe);
+    const value = parseFloat(getComputedStyle(probe).borderRadius);
+    probe.remove();
+    return value;
+  });
+  assert.equal(focus.radius, controlRadius, 'focus preserves the control radius');
   assert.ok(!focus.transitionProperty.split(',').map(value => value.trim()).includes('outline'),
     'focus visibility never depends on a transition');
 

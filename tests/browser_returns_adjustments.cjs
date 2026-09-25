@@ -17,13 +17,13 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
     if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar retur sedang sibuk'})});}
     else await route.continue();
   });
-  await page.locator('.order-settings').getByRole('button',{name:'Retur',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Retur',exact:true}).click();
   await page.getByText('Daftar retur sedang sibuk',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada retur pelanggan untuk order ini.',{exact:true}).waitFor();
   await page.unroute('**/api/orders/*/marketplace-returns?*');await page.keyboard.press('Escape');
 
-  await page.locator('.order-settings').getByRole('button',{name:'Shipping',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Shipping',exact:true}).click();
   await page.getByRole('button',{name:'Rincian SHIP-RETURN-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat retur',exact:true}).click();
   await page.getByLabel('Referensi retur',{exact:true}).fill('RET-UI-001');
@@ -59,10 +59,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await post('/api/marketplace-shipments/'+shipment.id+'/reverse',{reason:'Retur aktif masih terhubung'},'return-block-shipment',409);
 
   await page.keyboard.press('Escape');await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Adjustment',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Adjustment',exact:true}).click();
   await page.getByText('Belum ada adjustment barang jadi untuk order ini.',{exact:true}).waitFor();
   await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Barang jadi',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Barang jadi',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FG-WH-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat adjustment',exact:true}).click();
   await page.getByLabel('Referensi adjustment',{exact:true}).fill('ADJ-UI-001');
@@ -123,13 +123,13 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   // Analisis retur adalah halaman sekarang, bukan dialog; kembali ke papan produksi
   // sebelum membuka order, karena tombol order ada di papan.
   await openSidebarDestination('Produksi');
-  await page.getByRole('heading',{name:'Yang sedang dikerjakan.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Produksi',exact:true}).waitFor();
   await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Retur',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Retur',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RET-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi retur',exact:true}).count(),0);
   await page.getByRole('button',{name:'Semua retur',exact:true}).click();await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Adjustment',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Adjustment',exact:true}).click();
   await page.getByRole('button',{name:'Rincian ADJ-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi adjustment',exact:true}).count(),0);
 
@@ -137,14 +137,14 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
     released_date:'2026-10-03',reason:'CONTOH melepas stok opname'
   },'adjustment-release');
   await role(admin);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Adjustment',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Adjustment',exact:true}).click();
   await page.getByRole('button',{name:'Rincian ADJ-UI-001',exact:true}).click();
   await page.getByRole('button',{name:'Koreksi adjustment',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH hitungan opname diperbaiki');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.getByText('Adjustment dikoreksi',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Semua adjustment',exact:true}).click();await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Retur',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Retur',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RET-UI-001',exact:true}).click();
   await page.getByRole('button',{name:'Koreksi retur',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH paket ternyata bukan retur');

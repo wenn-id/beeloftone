@@ -44,7 +44,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByText('Belum ada bundle untuk order ini.',{exact:false}).waitFor();
   await page.unroute('**/api/orders/*/bundles?*');
   await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Hasil cutting',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Hasil cutting',exact:true}).click();
   await page.getByRole('button',{name:'Rincian BND-CUT',exact:true}).click();
   await page.getByRole('button',{name:'Buat bundle',exact:true}).click();
   await page.getByLabel('Bundle ID',{exact:true}).fill('BDL-UI-001');
@@ -75,7 +75,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-bundle-mobile.png')});
   await page.keyboard.press('Escape');
   await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Hasil cutting',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Hasil cutting',exact:true}).click();
   await page.getByRole('button',{name:'Rincian BND-CUT',exact:true}).click();
   await page.getByRole('button',{name:'Buat bundle',exact:true}).click();
   await page.keyboard.press('Escape');
