@@ -27,7 +27,7 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
   await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).waitFor();
-  await page.getByText('Belum dipetakan',{exact:true}).waitFor();
+  await page.locator('#dialog').getByText('Belum dipetakan',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Hubungkan Jubelio',exact:true}).click();
   await page.getByLabel('ID eksternal Jubelio',{exact:true}).fill('item-<42>');
   await page.getByLabel('SKU Jubelio',{exact:true}).fill('JUB-<LUNA>-M');
@@ -41,8 +41,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba ulang penyimpanan',exact:true}).click();
   await page.getByRole('heading',{name:'Mapping SKU Jubelio',exact:true}).waitFor();
-  await page.getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
-  await page.getByText('item-<42>',{exact:true}).waitFor();
+  await page.locator('#dialog').getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
+  await page.locator('#dialog').getByText('item-<42>',{exact:true}).waitFor();
   assert.equal(await page.locator('luna').count(),0);
   await page.unroute('**/api/products/*/external-mappings/jubelio');
   const history=await apiGet('/api/products/'+product.product_id+'/external-mappings/jubelio/history');
@@ -120,7 +120,7 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await login(viewer);
   await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jubelio '+product.sku,exact:true}).click();
-  await page.getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
+  await page.locator('#dialog').getByText('JUB-<LUNA>-M',{exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Ubah mapping',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Lepaskan mapping',exact:true}).count(),0);
   await page.getByRole('button',{name:'Riwayat mapping',exact:true}).click();

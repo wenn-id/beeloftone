@@ -271,7 +271,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- Batal is wired to the same guarded close --------------------------------------------
   await openSidebarDestination('Master SKU');
-  await heading('Satu kode untuk setiap kombinasi produk.');
+  await heading('Master SKU');
   await clearDialogLog();
   await page.getByRole('button', {name: 'Tambah SKU', exact: true}).click();
   await page.locator('dialog[open]').waitFor();

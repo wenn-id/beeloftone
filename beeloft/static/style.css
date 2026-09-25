@@ -1519,3 +1519,87 @@ label>input,label>select,label>textarea{margin-top:6px}
   #issues-summary.attention-note-success>.attention-note-copy{flex-direction:column;gap:.1rem}
   #issues-summary.attention-note-success .attention-note-reason::before{content:none;margin:0}
 }
+
+
+/* ==========================================================================
+   A6.2 - Bahan baku + Master SKU inner-workspace containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1 block above does for Produksi, done once more for the
+   two master-data workspaces: the bounded column they were approved with, the
+   grouping element's own stacking rhythm, and the handful of neutralisations that stop
+   a legacy rule still shipped for OTHER pages (`.state`, `.product-list`, `button`,
+   `.order-title`) from styling migrated markup.
+
+   Nothing here is a component. No A6.0 primitive is redefined and no A6.1 selector is
+   touched. Every rule is scoped to an id or to one of the two grouping classes, so it
+   cannot reach another workspace by accident - which is what the containment test in
+   `tests/test_apple27_materials_master_sku_contract.py` asserts selector by selector.
+
+   The legacy vocabulary these pages used to render with - `.filters`, `.sku-block`,
+   `.sku-heading`, `.material-balance`, `.product-item` - is deliberately left intact
+   above. `.filters` is still rendered by People and Aktivitas, `.product-item` by four
+   other dialogs, and `.bundle-label` by Bundle and Barang jadi plus the print
+   stylesheet. The two selectors that A6.2 stops emitting entirely (`.material-balance`,
+   `#batch-list .sku-block`) are left in place rather than cleaned up, because A6.1's
+   documented rule is that inert legacy CSS is removed by the phase that can prove the
+   removal safe on its own, not opportunistically by the next migration.
+   ========================================================================== */
+#materials-view,#products-view{max-width:1360px;margin-inline:auto}
+/* Both grouping elements carry no material of their own: the near-opaque surface is the
+   data surface / record list, and a second card around it would put two borders and two
+   shadows between the wallpaper and the rows. */
+.materials-work,.products-work{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+/* Both state hosts keep their id, their `role="status"` and their `.state` class, because
+   the request lifecycle, `fail()` and the M4 motion contract address them by exactly
+   those. Their BOX now comes from the A6 state primitive rendered inside them, so the
+   legacy `.state` card is withdrawn - without this every loading, empty and error state
+   would draw a second bordered panel around the first. */
+#materials-message,#products-message{padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit}
+/* Secondary information, not a panel. The inventory explanation and the mapping note keep
+   every word and keep their `aria-describedby` relationship, but they do not need a filled
+   surface to say "read me after the command bar" - size and position already say it.
+   Withdrawing the panel is what buys the batch list and the SKU list their place in the
+   first viewport.
+   The measure is bounded for the same reason the page subtitle is: a three-sentence definition of
+   what saldo and stok bebas mean is read once and has to be readable, and 1360px of it is not a
+   line, it is a ribbon. */
+#materials-inventory-note,#products-mapping-note{max-width:96ch;padding:1px 0 0;border-radius:0;background:none;font-size:var(--type-metadata);line-height:1.4}
+/* M4's refresh dim stays authoritative on both lists. `markRefreshing()` sets BOTH
+   `.is-refreshing` and `aria-busy`, and A6 dims a busy data surface to .6 while M4
+   documents .78. The migrated pages keep the documented M4 value, exactly as the board
+   does, because the refresh treatment is an existing reviewed behaviour A6.2 is not
+   re-opening. */
+#batch-list.is-refreshing,#product-list.is-refreshing{opacity:.78}
+/* The legacy `.product-list` scroll box belongs to the three dialogs that still render it.
+   On the page itself the catalog is the page, so it neither clips nor carries a bottom
+   margin the flex column already provides. */
+#product-list{max-height:none;overflow:visible;margin:0;padding:0}
+/* Master bahan is a long identity list inside a dialog whose own primary action sits
+   below it, so the list keeps its own scroll rather than pushing the action out of reach.
+   `.record-list` declares `overflow:hidden`, and an id is what re-opens it. */
+#material-master-list{max-height:min(420px,52dvh);overflow:auto}
+/* Quantity emphasis, not authority. Every quantity is labelled by its own column header;
+   what changes here is only which one the eye lands on first. Free stock is what an
+   operator can actually commit, the balance is the physical figure and reads at normal
+   weight, and the reservation is context. `forced-colors` collapses these differences,
+   which is why the column header - not the weight - is what carries the meaning. */
+#batch-list [data-batch-balance]{color:var(--ink)}
+#batch-list [data-batch-available]{color:var(--ink);font-weight:650}
+#batch-list [data-batch-reserved]{color:var(--muted)}
+/* Seven real columns of inventory need more room than the shared 44rem floor before the
+   identifiers start breaking a character per line, so this surface raises its own floor.
+   Still rem, not px: at 200% text the columns grow with the text instead of re-crushing
+   at twice the size. Overflow is handed to the surface by A6.0's own 980px rule. */
+@media(max-width:980px){
+  #batch-list>table{min-width:56rem}
+  /* The product's own narrow-width touch floor, restored for the migrated controls that
+     legitimately out-specify it. `button,input,select,textarea{min-height:44px}` is
+     declared globally at this breakpoint, but a class beats a bare element selector, so
+     A6's compact control height (and `.order-title`'s shared `min-height:auto` reset,
+     which cannot be changed at the source because Aktivitas renders it too) would
+     silently drop these below 44px on a narrow viewport. A6.0's `pointer:coarse` step is
+     ADDITIVE to that policy, not a replacement for it. */
+  #materials-view button,#products-view button,
+  #materials-view .command-filter,#materials-view .command-filter>select,
+  #products-view .command-search input{min-height:var(--touch-target-min)}
+}

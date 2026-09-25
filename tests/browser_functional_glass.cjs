@@ -257,13 +257,20 @@ module.exports = async ({page, login, admin, work}) => {
     return {seen, allowed};
   });
   assert.deepEqual(contentSurfaces.seen, [],
-    'no business card, table or dialog surface is filtered');
-  assert.equal(contentSurfaces.allowed.length, 1,
-    'exactly one command bar is a backdrop root, and nothing else in the content is');
-  assert.match(contentSurfaces.allowed[0].filter.join(' '), /blur\(/,
-    'and that one surface really is the bounded blur A6.0 declared');
-  assert.equal(contentSurfaces.allowed[0].blur, null,
-    'it filters its backdrop, never its own content');
+    'the command bar is the ONLY filtered surface in the workspace content');
+  // Every migrated workspace ships exactly one command bar, so this count is the number of migrated
+  // pages, not a property of the glass contract - A6.1 made it 1, A6.2 makes it 3. Pinning the
+  // number would have turned "no business surface is filtered" into "only one page may migrate".
+  // What has to stay true is asserted instead: at least one bar exists, and every one of them is
+  // the bounded backdrop blur A6.0 declared rather than a filter on its own content.
+  assert.ok(contentSurfaces.allowed.length >= 1,
+    'the A6.0 command bar is shipped and is a backdrop root');
+  for (const bar of contentSurfaces.allowed) {
+    assert.match(bar.filter.join(' '), /blur\(/,
+      `a command bar really is the bounded blur A6.0 declared (${bar.cls})`);
+    assert.equal(bar.blur, null,
+      `a command bar filters its backdrop, never its own content (${bar.cls})`);
+  }
   const sceneFilter = await page.locator('.workspace-main').evaluate(node=>getComputedStyle(node).backdropFilter);
   if(supported) assert.ok(Number(sceneFilter.match(/blur\(([\d.]+)px\)/)?.[1]) <= 16, 'one bounded scene filter');
 

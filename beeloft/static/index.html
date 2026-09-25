@@ -177,13 +177,19 @@
           </section>
         </div>
       </section>
-      <section id="materials-view" hidden>
+      <section id="materials-view" class="workspace-page" hidden>
         <button id="materials-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Bahan baku · stok internal</p><h1>Bahan masuk, pemakaian tercatat.</h1></div><div class="actions"><button id="scan-material-batch" type="button">Scan batch bahan</button><button id="material-master" type="button">Master bahan</button><button id="receive-material" class="primary" type="button" hidden>Terima batch bahan</button></div></div>
-        <p class="hint">Saldo adalah bahan layak pakai yang diterima, dikurangi pengeluaran ke order. Stok bebas = saldo fisik dikurangi reservasi semua order. Untuk mengalokasikan atau mengeluarkan bahan, buka order produksi.</p>
-        <div class="filters"><div><label for="material-filter">Bahan</label><select id="material-filter"><option value="">Semua bahan</option></select></div><button id="materials-refresh" type="button">Muat ulang bahan</button></div>
-        <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list" class="list-host"></div>
-        <div class="pagination"><span id="materials-page" class="hint"></span><div class="actions"><button id="materials-previous" type="button">Batch sebelumnya</button><button id="materials-next" type="button">Batch berikutnya</button></div></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Bahan baku</h1><p class="workspace-subtitle">Pantau batch, saldo, reservasi, dan stok bebas untuk produksi.</p></div><div class="workspace-actions"><button id="material-master" type="button" class="action-quiet">Master bahan</button><button id="scan-material-batch" type="button" class="action-secondary">Scan batch bahan</button><button id="receive-material" class="action-primary" type="button" hidden>Terima batch bahan</button></div></div>
+        <section class="materials-work" aria-labelledby="materials-batches-heading">
+        <form id="material-filter-form" class="command-bar">
+          <div class="command-filters"><label class="command-filter"><span>Bahan</span><select id="material-filter" aria-label="Bahan" aria-describedby="materials-inventory-note"><option value="">Semua bahan</option></select></label></div>
+          <div class="command-actions"><button id="materials-refresh" type="button" class="action-secondary">Muat ulang bahan</button></div>
+        </form>
+        <p id="materials-inventory-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Saldo adalah bahan layak pakai yang diterima, dikurangi pengeluaran ke order. Stok bebas = saldo fisik dikurangi reservasi semua order. Untuk mengalokasikan atau mengeluarkan bahan, buka order produksi.</span></p>
+        <div class="workspace-subhead"><h2 id="materials-batches-heading" class="workspace-section-title">Batch bahan</h2></div>
+        <p id="materials-message" class="state" role="status" hidden></p><div id="batch-list" class="list-host data-surface"></div>
+        <div class="pagination"><span id="materials-page" class="workspace-meta"></span><div class="actions"><button id="materials-previous" type="button" class="action-secondary">Batch sebelumnya</button><button id="materials-next" type="button" class="action-secondary">Batch berikutnya</button></div></div>
+        </section>
       </section>
       <section id="people-view" hidden>
         <button id="people-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
@@ -199,13 +205,19 @@
         <dl id="workforce-summary" class="workforce-summary" hidden></dl>
         <div id="workforce-list" class="list-host"></div>
       </section>
-      <section id="products-view" hidden>
+      <section id="products-view" class="workspace-page" hidden>
         <button id="products-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Master SKU · identitas produk</p><h1>Satu kode untuk setiap kombinasi produk.</h1></div><div class="actions"><button id="products-refresh" type="button">Muat ulang</button><button id="new-product" class="primary" type="button" hidden>Tambah SKU</button></div></div>
-        <p class="hint">Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk. BOM dan mapping menyimpan revisi.</p>
-        <div class="filters"><label class="search-field">Cari kode atau nama SKU<input id="products-search" type="search" maxlength="160" placeholder="Kode atau nama SKU"></label><button id="products-clear" type="button" class="quiet">Reset pencarian</button></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Master SKU</h1><p class="workspace-subtitle">Kelola identitas produk, mapping Jubelio, dan BOM.</p></div><div class="workspace-actions"><button id="products-refresh" type="button" class="action-secondary">Muat ulang</button><button id="new-product" class="action-primary" type="button" hidden>Tambah SKU</button></div></div>
+        <section class="products-work" aria-labelledby="products-catalog-heading">
+        <form id="products-search-form" class="command-bar">
+          <label class="command-search"><span class="visually-hidden">Cari kode, nama, varian, atau SKU Jubelio</span><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><input id="products-search" type="search" maxlength="160" aria-label="Cari kode, nama, varian, atau SKU Jubelio" aria-describedby="products-mapping-note" placeholder="Cari kode, nama, varian, atau SKU Jubelio"></label>
+          <div class="command-actions"><button id="products-clear" type="button" class="action-quiet">Reset pencarian</button></div>
+        </form>
+        <p id="products-mapping-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Mapping Jubelio dipakai konektor untuk mencocokkan SKU tanpa menebak nama produk. BOM dan mapping menyimpan revisi.</span></p>
+        <div class="workspace-subhead"><h2 id="products-catalog-heading" class="workspace-section-title">Katalog SKU</h2><span id="products-count" class="workspace-meta"></span></div>
         <p id="products-message" class="state" role="status" hidden></p>
         <div id="product-list" class="product-list list-host"></div>
+        </section>
       </section>
       <section id="analytics-view" hidden>
         <button id="analytics-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>

@@ -64,7 +64,7 @@ class LiquidLensContractTest(unittest.TestCase):
 
     def test_version_and_schema(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(), re.M).group(1)
-        self.assertEqual(version, '0.107.0')
+        self.assertEqual(version, '0.108.0')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft/api.py').read_text(encoding='utf-8'))
         self.assertEqual(json.loads((ROOT / 'docs/openapi.json').read_text(encoding='utf-8'))['info']['version'], version)
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
