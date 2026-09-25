@@ -92,7 +92,10 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await page.getByRole('button',{name:'Konfirmasi terima',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH jumlah dan kondisi fisik sesuai');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText('Lokasi custody sekarang:',{exact:false}).waitFor();
+  // A6.3: custody is a labelled fact in the bundle detail's "Posisi bundle sekarang" grid, so the
+  // label is a <dt> without the sentence colon it carried as prose, and the location keeps its own
+  // text node in the <dd> - which is what the exact match below still proves.
+  await page.getByText('Lokasi custody sekarang',{exact:false}).waitFor();
   await page.getByText('Sewing Line A <aman>',{exact:true}).waitFor();
 
   let failHistory=true;

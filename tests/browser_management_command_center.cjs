@@ -123,7 +123,7 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.locator('[data-command-attention="workforce-incomplete"]')
     .getByRole('button',{name:'Buka roster People',exact:true}).click();
   const peoplePage=page.locator('#people-view');
-  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'People',exact:true}).waitFor();
   await peoplePage.locator(`[data-workforce-employee="${missing.id}"]`)
     .getByText('Belum dicatat',{exact:true}).waitFor();
   await peoplePage.locator(`[data-workforce-employee="${absent.id}"]`)

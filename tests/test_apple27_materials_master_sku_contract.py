@@ -94,11 +94,13 @@ MATERIALS = section(HTML, 'materials-view')
 PRODUCTS = section(HTML, 'products-view')
 BOARD = section(HTML, 'board-view')
 
-# The A6.2 containment block: from its first selector to the end of the stylesheet. Its A6.1
-# counterpart is bounded by this same marker, so the two blocks are checked separately and neither
-# test can silently start covering the other's rules.
+# The A6.2 containment block: from its first selector to the first selector of the next phase's
+# block. Its A6.1 counterpart is bounded by this same marker, so the blocks are checked separately
+# and no test can silently start covering another's rules. A6.3 appended its own block after this
+# one, which is why the upper bound is now its marker rather than the end of the stylesheet.
 A62_MARKER = '#materials-view,#products-view{max-width:1360px'
-A62_BLOCK = code_css(CSS)[code_css(CSS).index(A62_MARKER):]
+A63_MARKER = '#people-view,#bundle-scan-view,#finished-goods-scan-view{max-width:1360px'
+A62_BLOCK = code_css(CSS)[code_css(CSS).index(A62_MARKER):code_css(CSS).index(A63_MARKER)]
 
 # Every renderer A6.2 migrated, by the name the A6.0 containment test attributes markup to.
 BAHAN_BAKU_RENDERERS = ('loadMaterials', 'materialBatchScanDialog', 'materialMasterDialog',
@@ -891,7 +893,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.108.0',
+        self.assertEqual(version, '0.109.0',
                          'A6.2 is a visible master-data workspace migration milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

@@ -85,9 +85,15 @@ LEGACY_VOCABULARY = (
 # primitive, and widening this list is the deliberate act each later phase has to perform. A6.1
 # added Produksi; A6.2 adds the two master-data workspaces and, unlike A6.1, the specifically named
 # dialog renderers those two workspaces launch - their dialogs ARE the workflow, not a side task.
+# A6.3 adds People and the two scanners on the same terms: People's workflow lives almost entirely
+# in dialogs, and a scanner's whole purpose is the result dialog it opens, so those named renderers
+# come with it - and nothing else. The nested workflows those two result dialogs launch (sewing,
+# handoff forms, stock adjustment, opname, marketplace reservation, warehouse movement, cutting, QC,
+# finishing) are deliberately NOT on this list and still fail if they start emitting A6 markup.
 # The list stays an enumeration rather than a pattern on purpose: an unrelated workspace or an
 # unrelated dialog that starts emitting A6 markup still fails this contract.
-MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view')
+MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view',
+                     'people-view', 'bundle-scan-view', 'finished-goods-scan-view')
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -106,6 +112,17 @@ MIGRATED_RENDERERS = frozenset({
     'productForm', 'bomComponentsHTML', 'bomDialog', 'bomForm', 'bomHistoryDialog',
     'productMappingDialog', 'productMappingForm', 'unmapProductForm',
     'productMappingHistoryDialog',
+    # ---- A6.3: People ----
+    'workforceField', 'workforceSelect', 'workforceFact',   # the A6 field grammar People's forms use
+    'loadPeople',     # the daily summary, the roster record list and its three distinct empty states
+    'workforceEmployeeMasterDialog', 'workforceEmployeeForm', 'workforceEmployeeHistoryDialog',
+    'workforceAttendanceForm', 'workforceAttendanceHistoryDialog',
+    'workforceRequestsDialog', 'workforceRequestForm', 'workforceRequestDialog',
+    'workforceRequestDecisionForm',
+    # ---- A6.3: Scan bundle + Scan barang jadi ----
+    'showScanner',    # the shared scanner lifecycle and its one result record
+    'bundleDialog',             # the direct destination of Scan bundle
+    'finishedGoodsReceiptDialog',   # the direct destination of Scan barang jadi
 })
 
 
@@ -667,7 +684,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.108.0')
+        self.assertEqual(version, '0.109.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

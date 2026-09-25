@@ -478,6 +478,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // A6.2 runs after A6.1: it reviews the two master-data workspaces and finishes by re-checking
   // that Produksi - whose order-material history shares a renderer with Bahan baku - still holds.
   await runModule('./browser_materials_master_sku_modern.cjs');
+  // A6.3 runs after A6.2, and after the workforce, bundle and finished-goods modules whose fixtures
+  // it reviews: it needs a cutting run to cut a bundle from and a receipt that already carries both
+  // sellable and hold stock, and it finishes by re-checking that A6.1 and A6.2 still hold.
+  await runModule('./browser_people_scan_modern_workspaces.cjs',{...bundling,...finishedGoods});
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

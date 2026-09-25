@@ -347,13 +347,13 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   await apiPost('/api/workforce/employees', {code: 'MOTION-' + Date.now(), name: 'CONTOH gerak roster',
     department: 'Produksi', reason: 'Fixture uji gerak M6'});
   await openDestination('workforce');
-  await page.waitForFunction(() => document.querySelectorAll('#workforce-list .workforce-row').length > 0);
+  await page.waitForFunction(() => document.querySelectorAll('#workforce-list .record-row').length > 0);
   await settle();
   await watchFade('workforce-list');
   await openDestination('board-home');
   await settle();
   await openDestination('workforce');
-  await page.waitForFunction(() => document.querySelectorAll('#workforce-list .workforce-row').length > 0);
+  await page.waitForFunction(() => document.querySelectorAll('#workforce-list .record-row').length > 0);
   await settle();
   assert.equal((await fadeState()).asked, false,
     'returning to People with the same filter is a first render for that page, not a replacement');
@@ -367,7 +367,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   assert.equal(rosterFade.finished, true, 'the roster replacement transition runs to completion');
   assert.equal((await motionStateOf('workforce-list')).classes, 'list-host',
     'the roster replacement class is cleaned up');
-  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#workforce-list .workforce-row')]
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#workforce-list .record-row')]
     .some(row => row.className.includes('motion'))), false, 'no individual roster row is animated');
 
   // The three approval-queue pages share one idiom and share one assertion: the filter change is

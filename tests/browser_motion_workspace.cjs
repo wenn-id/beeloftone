@@ -43,7 +43,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // ---- a real page change plays the entry, then cleans up after itself ------------------
   await installMotionWatch();
   await openSidebarDestination('People');
-  await heading('Kehadiran tim yang tercatat.');
+  await heading('People');
   await page.waitForTimeout(500);
   const peopleLog = (await motionLog()).filter(entry => entry.id === 'people-view');
   const peopleEntry = peopleLog.filter(entry => entry.classes);
@@ -125,7 +125,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await page.emulateMedia({reducedMotion: 'reduce'});
   await clearMotionLog();
   await openSidebarDestination('People');
-  await heading('Kehadiran tim yang tercatat.');
+  await heading('People');
   await page.waitForTimeout(500);
   const reducedLog = await motionLog();
   assert.deepEqual(reducedLog.filter(entry => String(entry.classes || "").includes('motion-enter')), [],
@@ -187,7 +187,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // Selecting a destination closes the drawer and keeps the heading-focus contract.
   await page.getByRole('button', {name: 'People', exact: true}).click();
-  await heading('Kehadiran tim yang tercatat.');
+  await heading('People');
   assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), false);
   assert.equal(await page.evaluate(() => document.activeElement ===
     document.querySelector('#people-view').querySelector('h1')), true, 'focus lands on the new page heading');

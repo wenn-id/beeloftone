@@ -191,19 +191,24 @@
         <div class="pagination"><span id="materials-page" class="workspace-meta"></span><div class="actions"><button id="materials-previous" type="button" class="action-secondary">Batch sebelumnya</button><button id="materials-next" type="button" class="action-secondary">Batch berikutnya</button></div></div>
         </section>
       </section>
-      <section id="people-view" hidden>
+      <section id="people-view" class="workspace-page" hidden>
         <button id="people-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">People · roster harian</p><h1>Kehadiran tim yang tercatat.</h1></div><div class="actions"><button id="people-requests" type="button">Permintaan cuti / lembur</button><button id="people-master" type="button">Daftar karyawan</button><button id="new-employee" class="primary" type="button" hidden>Tambah karyawan</button></div></div>
-        <p class="hint">Karyawan aktif yang belum memiliki catatan tetap ditampilkan. Koreksi kehadiran menyimpan revisi baru; catatan lama tetap utuh di riwayat.</p>
-        <form id="workforce-filter" class="filters">
-          <label>Tanggal<input id="workforce-date" name="work_date" type="date" required></label>
-          <label>Status<select id="workforce-status" name="status"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
-          <label class="search-field">Cari kode, nama, atau departemen<input id="workforce-search" name="q" type="search" maxlength="160" placeholder="Kode, nama, atau departemen"></label>
-          <button type="submit" class="primary">Tampilkan roster</button>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">People</h1><p class="workspace-subtitle">Pantau kehadiran, jam kerja, lembur, dan status tim.</p></div><div class="workspace-actions"><button id="people-master" type="button" class="action-quiet">Daftar karyawan</button><button id="people-requests" type="button" class="action-secondary">Permintaan cuti / lembur</button><button id="new-employee" class="action-primary" type="button" hidden>Tambah karyawan</button></div></div>
+        <dl id="workforce-summary" class="metric-strip" aria-label="Ringkasan roster harian" hidden></dl>
+        <section class="people-work" aria-labelledby="workforce-roster-heading">
+        <form id="workforce-filter" class="command-bar">
+          <div class="command-filters">
+            <label class="command-filter"><span>Tanggal</span><input id="workforce-date" name="work_date" type="date" required aria-label="Tanggal roster"></label>
+            <label class="command-filter"><span>Status</span><select id="workforce-status" name="status" aria-label="Status kehadiran" aria-describedby="workforce-revision-note"><option value="all">Semua status</option><option value="unrecorded">Belum dicatat</option><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>
+          </div>
+          <label class="command-search"><span class="visually-hidden">Cari kode, nama, atau departemen</span><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><input id="workforce-search" name="q" type="search" maxlength="160" aria-label="Cari kode, nama, atau departemen" aria-describedby="workforce-revision-note" placeholder="Kode, nama, atau departemen"></label>
+          <div class="command-actions"><button type="submit" class="action-secondary">Tampilkan roster</button></div>
         </form>
+        <p id="workforce-revision-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Karyawan aktif yang belum memiliki catatan tetap ditampilkan. Koreksi kehadiran menyimpan revisi baru; catatan lama tetap utuh di riwayat.</span></p>
+        <div class="workspace-subhead"><h2 id="workforce-roster-heading" class="workspace-section-title">Roster harian</h2><span id="workforce-roster-meta" class="workspace-meta"></span></div>
         <p id="workforce-message" class="state" role="status" hidden></p>
-        <dl id="workforce-summary" class="workforce-summary" hidden></dl>
         <div id="workforce-list" class="list-host"></div>
+        </section>
       </section>
       <section id="products-view" class="workspace-page" hidden>
         <button id="products-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
@@ -287,24 +292,30 @@
         <div class="page-heading"><div><p class="eyebrow">Inbox approval · antrean keputusan</p><h1>Satu antrean untuk setiap keputusan.</h1></div><div class="actions"><button id="approvals-refresh" type="button">Muat ulang inbox</button></div></div>
         <div id="approvals-body" aria-live="polite"></div>
       </section>
-      <section id="bundle-scan-view" hidden>
-        <div class="page-heading"><div><p class="eyebrow">Produksi · scanner</p><h1>Scan bundle</h1></div></div>
-        <form id="bundle-scan-form" class="filter-form">
-          <p class="form-info">Pindai QR pada label bundle atau masukkan Bundle ID. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
-          <label for="bundle-scan-code">Kode bundle<input id="bundle-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
-          <div class="form-actions"><button class="primary" type="submit">Buka bundle</button></div>
+      <section id="bundle-scan-view" class="workspace-page" hidden>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Scan bundle</h1><p class="workspace-subtitle">Pindai label bundle untuk membuka identitas dan statusnya.</p></div></div>
+        <form id="bundle-scan-form" class="scan-surface">
+          <div class="field field-wide scan-target">
+            <label class="field-label" for="bundle-scan-code">Kode bundle</label>
+            <input id="bundle-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="bundle-scan-hint" placeholder="Bundle ID">
+          </div>
+          <p id="bundle-scan-hint" class="scan-state"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg><span>Scanner USB/Bluetooth bekerja seperti keyboard, atau ketik Bundle ID manual lalu tekan Enter.</span></p>
+          <div class="field-actions field-actions-end"><button class="action-primary" type="submit">Buka bundle</button></div>
         </form>
-        <p id="bundle-scan-message" class="state" role="status" hidden></p><p id="bundle-scan-error" class="error" role="alert" hidden></p>
+        <p id="bundle-scan-message" class="state scan-state" role="status" hidden></p><p id="bundle-scan-error" class="error" role="alert" hidden></p>
         <div id="bundle-scan-result" class="scan-result" aria-live="polite"></div>
       </section>
-      <section id="finished-goods-scan-view" hidden>
-        <div class="page-heading"><div><p class="eyebrow">Gudang · scanner</p><h1>Scan barang jadi</h1></div></div>
-        <form id="finished-goods-scan-form" class="filter-form">
-          <p class="form-info">Pindai QR pada label penerimaan barang jadi atau masukkan referensinya. Scanner USB/Bluetooth dapat digunakan seperti keyboard lalu tekan Enter.</p>
-          <label for="finished-goods-scan-code">Kode barang jadi<input id="finished-goods-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
-          <div class="form-actions"><button class="primary" type="submit">Buka barang jadi</button></div>
+      <section id="finished-goods-scan-view" class="workspace-page" hidden>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Scan barang jadi</h1><p class="workspace-subtitle">Pindai label penerimaan barang jadi untuk membuka rincian stok.</p></div></div>
+        <form id="finished-goods-scan-form" class="scan-surface">
+          <div class="field field-wide scan-target">
+            <label class="field-label" for="finished-goods-scan-code">Kode barang jadi</label>
+            <input id="finished-goods-scan-code" name="code" type="search" required maxlength="200" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="finished-goods-scan-hint" placeholder="Referensi penerimaan">
+          </div>
+          <p id="finished-goods-scan-hint" class="scan-state"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-barcode"/></svg><span>Scanner USB/Bluetooth bekerja seperti keyboard, atau ketik referensi penerimaan manual lalu tekan Enter.</span></p>
+          <div class="field-actions field-actions-end"><button class="action-primary" type="submit">Buka barang jadi</button></div>
         </form>
-        <p id="finished-goods-scan-message" class="state" role="status" hidden></p><p id="finished-goods-scan-error" class="error" role="alert" hidden></p>
+        <p id="finished-goods-scan-message" class="state scan-state" role="status" hidden></p><p id="finished-goods-scan-error" class="error" role="alert" hidden></p>
         <div id="finished-goods-scan-result" class="scan-result" aria-live="polite"></div>
       </section>
       <section id="backup-view" hidden>
