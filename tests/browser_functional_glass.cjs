@@ -185,20 +185,55 @@ module.exports = async ({page, login, admin, work}) => {
     for (const sheet of document.styleSheets) { try { visit(sheet.cssRules); } catch { /* ignore */ } }
     return found;
   });
-  assert.equal(gates.supports.filter(text=>!text.startsWith('not ')).length, 1, 'one positive feature gate guards chrome');
+  // A6.0 added `workspace-primitives.css`, which owns the inner-workspace content language and
+  // brings its own optical layer for exactly one surface — the command bar — with its own
+  // reduced-transparency withdrawal and its own forced-colors contract. These three counts are
+  // therefore an inventory of owners, and A6.0 is the second one. Everything that makes the A4
+  // boundary a boundary is unchanged and still asserted below and above: the chrome gate still
+  // names both spellings, the lens still gains no nested blur, content surfaces are still never
+  // filtered, and every withdrawal still only ever restores a solid material. The stylesheet
+  // order in index.html is style.css, workspace.css, workspace-primitives.css, so the A6 entries
+  // append last and the indexed assertions below still address the sheets they were written for.
+  const positive = gates.supports.filter(text => !text.startsWith('not '));
+  assert.equal(positive.length, 2, 'two positive feature gates: A4 chrome and A6.0 command bar');
   assert.equal(gates.supports.filter(text=>text.startsWith('not ')).length, 2, 'workspace and liquid pseudo-elements have explicit solid fallbacks');
+  for (const gate of positive) {
+    assert.ok(/\bbackdrop-filter\b/.test(gate) && /-webkit-backdrop-filter/.test(gate),
+      `every gate tests both the standard and the -webkit property: ${gate}`);
+  }
   assert.ok(/\bbackdrop-filter\b/.test(gates.supports[0]) && /-webkit-backdrop-filter/.test(gates.supports[0]),
     `the gate tests both the standard and the -webkit property: ${gates.supports[0]}`);
-  assert.equal(gates.reducedTransparency.length, 3, 'A4 material, A5.2 workspace and A5.3 optics reduced-transparency fallbacks exist');
+  assert.equal(gates.reducedTransparency.length, 4, 'A4 material, A5.2 workspace, A5.3 optics and A6.0 workspace primitives reduced-transparency fallbacks exist');
   assert.ok(gates.reducedTransparency[0].includes('var(--material-functional-chrome-solid)'),
     'the reduced-transparency fallback restores the A1 solid chrome');
   assert.ok(gates.reducedTransparency[2].includes('--liquid-fill: var(--color-accent-soft)'),
     'the additional fallback supplies the liquid body with the solid selection material');
-  assert.equal(gates.forcedColors.length, 3, 'A4 material, A5.2 workspace and A5.3 optics forced-colors contracts exist');
+  // A6.0's withdrawal returns dense data surfaces to the opaque A1 material and never re-enables
+  // translucency, which is the one property that makes a fallback a fallback. The A6 group is
+  // located by content rather than by index: the indexed assertions above are historical, and a
+  // fourth owner should not have to guess its own position in a traversal.
+  const a6Transparency = gates.reducedTransparency.find(text => /\.data-surface/.test(text));
+  assert.ok(a6Transparency, 'the A6.0 reduced-transparency withdrawal is present');
+  assert.ok(a6Transparency.includes('var(--material-content)'),
+    'the A6.0 fallback returns workspace data surfaces to an opaque material');
+  assert.ok(!/backdrop-filter:\s*blur/.test(a6Transparency),
+    'the A6.0 fallback withdraws the filter rather than declaring one');
+  assert.equal(gates.forcedColors.length, 4, 'A4 material, A5.2 workspace, A5.3 optics and A6.0 workspace primitives forced-colors contracts exist');
   assert.ok(/backdrop-filter:\s*none/.test(gates.forcedColors[0]),
     'the forced-colors contract disables backdrop filtering');
   assert.ok(/nav-selection-lens::before/.test(gates.forcedColors[2]) && /display:\s*none/.test(gates.forcedColors[2]),
     'the additional forced-colors contract hides the liquid pseudo-elements');
+  // A6.0's contract must not lean on a background colour: the status dot is its non-colour channel.
+  // System colour keywords are matched case-insensitively because `cssText` serialisation
+  // lowercases them — the stylesheet says `CanvasText`, the engine reports `canvastext`.
+  const a6Forced = gates.forcedColors.find(text => /\.status-chip/.test(text));
+  assert.ok(a6Forced, `the A6.0 forced-colors contract is present: ${gates.forcedColors.map(t => t.slice(0, 60))}`);
+  assert.ok(/\.status-dot\s*\{[^}]*background:\s*canvastext/i.test(a6Forced),
+    'the A6.0 forced-colors contract keeps a non-colour channel for status');
+  assert.ok(/\.progress-fill\s*\{[^}]*background:\s*highlight/i.test(a6Forced),
+    'the A6.0 forced-colors contract gives progress a system fill');
+  assert.ok(/\.progress-track\s*\{[^}]*border:\s*1px solid canvastext/i.test(a6Forced),
+    'the A6.0 forced-colors contract outlines the progress track');
 
   // One bounded background sheet softens the A5.2 landscape; business cards, tables and dialogs
   // retain the A4 boundary against per-surface filtering.
