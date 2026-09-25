@@ -9,6 +9,11 @@
   <script src="/static/appearance.js"></script>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/workspace.css">
+  <!-- A6.0 inner-workspace content primitives. Loaded last because it owns only the
+       workspace content language and must never outrank the approved A5.2/A5.3 shell;
+       every selector in it is a name no shipped page uses yet, so today it renders
+       nothing differently and A6.1-A6.8 migrate pages onto it one at a time. -->
+  <link rel="stylesheet" href="/static/workspace-primitives.css">
   <script type="module" src="/static/app.mjs"></script>
 </head>
 <body>

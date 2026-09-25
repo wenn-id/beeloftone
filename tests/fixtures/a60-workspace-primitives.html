@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="id" data-theme="light" data-wallpaper="landscape">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <title>A6.0 primitive lab · NON-PRODUCTION</title>
+  <!-- ==========================================================================
+       Apple-27 A6.0 visual QA fixture. NOT PRODUCTION.
+
+       This file is evidence, not a feature. It lives under tests/ and deliberately
+       NOT under beeloft/static/, so it is never mounted by the StaticFiles route,
+       never packaged into the wheel by `package-data = static/*`, never reachable
+       from the application and never part of any navigation. Browser QA opens it
+       directly from disk over file://.
+
+       It loads the three real shipped stylesheets by relative path, so what is under
+       review is the actual cascade the product renders rather than a copy of it. All
+       data below is obviously synthetic and exists only to give the primitives
+       something to lay out; no production page gains fake data from this file.
+
+       What it must demonstrate, per the phase brief: page heading, metric cards,
+       command bar, segmented filters, data table, status chips, progress, empty
+       state, attention state, form controls, timeline/record rows, and the
+       primary/secondary/quiet/destructive action hierarchy.
+       ========================================================================== -->
+  <link rel="stylesheet" href="../../beeloft/static/style.css">
+  <link rel="stylesheet" href="../../beeloft/static/workspace.css">
+  <link rel="stylesheet" href="../../beeloft/static/workspace-primitives.css">
+  <style>
+    /* Fixture-local only, and only to make the harness measurable. Two jobs:
+       (1) the shell's wallpaper URL is absolute (/static/...), which cannot resolve
+           over file://, so it is repointed at the same real asset relatively;
+       (2) the shell pins `body` to 100dvh with overflow:hidden because the real app
+           scrolls inside .workspace-main. That would make a document-level
+           "no horizontal overflow" assertion vacuously true, so the fixture lets the
+           document itself scroll and keeps .workspace-main as the honest canvas.
+       Nothing here restyles an A6 primitive; the review would be worthless if it did. */
+    :root{--workspace-wallpaper:url('../../beeloft/static/wallpaper-landscape.webp')}
+    :root[data-wallpaper=mist]{--workspace-wallpaper:url('../../beeloft/static/wallpaper-mist.webp')}
+    body.a60-lab{height:auto;min-height:100dvh;overflow:visible}
+    body.a60-lab>.workspace-main{height:auto;min-height:100dvh;overflow:visible;padding:18px var(--pad-x) 40px}
+    /* Fixture chrome, never a primitive. Neutral and dashed on purpose so it cannot be
+       mistaken for part of the design system under review. */
+    .a60-banner{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+      margin:0 0 18px;padding:8px 12px;border:1px dashed var(--muted);border-radius:10px;
+      background:var(--material-content);color:var(--ink-2);font-size:.75rem;font-weight:600}
+    .a60-banner button{min-height:30px;padding:0 .6rem;font-size:.75rem}
+    .a60-group{display:flex;flex-direction:column;gap:10px;min-width:0}
+    .a60-group>h2{margin:0;color:var(--muted);font-size:.6875rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .a60-split{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--workspace-panel-gap);min-width:0}
+    .a60-skeletons{padding:0 var(--workspace-cell-x) 16px}
+  </style>
+</head>
+<body class="a60-lab">
+<svg class="icon-sprite" aria-hidden="true" focusable="false" width="0" height="0"><defs>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M9.2 4.4H7.4a2.2 2.2 0 0 0-2.2 2.2v12a2.2 2.2 0 0 0 2.2 2.2h9.2a2.2 2.2 0 0 0 2.2-2.2v-12a2.2 2.2 0 0 0-2.2-2.2h-1.8"/><rect x="9.2" y="2.8" width="5.6" height="3.4" rx="1.2"/><path d="M9.4 13.4l2 2 3.6-3.8"/></symbol>
+  <symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M10.3 4.3 2.9 17.2a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.4V14M12 17h.02"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M8.4 12.3l2.5 2.5 4.7-5.1"/></symbol>
+  <symbol id="i-alert-octagon" viewBox="0 0 24 24"><path d="M8.6 3.2h6.8l5.4 5.4v6.8l-5.4 5.4H8.6l-5.4-5.4V8.6l5.4-5.4Z"/><path d="M12 8v4.6M12 16.2h.02"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 1 1-2.4-5.8"/><path d="M20.2 4.4v4.2H16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.9"/><path d="M16 16l4.6 4.6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 11v5.4M12 7.9h.02"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.5 8.3v7.4L12 20.4 3.5 15.7V8.3L12 3.6l8.5 4.7Z"/><path d="M3.5 8.3 12 13l8.5-4.7M12 13v7.4"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 7.2V12l3.6 2.1"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8.5V6.4A2.4 2.4 0 0 1 6.4 4h2.1M15.5 4h2.1A2.4 2.4 0 0 1 20 6.4v2.1M20 15.5v2.1a2.4 2.4 0 0 1-2.4 2.4h-2.1M8.5 20H6.4A2.4 2.4 0 0 1 4 17.6v-2.1"/><path d="M4 12h16"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.4 12a8.6 8.6 0 1 0 2.6-6.1"/><path d="M3.4 4.6v5.6h5.6"/><path d="M12 8v4.4l3.2 1.9"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4.2 12h15"/><path d="M13.4 6.4 19.4 12l-6 5.6"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.2v5.6M15 3.2v5.6"/><path d="M6.2 8.8h11.6v2.4a5.8 5.8 0 0 1-11.6 0V8.8Z"/><path d="M12 17v3.8"/></symbol>
+  <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2.8 6.6h10.4v9.2H2.8z"/><path d="M13.2 9.9h3.9l3.3 3.2v2.7h-7.2"/><circle cx="7" cy="18.2" r="1.9"/><circle cx="16.8" cy="18.2" r="1.9"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M11.7 3.2H5.4A2.2 2.2 0 0 0 3.2 5.4v6.3a2.2 2.2 0 0 0 .65 1.56l7.2 7.2a2.2 2.2 0 0 0 3.1 0l6.3-6.3a2.2 2.2 0 0 0 0-3.1l-7.2-7.2a2.2 2.2 0 0 0-1.56-.65Z"/><circle cx="8" cy="8" r="1.4"/></symbol>
+</defs></svg>
+
+<main class="workspace-main">
+  <p class="a60-banner">
+    <span>A6.0 primitive lab &middot; NON-PRODUCTION FIXTURE &middot; synthetic data</span>
+    <span>
+      <button type="button" data-theme-set="light">Mode terang</button>
+      <button type="button" data-theme-set="dark">Mode gelap</button>
+    </span>
+  </p>
+
+  <div class="workspace-page">
+
+    <!-- 1. page heading: eyebrow, title, one useful line, actions right -->
+    <header class="workspace-heading">
+      <div class="workspace-heading-copy">
+        <p class="workspace-eyebrow">Operasional &middot; produksi</p>
+        <h1 class="workspace-title">Produksi</h1>
+        <p class="workspace-subtitle">Pantau order, progres, kendala, dan output produksi.</p>
+      </div>
+      <div class="workspace-actions">
+        <button class="action-secondary" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>Muat ulang</button>
+        <button class="action-primary" type="button">+ Buat order</button>
+      </div>
+    </header>
+
+    <!-- 2. metric strip -->
+    <section class="a60-group">
+      <h2>Metric strip</h2>
+      <ul class="metric-strip">
+        <li class="metric-card metric-card-info">
+          <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg></span>
+          <span class="metric-label">Order aktif</span>
+          <span class="metric-value">12</span>
+          <span class="metric-detail">3 lewat target</span>
+        </li>
+        <li class="metric-card metric-card-warning">
+          <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-alert-triangle"/></svg></span>
+          <span class="metric-label">Menunggu bahan</span>
+          <span class="metric-value">4</span>
+          <span class="metric-detail">Tertahan di gudang</span>
+        </li>
+        <li class="metric-card metric-card-success">
+          <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-check-circle"/></svg></span>
+          <span class="metric-label">Selesai pekan ini</span>
+          <span class="metric-value">28</span>
+          <span class="metric-detail">Diterima gudang</span>
+        </li>
+        <li class="metric-card metric-card-danger">
+          <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-alert-octagon"/></svg></span>
+          <span class="metric-label">Lewat target</span>
+          <span class="metric-value">3</span>
+          <span class="metric-detail">Perlu tindakan</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- 3. command bar, segmented filter, info panel -->
+    <section class="a60-group">
+      <h2>Command bar &amp; segmented filter</h2>
+      <div class="command-bar">
+        <label class="command-search">
+          <span class="visually-hidden">Cari order produksi</span>
+          <svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>
+          <input type="search" placeholder="Cari referensi, produk, atau SKU">
+        </label>
+        <div class="command-filters">
+          <label class="command-filter"><span>Status</span>
+            <select><option>Semua</option><option>Dalam produksi</option><option>Selesai</option></select></label>
+          <label class="command-filter"><span>PIC</span>
+            <select><option>Semua</option><option>Rina Wulandari</option><option>Dimas Prakoso</option></select></label>
+          <label class="command-filter"><span>Posisi</span>
+            <select><option>Semua</option><option>Cutting</option><option>Finishing</option></select></label>
+        </div>
+        <div class="command-actions">
+          <button class="action-quiet" type="button">Reset</button>
+        </div>
+      </div>
+      <div class="segmented-filter" role="group" aria-label="Filter status order">
+        <button class="filter-chip" type="button" aria-pressed="true">Semua<span class="filter-chip-count">47</span></button>
+        <button class="filter-chip" type="button" aria-pressed="false">Aktif<span class="filter-chip-count">12</span></button>
+        <button class="filter-chip" type="button" aria-pressed="false">Dalam produksi<span class="filter-chip-count">8</span></button>
+        <button class="filter-chip" type="button" aria-pressed="false">Menunggu<span class="filter-chip-count">4</span></button>
+        <button class="filter-chip" type="button" aria-pressed="false">Selesai<span class="filter-chip-count">28</span></button>
+      </div>
+      <p class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg>
+        <span>Saldo dihitung dari batch layak pakai. Angka progres mengikuti penerimaan gudang, bukan laporan manual.</span></p>
+    </section>
+
+    <!-- 4. data surface -->
+    <section class="a60-group">
+      <h2>Data surface</h2>
+      <div class="data-surface">
+        <div class="data-toolbar">
+          <h3 class="workspace-section-title">Order produksi</h3>
+          <span class="workspace-meta">47 order &middot; 25 per halaman</span>
+        </div>
+        <table>
+          <caption class="visually-hidden">Daftar order produksi</caption>
+          <thead class="data-header">
+            <tr>
+              <th scope="col">Order / produk</th>
+              <th scope="col">SKU</th>
+              <th scope="col" class="data-column-secondary">Penanggung jawab</th>
+              <th scope="col" class="data-cell-numeric">Target</th>
+              <th scope="col">Status</th>
+              <th scope="col">Progres</th>
+              <th scope="col"><span class="visually-hidden">Tindakan</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="data-row" tabindex="0">
+              <td class="data-cell"><span class="data-primary">PRD-2419</span><span class="data-secondary">Kaos Combed 30s &middot; Navy</span></td>
+              <td class="data-cell"><span class="data-secondary">SKU-CMB-30-NVY</span></td>
+              <td class="data-cell data-column-secondary"><span class="data-meta">Rina Wulandari</span></td>
+              <td class="data-cell data-cell-numeric"><span class="data-meta">28 Sep</span></td>
+              <td class="data-cell"><span class="status-chip status-chip-info"><span class="status-dot"></span>Dalam produksi</span></td>
+              <td class="data-cell"><div class="progress-meter"><div class="progress-track" role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100" aria-label="Progres PRD-2419"><span class="progress-fill" style="--progress-value:72%"></span></div><span class="progress-value">72%</span></div></td>
+              <td class="data-cell data-cell-tight"><div class="data-actions">
+                <button class="icon-action" type="button" aria-label="Buka detail PRD-2419"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></button>
+                <button class="icon-action" type="button" aria-label="Riwayat PRD-2419"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button></div></td>
+            </tr>
+            <tr class="data-row" tabindex="0">
+              <td class="data-cell"><span class="data-primary">PRD-2418</span><span class="data-secondary">Kemeja Oxford &middot; Putih</span></td>
+              <td class="data-cell"><span class="data-secondary">SKU-OXF-WHT</span></td>
+              <td class="data-cell data-column-secondary"><span class="data-meta">Dimas Prakoso</span></td>
+              <td class="data-cell data-cell-numeric"><span class="data-meta">26 Sep</span></td>
+              <td class="data-cell"><span class="status-chip status-chip-success"><span class="status-dot"></span>Selesai</span></td>
+              <td class="data-cell"><div class="progress-meter"><div class="progress-track progress-track-success" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" aria-label="Progres PRD-2418"><span class="progress-fill" style="--progress-value:100%"></span></div><span class="progress-value">100%</span></div></td>
+              <td class="data-cell data-cell-tight"><div class="data-actions">
+                <button class="icon-action" type="button" aria-label="Buka detail PRD-2418"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></button>
+                <button class="icon-action" type="button" aria-label="Riwayat PRD-2418"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button></div></td>
+            </tr>
+            <tr class="data-row" tabindex="0">
+              <td class="data-cell"><span class="data-primary">PRD-2417</span><span class="data-secondary">Hoodie Fleece &middot; Abu</span></td>
+              <td class="data-cell"><span class="data-secondary">SKU-HDF-GRY</span></td>
+              <td class="data-cell data-column-secondary"><span class="data-meta">Siti Nurhaliza</span></td>
+              <td class="data-cell data-cell-numeric"><span class="data-meta">24 Sep</span></td>
+              <td class="data-cell"><span class="status-chip status-chip-danger"><span class="status-dot"></span>Lewat target</span></td>
+              <td class="data-cell"><div class="progress-meter"><div class="progress-track progress-track-danger" role="progressbar" aria-valuenow="38" aria-valuemin="0" aria-valuemax="100" aria-label="Progres PRD-2417"><span class="progress-fill" style="--progress-value:38%"></span></div><span class="progress-value">38%</span></div></td>
+              <td class="data-cell data-cell-tight"><div class="data-actions">
+                <button class="icon-action" type="button" aria-label="Buka detail PRD-2417"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></button>
+                <button class="icon-action" type="button" aria-label="Riwayat PRD-2417"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button></div></td>
+            </tr>
+            <tr class="data-row" tabindex="0">
+              <td class="data-cell"><span class="data-primary">PRD-2416</span><span class="data-secondary">Polo Pique &middot; Hitam</span></td>
+              <td class="data-cell"><span class="data-secondary">SKU-PLQ-BLK</span></td>
+              <td class="data-cell data-column-secondary"><span class="data-meta">Bayu Santoso</span></td>
+              <td class="data-cell data-cell-numeric"><span class="data-meta">01 Okt</span></td>
+              <td class="data-cell"><span class="status-chip status-chip-warning"><span class="status-dot"></span>Menunggu bahan</span></td>
+              <td class="data-cell"><div class="progress-meter"><div class="progress-track progress-track-warning" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progres PRD-2416"><span class="progress-fill" style="--progress-value:0%"></span></div><span class="progress-value">0%</span></div></td>
+              <td class="data-cell data-cell-tight"><div class="data-actions">
+                <button class="icon-action" type="button" aria-label="Buka detail PRD-2416"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></button>
+                <button class="icon-action" type="button" aria-label="Riwayat PRD-2416"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button></div></td>
+            </tr>
+            <tr class="data-row" tabindex="0">
+              <td class="data-cell"><span class="data-primary">PRD-2415</span><span class="data-secondary">Celana Chino &middot; Krem</span></td>
+              <td class="data-cell"><span class="data-secondary">SKU-CHN-KRM</span></td>
+              <td class="data-cell data-column-secondary"><span class="data-meta">Agus Salim</span></td>
+              <td class="data-cell data-cell-numeric"><span class="data-meta">03 Okt</span></td>
+              <td class="data-cell"><span class="status-chip status-chip-neutral"><span class="status-dot"></span>Pending</span></td>
+              <td class="data-cell"><div class="progress-meter"><div class="progress-track" role="progressbar" aria-valuenow="15" aria-valuemin="0" aria-valuemax="100" aria-label="Progres PRD-2415"><span class="progress-fill" style="--progress-value:15%"></span></div><span class="progress-value">15%</span></div></td>
+              <td class="data-cell data-cell-tight"><div class="data-actions">
+                <button class="icon-action" type="button" aria-label="Buka detail PRD-2415"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-arrow-right"/></svg></button>
+                <button class="icon-action" type="button" aria-label="Riwayat PRD-2415"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 5. record list + timeline -->
+    <section class="a60-group">
+      <h2>Record list &amp; timeline</h2>
+      <div class="a60-split">
+        <ul class="record-list">
+          <li class="record-row">
+            <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-plug"/></svg></span>
+            <div class="record-row-copy"><span class="data-primary">Jubelio</span><span class="data-secondary">Sinkron stok &amp; pesanan marketplace</span></div>
+            <div class="record-row-aside"><span class="status-chip status-chip-success"><span class="status-dot"></span>Sehat</span>
+              <span class="data-meta">2 menit lalu</span><button class="action-quiet" type="button">Buka</button></div>
+          </li>
+          <li class="record-row">
+            <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-truck"/></svg></span>
+            <div class="record-row-copy"><span class="data-primary">Ekspedisi utama</span><span class="data-secondary">Tarif &amp; pelacakan pengiriman</span></div>
+            <div class="record-row-aside"><span class="status-chip status-chip-warning"><span class="status-dot"></span>Stale</span>
+              <span class="data-meta">6 jam lalu</span><button class="action-quiet" type="button">Buka</button></div>
+          </li>
+          <li class="record-row">
+            <span class="metric-icon"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-tag"/></svg></span>
+            <div class="record-row-copy"><span class="data-primary">Katalog SKU</span><span class="data-secondary">Master produk internal</span></div>
+            <div class="record-row-aside"><span class="status-chip status-chip-neutral"><span class="status-dot"></span>Pending</span>
+              <span class="data-meta">Belum pernah</span><button class="action-quiet" type="button">Buka</button></div>
+          </li>
+        </ul>
+        <div class="utility-panel">
+          <h3 class="workspace-section-title">Aktivitas hari ini</h3>
+          <ul class="timeline">
+            <li class="timeline-item timeline-item-info">
+              <span class="timeline-time">09:42</span>
+              <span class="timeline-event">Order PRD-2419 dibuat</span>
+              <span class="timeline-actor">Rina Wulandari</span>
+              <p class="timeline-detail">Target selesai 28 Sep, 120 pcs.</p>
+            </li>
+            <li class="timeline-item timeline-item-success">
+              <span class="timeline-time">10:15</span>
+              <span class="timeline-event">Batch bahan BTH-881 diterima</span>
+              <span class="timeline-actor">Gudang bahan</span>
+              <p class="timeline-detail">Saldo layak pakai naik 340 m.</p>
+            </li>
+            <li class="timeline-item timeline-item-warning">
+              <span class="timeline-time">11:02</span>
+              <span class="timeline-event">Sinkron Jubelio tertunda</span>
+              <span class="timeline-actor">Integrasi</span>
+              <p class="timeline-detail">Percobaan berikutnya otomatis.</p>
+            </li>
+            <li class="timeline-item timeline-item-danger">
+              <span class="timeline-time">13:27</span>
+              <span class="timeline-event">PRD-2417 melewati target</span>
+              <span class="timeline-actor">Sistem</span>
+              <p class="timeline-detail">Selisih 3 hari dari target selesai.</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. detail grid -->
+    <section class="a60-group">
+      <h2>Detail grid</h2>
+      <dl class="detail-grid">
+        <div class="detail-field"><dt>Referensi</dt><dd>PRD-2419</dd></div>
+        <div class="detail-field"><dt>Produk</dt><dd>Kaos Combed 30s &middot; Navy</dd></div>
+        <div class="detail-field"><dt>Jumlah</dt><dd>120 pcs</dd></div>
+        <div class="detail-field"><dt>Target selesai</dt><dd>28 Sep 2026</dd></div>
+        <div class="detail-field"><dt>Penanggung jawab</dt><dd>Rina Wulandari</dd></div>
+        <div class="detail-field"><dt>Diterima gudang</dt><dd>86 pcs</dd></div>
+      </dl>
+    </section>
+
+    <!-- 7. attention, empty, error, loading -->
+    <section class="a60-group">
+      <h2>Attention, empty, error, loading</h2>
+      <div class="attention-note">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert-triangle"/></svg>
+        <div class="attention-note-copy">
+          <p class="attention-note-title">3 order melewati target selesai</p>
+          <p class="attention-note-reason">Selisih terbesar 3 hari pada PRD-2417. Tinjau kapasitas finishing.</p>
+        </div>
+        <button class="action-secondary" type="button">Lihat order</button>
+      </div>
+      <div class="attention-note attention-note-critical">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert-octagon"/></svg>
+        <div class="attention-note-copy">
+          <p class="attention-note-title">Stok bahan BTH-402 habis</p>
+          <p class="attention-note-reason">2 order tertahan menunggu penerimaan bahan.</p>
+        </div>
+      </div>
+      <div class="a60-split">
+        <div class="data-surface">
+          <div class="empty-state">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-box"/></svg>
+            <p class="empty-state-title">Belum ada order produksi</p>
+            <p class="empty-state-copy">Order yang dibuat akan muncul di sini beserta progres dan statusnya.</p>
+            <button class="action-primary empty-state-action" type="button">+ Buat order</button>
+          </div>
+        </div>
+        <div class="error-state">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert-octagon"/></svg>
+          <p class="error-state-title">Gagal memuat order</p>
+          <p class="error-state-copy">Permintaan ke server tidak selesai. Periksa koneksi lalu coba lagi.</p>
+          <button class="action-secondary error-state-action" type="button">Coba lagi</button>
+        </div>
+      </div>
+      <div class="data-surface" aria-busy="true">
+        <div class="loading-state"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
+          <span>Memuat order produksi&hellip;</span></div>
+        <div class="a60-skeletons">
+          <span class="skeleton-line"></span><span class="skeleton-line"></span>
+          <span class="skeleton-line skeleton-line-short"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. form primitives + action hierarchy -->
+    <section class="a60-group">
+      <h2>Form primitives &amp; action hierarchy</h2>
+      <form class="utility-panel" novalidate>
+        <h3 class="workspace-section-title">Buat order produksi</h3>
+        <div class="field-grid">
+          <label class="field"><span class="field-label">Referensi</span>
+            <input type="text" value="PRD-2420">
+            <span class="field-help">Dibuat otomatis, boleh diubah.</span></label>
+          <label class="field"><span class="field-label">Produk</span>
+            <select><option>Kaos Combed 30s &middot; Navy</option><option>Hoodie Fleece &middot; Abu</option></select></label>
+          <label class="field"><span class="field-label">Jumlah<span class="field-label-optional">pcs</span></span>
+            <input type="number" value="0" aria-invalid="true" aria-describedby="a60-qty-error">
+            <span class="field-error" id="a60-qty-error">Jumlah harus lebih dari 0.</span></label>
+          <label class="field"><span class="field-label">Target selesai</span>
+            <input type="date" value="2026-10-08"></label>
+          <label class="field field-wide"><span class="field-label">Catatan</span>
+            <textarea placeholder="Opsional"></textarea></label>
+        </div>
+        <label class="field-check"><input type="checkbox" checked> Kirim notifikasi ke penanggung jawab</label>
+        <div class="field-actions field-actions-end">
+          <button class="action-quiet" type="reset">Batal</button>
+          <button class="action-destructive" type="button">Hapus draf</button>
+          <button class="action-primary" type="button">Simpan order</button>
+        </div>
+      </form>
+      <div class="command-bar">
+        <button class="action-primary" type="button">+ Buat order</button>
+        <button class="action-secondary" type="button">Export</button>
+        <button class="action-quiet" type="button">Muat ulang</button>
+        <button class="action-destructive" type="button">Hapus</button>
+        <button class="icon-action" type="button" aria-label="Tindakan lain"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-history"/></svg></button>
+      </div>
+    </section>
+
+    <!-- 9. scan surface foundation (A6.3 owns the real workflows) -->
+    <section class="a60-group">
+      <h2>Scan surface foundation</h2>
+      <div class="scan-surface">
+        <h3 class="workspace-section-title">Scan bundle</h3>
+        <label class="scan-target"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg>
+          <span class="visually-hidden">Kode bundle</span>
+          <input type="text" placeholder="Arahkan pemindai atau ketik kode bundle"></label>
+        <p class="scan-state"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-check-circle"/></svg>
+          <span>Siap memindai &middot; posisi Cutting &middot; PRD-2419</span></p>
+        <ul class="scan-recent">
+          <li class="record-row"><div class="record-row-copy"><span class="data-primary">BDL-00412</span>
+            <span class="data-secondary">Kaos Combed 30s &middot; Navy &middot; 24 pcs</span></div>
+            <div class="record-row-aside"><span class="status-chip status-chip-success"><span class="status-dot"></span>Tercatat</span></div></li>
+          <li class="record-row"><div class="record-row-copy"><span class="data-primary">BDL-00411</span>
+            <span class="data-secondary">Kaos Combed 30s &middot; Navy &middot; 24 pcs</span></div>
+            <div class="record-row-aside"><span class="status-chip status-chip-danger"><span class="status-dot"></span>Duplikat</span></div></li>
+        </ul>
+        <div class="scan-fallback">
+          <label class="field"><span class="field-label">Input manual</span><input type="text"></label>
+          <button class="action-secondary" type="button">Catat manual</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. status chip + progress reference -->
+    <section class="a60-group">
+      <h2>Status chips &amp; progress</h2>
+      <div class="command-bar">
+        <span class="status-chip status-chip-info"><span class="status-dot"></span>Dalam produksi</span>
+        <span class="status-chip status-chip-success"><span class="status-dot"></span>Selesai</span>
+        <span class="status-chip status-chip-warning"><span class="status-dot"></span>Menunggu bahan</span>
+        <span class="status-chip status-chip-danger"><span class="status-dot"></span>Lewat target</span>
+        <span class="status-chip status-chip-warning"><span class="status-dot"></span>Stale</span>
+        <span class="status-chip status-chip-success"><span class="status-dot"></span>Sehat</span>
+        <span class="status-chip status-chip-neutral"><span class="status-dot"></span>Pending</span>
+      </div>
+      <div class="a60-split">
+        <div class="progress-meter"><div class="progress-track" role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100" aria-label="Progres normal"><span class="progress-fill" style="--progress-value:72%"></span></div><span class="progress-value">72%</span></div>
+        <div class="progress-meter"><div class="progress-track progress-track-success" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" aria-label="Progres selesai"><span class="progress-fill" style="--progress-value:100%"></span></div><span class="progress-value">100%</span></div>
+        <div class="progress-meter"><div class="progress-track progress-track-warning" role="progressbar" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100" aria-label="Progres tertahan"><span class="progress-fill" style="--progress-value:45%"></span></div><span class="progress-value">45%</span></div>
+        <div class="progress-meter"><div class="progress-track progress-track-danger" role="progressbar" aria-valuenow="18" aria-valuemin="0" aria-valuemax="100" aria-label="Progres lewat target"><span class="progress-fill" style="--progress-value:18%"></span></div><span class="progress-value">18%</span></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+<script>
+  /* Fixture-only theme switch. No animation frame, no timer, no polling: one click
+     listener that writes the same data attribute appearance.js writes in production. */
+  document.querySelectorAll('[data-theme-set]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      document.documentElement.dataset.theme = button.dataset.themeSet;
+    });
+  });
+</script>
+</body>
+</html>

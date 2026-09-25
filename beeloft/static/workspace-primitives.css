@@ -1,0 +1,616 @@
+/* ==========================================================================
+   Apple-27 A6.0 modern workspace foundation.
+
+   This file owns ONE thing: the content language of the inner operational
+   workspaces (Produksi, Bahan baku, People, Scan, Analytics, Integrasi,
+   Purchasing, Budget marketing). It owns nothing about the shell. The scenic
+   wallpaper, the floating window, the traffic lights, the toolbar, the sidebar,
+   the pinned approval utility, the A2 selected-lens identity, the A3 spring and
+   the A5.3 liquid-lens presentation all stay exactly where they are, in
+   `workspace.css`, untouched and unreferenced from here.
+
+   It is also deliberately additive. Every selector below is a name that did not
+   exist in the product before A6.0, verified against `style.css`, `workspace.css`,
+   `index.html` and `app.mjs`. Nothing here restyles the legacy vocabulary
+   (`.state`, `.card`, `.filters`, `.filter-form`, `.table-head`, `.order-row`,
+   `.data-table`, `.status-label`, `.form-grid`, `.form-actions`,
+   `.attention-panel`), so loading this stylesheet changes the rendering of zero
+   production pages today. A6.1-A6.8 migrate pages onto these primitives one at a
+   time; A6.0 only has to make that migration possible and coherent.
+
+   Three requested names were already taken by shipped surfaces and would have
+   silently redesigned them, so they use cohesive alternatives instead:
+     .attention-panel -> .attention-note   (Command Center owns .attention-panel)
+     .form-grid       -> .field-grid       (legacy dialog forms own .form-grid)
+     .form-actions    -> .field-actions    (legacy dialog forms own .form-actions)
+   The `.field*` family is the better name anyway: the grid, the fields and the
+   action row now read as one thing.
+
+   Material discipline follows A1/A4 exactly rather than inventing a second
+   policy. Everything outside the `@supports` block near the bottom is SOLID and
+   is the real, finished rendering. Translucency is a bounded enhancement applied
+   afterwards, withdrawn under `prefers-reduced-transparency`, and overridden
+   entirely under `forced-colors`. There is exactly one blurred surface in this
+   file - the command bar - and no row, chip, cell or card is ever filtered.
+
+   A6.0 introduces no motion system. The only transitions here are the hover and
+   focus grammar the product already had, gated behind `prefers-reduced-motion`,
+   with no keyframes, no script, no animation frame and no timer.
+   ========================================================================== */
+/* Text colour here is always the `--ink` / `--ink-2` / `--muted` role aliases, never the
+   raw `--color-label-*` roles they normally point at. That is deliberate: A5.2 re-tunes
+   exactly those three aliases for the workspace environment in both themes (light
+   `--ink:#102045` / `--muted:#4a6080`, dark `--ink:#f1f6ff` / `--ink-2:#e3edfa` /
+   `--muted:#c0d0e4`) because workspace text sits on a translucent canvas over the
+   wallpaper rather than on a flat page. Consuming the aliases is what keeps A6 text
+   identical to every neighbouring shipped surface instead of introducing a second,
+   slightly dimmer palette in dark mode. */
+:root{
+  /* Workspace rhythm. Deliberately its own compact step rather than the shell's
+     40px control: an operational toolbar that manipulates a table should read
+     denser than a page's primary buttons, and coarse pointers get the full
+     44px target back further down. Radii sit just inside the shell's own scale so
+     a data surface reads as content inside the window, never as a second window. */
+  --workspace-control-height:34px;
+  --workspace-control-radius:10px;
+  --workspace-surface-radius:16px;
+  --workspace-panel-radius:12px;
+  --workspace-panel-gap:14px;
+  --workspace-section-gap:20px;
+  --workspace-row-height:52px;
+  --workspace-cell-x:14px;
+  --workspace-cell-y:10px;
+  /* Materials resolve to the A1 opaque materials by default. This is the baseline
+     the product actually paints; the tints below are never read unless the
+     `@supports` gate is satisfied. Because `--material-*` is already theme-aware,
+     these four names need no dark override at all. */
+  --workspace-surface:var(--material-content);
+  --workspace-surface-secondary:var(--material-content-subtle);
+  --workspace-toolbar:var(--material-content);
+  /* Structure and interaction. Dividers and hover are intentionally alpha over the
+     surface rather than opaque greys, so one value works on every material grade
+     above without a per-surface variant. */
+  --workspace-divider:#1d1d1f14;
+  --workspace-edge:#1d1d1f1f;
+  --workspace-hover:#1d1d1f0a;
+  --workspace-selected:#0064d114;
+  --workspace-shadow:0 1px 2px #1d1d1f08,0 8px 24px #1d1d1f0a;
+  /* Translucent grades. Consumed only inside the @supports block. The blur budget
+     is small and theme-invariant, like the shell's, so a theme change can never
+     re-animate the filter. */
+  --workspace-surface-tint:#ffffffeb;
+  --workspace-surface-secondary-tint:#f2f5facc;
+  --workspace-toolbar-tint:#ffffffc7;
+  --workspace-toolbar-highlight:#ffffffa6;
+  --workspace-toolbar-blur:18px;
+  --workspace-toolbar-saturation:1.25;
+}
+:root[data-theme=dark]{
+  /* Dark is tuned, not inverted: the divider and hover become light alpha because
+     that is how a dark surface shows structure, and the tints hold the dark
+     content colour slightly off full opacity so the wallpaper reads as depth
+     rather than as haze behind the data. */
+  --workspace-divider:#ffffff1f;
+  --workspace-edge:#ffffff26;
+  --workspace-hover:#ffffff12;
+  --workspace-selected:#78b4ff29;
+  --workspace-shadow:0 1px 2px #0000002e,0 8px 24px #00000029;
+  --workspace-surface-tint:#202023ed;
+  --workspace-surface-secondary-tint:#29292dd9;
+  --workspace-toolbar-tint:#202023cc;
+  --workspace-toolbar-highlight:#ffffff14;
+}
+
+/* ---------- page container ----------
+   The page itself is not a surface. It is a transparent, environment-aware canvas
+   so the shell's wallpaper and wash stay visible between the surfaces that sit on
+   it; §37's hierarchy starts with nothing, not with a white rectangle. */
+.workspace-page{display:flex;flex-direction:column;gap:var(--workspace-section-gap);min-width:0;background:none}
+.workspace-page>*{min-width:0}
+
+/* ---------- page heading ----------
+   context -> title -> one useful line -> actions right. `align-items:end` keeps the
+   action row optically on the subtitle's baseline instead of floating above a tall
+   heading block. */
+.workspace-heading{display:flex;align-items:end;justify-content:space-between;gap:1.25rem;flex-wrap:wrap}
+.workspace-heading-copy{min-width:0;flex:1 1 20rem}
+.workspace-eyebrow{margin:0 0 .3rem;color:var(--muted);font-size:var(--type-metadata);font-weight:600;letter-spacing:.01em}
+.workspace-title{margin:0;color:var(--ink);font-size:var(--type-page-title);font-weight:700;line-height:1.15;letter-spacing:-.025em;overflow-wrap:anywhere}
+.workspace-subtitle{margin:.3rem 0 0;color:var(--ink-2);font-size:var(--type-body);line-height:1.45;max-width:64ch}
+.workspace-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+/* A section title has to be unmistakably smaller than the page title, or the page
+   grows a second heading and the hierarchy collapses. */
+.workspace-section-title{margin:0;color:var(--ink);font-size:var(--type-section-title);font-weight:650;letter-spacing:-.015em}
+.workspace-meta{color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums}
+
+/* ---------- metric strip ----------
+   `auto-fit` with a floor, not a hard four-column grid: a workspace with two
+   honest metrics gets two cards, and nothing invents a third to fill the row. */
+.metric-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--workspace-panel-gap);margin:0;padding:0;list-style:none}
+.metric-card{
+  --metric-tint:var(--workspace-surface-secondary);--metric-ink:var(--ink-2);
+  display:flex;flex-direction:column;gap:.3rem;min-width:0;min-height:104px;
+  padding:14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--workspace-surface);box-shadow:var(--workspace-shadow);
+}
+/* `flex:0 0 auto` is not decoration. The same tile is reused as the leading glyph of a
+   record row, where it is a flex item in a tight horizontal line; with the default
+   `flex-shrink:1` it deformed from 28px to 15px at 768px and stopped reading as a square
+   semantic tile at all. It never shrinks, in either host. */
+.metric-icon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;height:28px;margin-bottom:.15rem;border-radius:var(--radius-compact);background:var(--metric-tint);color:var(--metric-ink)}
+.metric-label{color:var(--ink-2);font-size:var(--type-caption);font-weight:600;overflow-wrap:anywhere}
+.metric-value{color:var(--ink);font-size:1.5rem;font-weight:660;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.metric-detail{color:var(--muted);font-size:var(--type-metadata);overflow-wrap:anywhere}
+/* Semantic tint applies to the icon tile only. The card body stays neutral so a
+   strip of five metrics never turns into five coloured panels. */
+.metric-card-info{--metric-tint:var(--color-accent-soft);--metric-ink:var(--color-accent)}
+.metric-card-success{--metric-tint:var(--color-success-soft);--metric-ink:var(--color-success)}
+.metric-card-warning{--metric-tint:var(--color-warning-soft);--metric-ink:var(--color-warning)}
+.metric-card-danger{--metric-tint:var(--color-danger-soft);--metric-ink:var(--color-danger)}
+
+/* ---------- command bar ----------
+   This is the primitive that retires the old stacked filter form. It is a native
+   toolbar for manipulating the workspace, not something to fill in: search takes
+   the slack, filters stay intrinsic, and the reset/refresh actions push right.
+   Filter semantics are untouched - this is geometry and material only. */
+.command-bar{
+  position:relative;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;
+  padding:8px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  background:var(--workspace-toolbar);box-shadow:var(--workspace-shadow);
+}
+.command-search{position:relative;display:flex;align-items:center;flex:1 1 15rem;min-width:0}
+.command-search>.icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.command-search input{
+  width:100%;min-width:0;min-height:var(--workspace-control-height);height:var(--workspace-control-height);
+  padding:0 .7rem 0 2.05rem;border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  background:var(--workspace-surface-secondary);color:var(--ink);font-size:var(--type-control);
+}
+.command-search input::placeholder{color:var(--muted)}
+.command-search input:focus{border-color:var(--focus);background:var(--workspace-surface)}
+/* The native clear affordance is kept where the control is a search input; it is a
+   real affordance and inventing a second button beside it would be clutter. */
+.command-search input[type=search]::-webkit-search-cancel-button{cursor:pointer}
+.command-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+/* One control family: label and select share a single bordered shell, so a row of
+   four filters reads as four controls rather than eight boxes. The label stays a
+   real <label>; `.command-filter-quiet` hides its text visually only. */
+.command-filter{
+  display:inline-flex;align-items:center;gap:.4rem;min-width:0;max-width:100%;
+  height:var(--workspace-control-height);padding:0 .3rem 0 .6rem;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  background:var(--workspace-surface-secondary);
+  color:var(--ink-2);font-size:var(--type-metadata);font-weight:600;white-space:nowrap;
+}
+.command-filter:focus-within{border-color:var(--focus);background:var(--workspace-surface)}
+.command-filter>select,.command-filter>input{
+  min-width:0;min-height:0;height:calc(var(--workspace-control-height) - 2px);
+  padding:0 .15rem;border:0;border-radius:calc(var(--workspace-control-radius) - 2px);
+  background:none;color:var(--ink);font-size:var(--type-control);font-weight:500;
+}
+.command-filter>select:focus,.command-filter>input:focus{outline:none;border-color:transparent}
+.command-filter-quiet>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.command-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+
+/* ---------- segmented filter / status chips ----------
+   Only for filters that already exist in the page's data. Selected state is a soft
+   tinted material with a weight change, never a bright filled button. */
+.segmented-filter{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;padding:3px;border:1px solid var(--workspace-edge);border-radius:var(--radius-pill);background:var(--workspace-surface-secondary)}
+.filter-chip{
+  min-height:calc(var(--workspace-control-height) - 8px);padding:0 .7rem;
+  border:1px solid transparent;border-radius:var(--radius-pill);
+  background:none;box-shadow:none;color:var(--ink-2);
+  font-size:var(--type-metadata);font-weight:600;white-space:nowrap;
+}
+.filter-chip:hover{border-color:transparent;background:var(--workspace-hover);color:var(--ink)}
+.filter-chip[aria-pressed=true]{background:var(--workspace-selected);border-color:var(--color-accent-soft);color:var(--color-accent);font-weight:680}
+.filter-chip[aria-pressed=true]:hover{background:var(--workspace-selected);color:var(--color-accent)}
+.filter-chip-count{margin-left:.35rem;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- data surface ----------
+   Tables stay tables. What changes is the frame: one rounded near-opaque surface,
+   a quiet header, thin dividers, no grid lines, and actions that live in the row
+   instead of in a column of buttons. */
+/* `position:relative` is load-bearing, not cosmetic. The surface clips and scrolls, and
+   `.visually-hidden` is `position:absolute`, so without a positioned ancestor every
+   screen-reader-only label inside a header cell or an icon-only action resolves against
+   the initial containing block instead. It then escapes the surface's clip entirely and
+   adds its offset to the ROOT scroller, which is a real horizontal document overflow at
+   390px and 320px - measured, not theoretical. Making the surface the containing block
+   fixes it once here instead of once per migrated page. */
+.data-surface{
+  position:relative;min-width:0;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);
+  background:var(--workspace-surface);box-shadow:var(--workspace-shadow);overflow:hidden;
+}
+.data-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:12px var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider)}
+.data-toolbar>*{min-width:0}
+.data-surface>table{width:100%;border-collapse:collapse;text-align:left;font-size:var(--type-control)}
+/* Compact, lower contrast, medium weight, sentence case. A dark header band and
+   0.07em uppercase is the single strongest "old admin panel" signal in the product,
+   so it is exactly what this replaces. */
+.data-header th{
+  padding:var(--workspace-cell-y) var(--workspace-cell-x);
+  border-bottom:1px solid var(--workspace-divider);background:var(--workspace-surface-secondary);
+  color:var(--muted);font-size:var(--type-metadata);font-weight:600;letter-spacing:0;
+  text-transform:none;white-space:nowrap;
+}
+.data-row>*{padding:var(--workspace-cell-y) var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider);vertical-align:middle}
+.data-row:last-child>*{border-bottom:0}
+/* `.data-row` is the <tr> primitive. In table layout `height` is a *minimum*, which is
+   exactly the wanted behaviour: a one-line row gets a comfortable 52px and a row with
+   secondary metadata grows past it instead of being clipped. Stacked, non-table records
+   use `.record-row`, which is a flex box and sets `min-height` for the same result. */
+.data-row{height:var(--workspace-row-height)}
+.data-row:hover{background:var(--workspace-hover)}
+.data-row[aria-selected=true]{background:var(--workspace-selected)}
+.data-cell{min-width:0;overflow-wrap:anywhere}
+.data-cell-numeric{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.data-cell-tight{width:1%;white-space:nowrap}
+/* Row text hierarchy. Three weights of meaning, no box around any of them. */
+.data-primary{display:block;color:var(--ink);font-size:var(--type-control);font-weight:620;letter-spacing:-.005em;overflow-wrap:anywhere}
+.data-secondary{display:block;margin-top:.1rem;color:var(--ink-2);font-size:var(--type-metadata);overflow-wrap:anywhere}
+.data-meta{display:block;color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums}
+.data-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:nowrap}
+/* Sticky header, opt-in, and only meaningful on a surface that actually scrolls. */
+.data-surface-scroll{overflow:auto;max-height:70dvh}
+.data-surface-scroll .data-header th{position:sticky;top:0;z-index:1}
+/* Refresh presentation reuses the request lifecycle the pages already have:
+   `aria-busy` is the state, opacity is the only thing A6.0 adds to it. */
+.data-surface[aria-busy=true],.record-list[aria-busy=true]{opacity:.6}
+
+/* ---------- status chips ----------
+   One chip system for the whole product. The dot is not decoration: it is the
+   redundant, non-colour channel that keeps the state readable under forced
+   colours and for colour-blind operators. Meaning is never changed here. */
+.status-chip{
+  --status-ink:var(--ink-2);--status-tint:var(--workspace-surface-secondary);
+  display:inline-flex;align-items:center;gap:.35rem;max-width:100%;
+  padding:.15rem .5rem;border:1px solid transparent;border-radius:var(--radius-pill);
+  background:var(--status-tint);color:var(--status-ink);
+  font-size:var(--type-metadata);font-weight:600;white-space:nowrap;
+}
+.status-dot{flex:0 0 auto;width:6px;height:6px;border-radius:var(--radius-pill);background:currentColor}
+.status-chip-info{--status-ink:var(--color-accent);--status-tint:var(--color-accent-soft)}
+.status-chip-success{--status-ink:var(--color-success);--status-tint:var(--color-success-soft)}
+.status-chip-warning{--status-ink:var(--color-warning);--status-tint:var(--color-warning-soft)}
+.status-chip-danger{--status-ink:var(--color-danger);--status-tint:var(--color-danger-soft)}
+.status-chip-neutral{--status-ink:var(--ink-2);--status-tint:var(--workspace-surface-secondary)}
+
+/* ---------- progress ----------
+   A thin track with the number beside it. There is no native element that can be
+   styled to this reliably across engines, so the track is a div with the real
+   progressbar role and live values on it. */
+.progress-meter{display:flex;align-items:center;gap:.5rem;min-width:0}
+.progress-track{--progress-color:var(--color-accent);flex:1 1 auto;min-width:48px;height:5px;border-radius:var(--radius-pill);background:var(--workspace-surface-secondary);overflow:hidden}
+.progress-fill{display:block;width:var(--progress-value,0%);height:100%;border-radius:inherit;background:var(--progress-color)}
+.progress-value{flex:0 0 auto;color:var(--ink-2);font-size:var(--type-metadata);font-weight:600;font-variant-numeric:tabular-nums}
+/* Semantic only where the data genuinely means it. Blue is the default because
+   "in progress" is the normal case, not a warning and not a success. */
+.progress-track-success{--progress-color:var(--color-success)}
+.progress-track-warning{--progress-color:var(--color-warning)}
+.progress-track-danger{--progress-color:var(--color-danger)}
+
+/* ---------- panels ----------
+   Quiet secondary surfaces for explanation, not bordered callouts. `.info-panel`
+   carries data-source and scope notes; `.utility-panel` is a small grouped
+   container; `.attention-note` is the one that may raise its voice, and only with
+   a subtle semantic tint. */
+.info-panel{display:flex;align-items:flex-start;gap:.6rem;min-width:0;padding:10px 12px;border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);color:var(--ink-2);font-size:var(--type-caption);line-height:1.45}
+.info-panel>.icon{flex:0 0 auto;margin-top:.1rem;color:var(--muted)}
+.info-panel p{margin:0}
+.utility-panel{display:flex;flex-direction:column;gap:.6rem;min-width:0;padding:14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary)}
+.attention-note{
+  --attention-ink:var(--color-warning);--attention-tint:var(--color-warning-soft);--attention-edge:var(--color-warning-edge);
+  display:flex;align-items:flex-start;gap:.65rem;flex-wrap:wrap;min-width:0;
+  padding:12px 14px;border:1px solid var(--attention-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--attention-tint);color:var(--ink);
+}
+.attention-note>.icon{flex:0 0 auto;margin-top:.15rem;color:var(--attention-ink)}
+/* The basis is what moves the context action to its own row when the panel runs out of
+   width, instead of compressing the button until its label breaks mid-phrase ("Lihat /
+   order" at 390px). Above roughly 20rem of copy there is room for both and nothing wraps,
+   so this needs no breakpoint of its own - the panel decides from its own measurements. */
+.attention-note-copy{min-width:0;flex:1 1 20rem;display:flex;flex-direction:column;gap:.2rem}
+.attention-note>:not(.icon):not(.attention-note-copy){flex:0 0 auto;margin-left:auto}
+.attention-note-title{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:650}
+.attention-note-reason{margin:0;color:var(--ink-2);font-size:var(--type-caption);line-height:1.45}
+.attention-note-critical{--attention-ink:var(--color-danger);--attention-tint:var(--color-danger-soft);--attention-edge:var(--color-danger-edge)}
+.attention-note-info{--attention-ink:var(--color-accent);--attention-tint:var(--color-accent-soft);--attention-edge:var(--color-accent)}
+
+/* ---------- empty / error / loading ----------
+   The old pattern was a bordered box reading "Tidak ada data." These three replace
+   it with an explanation. The action slot is optional on purpose: a page whose
+   viewer cannot create the record, or whose workflow has no create step, renders
+   the title and the sentence and nothing else. */
+.empty-state,.error-state{display:flex;flex-direction:column;align-items:center;gap:.5rem;padding:2.5rem 1.25rem;text-align:center}
+.empty-state>.icon,.error-state>.icon{width:24px;height:24px;margin-bottom:.15rem;color:var(--muted)}
+.empty-state-title,.error-state-title{margin:0;color:var(--ink);font-size:var(--type-card-title);font-weight:650}
+.empty-state-copy,.error-state-copy{margin:0;max-width:44ch;color:var(--ink-2);font-size:var(--type-caption);line-height:1.5}
+.empty-state-action,.error-state-action{margin-top:.5rem}
+.error-state>.icon{color:var(--color-danger)}
+.error-state-title{color:var(--color-danger)}
+/* A restrained error surface, not a red banner: the tint is soft, the copy is the
+   application's own truthful message, and retry appears only where the page
+   already had one. */
+.error-state{border-radius:var(--workspace-surface-radius);background:var(--color-danger-soft)}
+.loading-state{display:flex;align-items:center;gap:.55rem;padding:1.25rem var(--workspace-cell-x);color:var(--ink-2);font-size:var(--type-caption)}
+/* A static skeleton, deliberately not a shimmer: A6.0 adds no keyframes anywhere,
+   and geometry alone already communicates "content is arriving here". */
+.skeleton-line{display:block;height:.7rem;border-radius:var(--radius-pill);background:var(--workspace-surface-secondary)}
+.skeleton-line+.skeleton-line{margin-top:.45rem}
+.skeleton-line-short{width:40%}
+
+/* ---------- record list ----------
+   For the workspaces a table would misrepresent: integrations, approval requests,
+   people, activity, recommendations. Same surface, same dividers, same text
+   hierarchy as the data table, so the two read as one family. */
+/* Same containing-block reasoning as `.data-surface`: this one clips too. */
+.record-list{position:relative;display:flex;flex-direction:column;min-width:0;border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface);box-shadow:var(--workspace-shadow);overflow:hidden;margin:0;padding:0;list-style:none}
+.record-row{display:flex;align-items:center;gap:var(--workspace-panel-gap);min-width:0;min-height:var(--workspace-row-height);padding:12px var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider)}
+.record-row:last-child{border-bottom:0}
+.record-row:hover{background:var(--workspace-hover)}
+.record-row[aria-selected=true]{background:var(--workspace-selected)}
+/* The basis is `0`, not `auto`, and that is the whole fix for the wrapped row. Flexbox
+   breaks lines using each item's *hypothetical* main size, before flex-shrink is applied,
+   so `min-width:0` cannot keep a content-sized item on the line - at 320px/200% the copy's
+   max-content base did not fit beside the tile and wrapped below it, orphaning the tile on
+   its own line. A zero basis always fits, then grows into the space that is left. */
+.record-row-copy{flex:1 1 0;min-width:0}
+.record-row-aside{display:flex;align-items:center;gap:.6rem;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}
+/* The row stays centre-aligned, which is the reviewed desktop rendering, but the leading
+   tile aligns to the title instead of to the row's midpoint. Once the secondary line wraps
+   the row grows taller than the tile, and a centred tile then floats down beside the
+   metadata rather than reading as the record's identity. */
+.record-row>.metric-icon{align-self:flex-start;margin-bottom:0}
+
+/* ---------- timeline ----------
+   Foundation for activity, audit trail and sync history. The rail is drawn on the
+   list, not once per item, and the marker is a pseudo-element, so a 500-row audit
+   page paints one border and no extra nodes. */
+.timeline{display:flex;flex-direction:column;min-width:0;margin:0;padding:0;list-style:none}
+.timeline-item{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:.2rem .8rem;min-width:0;padding:0 0 1rem 1.15rem;border-left:1px solid var(--workspace-divider)}
+.timeline-item:last-child{border-left-color:transparent;padding-bottom:0}
+.timeline-item::before{content:"";position:absolute;top:.38rem;left:-4.5px;width:8px;height:8px;border:1px solid var(--workspace-surface);border-radius:var(--radius-pill);background:var(--timeline-marker,var(--color-separator-strong))}
+.timeline-time{grid-column:1;color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums;white-space:nowrap}
+.timeline-event{grid-column:2;min-width:0;color:var(--ink);font-size:var(--type-control);font-weight:600;overflow-wrap:anywhere}
+.timeline-actor{grid-column:2;color:var(--ink-2);font-size:var(--type-metadata);overflow-wrap:anywhere}
+.timeline-detail{grid-column:2;margin:.15rem 0 0;color:var(--ink-2);font-size:var(--type-caption);line-height:1.45;overflow-wrap:anywhere}
+.timeline-item-info{--timeline-marker:var(--color-accent)}
+.timeline-item-success{--timeline-marker:var(--color-success)}
+.timeline-item-warning{--timeline-marker:var(--color-warning)}
+.timeline-item-danger{--timeline-marker:var(--color-danger)}
+
+/* ---------- detail grid ----------
+   Label/value pairs for a record's detail region. A definition list, because that
+   is what it is. */
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--workspace-panel-gap);min-width:0;margin:0}
+.detail-field{min-width:0;display:flex;flex-direction:column;gap:.15rem}
+.detail-field>dt{color:var(--muted);font-size:var(--type-metadata);font-weight:600}
+.detail-field>dd{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+
+/* ---------- scan surface ----------
+   Bounded foundation only; A6.3 owns the Scan Bundle and Scan Barang Jadi
+   workflows. What is settled here is the shape: one large focused input region,
+   the current state beside it, a recent-result area and a manual fallback. */
+.scan-surface{position:relative;display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0;padding:18px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface);box-shadow:var(--workspace-shadow)}
+.scan-target{display:flex;align-items:center;gap:.6rem;min-width:0;padding:14px;border:1px dashed var(--color-separator-strong);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary)}
+.scan-target input{min-height:44px;border-color:var(--workspace-edge);background:var(--workspace-surface);font-size:1.05rem;font-variant-numeric:tabular-nums}
+.scan-state{display:flex;align-items:center;gap:.5rem;min-width:0;color:var(--ink-2);font-size:var(--type-caption)}
+.scan-recent{display:flex;flex-direction:column;gap:.4rem;min-width:0;margin:0;padding:0;list-style:none}
+.scan-fallback{display:flex;flex-wrap:wrap;align-items:end;gap:.6rem;min-width:0;padding-top:.2rem;border-top:1px solid var(--workspace-divider)}
+
+/* ---------- form primitives ----------
+   Consistent control geometry, label above field, help and error owned by the
+   field rather than floated somewhere near it. Nothing here is positioned or
+   sized relative to the page, so A6.x can drop a `.field-grid` into a sheet, a
+   popover or the existing <dialog> without rewriting a single visual rule. */
+.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--workspace-panel-gap);min-width:0}
+.field-grid-single{grid-template-columns:minmax(0,1fr)}
+.field{display:flex;flex-direction:column;gap:.3rem;min-width:0}
+.field-wide{grid-column:1/-1}
+.field-label{color:var(--ink-2);font-size:var(--type-metadata);font-weight:600}
+.field-label-optional{margin-left:.3rem;color:var(--muted);font-weight:500}
+.field>input,.field>select,.field>textarea{
+  width:100%;min-width:0;min-height:var(--workspace-control-height);
+  padding:.35rem .6rem;border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  background:var(--workspace-surface-secondary);color:var(--ink);font-size:var(--type-control);
+}
+.field>textarea{min-height:5.5rem;padding:.5rem .6rem;line-height:1.5;resize:vertical}
+.field>input:focus,.field>select:focus,.field>textarea:focus{border-color:var(--focus);background:var(--workspace-surface)}
+.field-help{color:var(--muted);font-size:var(--type-metadata);line-height:1.45}
+/* The error is announced as well as tinted, and the control is marked through
+   `aria-invalid` rather than through a class, so the semantics carry it. */
+.field-error{display:flex;align-items:flex-start;gap:.3rem;color:var(--color-danger);font-size:var(--type-metadata);font-weight:600;line-height:1.45}
+.field>[aria-invalid=true]{border-color:var(--color-danger-edge);background:var(--color-danger-soft)}
+.field-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;margin-top:.2rem}
+.field-actions-end{justify-content:flex-end}
+.field-check{display:flex;align-items:center;gap:.55rem;min-width:0;min-height:var(--workspace-control-height);color:var(--ink-2);font-size:var(--type-control);font-weight:500}
+.field-check>input{width:auto;min-height:0;flex:0 0 auto;accent-color:var(--color-accent)}
+
+/* ---------- action hierarchy ----------
+   Four weights, so a page cannot end up with six controls of equal priority. The
+   primary is compact and confident rather than a full-width SaaS call to action;
+   secondary and quiet carry everything else; destructive is reserved for
+   operations that actually destroy something. */
+.action-primary,.action-secondary,.action-quiet,.action-destructive{
+  min-height:var(--workspace-control-height);padding:0 .8rem;
+  border-radius:var(--workspace-control-radius);font-size:var(--type-control);font-weight:620;
+}
+.action-primary{border:1px solid var(--color-accent);background:var(--color-accent);color:var(--color-on-accent);box-shadow:var(--shadow-content)}
+.action-primary:hover{border-color:var(--color-accent-hover);background:var(--color-accent-hover);color:var(--color-on-accent)}
+.action-secondary{border:1px solid var(--workspace-edge);background:var(--workspace-surface);color:var(--ink);box-shadow:var(--shadow-content)}
+.action-secondary:hover{border-color:var(--color-separator-strong);background:var(--workspace-surface-secondary);color:var(--ink)}
+.action-quiet{border:1px solid transparent;background:none;box-shadow:none;color:var(--ink-2)}
+.action-quiet:hover{border-color:transparent;background:var(--workspace-hover);color:var(--ink)}
+.action-destructive{border:1px solid var(--color-danger-edge);background:var(--color-danger-soft);color:var(--color-danger);box-shadow:none}
+.action-destructive:hover{border-color:var(--color-danger);background:var(--color-danger-soft);color:var(--color-danger)}
+/* The contextual row action. Square, quiet, and 28px on a fine pointer only - the
+   coarse-pointer block below gives it a full target back. An ellipsis trigger is
+   for low-frequency actions; a workflow's primary action stays spelled out. */
+.icon-action{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;min-height:0;padding:0;
+  border:1px solid transparent;border-radius:var(--radius-compact);
+  background:none;box-shadow:none;color:var(--muted);
+}
+.icon-action:hover{border-color:transparent;background:var(--workspace-hover);color:var(--ink)}
+.icon-action-danger:hover{background:var(--color-danger-soft);color:var(--color-danger)}
+
+/* ---------- focus ----------
+   One grammar for everything interactive in a workspace. The global A1 ring is
+   inherited; these rules only pull it inside surfaces that clip their own
+   overflow, where a 2px outset ring would otherwise be cropped and invisible. */
+.data-row:focus-visible,.record-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.data-header th button:focus-visible,.data-toolbar :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.filter-chip:focus-visible,.icon-action:focus-visible,.command-filter>select:focus-visible,.command-filter>input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.command-filter:has(>select:focus-visible),.command-filter:has(>input:focus-visible){border-color:var(--focus)}
+
+/* ---------- responsive ----------
+   The shell's own breakpoints (1240 / 1040 / 980 / 650) are reused as-is; A6.0
+   introduces no new one and no conflict. */
+@media(max-width:1240px){
+  /* Tablet: tighten the rhythm before dropping anything. */
+  :root{--workspace-cell-x:12px;--workspace-row-height:48px;--workspace-panel-gap:12px}
+  .metric-strip{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+}
+@media(max-width:980px){
+  /* Columns a workspace has declared as secondary may leave here. The class is
+     opt-in per page, so a table whose relationships need every column simply does
+     not use it and scrolls instead. */
+  .data-surface{overflow-x:auto}
+  .data-column-secondary{display:none}
+  .workspace-heading{align-items:flex-start}
+  .command-actions{margin-left:0}
+  /* The floor that makes horizontal scrolling actually work. `width:100%` alone loses
+     this argument: the surface becomes a scroll container, but the table still shrinks
+     to the container and `overflow-wrap:anywhere` then lets a column collapse to about
+     one character per line - measured at 390px, `SKU-CMB-30-NVY` broke into five lines.
+     A minimum width makes the table keep a readable column rhythm and hand the overflow
+     to the surface, which is what §34 asks for. The floor is in `rem`, not `px`, so at
+     200% text the columns grow with the text instead of re-crushing at twice the size. */
+  .data-surface>table{min-width:44rem}
+}
+@media(max-width:650px){
+  /* Phone. Search takes its own row, the action row spans the width, and the page
+     heading stops competing with the content. Tables do NOT globally become cards:
+     `.data-surface` scrolls horizontally, and a page that can preserve meaning
+     stacked opts into `.record-list` deliberately instead. */
+  :root{--workspace-section-gap:16px;--workspace-cell-x:12px}
+  .workspace-title{font-size:1.4rem}
+  .workspace-subtitle{font-size:var(--type-caption)}
+  .workspace-actions{width:100%;justify-content:flex-start}
+  .command-bar{gap:8px}
+  .command-search{flex-basis:100%}
+  .command-filters{width:100%}
+  .command-filter{flex:1 1 9rem}
+  .command-actions{width:100%;margin-left:0}
+  .command-actions>*{flex:1 1 auto}
+  .metric-strip{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+  .metric-card{min-height:92px;padding:12px}
+  .metric-value{font-size:1.3rem}
+  /* Wrap rather than stack. `flex-direction:column` put the semantic icon tile on a line
+     of its own above the record name, which reads as an orphan and wastes a row; wrapping
+     keeps icon and title together as one identity and lets only the status/meta/action
+     group fall to a second line. */
+  /* Wrap, do not stack: `.record-row-aside` at `width:100%` is what forces the second line,
+     while the tile and the copy keep line one. The copy's zero flex-basis in the base rule
+     is what makes that hold at 200% text. */
+  .record-row{align-items:flex-start;flex-wrap:wrap;gap:.6rem var(--workspace-panel-gap)}
+  .record-row-aside{width:100%;justify-content:flex-start}
+  .detail-grid,.field-grid{grid-template-columns:minmax(0,1fr)}
+  .timeline-item{grid-template-columns:minmax(0,1fr)}
+  .timeline-time{grid-column:1}
+  .timeline-event,.timeline-actor,.timeline-detail{grid-column:1}
+  .empty-state,.error-state{padding:2rem 1rem}
+}
+/* Touch targets are a pointer question, not a width question: a 1024px tablet needs
+   them and a 500px desktop window does not. Desktop density from the approved shell
+   is therefore preserved, and every control that was compact for a mouse becomes a
+   full 44px target for a finger. */
+@media(pointer:coarse){
+  :root{--workspace-control-height:var(--touch-target-min)}
+  .filter-chip{min-height:var(--touch-target-min);padding:0 .9rem}
+  .icon-action{width:var(--touch-target-min);height:var(--touch-target-min)}
+  .data-row>*{padding-top:.75rem;padding-bottom:.75rem}
+  .segmented-filter{gap:6px}
+}
+
+/* ---------- motion ----------
+   A6.0 adds no motion system. This is the product's existing hover/focus grammar
+   extended to the new controls with the existing tokens, nothing more: no
+   keyframes, no entrance choreography, no row or card staggering, and no script.
+   Everything moving is gated on the preference. */
+@media(prefers-reduced-motion:no-preference){
+  .data-row,.record-row,.filter-chip,.icon-action,.command-filter,.command-search input,
+  .action-primary,.action-secondary,.action-quiet,.action-destructive{
+    transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard);
+  }
+  .data-surface,.record-list{transition:opacity var(--motion-base) var(--ease-standard)}
+  .progress-fill{transition:width var(--motion-base) var(--ease-standard)}
+}
+
+/* ---------- material enhancement ----------
+   Everything above is solid and finished. This block is the only place a workspace
+   surface becomes translucent, and it follows §37's hierarchy precisely:
+
+     page content      transparent canvas          (no surface at all)
+     primary data      near-opaque                 (0.92 alpha, legibility first)
+     secondary panel   controlled translucency     (0.80 alpha)
+     command bar       restrained Liquid Glass     (one blurred surface, 18px)
+
+   The filter is on the command bar and nowhere else. No row, chip, cell, metric
+   card, panel or list item is ever a backdrop root, which is both §46's
+   performance rule and the reason a 400-row table costs the compositor nothing
+   more than it did before A6.0. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .data-surface,.record-list,.scan-surface{background:var(--workspace-surface-tint)}
+  .metric-card,.utility-panel,.info-panel{background:var(--workspace-surface-secondary-tint)}
+  .command-bar{
+    background:var(--workspace-toolbar-tint);border-color:var(--workspace-edge);
+    -webkit-backdrop-filter:blur(var(--workspace-toolbar-blur)) saturate(var(--workspace-toolbar-saturation));
+    backdrop-filter:blur(var(--workspace-toolbar-blur)) saturate(var(--workspace-toolbar-saturation));
+    box-shadow:inset 0 1px 0 var(--workspace-toolbar-highlight),var(--workspace-shadow);
+  }
+  /* The transparency preference withdraws the enhancement and never adds one. Dense
+     data surfaces return to the fully opaque A1 materials, because readability of a
+     table is not a place to trade anything away. */
+  @media(prefers-reduced-transparency:reduce){
+    .data-surface,.record-list,.scan-surface{background:var(--material-content)}
+    .metric-card,.utility-panel,.info-panel{background:var(--material-content-subtle)}
+    .command-bar{
+      background:var(--material-functional-chrome-solid);
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+      box-shadow:var(--workspace-shadow);
+    }
+  }
+}
+/* Forced colours outrank every material and every tint. Nothing here may depend on
+   a background colour to carry meaning, so status chips, progress, rows and the
+   attention note all fall back to system colours plus a real border or a real
+   fill - and the status dot keeps working as the non-colour channel it was added
+   to be. This sits outside the @supports block so it also corrects the solid
+   baseline's decorative edges. */
+@media(forced-colors:active){
+  .data-surface,.record-list,.metric-card,.utility-panel,.info-panel,.scan-surface,.attention-note,.error-state{background:Canvas;color:CanvasText;box-shadow:none}
+  .command-bar{background:Canvas;color:CanvasText;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .data-surface,.record-list,.metric-card,.utility-panel,.command-bar,.scan-surface,.attention-note,.segmented-filter{border:1px solid CanvasText}
+  .data-header th,.data-row>*,.record-row{border-bottom:1px solid CanvasText}
+  .data-header th{background:Canvas;color:CanvasText}
+  .data-row:hover,.record-row:hover,.data-row[aria-selected=true],.record-row[aria-selected=true]{background:Canvas;color:CanvasText;forced-color-adjust:none}
+  .data-row[aria-selected=true],.record-row[aria-selected=true]{outline:2px solid Highlight;outline-offset:-2px}
+  .status-chip{background:Canvas;color:CanvasText;border:1px solid CanvasText}
+  .status-dot{background:CanvasText}
+  .progress-track{border:1px solid CanvasText;background:Canvas}
+  .progress-fill{background:Highlight}
+  .filter-chip{border:1px solid CanvasText;background:Canvas;color:CanvasText}
+  .filter-chip[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
+  .action-primary{border:1px solid ButtonText;background:ButtonFace;color:ButtonText}
+  .action-secondary,.action-quiet,.action-destructive,.icon-action{border:1px solid ButtonText;background:ButtonFace;color:ButtonText}
+  .attention-note>.icon,.error-state>.icon,.empty-state>.icon{color:CanvasText}
+  .field>[aria-invalid=true]{border:2px solid CanvasText;background:Canvas}
+  .field-error,.error-state-title{color:CanvasText}
+  .skeleton-line{border:1px solid CanvasText;background:Canvas}
+  .timeline-item{border-left-color:CanvasText}
+  .timeline-item::before{background:CanvasText;border-color:Canvas}
+  .timeline-item:last-child{border-left-color:transparent}
+}
