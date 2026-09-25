@@ -25,7 +25,7 @@ module.exports=async({page,login,admin})=>{
   const submit=page.locator('#login-form button[type="submit"]');
   const loginError=page.locator('#login-error:not([hidden])');
   const sso=page.locator('#sso-login');
-  const board=page.getByRole('heading',{name:'Yang sedang dikerjakan.'});
+  const board=page.getByRole('heading',{name:'Produksi',exact:true});
   const settled=()=>page.locator('#main:not([aria-busy])').waitFor();
 
   // Keadaan kelima kontrol dibaca dalam satu perjalanan ke halaman, sehingga yang dibandingkan

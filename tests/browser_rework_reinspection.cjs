@@ -43,7 +43,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     await page.getByRole('button',{name:/DEMO-REWORK-QC/}).click();
     await page.getByRole('heading',{name:'CONTOH rework dan inspeksi ulang',exact:true}).waitFor();
   }
-  async function openQc(){await page.locator('.order-settings').getByRole('button',{name:'Final QC',exact:true}).click();}
+  async function openQc(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Final QC',exact:true}).click();}
   async function totals(){return (await apiGet('/api/orders/'+order.id)).totals;}
   async function conserved(label){
     const current=await totals();
@@ -84,7 +84,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
 
   // 1. Inspeksi awal dari finishing: 12 diterima, 8 rework.
   await role(operator);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Finishing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Finishing',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RWK-FIN',exact:true}).click();
   await page.getByRole('button',{name:'Catat final QC',exact:true}).click();
   await page.getByLabel('Referensi final QC',{exact:true}).fill('RWK-QC-1');
@@ -119,7 +119,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByText('Catat penyelesaiannya dari rincian final QC',{exact:false}).waitFor();
   await closeDialog();
   // Order detail menyediakan pintu masuk langsung ke riwayat selesai rework.
-  await page.locator('.order-settings').getByRole('button',{name:'Selesai rework',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Selesai rework',exact:true}).click();
   await page.getByRole('heading',{name:'Selesai rework order',exact:true}).waitFor();
   await page.getByText('Belum ada catatan selesai rework untuk order ini',{exact:false}).waitFor();
   await closeDialog();
@@ -236,7 +236,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await post('/api/finishing-records/'+finishing.id+'/reverse',{reason:'CONTOH masih dipakai final QC'},'rwk-block-finishing',409);
   await post('/api/movements/'+completionOne.movement_id+'/reverse',{reason:'CONTOH koreksi terpisah'},'rwk-block-movement',409);
   await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Barang jadi',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Barang jadi',exact:true}).click();
   await page.getByRole('button',{name:'Rincian RWK-FG-1',exact:true}).click();
   await page.getByRole('button',{name:'Koreksi penerimaan',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH penerimaan salah lokasi');

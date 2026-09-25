@@ -592,6 +592,28 @@ function message(id, text, error = false) {
   $(id).hidden = !text; $(id).textContent = text;
   $(id).classList.toggle('error', error);
 }
+// Keadaan halaman — memuat, kosong, galat — untuk workspace yang sudah memakai primitif A6.0.
+// Host-nya tidak berpindah dan tidak berganti nama: id, `role="status"`, dan kelas `.state`
+// tetap, karena siklus permintaan, `fail()`, dan kontrak gerak M4 semuanya menunjuk ke sana.
+// M4 bahkan menuntut `className` kembali menjadi tepat `state` setelah keadaan kosong selesai
+// memudar, jadi kelas A6 dipasang di dalam host, bukan pada host. Kelas `.error` dipertahankan
+// karena itulah yang dipakai `message()` dan yang dibaca pemeriksa galat.
+// Teksnya sengaja tetap teks yang sama: keadaan ini sudah punya kalimat yang dipakai operator
+// dan diuji, dan A6.1 hanya memindahkan bentuknya.
+const STATE_SHELL = {loading:'loading-state', empty:'empty-state', error:'error-state'};
+const STATE_GLYPH = {loading:'refresh', empty:'inbox', error:'alert-octagon'};
+function pageState(id, kind, title = '', copy = '', action = '') {
+  const host = $(id);
+  host.classList.toggle('error', kind === 'error');
+  if (!kind) { host.hidden = true; host.replaceChildren(); return; }
+  const shell = STATE_SHELL[kind];
+  host.innerHTML = kind === 'loading'
+    ? `<p class="${shell}">${svgIcon(STATE_GLYPH[kind])}${e(title)}</p>`
+    : `<div class="${shell}">${svgIcon(STATE_GLYPH[kind])}<p class="${shell}-title">${e(title)}</p>`
+      + (copy ? `<p class="${shell}-copy">${e(copy)}</p>` : '')
+      + (action ? `<p class="${shell}-action">${action}</p>` : '') + '</div>';
+  host.hidden = false;
+}
 // Muat ulang data yang sudah tampil tidak mengosongkan kontainernya. Isi yang lama dipertahankan
 // sambil diredupkan dan ditandai aria-busy, jadi pembaca layar tetap mendapat kabar bahwa datanya
 // sedang diperbarui tanpa operator kehilangan konteks. Kontrol tidak dikunci: spec hanya meminta
@@ -880,14 +902,26 @@ workspaceChrome.session(null);
 loadLoginOptions();
 restoreSession();
 
+// Status order dipindahkan ke chip A6.0. Kebenarannya tidak bergerak: urutan pemeriksaannya
+// sama, keempat kalimatnya sama, dan artinya sama — `overdue` tetap menang atas status apa pun,
+// dan `closed_with_reject` tetap dibedakan dari selesai yang bersih. Yang berubah hanya
+// presentasinya. Setiap chip membawa titik yang bukan warna, jadi statusnya tetap terbaca di
+// forced-colors dan bagi pemakai yang tidak membedakan warna: syarat itu tidak bisa dipenuhi
+// oleh latar belakang semantik sendirian.
 function statusHTML(order) {
-  if (order.overdue) return '<span class="status-label late">Lewat target</span>';
-  if (order.status === 'completed') return '<span class="status-label done">Selesai</span>';
-  if (order.status === 'closed_with_reject') return '<span class="status-label done">Ditutup · ada reject</span>';
-  return '<span class="status-label">Dalam produksi</span>';
+  const [tone, label] = order.overdue ? ['danger', 'Lewat target']
+    : order.status === 'completed' ? ['success', 'Selesai']
+    : order.status === 'closed_with_reject' ? ['warning', 'Ditutup · ada reject']
+    : ['info', 'Dalam produksi'];
+  return `<span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${label}</span>`;
 }
+// Indikator kendala adalah penyerta, bukan lencana kedua yang sama besar. Yang terlihat
+// dipendekkan menjadi "N kendala" supaya kolom status tidak ikut melebar di setiap baris;
+// kata "terbuka" tetap dibacakan, jadi tidak ada arti yang hilang dari yang dulu ditulis penuh.
 function issueBadge(order) {
-  return order.open_issues ? `<span class="status-label late">${n(order.open_issues)} kendala terbuka</span>` : '';
+  return order.open_issues ? '<span class="status-chip status-chip-warning">'
+    + `<span class="status-dot" aria-hidden="true"></span>${n(order.open_issues)} kendala`
+    + '<span class="visually-hidden"> terbuka</span></span>' : '';
 }
 function showBoard() {
   activateWorkspace('board-home'); selected = null;
@@ -1138,7 +1172,7 @@ async function loadBoard() {
   // menggantinya. Hanya penggantian itu yang memudar sebagai satu unit, dan hanya kalau ada
   // baris yang benar-benar tergantikan — halaman yang baru dibuka tidak memudar.
   const refreshing = markRefreshing('order-list');
-  if (!refreshing) { message('board-message', 'Memuat posisi produksi…'); $('order-list').hidden = true; }
+  if (!refreshing) { pageState('board-message', 'loading', 'Memuat posisi produksi…'); $('order-list').hidden = true; }
   $('previous').disabled = true; $('next').disabled = true;
   $('summary').setAttribute('aria-busy', 'true');
   try {
@@ -1161,31 +1195,76 @@ async function loadBoard() {
     $('board-owner').innerHTML = '<option value="">Semua PIC</option>' + result.owners.map(owner => option(owner.id,owner.name + (owner.active ? '' : ' (akun nonaktif)'))).join('');
     if (ownerId && !result.owners.some(owner => owner.id === ownerId)) $('board-owner').insertAdjacentHTML('beforeend',option(ownerId,previousOwnerLabel || 'PIC tidak lagi memiliki order'));
     $('board-owner').value = ownerId;
-    $('issues-summary').classList.toggle('has-issues', result.open_issues > 0);
-    $('issues-summary').innerHTML = `${svgIcon(result.open_issues > 0 ? 'alert-triangle' : 'check-circle')}`
-      + `<span><strong>${n(result.open_issues)} kendala terbuka</strong><span class="issue-link"> · lihat order terkait</span></span>`;
+    // Ringkasan kendala memakai permukaan perhatian A6.0. Perilakunya tidak disentuh — satu klik
+    // tetap menyetel ulang filter lalu memilih status `blocked` — dan `has-issues` dipertahankan
+    // karena itulah kelas yang dibaca pemeriksa keadaannya. Nol kendala mendapat keadaan bersih
+    // yang tenang di tempat dan bentuk yang sama, bukan komponen yang hilang, supaya isi di
+    // bawahnya tidak melompat setiap kali hitungannya menyentuh nol.
+    const openIssues = result.open_issues;
+    $('issues-summary').classList.toggle('has-issues', openIssues > 0);
+    $('issues-summary').classList.toggle('attention-note-critical', openIssues > 0);
+    $('issues-summary').classList.toggle('attention-note-success', openIssues === 0);
+    $('issues-summary').innerHTML = `${svgIcon(openIssues > 0 ? 'alert-triangle' : 'check-circle')}`
+      + `<span class="attention-note-copy"><strong class="attention-note-title">${n(openIssues)} kendala terbuka</strong>`
+      + `<span class="attention-note-reason">${openIssues > 0 ? 'Lihat order terkait' : 'Semua order berjalan tanpa kendala terbuka'}</span></span>`
+      + (openIssues > 0 ? `<span class="issue-link">${svgIcon('arrow-right','icon-sm')}</span>` : '');
     $('issues-summary').hidden = false;
     const s = result.summary;
-    $('summary').innerHTML = [['Order aktif',s.active,'order','layers'],['Lewat target',s.overdue,'order','alert-triangle'],
-      ['Dalam proses',s.in_progress,'pcs','activity'],['Perlu rework',s.rework,'pcs','undo']]
-      .map(([label,value,unit,glyph]) => `<div${glyph === 'activity' ? ' class="production-wip"' : ''}><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
+    // Empat nilai yang sama, dari field payload yang sama, dengan satuan yang sama. Nada
+    // semantiknya mengikuti datanya: "Lewat target" dan "Perlu rework" hanya berwarna kalau
+    // angkanya benar-benar di atas nol, supaya papan yang sehat tidak terbaca seperti papan yang
+    // bermasalah. Warnanya ada di kotak ikonnya saja — badan kartunya tetap netral, jadi keempat
+    // metrik ini tidak pernah terbaca sebagai tab yang sedang terpilih.
+    $('summary').innerHTML = [
+      ['Order aktif', s.active, 'order', 'layers', 'metric-card-info'],
+      ['Lewat target', s.overdue, 'order', 'alert-triangle', s.overdue > 0 ? 'metric-card-danger' : ''],
+      ['Dalam proses', s.in_progress, 'pcs', 'activity', 'metric-card-info'],
+      ['Perlu rework', s.rework, 'pcs', 'undo', s.rework > 0 ? 'metric-card-warning' : ''],
+    ].map(([label, value, unit, glyph, tone]) => `<div class="metric-card${tone ? ' ' + tone : ''}">`
+      + `<span class="metric-icon">${svgIcon(glyph, 'icon-sm')}</span>`
+      + `<dt class="metric-label">${label}</dt>`
+      + `<dd class="metric-value">${n(value)} <small class="metric-unit">${unit}</small></dd></div>`).join('');
     $('summary').removeAttribute('aria-busy');
     $('updated').textContent = 'Diperbarui ' + new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit'}).format(new Date());
     if (!result.orders.length) {
-      message('board-message', result.summary.orders ? 'Tidak ada order yang cocok. Ubah pencarian atau filter status.' :
-        user.role === 'admin' ? 'Belum ada order. Tambahkan SKU lewat Master SKU, lalu buat order produksi pertama.' : 'Belum ada order produksi. Minta admin membuat order untuk tim.');
-      $('order-list').replaceChildren();
+      // Dua keadaan kosong yang berbeda tetap dibedakan, karena artinya berbeda: produksi yang
+      // memang belum ada, dan filter yang tidak menemukan apa pun. Aksi hanya ditawarkan kepada
+      // peran yang benar-benar boleh melakukannya; keadaan kosong yang tersaring tidak membawa
+      // tombol sendiri karena kontrol "Reset filter" sudah berada satu baris di atasnya.
+      if (result.summary.orders) pageState('board-message', 'empty', 'Tidak ada order yang cocok.',
+        'Ubah pencarian atau filter status, atau tekan Reset filter untuk melihat seluruh order.');
+      else if (user.role === 'admin') pageState('board-message', 'empty', 'Belum ada order.',
+        'Tambahkan SKU lewat Master SKU, lalu buat order produksi pertama.',
+        '<button type="button" class="action-primary" data-action="new-order">Buat order produksi pertama</button>');
+      else pageState('board-message', 'empty', 'Belum ada order produksi.', 'Minta admin membuat order untuk tim.');
+      $('order-list').replaceChildren(); $('order-list').hidden = true;
       // Keadaan kosong adalah keadaan semantik, bukan placeholder memuat: daftar yang
       // tergantikan olehnya memudar sebagai satu unit supaya pergantiannya terbaca.
       if (refreshing) playEntryMotion($('board-message'), '--motion-base');
     } else {
-      message('board-message',''); $('order-list').hidden = false;
-      $('order-list').innerHTML = '<div class="order-grid table-head" aria-hidden="true"><span>Order / produk</span><span>Penanggung jawab</span><span>Target selesai</span><span>Diterima gudang</span><span class="status-cell">Status</span></div>' + result.orders.map(order => {
+      pageState('board-message',''); $('order-list').hidden = false;
+      // Tabel semantik, bukan grid yang berpura-pura menjadi tabel: judul kolomnya menjadi <th>
+      // yang sungguhan, jadi setiap sel punya hubungan baris/kolom tanpa satu pun role ditempelkan
+      // dengan tangan. `.order-row` dan `.order-title` dipertahankan pada baris karena
+      // playProgressSettle(), gerak M4, dan puluhan modul penerimaan menunjuk ke keduanya; sisanya
+      // adalah tata bahasa permukaan data A6.0. Kolom terakhir adalah panah penunjuk arah dan
+      // sengaja dekoratif: pemicu detail yang sebenarnya tetap satu tombol judul per baris, jadi
+      // nama yang bisa diakses di baris ini tetap tepat satu.
+      $('order-list').innerHTML = '<table><thead class="data-header"><tr>'
+        + '<th scope="col">Order / produk</th><th scope="col">PIC</th><th scope="col">Target selesai</th>'
+        + '<th scope="col">Progress</th><th scope="col">Status</th>'
+        + '<th scope="col"><span class="visually-hidden">Buka order</span></th></tr></thead><tbody>'
+        + result.orders.map(order => {
         const progress = Math.round(order.totals.warehouse / order.target_quantity * 100);
-        return `<article class="order-grid order-row"><div class="cell"><button class="order-title" data-action="detail" data-id="${e(order.id)}"><span class="reference">${e(order.reference)}</span>${e(order.title)}</button><span class="hint">${order.lines.length} SKU · target ${n(order.target_quantity)} pcs</span></div>
-          <div class="cell"><span class="cell-label">PIC</span>${e(order.owner_name)}</div><div class="cell"><span class="cell-label">Target selesai</span>${date(order.due_date)}</div>
-          <div class="cell progress-cell"><div class="progress-note"><span>${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong>${progress}%</strong></div><progress data-order="${e(order.id)}" value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div><div class="cell status-cell">${statusHTML(order)}${issueBadge(order)}</div></article>`;
-      }).join('');
+        return `<tr class="order-row data-row"><td class="data-cell"><button class="order-title data-primary" data-action="detail" data-id="${e(order.id)}"><span class="reference">${e(order.reference)}</span>${e(order.title)}</button><span class="data-secondary">${order.lines.length} SKU · target ${n(order.target_quantity)} pcs</span></td>`
+          + `<td class="data-cell">${e(order.owner_name)}</td>`
+          + `<td class="data-cell data-cell-tight">${date(order.due_date)}</td>`
+          // Artinya tetap persis seperti sebelumnya: jumlah yang sudah diterima gudang dibagi
+          // target produksi. Bukan "produksi selesai", dan labelnya mengatakannya apa adanya.
+          + `<td class="data-cell"><div class="progress-meter progress-meter-stack"><span class="progress-legend"><span class="data-meta">${n(order.totals.warehouse)} / ${n(order.target_quantity)} pcs</span><strong class="progress-value">${progress}%</strong></span><progress class="progress-native" data-order="${e(order.id)}" value="${order.totals.warehouse}" max="${order.target_quantity}" aria-label="Jumlah diterima gudang ${e(order.reference)}"></progress></div></td>`
+          + `<td class="data-cell"><span class="chip-row">${statusHTML(order)}${issueBadge(order)}</span></td>`
+          + `<td class="data-cell data-cell-tight">${svgIcon('arrow-right','icon-sm')}</td></tr>`;
+      }).join('') + '</tbody></table>';
       playProgressSettle(progressBefore);
       if (replacing) playEntryMotion($('order-list'), '--motion-base');
     }
@@ -1193,31 +1272,123 @@ async function loadBoard() {
     $('previous').disabled = offset === 0; $('next').disabled = offset + 25 >= result.total;
     // Galat selalu muncul seketika dan tanpa peredupan: baris yang sudah ada tetap terbaca
     // sementara pesan kesalahannya bisa langsung ditindak.
-  } catch (error) { if (version === epoch && request === boardRequest) { settleRefreshing('order-list'); $('summary').replaceChildren(); $('summary').removeAttribute('aria-busy'); $('issues-summary').hidden = true; $('updated').textContent = ''; fail(error, 'board-message'); } }
+  } catch (error) {
+    if (version === epoch && request === boardRequest) {
+      settleRefreshing('order-list'); $('summary').replaceChildren(); $('summary').removeAttribute('aria-busy');
+      $('issues-summary').hidden = true; $('updated').textContent = '';
+      // Sesi yang berakhir tetap melewati jalur kegagalan autentikasi yang sudah ada, termasuk
+      // logout dan pesan di formulir masuk; hanya galat lain yang digambar sebagai permukaan
+      // galat A6.0 — dengan pesan yang sama persis, supaya yang terbaca tidak berubah.
+      if (error.status === 401) fail(error, 'board-message');
+      else pageState('board-message', 'error', error.message);
+    }
+  }
 }
 
 async function openDetail(id) {
   activateWorkspace('board-home','detail-view');
   const version = epoch, request = ++detailRequest;
-  message('detail-message', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
+  pageState('detail-message', 'loading', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
   try {
     const [order, movements, blockers] = await Promise.all([api.get('/api/orders/' + encodeURIComponent(id)), api.get(`/api/orders/${encodeURIComponent(id)}/movements?limit=100`), api.get(`/api/orders/${encodeURIComponent(id)}/issues?limit=100`)]);
     if (version !== epoch || request !== detailRequest || view !== 'detail') return;
     selected = order; issues = blockers; issuesMore = blockers.length === 100; history = movements; historyOffset = movements.length;
-    message('detail-message', ''); $('detail-content').hidden = false; renderDetail(movements.length === 100);
-  } catch (error) { if (version === epoch && request === detailRequest) fail(error, 'detail-message'); }
+    pageState('detail-message', ''); $('detail-content').hidden = false; renderDetail(movements.length === 100);
+  } catch (error) {
+    if (version === epoch && request === detailRequest) {
+      if (error.status === 401) fail(error, 'detail-message');
+      else pageState('detail-message', 'error', error.message);
+    }
+  }
 }
 function renderDetail(more) {
   const o = selected;
-  $('detail-content').innerHTML = `<div class="detail-top"><div><p class="eyebrow">${e(o.reference)}</p><h1>${e(o.title)}</h1></div><button data-action="refresh-detail">Muat ulang order</button></div>
-    <div class="detail-meta"><div><span>Penanggung jawab</span><strong>${e(o.owner_name)}</strong></div><div><span>Target selesai</span><strong>${date(o.due_date)}</strong></div><div><span>Target produksi</span><strong>${n(o.target_quantity)} pcs</strong></div><div><span>Status</span><strong>${statusHTML(o)}</strong></div></div>
-    <div class="actions order-settings">${user.role === 'admin' ? '<button data-action="edit-order">Ubah tenggat / PIC</button>' : ''}${user.role !== 'viewer' ? '<button data-action="new-production-change-request">Ajukan perubahan tenggat / PIC</button>' : ''}<button class="quiet" data-action="production-change-requests">Riwayat permintaan perubahan</button><button class="quiet" data-action="order-changes">Riwayat tenggat / PIC</button><button data-action="requirements">Kebutuhan bahan</button><button data-action="reservations">Reservasi bahan</button><button data-action="consumption">Pemakaian &amp; waste</button><button data-action="production-cost">Biaya aktual</button><button data-action="contribution-margin">Margin kontribusi</button><button data-action="cutting-runs">Hasil cutting</button><button data-action="bundles">Bundle</button><button data-action="sewing-jobs">Sewing / makloon</button><button data-action="finishing-records">Finishing</button><button data-action="final-qc-records">Final QC</button><button data-action="rework-completions">Selesai rework</button><button data-action="finished-goods">Barang jadi</button><button data-action="warehouse">Gudang</button><button data-action="marketplace-reservations">Reservasi jual</button><button data-action="marketplace-picks">Picking</button><button data-action="marketplace-packs">Packing</button><button data-action="marketplace-shipments">Shipping</button><button data-action="marketplace-returns">Retur</button><button data-action="finished-goods-adjustments">Adjustment</button><button data-action="finished-goods-stock-counts">Stock opname</button>${user.role !== 'viewer' ? '<button data-action="issue-material">Keluarkan bahan ke order</button>' : ''}<button class="quiet" data-action="order-materials">Riwayat bahan order</button></div>
-    <p><button data-action="order-purchases">PR untuk order ini</button></p>
-    <h2>Posisi barang sekarang</h2><div class="stages">${stages.map((stage,index) => `<div class="stage"><small><span class="stage-number">0${index + 1}</span>${labels[stage]}</small><strong>${n(o.totals[stage])}</strong> <span class="hint">pcs</span></div>`).join('')}</div>
-    <div class="exceptions"><span>Rework <strong>${n(o.totals.rework)} pcs</strong></span><span>Reject <strong>${n(o.totals.reject)} pcs</strong></span><span class="hint">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
-    <h2>Rincian per SKU</h2>${o.lines.map(line => `<article class="sku-block"><div class="sku-heading"><div><h3>${e(line.sku)}</h3><span class="hint">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${user.role !== 'viewer' ? `<div class="actions"><button data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div><div class="sku-balances">${[...stages,'rework','reject'].map(stage => `<span>${labels[stage]}<strong>${n(line.balances[stage])}</strong></span>`).join('')}</div></article>`).join('')}
-    <section class="history-section" aria-labelledby="issues-heading"><div class="history-heading"><h2 id="issues-heading">Kendala produksi · ${n(o.open_issues)} terbuka</h2><span class="hint">Catatan terbaru dahulu · waktu Jakarta</span></div><div id="issue-list"></div><button id="more-issues" data-action="more-issues" ${issuesMore ? '' : 'hidden'}>Muat kendala sebelumnya</button></section>
-    <section class="history-section"><div class="history-heading"><h2>Riwayat perpindahan</h2><span class="hint">Urutan pencatatan terlama · waktu Jakarta</span></div><div id="history-list"></div><button id="more-history" data-action="more-history" ${more ? '' : 'hidden'}>Muat riwayat berikutnya</button></section>`;
+  const admin = user.role === 'admin', writer = user.role !== 'viewer';
+  // Satu pembentuk saldo untuk ketiga tempat yang menampilkannya: posisi order, pengecualian, dan
+  // saldo per SKU. Semuanya angka operasional dengan label eksplisit, bukan grafik. Posisi yang
+  // saldonya nol diredupkan — bukan disembunyikan dan bukan diubah — supaya posisi yang benar-benar
+  // berisi barang langsung terbaca. Angkanya tetap ditulis lengkap.
+  const balance = (label, value) => `<div class="detail-field${value ? '' : ' balance-idle'}">`
+    + `<dt>${label}</dt><dd>${n(value)} <small class="metric-unit">pcs</small></dd></div>`;
+  // Aksi yang sama persis: tidak ada satu pun yang dihapus, dan tidak ada satu pun `data-action`
+  // yang berubah — hanya disusun ulang menjadi tiga kelompok alur kerja, dan sekarang juga dibedakan
+  // bobotnya. Daftar rata dua puluh lima tombol yang lama secara fungsional kaya tetapi tidak bisa
+  // dibaca; dinding kapsul putih yang menggantikannya juga tidak, karena semuanya sama nyaring.
+  //
+  // Jadi ada dua bobot, dan pembedanya adalah arti aksinya, bukan seleranya:
+  //   'command' — perintah yang langsung mengubah sesuatu. Tetap berbentuk tombol.
+  //   'row'     — membuka catatan, riwayat, atau daftar untuk dilihat. Menjadi baris utilitas
+  //               dengan chevron, karena yang dikatakannya adalah "ini membuka halaman".
+  // Aturan keterlihatan tetap tinggal di JS seperti sebelumnya; `admin` dan `writer` di bawah
+  // adalah pemeriksaan peran yang sama yang sudah dipakai, bukan pemeriksaan baru.
+  const actionGroups = [
+    ['Order &amp; perencanaan', [
+      admin && ['edit-order', 'Ubah tenggat / PIC', 'command'],
+      writer && ['new-production-change-request', 'Ajukan perubahan tenggat / PIC', 'command'],
+      ['production-change-requests', 'Riwayat permintaan perubahan', 'row'],
+      ['order-changes', 'Riwayat tenggat / PIC', 'row'],
+      ['requirements', 'Kebutuhan bahan', 'row'],
+      ['reservations', 'Reservasi bahan', 'row'],
+      ['consumption', 'Pemakaian &amp; waste', 'row'],
+      ['production-cost', 'Biaya aktual', 'row'],
+      ['contribution-margin', 'Margin kontribusi', 'row'],
+      ['order-purchases', 'PR untuk order ini', 'row'],
+    ]],
+    ['Alur produksi', [
+      writer && ['issue-material', 'Keluarkan bahan ke order', 'command'],
+      ['cutting-runs', 'Hasil cutting', 'row'],
+      ['bundles', 'Bundle', 'row'],
+      ['sewing-jobs', 'Sewing / makloon', 'row'],
+      ['finishing-records', 'Finishing', 'row'],
+      ['final-qc-records', 'Final QC', 'row'],
+      ['rework-completions', 'Selesai rework', 'row'],
+      ['finished-goods', 'Barang jadi', 'row'],
+      ['warehouse', 'Gudang', 'row'],
+      ['order-materials', 'Riwayat bahan order', 'row'],
+    ]],
+    ['Fulfilment &amp; marketplace', [
+      ['marketplace-reservations', 'Reservasi jual', 'row'],
+      ['marketplace-picks', 'Picking', 'row'],
+      ['marketplace-packs', 'Packing', 'row'],
+      ['marketplace-shipments', 'Shipping', 'row'],
+      ['marketplace-returns', 'Retur', 'row'],
+      ['finished-goods-adjustments', 'Adjustment', 'row'],
+      ['finished-goods-stock-counts', 'Stock opname', 'row'],
+    ]],
+  ].map(([title, items]) => {
+    const present = items.filter(Boolean);
+    const commands = present.filter(([, , weight]) => weight === 'command');
+    const rows = present.filter(([, , weight]) => weight === 'row');
+    return `<div class="utility-panel"><p class="utility-panel-title">${title}</p>`
+      + (commands.length ? `<div class="action-row">${commands
+        .map(([action, label]) => `<button class="action-secondary" data-action="${action}">${label}</button>`)
+        .join('')}</div>` : '')
+      + (rows.length ? `<div class="utility-rows">${rows
+        .map(([action, label]) => `<button class="record-row" data-action="${action}">`
+          + `<span class="record-row-copy"><span class="data-primary">${label}</span></span>`
+          + `${svgIcon('arrow-right', 'icon-sm')}</button>`)
+        .join('')}</div>` : '')
+      + '</div>';
+  }).join('');
+  // Urutan halaman ini adalah urutan pertanyaan yang benar-benar diajukan operator: order apa ini,
+  // di mana barangnya sekarang, apa pengecualiannya, SKU mana, lalu baru apa yang bisa dilakukan.
+  // Katalog aksi yang lengkap dulu berada di atas dan mendorong data operasional keluar dari layar
+  // pertama; sekarang ia mendukung alur kerja alih-alih membuka halaman.
+  $('detail-content').innerHTML = `<div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">${e(o.reference)}</p><h1 class="workspace-title">${e(o.title)}</h1></div><div class="workspace-actions"><button class="action-secondary" data-action="refresh-detail">Muat ulang order</button></div></div>
+    <dl class="detail-grid"><div class="detail-field"><dt>Penanggung jawab</dt><dd>${e(o.owner_name)}</dd></div><div class="detail-field"><dt>Target selesai</dt><dd>${date(o.due_date)}</dd></div><div class="detail-field"><dt>Target produksi</dt><dd>${n(o.target_quantity)} <small class="metric-unit">pcs</small></dd></div><div class="detail-field"><dt>Status</dt><dd>${statusHTML(o)}</dd></div></dl>
+    <section aria-labelledby="stage-balance-heading"><div class="workspace-subhead"><h2 id="stage-balance-heading" class="workspace-section-title">Posisi barang sekarang</h2><span class="workspace-meta">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
+      <div class="utility-panel"><dl class="detail-grid detail-grid-compact">${stages.map(stage => balance(labels[stage], o.totals[stage])).join('')}</dl></div>
+      <div class="utility-panel"><p class="utility-panel-title">Saldo pengecualian</p><dl class="detail-grid detail-grid-compact">${balance('Rework', o.totals.rework)}${balance('Reject', o.totals.reject)}</dl></div>
+      <p class="info-panel">${svgIcon('info','icon-sm')}<span>Angka di atas adalah saldo yang sedang berada di tiap posisi saat ini, bukan jumlah yang sudah selesai melewatinya. Deretan ini karena itu tidak berjumlah maju dari kiri ke kanan.</span></p></section>
+    <section aria-labelledby="sku-detail-heading"><div class="workspace-subhead"><h2 id="sku-detail-heading" class="workspace-section-title">Rincian per SKU</h2></div>
+      ${o.lines.map(line => `<div class="utility-panel sku-record"><div class="workspace-subhead"><div><span class="data-primary">${e(line.sku)}</span><span class="data-secondary">${e(line.name)} · ${e([line.color,line.size].filter(Boolean).join(' / '))} · target ${n(line.quantity)} pcs</span></div>${writer ? `<div class="action-row"><button class="action-secondary" data-action="move" data-id="${e(line.id)}">Catat perpindahan</button><button class="action-secondary" data-action="new-issue" data-id="${e(line.id)}">Catat kendala</button></div>` : ''}</div>
+      <dl class="detail-grid detail-grid-compact">${[...stages,'rework','reject'].map(stage => balance(labels[stage], line.balances[stage])).join('')}</dl></div>`).join('')}</section>
+    <section aria-labelledby="order-actions-heading"><div class="workspace-subhead"><h2 id="order-actions-heading" class="workspace-section-title">Tindakan order</h2></div>
+      <div class="panel-grid">${actionGroups}</div></section>
+    <section aria-labelledby="issues-heading"><div class="workspace-subhead"><h2 id="issues-heading" class="workspace-section-title">Kendala produksi · ${n(o.open_issues)} terbuka</h2><span class="workspace-meta">Catatan terbaru dahulu · waktu Jakarta</span></div>
+      <div id="issue-list" class="record-list"></div><div class="action-row"><button id="more-issues" class="action-quiet" data-action="more-issues" ${issuesMore ? '' : 'hidden'}>Muat kendala sebelumnya</button></div></section>
+    <section aria-labelledby="history-heading"><div class="workspace-subhead"><h2 id="history-heading" class="workspace-section-title">Riwayat perpindahan</h2><span class="workspace-meta">Urutan pencatatan terlama · waktu Jakarta</span></div>
+      <ol id="history-list" class="timeline"></ol><div class="action-row"><button id="more-history" class="action-quiet" data-action="more-history" ${more ? '' : 'hidden'}>Muat riwayat berikutnya</button></div></section>`;
   renderHistory(); renderIssues();
 }
 function renderHistory() {
@@ -1225,8 +1396,14 @@ function renderHistory() {
   $('history-list').innerHTML = history.length ? history.map(item => {
     const canReverse = user.role === 'admin' && !item.reversal_of && !reversed.has(item.id) && !item.cutting_run_id && !item.sewing_job_id && !item.finishing_record_id && !item.final_qc_record_id && !item.rework_completion_id;
     const timestamp = new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
-    return `<article class="history-item"><time datetime="${e(item.created_at)}">${timestamp}</time><div><strong>${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}</strong><p class="hint">${e(item.sku)} · dicatat ${e(item.actor_name)}${item.reversal_of ? ' · Catatan pembalik' : reversed.has(item.id) ? ' · Sudah dibalik' : ''}</p>${item.reason ? `<p class="reason">${e(item.reason)}</p>` : ''}</div>${item.cutting_run_id ? `<button data-action="cutting-run" data-id="${e(item.cutting_run_id)}">Hasil cutting</button>` : ''}${item.sewing_job_id ? `<button data-action="sewing-job" data-id="${e(item.sewing_job_id)}">Job sewing</button>` : ''}${item.finishing_record_id ? `<button data-action="finishing-record" data-id="${e(item.finishing_record_id)}">Finishing</button>` : ''}${item.final_qc_record_id ? `<button data-action="final-qc-record" data-id="${e(item.final_qc_record_id)}">Final QC</button>` : ''}${item.rework_completion_id ? `<button data-action="rework-completion" data-id="${e(item.rework_completion_id)}">Selesai rework</button>` : ''}${canReverse ? `<button class="quiet history-action" data-action="reverse" data-id="${e(item.id)}">Koreksi</button>` : ''}</article>`;
-  }).join('') : '<p class="state">Belum ada perpindahan. Semua target masih berada di posisi belum cutting.</p>';
+    const exception = item.reversal_of ? ' · Catatan pembalik' : reversed.has(item.id) ? ' · Sudah dibalik' : '';
+    const links = `${item.cutting_run_id ? `<button class="action-quiet" data-action="cutting-run" data-id="${e(item.cutting_run_id)}">Hasil cutting</button>` : ''}${item.sewing_job_id ? `<button class="action-quiet" data-action="sewing-job" data-id="${e(item.sewing_job_id)}">Job sewing</button>` : ''}${item.finishing_record_id ? `<button class="action-quiet" data-action="finishing-record" data-id="${e(item.finishing_record_id)}">Finishing</button>` : ''}${item.final_qc_record_id ? `<button class="action-quiet" data-action="final-qc-record" data-id="${e(item.final_qc_record_id)}">Final QC</button>` : ''}${item.rework_completion_id ? `<button class="action-quiet" data-action="rework-completion" data-id="${e(item.rework_completion_id)}">Selesai rework</button>` : ''}${canReverse ? `<button class="action-quiet history-action" data-action="reverse" data-id="${e(item.id)}">Koreksi</button>` : ''}`;
+    return `<li class="timeline-item${exception ? ' timeline-item-warning' : ''}"><time class="timeline-time" datetime="${e(item.created_at)}">${timestamp}</time>`
+      + `<span class="timeline-event">${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}</span>`
+      + `<span class="timeline-actor">${e(item.sku)} · dicatat ${e(item.actor_name)}${exception}</span>`
+      + (item.reason ? `<p class="timeline-detail reason">${e(item.reason)}</p>` : '')
+      + (links ? `<span class="timeline-detail"><span class="action-row">${links}</span></span>` : '') + '</li>';
+  }).join('') : '<li class="timeline-item"><span class="timeline-event">Belum ada perpindahan.</span><span class="timeline-actor">Semua target masih berada di posisi belum cutting.</span></li>';
 }
 async function moreHistory(button) {
   const id = selected.id, version = epoch, request = detailRequest;
@@ -1641,10 +1818,25 @@ async function orderForm() {
   try {
     const [products, users] = await Promise.all([allRows('/api/products'), api.get('/api/users')]);
     if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
-    if (!products.length) { $('dialog-content').innerHTML = '<p>Tambahkan minimal satu SKU sebelum membuat order.</p><button class="primary" data-action="new-product">Tambah SKU</button>'; return; }
-    formDialog('Buat order produksi', field('reference','Referensi order','text','required maxlength="160"') + field('title','Nama order','text','required maxlength="160"') +
-      `<div><label for="order-owner">Penanggung jawab</label><select id="order-owner" name="owner_id" required>${users.filter(u => u.active && u.role !== 'viewer').map(u => option(u.id,u.name)).join('')}</select></div>` + field('due_date','Target selesai','date','required') +
-      '<div class="full"><h3>Produk yang dikerjakan</h3><div id="order-lines"></div><button type="button" id="add-line">Tambah baris SKU</button></div>', form => {
+    // Keadaan tanpa SKU tetap jalur yang jujur dan tetap membawa aksi yang sungguhan, sekarang
+    // digambar sebagai keadaan kosong A6.0 alih-alih satu paragraf dan satu tombol.
+    if (!products.length) { $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}`
+      + '<p class="empty-state-title">Belum ada SKU.</p>'
+      + '<p class="empty-state-copy">Tambahkan minimal satu SKU sebelum membuat order.</p>'
+      + '<p class="empty-state-action"><button class="action-primary" data-action="new-product">Tambah SKU</button></p></div>'; return; }
+    // Presentasi saja. Seluruh aturan bisnisnya tidak disentuh: field dan atribut `name` yang
+    // sama, `required`, `maxlength="160"`, jumlah minimal 1 dan maksimal 1.000.000.000, penolakan
+    // SKU ganda, baris terakhir yang tidak bisa dihapus, batas 100 baris, POST /api/orders lewat
+    // formDialog() yang sama beserta idempotency, guardPending(), dan penjaga modalVersion.
+    formDialog('Buat order produksi',
+      '<div class="field"><label class="field-label" for="order-reference">Referensi order</label><input id="order-reference" name="reference" type="text" required maxlength="160"></div>'
+      + '<div class="field"><label class="field-label" for="order-name">Nama order</label><input id="order-name" name="title" type="text" required maxlength="160"></div>'
+      + `<div class="field"><label class="field-label" for="order-owner">Penanggung jawab</label><select id="order-owner" name="owner_id" required>${users.filter(u => u.active && u.role !== 'viewer').map(u => option(u.id,u.name)).join('')}</select></div>`
+      + '<div class="field"><label class="field-label" for="order-due-date">Target selesai</label><input id="order-due-date" name="due_date" type="date" required></div>'
+      + '<div class="full field-wide"><h3 class="workspace-section-title">Produk yang dikerjakan</h3>'
+      + '<p class="field-help">Satu baris per SKU, dan setiap SKU cukup satu baris. Maksimal 100 baris.</p>'
+      + '<div id="order-lines"></div>'
+      + '<div class="field-actions"><button type="button" id="add-line" class="action-secondary">Tambah baris SKU</button></div></div>', form => {
         const data = new FormData(form);
         const lines = [...form.querySelectorAll('.line-input')].map(row => ({product_id:row.querySelector('select').value, quantity:Number(row.querySelector('input').value)}));
         if (new Set(lines.map(line => line.product_id)).size !== lines.length) throw new Error('SKU yang sama cukup satu baris. Gabungkan jumlahnya.');
@@ -1655,7 +1847,14 @@ async function orderForm() {
       if (count >= 100) return;
       const row = document.createElement('div'); row.className = 'line-input';
       const selectId = 'sku-' + crypto.randomUUID();
-      row.innerHTML = `<div><label for="${selectId}">SKU</label><select id="${selectId}" required>${products.map(p => option(p.id,p.sku)).join('')}</select></div><label>Jumlah<input type="number" required min="1" max="1000000000" step="1"></label><button type="button" aria-label="Hapus baris SKU">Hapus</button>`;
+      // `.line-input` dipertahankan karena collect() di atas mengumpulkan barisnya lewat kelas itu,
+      // dan tata letak tiga kolomnya — SKU, jumlah, hapus — memang sudah bentuk yang diminta.
+      // Yang berubah hanya isi tiap kolom: pasangan label/kontrol A6.0, dan hapus yang tenang
+      // alih-alih tombol sekeras aksi utama. querySelector('select') dan querySelector('input')
+      // tetap menemukan kontrol yang sama dalam urutan yang sama.
+      row.innerHTML = `<div class="field"><label class="field-label" for="${selectId}">SKU</label><select id="${selectId}" required>${products.map(p => option(p.id,p.sku)).join('')}</select></div>`
+        + `<div class="field"><label class="field-label" for="${selectId}-quantity">Jumlah</label><input id="${selectId}-quantity" type="number" required min="1" max="1000000000" step="1"></div>`
+        + '<button type="button" class="action-quiet" aria-label="Hapus baris SKU">Hapus</button>';
       row.querySelector('button').onclick = () => { if ($('order-lines').children.length > 1) row.remove(); else notify('Order memerlukan minimal satu SKU.'); };
       $('order-lines').append(row);
     }
@@ -1766,13 +1965,21 @@ document.addEventListener('click', event => {
   actions[button.dataset.action]?.();
 });
 
+// Kendala produksi memakai daftar catatan A6.0. Urutannya tetap terbaru dahulu seperti yang
+// dikatakan judulnya, dan setiap field yang dulu ditampilkan tetap ditampilkan: SKU, tahap,
+// keadaan terbuka/selesai, deskripsi, PIC beserta penanda akun nonaktif, pencatat, waktu
+// pencatatan, dan — kalau sudah selesai — penyelesaian, penyelesai, dan waktunya. Tombol
+// "Selesaikan kendala" tetap muncul untuk peran yang memang boleh. Kelas `.reason` dipertahankan
+// karena `white-space:pre-wrap` miliknya yang membuat deskripsi multi-baris tetap terbaca utuh.
 function renderIssues() {
   const timestamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
-  $('issue-list').innerHTML = issues.length ? issues.map(item => `<article class="issue-item">
-    <div class="issue-heading"><strong>${e(item.sku)} · ${labels[item.stage]}</strong><span class="status-label ${item.resolved_at ? 'done' : 'late'}">${item.resolved_at ? 'Selesai' : 'Terbuka'}</span></div>
-    <p class="reason">${e(item.description)}</p><p class="hint">PIC: ${e(item.owner_name)}${item.owner_active ? '' : ' (akun nonaktif)'} · dicatat ${e(item.creator_name)} · ${timestamp(item.created_at)}</p>
-    ${item.resolved_at ? `<div class="issue-resolution"><strong>Penyelesaian</strong><p class="reason">${e(item.resolution)}</p><p class="hint">${e(item.resolver_name)} · ${timestamp(item.resolved_at)}</p></div>` : user.role !== 'viewer' ? `<button data-action="resolve-issue" data-id="${e(item.id)}">Selesaikan kendala</button>` : ''}
-    </article>`).join('') : '<p class="state">Belum ada kendala yang dicatat untuk order ini.</p>';
+  $('issue-list').innerHTML = issues.length ? issues.map(item => `<article class="record-row">
+    <span class="record-row-copy"><span class="chip-row"><span class="data-primary">${e(item.sku)} · ${labels[item.stage]}</span><span class="status-chip status-chip-${item.resolved_at ? 'success' : 'warning'}"><span class="status-dot" aria-hidden="true"></span>${item.resolved_at ? 'Selesai' : 'Terbuka'}</span></span>
+    <span class="data-secondary reason">${e(item.description)}</span>
+    <span class="data-meta">PIC: ${e(item.owner_name)}${item.owner_active ? '' : ' (akun nonaktif)'} · dicatat ${e(item.creator_name)} · ${timestamp(item.created_at)}</span>
+    ${item.resolved_at ? `<span class="data-secondary">Penyelesaian: <span class="reason">${e(item.resolution)}</span></span><span class="data-meta">${e(item.resolver_name)} · ${timestamp(item.resolved_at)}</span>` : ''}</span>
+    ${!item.resolved_at && user.role !== 'viewer' ? `<span class="record-row-aside"><button class="action-secondary" data-action="resolve-issue" data-id="${e(item.id)}">Selesaikan kendala</button></span>` : ''}
+    </article>`).join('') : '<div class="empty-state"><p class="empty-state-copy">Belum ada kendala yang dicatat untuk order ini.</p></div>';
 }
 async function moreIssues(button) {
   const version = epoch, request = detailRequest, id = selected.id;

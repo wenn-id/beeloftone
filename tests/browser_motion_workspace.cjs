@@ -38,7 +38,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   await login(admin);
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
 
   // ---- a real page change plays the entry, then cleans up after itself ------------------
   await installMotionWatch();
@@ -91,7 +91,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- the focused case: Produksi -> People -> Approval quickly, holding a late response --
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await page.waitForTimeout(300);
   let releaseBoard, signalBoard, finishBoard;
   const boardStarted = new Promise(resolve => signalBoard = resolve);
@@ -160,7 +160,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- the closed drawer is not reachable by Tab ---------------------------------------
   await page.setViewportSize({width: 390, height: 844});
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   assert.equal(await page.evaluate(() => document.body.classList.contains('nav-open')), false, 'drawer settled closed');
   assert.notEqual(await page.locator('#app-sidebar').getAttribute('inert'), null,
     'a closed drawer is inert as well as unrendered');

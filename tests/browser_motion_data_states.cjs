@@ -50,7 +50,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   await login(admin);
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await page.locator('#order-list .order-row').first().waitFor();
 
   // ---- the notice enters, keeps its six seconds, then leaves -------------------------------
@@ -107,7 +107,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   // ---- a manual refresh keeps the rows and dims them without blocking controls --------------
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await installListWatch();
   const rowsBefore = (await listState()).rows;
   assert.equal(rowsBefore > 0, true, 'the board has rows to preserve');

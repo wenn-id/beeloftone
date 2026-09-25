@@ -240,19 +240,30 @@ module.exports = async ({page, login, admin, work}) => {
   await open('command-center');
   await page.locator('#command-center-content:not([hidden])').waitFor();
   const contentSurfaces = await page.evaluate(() => {
-    const seen = [];
+    const seen = [], allowed = [];
     for (const node of document.querySelectorAll(
       '.workspace-main *, dialog, .notice, .state, .card, .hero-panel, .summary, table, .sidebar-cta')) {
       const computed = getComputedStyle(node);
       const filter = [computed.backdropFilter, computed.webkitBackdropFilter].filter(v => v && v !== 'none');
       const blur = /blur\(/.test(computed.filter || '') ? computed.filter : null;
-      if (filter.length || blur) {
-        seen.push({tag: node.tagName, cls: node.className && String(node.className).slice(0, 60), filter, blur});
-      }
+      if (!filter.length && !blur) continue;
+      const entry = {tag: node.tagName, cls: node.className && String(node.className).slice(0, 60), filter, blur};
+      // A6.0's command bar is the one bounded optical surface the workspace content language
+      // owns, and A6.1 is the first phase to ship it, so this scan now meets it for real.
+      // `test_repeated_surfaces_are_never_backdrop_roots` pins that it is the ONLY filtered A6
+      // selector; here it is separated out so the A4 boundary still binds everything else.
+      (node.classList.contains('command-bar') ? allowed : seen).push(entry);
     }
-    return seen;
+    return {seen, allowed};
   });
-  assert.deepEqual(contentSurfaces, [], 'no business card, table or dialog surface is filtered');
+  assert.deepEqual(contentSurfaces.seen, [],
+    'no business card, table or dialog surface is filtered');
+  assert.equal(contentSurfaces.allowed.length, 1,
+    'exactly one command bar is a backdrop root, and nothing else in the content is');
+  assert.match(contentSurfaces.allowed[0].filter.join(' '), /blur\(/,
+    'and that one surface really is the bounded blur A6.0 declared');
+  assert.equal(contentSurfaces.allowed[0].blur, null,
+    'it filters its backdrop, never its own content');
   const sceneFilter = await page.locator('.workspace-main').evaluate(node=>getComputedStyle(node).backdropFilter);
   if(supported) assert.ok(Number(sceneFilter.match(/blur\(([\d.]+)px\)/)?.[1]) <= 16, 'one bounded scene filter');
 

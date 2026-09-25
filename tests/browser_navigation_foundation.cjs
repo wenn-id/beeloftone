@@ -26,7 +26,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
 
   const destinations = [
     {name: 'Command center', nav: 'command-center', section: 'command-center-view', heading: 'Command center'},
-    {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Yang sedang dikerjakan.'},
+    {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Produksi'},
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},

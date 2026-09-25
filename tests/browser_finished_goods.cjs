@@ -34,7 +34,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     accepted_quantity:20,rework_quantity:0,reject_quantity:0,inspection_date:'2026-09-17',reason:'CONTOH QC pass'},'fg-qc');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-FINISHED-GOODS/}).click();await page.getByRole('heading',{name:'CONTOH penerimaan barang jadi',exact:true}).waitFor();}
-  async function openGoods(){await page.locator('.order-settings').getByRole('button',{name:'Barang jadi',exact:true}).click();}
+  async function openGoods(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Barang jadi',exact:true}).click();}
 
   await role(operator);await openOrder();
   let failList=true;
@@ -46,7 +46,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada penerimaan barang jadi untuk order ini.',{exact:false}).waitFor();
   await page.unroute('**/api/orders/*/finished-goods-receipts?*');await page.keyboard.press('Escape');
-  await page.locator('.order-settings').getByRole('button',{name:'Final QC',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Final QC',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FG-QC',exact:true}).click();
   await page.getByRole('button',{name:'Terima barang jadi',exact:true}).click();
   await page.getByLabel('Referensi penerimaan',{exact:true}).fill('FG-UI-001');
@@ -80,7 +80,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   assert.deepEqual([inventory.sellable_quantity,inventory.hold_quantity],[12,3]);
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-finished-goods-mobile.png')});
   await page.keyboard.press('Escape');await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Final QC',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Final QC',exact:true}).click();
   await page.getByRole('button',{name:'Rincian FG-QC',exact:true}).click();
   await page.getByRole('button',{name:'Terima barang jadi',exact:true}).click();
   await page.keyboard.press('Escape');await page.locator('dialog').waitFor({state:'hidden'});

@@ -24,7 +24,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
     }
     await access.fill(key);
     await page.getByRole('button',{name:'Buka ruang produksi',exact:true}).click();
-    await page.getByRole('heading',{name:'Yang sedang dikerjakan.'}).waitFor();
+    await page.getByRole('heading',{name:'Produksi',exact:true}).waitFor();
     await page.locator('#summary dd').first().waitFor();
     // Feature modules exercise every analytics destination; the shipped sidebar starts collapsed.
     await page.locator('.nav-collapse').evaluate(node => { node.open = true; });
@@ -65,7 +65,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   const capture=request=>{if(request.url().startsWith(base+'/api/'))browserApiHeaders.push(request.headers());};
   page.on('request',capture);
   await page.reload();
-  await page.getByRole('heading',{name:'Yang sedang dikerjakan.'}).waitFor();
+  await page.getByRole('heading',{name:'Produksi',exact:true}).waitFor();
   await page.locator('#summary dd').first().waitFor();
   page.off('request',capture);
   assert.ok(browserApiHeaders.length>=3);
@@ -252,7 +252,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByLabel('Apa kendalanya?').fill('Jarum <rusak> & menunggu pengganti');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.getByRole('heading',{name:'Kendala produksi · 1 terbuka',exact:true}).waitFor();
-  assert.equal(await page.locator('.issue-item .reason').first().innerText(),'Jarum <rusak> & menunggu pengganti');
+  assert.equal(await page.locator('#issue-list .reason').first().innerText(),'Jarum <rusak> & menunggu pengganti');
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
   await page.locator('#issues-summary').click();
   await page.waitForFunction(() => document.getElementById('status').value === 'blocked' && !document.getElementById('order-list').hidden && document.querySelectorAll('.order-row').length === 1);
@@ -272,7 +272,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.getByLabel('Alasan perubahan').fill('Mesin <dipindah> & jadwal diperbarui');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
   await page.locator('dialog').waitFor({state:'hidden'});
-  await page.locator('.detail-meta').getByText('1 Feb 2099',{exact:true}).waitFor();
+  await page.locator('#detail-content>.detail-grid').getByText('1 Feb 2099',{exact:true}).waitFor();
   const revised = await apiGet('/api/orders/'+orderId);
   assert.equal(revised.owner_id,creds.users[1].id);
   assert.equal(revised.totals.planned,50);
@@ -292,7 +292,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   assert.equal((await apiGet('/api/orders/'+orderId)).due_date,'2099-03-01');
   await page.getByRole('button',{name:'Tutup dialog',exact:true}).click();
   await page.getByRole('button',{name:'Muat ulang order',exact:true}).click();
-  await page.locator('.detail-meta').getByText('1 Mar 2099',{exact:true}).waitFor();
+  await page.locator('#detail-content>.detail-grid').getByText('1 Mar 2099',{exact:true}).waitFor();
 
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
   await page.getByLabel('Status',{exact:true}).selectOption('all');
@@ -473,6 +473,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_macos_workspace.cjs');
   await runModule('./browser_sidebar_utility.cjs');
   await runModule('./browser_a60_workspace_foundation.cjs');
+  // A6.1 runs after the A6.0 foundation review, because it is the first page to consume it.
+  await runModule('./browser_production_modern_workspace.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

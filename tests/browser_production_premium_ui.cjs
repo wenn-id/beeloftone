@@ -24,11 +24,26 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
         return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''} L=${Math.round(box.left)} R=${Math.round(box.right)} sw=${el.scrollWidth} cw=${el.clientWidth} min=${cs.minWidth} ws=${cs.whiteSpace}`;
       };
       // Controls, KPI values and row cells must stay inside the viewport and inside themselves.
+      // One documented exception: A6/(S)34's narrow-width table strategy is for `.data-surface` to
+      // become a horizontal scroll container so the columns keep a readable rhythm instead of
+      // collapsing an order reference to one character per line. Content inside a scroller is
+      // MEANT to extend past the viewport - that is what scrolling it means - so those elements
+      // are held only to the self-clipping test. The document-level check below is what still
+      // guarantees the page itself never scrolls sideways.
+      const scrolled = el => {
+        for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+          const overflow = getComputedStyle(node).overflowX;
+          if (overflow === 'auto' || overflow === 'scroll') return true;
+        }
+        return false;
+      };
       const bad = [];
-      for (const el of document.querySelectorAll('#board-view input, #board-view select, #board-view button, #summary dd, #summary dt, #board-view .cell')) {
+      for (const el of document.querySelectorAll('#board-view input, #board-view select, #board-view button, #summary dd, #summary dt, #order-list .data-cell')) {
         if (!el.getClientRects().length) continue;
         const box = el.getBoundingClientRect();
-        if (box.left < 0 || box.right > vw + 1 || el.scrollWidth > el.clientWidth + 1) bad.push(describe(el));
+        if (el.scrollWidth > el.clientWidth + 1) { bad.push(describe(el)); continue; }
+        if (scrolled(el)) continue;
+        if (box.left < 0 || box.right > vw + 1) bad.push(describe(el));
       }
       // When the document itself overflows, name the innermost element(s) responsible
       // instead of reporting only the page, so a future failure points at the real cause.
@@ -60,30 +75,45 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
     const search=document.querySelector('#search').getBoundingClientRect();
     const status=document.querySelector('#status').getBoundingClientRect();
     const submit=document.querySelector('#board-view .production-search').getBoundingClientRect();
+    const list=document.querySelector('#order-list');
+    const statusCell=document.querySelector('#order-list .order-row>td:nth-child(5)');
     return {
       width:box.width, centered:Math.abs((box.left+box.right)-(parent.left+parent.right))<2,
       cardHeights:cards.map(el=>el.getBoundingClientRect().height),
       cardBackgrounds:cards.map(el=>getComputedStyle(el).backgroundColor),
-      icons:cards.map(el=>{const svg=el.querySelector('svg');return {hidden:svg.getAttribute('aria-hidden'), focusable:svg.getAttribute('focusable'), resolves:!!document.querySelector(svg.querySelector('use').getAttribute('href')), tile:getComputedStyle(svg).boxShadow};}),
-      figureLarger:parseFloat(getComputedStyle(cards[0].querySelector('dd')).fontSize)>parseFloat(getComputedStyle(cards[0].querySelector('dt')).fontSize)*2,
-      searchPriority:search.width>status.width*2 && search.top<status.top && Math.abs(search.bottom-submit.bottom)<2,
+      // A6 tints the semantic tile, never the card body: that is what keeps four metrics from
+      // reading as four tabs with one selected.
+      tileBackgrounds:cards.map(el=>getComputedStyle(el.querySelector('.metric-icon')).backgroundColor),
+      icons:cards.map(el=>{const svg=el.querySelector('svg');return {hidden:svg.getAttribute('aria-hidden'), focusable:svg.getAttribute('focusable'), resolves:!!document.querySelector(svg.querySelector('use').getAttribute('href')), tile:getComputedStyle(svg.parentElement).backgroundColor};}),
+      figureRatio:parseFloat(getComputedStyle(cards[0].querySelector('dd')).fontSize)/parseFloat(getComputedStyle(cards[0].querySelector('dt')).fontSize),
+      // One command bar, one row: the search leads it, the submit sits on the same baseline, and
+      // the filters are compact beside them rather than stacked underneath.
+      searchPriority:search.width>status.width && Math.abs(search.top-status.top)<2 && Math.abs(search.bottom-submit.bottom)<2,
+      commandGeometry:{searchW:search.width,statusW:status.width,searchTop:search.top,statusTop:status.top,searchBottom:search.bottom,submitBottom:submit.bottom},
       contained:['#search-form','#order-list','.pagination'].every(sel=>surface.contains(board.querySelector(sel))),
       resetBackground:getComputedStyle(document.querySelector('#reset-board')).backgroundColor,
-      headerBackground:getComputedStyle(document.querySelector('.table-head')).backgroundColor,
+      headerBackground:getComputedStyle(document.querySelector('#order-list .data-header th')).backgroundColor,
+      // The data surface carries the material now; the grouping element is a transparent
+      // container, because two nested cards would put two borders around one table.
+      listBackground:getComputedStyle(list).backgroundColor,
       surfaceBackground:getComputedStyle(surface).backgroundColor,
-      chipWidth:board.querySelector('.status-label').getBoundingClientRect().width,
-      cellWidth:document.querySelector('#order-list .status-cell').getBoundingClientRect().width,
+      listBorder:parseFloat(getComputedStyle(list).borderTopWidth),
+      chipWidth:board.querySelector('.status-chip').getBoundingClientRect().width,
+      cellWidth:statusCell.getBoundingClientRect().width,
     };
   });
   assert.ok(shape.width>=1320 && shape.width<=1380 && shape.centered, 'wide Production column is bounded and centered');
   assert.ok(shape.cardHeights.every(height=>height<130), 'desktop KPI cards are denser than the baseline');
-  assert.notEqual(shape.cardBackgrounds[0],shape.cardBackgrounds[2], 'WIP has deliberate emphasis');
-  assert.ok(shape.figureLarger);
-  for(const icon of shape.icons){assert.equal(icon.hidden,'true');assert.equal(icon.focusable,'false');assert.ok(icon.resolves);assert.notEqual(icon.tile,'none');}
-  assert.ok(shape.searchPriority, 'search and submit lead the compact secondary filter row');
-  assert.ok(shape.contained, 'toolbar, rows and pagination share one working surface');
+  assert.equal(new Set(shape.cardBackgrounds).size,1, 'metric card bodies stay neutral - these are metrics, not selected tabs');
+  assert.ok(new Set(shape.tileBackgrounds).size>=2, 'the semantic tiles carry the distinction instead');
+  assert.ok(shape.figureRatio>1.7, `the figure dominates its label (${shape.figureRatio})`);
+  for(const icon of shape.icons){assert.equal(icon.hidden,'true');assert.equal(icon.focusable,'false');assert.ok(icon.resolves);assert.notEqual(icon.tile,'rgba(0, 0, 0, 0)');}
+  assert.ok(shape.searchPriority, 'search and submit lead one compact command bar: '+JSON.stringify(shape.commandGeometry));
+  assert.ok(shape.contained, 'command bar, rows and pagination share one working surface');
   assert.equal(shape.resetBackground,'rgba(0, 0, 0, 0)', 'reset stays tertiary');
-  assert.notEqual(shape.headerBackground,shape.surfaceBackground);
+  assert.notEqual(shape.headerBackground,shape.listBackground, 'the quiet table header is still distinguishable');
+  assert.equal(shape.surfaceBackground,'rgba(0, 0, 0, 0)', 'the grouping element adds no second card');
+  assert.ok(shape.listBorder>0, 'the order list is the bordered primary data surface');
   assert.ok(shape.chipWidth<shape.cellWidth, 'status is shrink-wrapped');
   const data=await apiGet('/api/production-board?limit=25&offset=0');
   const number=new Intl.NumberFormat('id-ID');
@@ -95,14 +125,23 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
   for(const count of [0,3]){
     await page.route(endpoint,async route=>{const response=await route.fetch();const body=await response.json();body.open_issues=count;await route.fulfill({response,json:body});});
     await loaded(()=>page.locator('#refresh').click());
-    const tone=await page.locator('#issues-summary').evaluate(el=>({text:el.textContent, color:getComputedStyle(el).color, background:getComputedStyle(el).backgroundColor, active:el.classList.contains('has-issues'), glyph:el.querySelector('use').getAttribute('href')}));
+    const tone=await page.locator('#issues-summary').evaluate(el=>({text:el.textContent, color:getComputedStyle(el).color, background:getComputedStyle(el).backgroundColor, active:el.classList.contains('has-issues'), glyph:el.querySelector('use').getAttribute('href'),
+      // A6 keeps an attention note's copy at the readable ink and carries the semantic in the
+      // surface tint, its border and the leading icon. The icon is the colour channel to read.
+      iconColor:getComputedStyle(el.querySelector('.icon')).color, border:getComputedStyle(el).borderTopColor,
+      title:el.querySelector('.attention-note-title').textContent.trim(),
+      reason:el.querySelector('.attention-note-reason').textContent.trim()}));
     assert.match(tone.text,new RegExp(`${count} kendala terbuka`));
+    assert.equal(tone.title,`${count} kendala terbuka`,'the count is the note title');
+    assert.ok(tone.reason.length>0,'the note says what the operator can do about it');
     assert.equal(tone.active,count>0);assert.equal(tone.glyph,count?'#i-alert-triangle':'#i-check-circle');
     tones.push(tone);
     await page.unroute(endpoint);
   }
-  assert.notEqual(tones[0].background,tones[1].background);
-  assert.notEqual(tones[0].color,tones[1].color);
+  assert.notEqual(tones[0].background,tones[1].background,'the cleared and raised states have different tints');
+  assert.notEqual(tones[0].border,tones[1].border,'...and different edges');
+  assert.notEqual(tones[0].iconColor,tones[1].iconColor,'...and different semantic icon colours');
+  assert.equal(tones[0].color,tones[1].color,'the copy itself stays at the readable ink in both states');
   const issueQuery=await loaded(()=>page.locator('#issues-summary').click());
   assert.equal(issueQuery.searchParams.get('status'),'blocked');
   await loaded(()=>page.locator('#reset-board').click());
@@ -137,15 +176,49 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
 
   for(const theme of ['light','dark']){
     if(await page.locator('#theme').textContent() !== (theme==='dark'?'Mode terang':'Mode gelap')) await page.locator('#theme').click();
+    // Park the pointer outside the list first. A6 rows carry a 4%-alpha hover overlay, and a
+    // pointer left sitting on a row after the pagination clicks would otherwise be measured as
+    // part of that row's backdrop.
+    await page.mouse.move(0,0);
+    await page.locator('#board-view .workspace-title').hover();
     const contrast = await page.evaluate(() => {
-      const rgb = value => value.match(/[\d.]+/g).slice(0,3).map(Number);
-      const luminance = value => rgb(value).map(c => c/255).map(c => c<=.04045?c/12.92:((c+.055)/1.055)**2.4)
+      // Alpha is composited rather than discarded. A6 surfaces are deliberately translucent
+      // (`#ffffffeb` over the wallpaper) and its hover and selection states are low-alpha
+      // overlays, so reading only the first non-transparent background - and reading it as if
+      // it were opaque - measures a colour that is never actually on screen. Every layer from
+      // the element up to the first opaque one is blended over the page canvas instead.
+      const parse = value => {
+        const parts = (value.match(/[\d.]+/g) || []).map(Number);
+        return {r:parts[0]||0, g:parts[1]||0, b:parts[2]||0, a:parts.length>3?parts[3]:1};
+      };
+      const probe = value => {
+        const node = document.createElement('span');
+        node.style.color = value; document.body.appendChild(node);
+        const resolved = getComputedStyle(node).color; node.remove();
+        return parse(resolved);
+      };
+      const canvas = probe('var(--canvas)');
+      const backdrop = el => {
+        const layers = [];
+        for (let node = el; node; node = node.parentElement) {
+          const layer = parse(getComputedStyle(node).backgroundColor);
+          if (layer.a > 0) layers.push(layer);
+          if (layer.a >= 1) break;
+        }
+        let base = canvas;
+        for (const layer of layers.reverse())
+          base = {r:layer.r*layer.a + base.r*(1-layer.a),
+                  g:layer.g*layer.a + base.g*(1-layer.a),
+                  b:layer.b*layer.a + base.b*(1-layer.a), a:1};
+        return base;
+      };
+      const luminance = ({r,g,b}) => [r,g,b].map(c => c/255)
+        .map(c => c<=.04045?c/12.92:((c+.055)/1.055)**2.4)
         .reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
-      return [...document.querySelectorAll('#summary dt, #summary dd, #summary small, #issues-summary, #search-form label, #search-form input, #search-form select, #search-form button, #production-filter-hint, #updated, #order-list .reference, #order-list .hint, #order-list .order-title, #order-list .status-label, #new-order')].map(el=>{
-        let parent=el, background='rgba(0, 0, 0, 0)';
-        while(parent && background==='rgba(0, 0, 0, 0)'){background=getComputedStyle(parent).backgroundColor;parent=parent.parentElement;}
-        const fg=luminance(getComputedStyle(el).color),bg=luminance(background);
-        return {label:el.id || el.textContent.trim().slice(0,35),ratio:(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)};
+      return [...document.querySelectorAll('#summary dt, #summary dd, #summary small, #issues-summary, #issues-summary .attention-note-title, #issues-summary .attention-note-reason, #search-form label, #search-form input, #search-form select, #search-form button, #production-filter-hint, #updated, #order-list .data-header th, #order-list .reference, #order-list .data-secondary, #order-list .data-meta, #order-list .progress-value, #order-list .order-title, #order-list .status-chip, #new-order')].map(el=>{
+        const fg=luminance(parse(getComputedStyle(el).color)),bg=luminance(backdrop(el));
+        return {label:el.id || el.textContent.trim().slice(0,35),
+          ratio:(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)};
       });
     });
     assert.deepEqual(contrast.filter(c=>c.ratio<4.5),[],`${theme}: Production text meets AA contrast`);
@@ -174,14 +247,26 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, api
     assert.equal(await page.locator('dialog[open]').evaluate(el=>el.scrollWidth<=el.clientWidth && el.getBoundingClientRect().width<=innerWidth),true,'create order dialog fits at enlarged text');
     await page.keyboard.press('Escape');await page.evaluate(()=>document.documentElement.style.fontSize='');
   }
+  // Dark mode is tuned, not inverted: the data surface resolves to the A6 workspace surface
+  // token (near-opaque over the wallpaper, or the flat A1 material where translucency is off),
+  // and it is never simply the page canvas.
   const dark=await page.evaluate(()=>{
     const root=getComputedStyle(document.documentElement);
-    const surface=document.querySelector('.production-work');
-    const probe=document.createElement('span');surface.appendChild(probe);probe.style.color='var(--surface)';
-    const expected=getComputedStyle(probe).color;probe.remove();
-    return {actual:getComputedStyle(surface).backgroundColor,expected,canvas:root.getPropertyValue('--canvas').trim()};
+    const list=document.querySelector('#order-list');
+    const resolve=value=>{
+      const probe=document.createElement('span');probe.style.color=value;list.appendChild(probe);
+      const colour=getComputedStyle(probe).color;probe.remove();return colour;
+    };
+    return {actual:getComputedStyle(list).backgroundColor,
+      // Either is correct and both are the A6 surface: the near-opaque tint where the engine
+      // has backdrop filtering, the flat A1 material where it does not.
+      tint:resolve('var(--workspace-surface-tint)'), solid:resolve('var(--workspace-surface)'),
+      canvasColour:resolve('var(--canvas)'), canvas:root.getPropertyValue('--canvas').trim()};
   });
-  assert.equal(dark.actual,dark.expected);assert.equal(dark.canvas,'#151517');
+  assert.ok([dark.tint,dark.solid].includes(dark.actual),
+    `the dark data surface is the A6 workspace surface (got ${dark.actual})`);
+  assert.notEqual(dark.actual,dark.canvasColour,'the data surface is never just the page canvas');
+  assert.equal(dark.canvas,'#151517');
   await page.locator('#theme').click();
 
   let release;const gate=new Promise(resolve=>release=resolve);

@@ -17,13 +17,13 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
     if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar pick sedang sibuk'})});}
     else await route.continue();
   });
-  await page.locator('.order-settings').getByRole('button',{name:'Picking',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Picking',exact:true}).click();
   await page.getByText('Daftar pick sedang sibuk',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada pick marketplace untuk order ini.',{exact:true}).waitFor();
   await page.unroute('**/api/orders/*/marketplace-picks?*');await page.keyboard.press('Escape');
 
-  await page.locator('.order-settings').getByRole('button',{name:'Reservasi jual',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Reservasi jual',exact:true}).click();
   await page.getByRole('button',{name:'Rincian MKT-PICK-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat pick',exact:true}).click();
   const scan=page.getByLabel('SKU / QR lot',{exact:true});
@@ -67,12 +67,12 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,reserva
     released_date:'2026-09-24',reason:'Pick aktif harus dikoreksi dahulu'},'pick-block-release',409,operator);
 
   await role(viewer);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Picking',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Picking',exact:true}).click();
   await page.getByRole('button',{name:'Rincian PICK-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi pick',exact:true}).count(),0);
 
   await role(admin);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Picking',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Picking',exact:true}).click();
   await page.getByRole('button',{name:'Rincian PICK-UI-001',exact:true}).click();
   await page.getByRole('button',{name:'Koreksi pick',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH lokasi staging salah');

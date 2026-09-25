@@ -122,6 +122,12 @@
    grows a second heading and the hierarchy collapses. */
 .workspace-section-title{margin:0;color:var(--ink);font-size:var(--type-section-title);font-weight:650;letter-spacing:-.015em}
 .workspace-meta{color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums}
+/* The row that introduces one section inside a page: its title on the left and a quiet
+   piece of metadata (a freshness stamp, a count) on the right. `align-items:end` puts the
+   metadata on the title's baseline rather than its box centre, which is what keeps the
+   stamp from reading as a second heading. */
+.workspace-subhead{display:flex;align-items:end;justify-content:space-between;gap:.75rem;flex-wrap:wrap;min-width:0}
+.workspace-subhead>*{min-width:0}
 
 /* ---------- metric strip ----------
    `auto-fit` with a floor, not a hard four-column grid: a workspace with two
@@ -139,8 +145,14 @@
    semantic tile at all. It never shrinks, in either host. */
 .metric-icon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;height:28px;margin-bottom:.15rem;border-radius:var(--radius-compact);background:var(--metric-tint);color:var(--metric-ink)}
 .metric-label{color:var(--ink-2);font-size:var(--type-caption);font-weight:600;overflow-wrap:anywhere}
-.metric-value{color:var(--ink);font-size:1.5rem;font-weight:660;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.metric-value{margin:0;color:var(--ink);font-size:1.5rem;font-weight:660;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .metric-detail{color:var(--muted);font-size:var(--type-metadata);overflow-wrap:anywhere}
+/* The unit that belongs to the figure rather than beside it. Kept inside `.metric-value` so
+   the value and its unit are one string for a screen reader and one line for the eye, and
+   dropped back to metadata weight so "12" reads as the number and "order" as its scale.
+   `margin:0` on the value above is what lets the strip be marked up as a real <dl>: a
+   metric is a term and its definition, and a <dd> arrives with a 40px indent. */
+.metric-unit{margin-left:.1rem;color:var(--muted);font-size:var(--type-metadata);font-weight:500;letter-spacing:0}
 /* Semantic tint applies to the icon tile only. The card body stays neutral so a
    strip of five metrics never turns into five coloured panels. */
 .metric-card-info{--metric-tint:var(--color-accent-soft);--metric-ink:var(--color-accent)}
@@ -160,9 +172,15 @@
 }
 .command-search{position:relative;display:flex;align-items:center;flex:1 1 15rem;min-width:0}
 .command-search>.icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+/* `margin:0` is load-bearing, not tidiness. `.command-search` and `.command-filter` are real
+   <label> elements, and the foundation spaces a control that is a label's direct child
+   (`label>input,label>select{margin-top:.4rem}`) for the stacked form layout it was written
+   for. Inside a single-line control shell that margin pushes the control off the shared
+   baseline and makes the bar wrap a row early, so it is withdrawn here for exactly the
+   controls this file owns. */
 .command-search input{
   width:100%;min-width:0;min-height:var(--workspace-control-height);height:var(--workspace-control-height);
-  padding:0 .7rem 0 2.05rem;border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  margin:0;padding:0 .7rem 0 2.05rem;border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
   background:var(--workspace-surface-secondary);color:var(--ink);font-size:var(--type-control);
 }
 .command-search input::placeholder{color:var(--muted)}
@@ -184,7 +202,7 @@
 .command-filter:focus-within{border-color:var(--focus);background:var(--workspace-surface)}
 .command-filter>select,.command-filter>input{
   min-width:0;min-height:0;height:calc(var(--workspace-control-height) - 2px);
-  padding:0 .15rem;border:0;border-radius:calc(var(--workspace-control-radius) - 2px);
+  margin:0;padding:0 .15rem;border:0;border-radius:calc(var(--workspace-control-radius) - 2px);
   background:none;color:var(--ink);font-size:var(--type-control);font-weight:500;
 }
 .command-filter>select:focus,.command-filter>input:focus{outline:none;border-color:transparent}
@@ -275,6 +293,11 @@
 .status-chip-warning{--status-ink:var(--color-warning);--status-tint:var(--color-warning-soft)}
 .status-chip-danger{--status-ink:var(--color-danger);--status-tint:var(--color-danger-soft)}
 .status-chip-neutral{--status-ink:var(--ink-2);--status-tint:var(--workspace-surface-secondary)}
+/* Where a cell carries a status and a qualifier rather than a status alone. Chips are
+   `inline-flex` and `nowrap`, so two of them separated by whitespace wrap with no vertical
+   rhythm at all; this gives the pair a real gap on both axes and lets the second chip drop
+   to its own line in a narrow column instead of widening it. */
+.chip-row{display:flex;align-items:center;gap:.3rem .4rem;flex-wrap:wrap;min-width:0}
 
 /* ---------- progress ----------
    A thin track with the number beside it. There is no native element that can be
@@ -289,6 +312,21 @@
 .progress-track-success{--progress-color:var(--color-success)}
 .progress-track-warning{--progress-color:var(--color-warning)}
 .progress-track-danger{--progress-color:var(--color-danger)}
+/* The same track, drawn on a native `<progress>`. The `.progress-track`/`.progress-fill`
+   pair is a div that reads its width from a custom property, which a script cannot drive
+   through `.value`; workspaces that interpolate a real measured quantity need the native
+   element so the value, the maximum and the accessible label stay on one node. Publishing
+   the track for both keeps one visual language instead of two, and the element keeps its
+   own implicit `progressbar` role rather than having one forged for a div. */
+.progress-native{-webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:48px;width:auto;height:5px;border:0;border-radius:var(--radius-pill);background:var(--workspace-surface-secondary);color:var(--progress-color,var(--color-accent));overflow:hidden}
+.progress-native::-webkit-progress-bar{background:var(--workspace-surface-secondary);border-radius:inherit}
+.progress-native::-webkit-progress-value{background:var(--progress-color,var(--color-accent));border-radius:inherit}
+.progress-native::-moz-progress-bar{background:var(--progress-color,var(--color-accent));border-radius:inherit}
+/* Stacked meter: the legend above, the track below, full width. Preferred where the numbers
+   are the point and the bar is the confirmation - a dense table column, typically - because
+   three items on one line is what makes a measured cell start truncating first. */
+.progress-meter-stack{flex-direction:column;align-items:stretch;gap:.3rem}
+.progress-legend{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;min-width:0}
 
 /* ---------- panels ----------
    Quiet secondary surfaces for explanation, not bordered callouts. `.info-panel`
@@ -299,11 +337,24 @@
 .info-panel>.icon{flex:0 0 auto;margin-top:.1rem;color:var(--muted)}
 .info-panel p{margin:0}
 .utility-panel{display:flex;flex-direction:column;gap:.6rem;min-width:0;padding:14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary)}
+/* The panel's own caption. Deliberately metadata weight, not a heading weight: a utility
+   group labels a set of controls, and a page whose every control cluster shouted would have
+   no hierarchy left for the data. */
+.utility-panel-title{margin:0;color:var(--ink-2);font-size:var(--type-metadata);font-weight:650;letter-spacing:.01em}
+/* A left-aligned wrapping row of actions. `.workspace-actions` is the page-header variant and
+   pushes to the right; `.field-actions` belongs to a form. A cluster of utilities inside a
+   panel needs neither, so it gets the plain reading-order row. */
+.action-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+/* Several panels side by side. `align-items:start` is the load-bearing part: without it the
+   grid stretches every panel to the tallest one, and a group of four utilities gains the dead
+   space of a group of ten. The track is wider than `.detail-grid`'s because a panel holds
+   controls, and a 180px column would wrap every button onto its own line. */
+.panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:var(--workspace-panel-gap);align-items:start;min-width:0}
 .attention-note{
   --attention-ink:var(--color-warning);--attention-tint:var(--color-warning-soft);--attention-edge:var(--color-warning-edge);
-  display:flex;align-items:flex-start;gap:.65rem;flex-wrap:wrap;min-width:0;
+  display:flex;align-items:flex-start;justify-content:flex-start;gap:.65rem;flex-wrap:wrap;min-width:0;
   padding:12px 14px;border:1px solid var(--attention-edge);border-radius:var(--workspace-panel-radius);
-  background:var(--attention-tint);color:var(--ink);
+  background:var(--attention-tint);color:var(--ink);text-align:left;
 }
 .attention-note>.icon{flex:0 0 auto;margin-top:.15rem;color:var(--attention-ink)}
 /* The basis is what moves the context action to its own row when the panel runs out of
@@ -316,6 +367,10 @@
 .attention-note-reason{margin:0;color:var(--ink-2);font-size:var(--type-caption);line-height:1.45}
 .attention-note-critical{--attention-ink:var(--color-danger);--attention-tint:var(--color-danger-soft);--attention-edge:var(--color-danger-edge)}
 .attention-note-info{--attention-ink:var(--color-accent);--attention-tint:var(--color-accent-soft);--attention-edge:var(--color-accent)}
+/* The cleared state. An attention surface that can be raised has to be able to report the
+   all-clear in the same place and the same shape, or the absence of a warning becomes the
+   absence of a component and the row below it jumps every time the count reaches zero. */
+.attention-note-success{--attention-ink:var(--color-success);--attention-tint:var(--color-success-soft);--attention-edge:var(--color-success-edge)}
 
 /* ---------- empty / error / loading ----------
    The old pattern was a bordered box reading "Tidak ada data." These three replace
@@ -384,6 +439,11 @@
    Label/value pairs for a record's detail region. A definition list, because that
    is what it is. */
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--workspace-panel-gap);min-width:0;margin:0}
+/* Same grid for many short numeric facts rather than a few prose ones - a per-position
+   balance read-out, for instance. The narrower track is the whole difference: at 180px a
+   set of eight two-word labels wraps to two rows on a desktop and reads as a table that
+   lost its header. */
+.detail-grid-compact{grid-template-columns:repeat(auto-fit,minmax(108px,1fr))}
 .detail-field{min-width:0;display:flex;flex-direction:column;gap:.15rem}
 .detail-field>dt{color:var(--muted);font-size:var(--type-metadata);font-weight:600}
 .detail-field>dd{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -517,7 +577,12 @@
      is what makes that hold at 200% text. */
   .record-row{align-items:flex-start;flex-wrap:wrap;gap:.6rem var(--workspace-panel-gap)}
   .record-row-aside{width:100%;justify-content:flex-start}
-  .detail-grid,.field-grid{grid-template-columns:minmax(0,1fr)}
+  .detail-grid,.field-grid,.panel-grid{grid-template-columns:minmax(0,1fr)}
+  /* Declared after the single-column rule on purpose: short numeric facts are the one
+     case that must NOT become one per row. Eight balances stacked is eight screens of
+     scrolling for data whose whole value is being comparable at a glance, so the
+     compact grid keeps wrapping in columns and only narrows its track. */
+  .detail-grid-compact{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
   .timeline-item{grid-template-columns:minmax(0,1fr)}
   .timeline-time{grid-column:1}
   .timeline-event,.timeline-actor,.timeline-detail{grid-column:1}
@@ -602,6 +667,14 @@
   .status-dot{background:CanvasText}
   .progress-track{border:1px solid CanvasText;background:Canvas}
   .progress-fill{background:Highlight}
+  /* The native element needs the same treatment through its two shadow parts, and
+     `forced-color-adjust:none` is what allows the filled portion to keep a Highlight
+     fill instead of being flattened to the system background - without it the bar
+     becomes an empty outline and the quantity loses its only visual channel. */
+  .progress-native{border:1px solid CanvasText;background:Canvas;forced-color-adjust:none}
+  .progress-native::-webkit-progress-bar{background:Canvas}
+  .progress-native::-webkit-progress-value{background:Highlight}
+  .progress-native::-moz-progress-bar{background:Highlight}
   .filter-chip{border:1px solid CanvasText;background:Canvas;color:CanvasText}
   .filter-chip[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
   .action-primary{border:1px solid ButtonText;background:ButtonFace;color:ButtonText}

@@ -305,24 +305,26 @@
           <p id="backup-message" role="status" hidden></p><button id="download-backup" type="button" class="primary">Unduh cadangan database</button>
         </div>
       </section>
-      <section id="board-view">
-        <div class="page-heading"><div><p class="eyebrow">Papan produksi</p><h1>Yang sedang dikerjakan.</h1></div><div class="actions"><button id="refresh" type="button">Muat ulang</button><button id="new-order" type="button" class="primary" hidden>Buat order produksi</button></div></div>
-        <dl id="summary" class="summary" aria-label="Ringkasan seluruh produksi"></dl>
-        <button id="issues-summary" class="issues-summary" type="button" hidden></button>
-        <div class="ledger-heading"><h2 id="production-orders-heading">Order produksi</h2><span id="updated" class="hint"></span></div>
+      <section id="board-view" class="workspace-page">
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Produksi</h1><p class="workspace-subtitle">Pantau order, progres, kendala, dan output produksi.</p></div><div class="workspace-actions"><button id="refresh" type="button" class="action-secondary">Muat ulang</button><button id="new-order" type="button" class="action-primary" hidden>Buat order produksi</button></div></div>
+        <dl id="summary" class="metric-strip" aria-label="Ringkasan seluruh produksi"></dl>
+        <button id="issues-summary" class="attention-note" type="button" hidden></button>
         <section class="production-work" aria-labelledby="production-orders-heading">
-        <form id="search-form" class="filters">
-          <label class="search-field">Cari order atau SKU<input id="search" type="search" placeholder="Referensi, produk, atau SKU" maxlength="160"></label>
-          <button type="submit" class="production-search">Cari order</button>
-          <label>Status<select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="blocked">Ada kendala terbuka</option><option value="closed">Selesai / ditutup</option></select></label>
-          <label>PIC order<select id="board-owner" aria-label="PIC order"><option value="">Semua PIC</option></select></label>
-          <label>Posisi barang<select id="board-stage" aria-label="Posisi barang" aria-describedby="production-filter-hint"><option value="all">Semua posisi</option><option value="planned">Belum cutting</option><option value="cutting">Cutting</option><option value="sewing">Sewing</option><option value="finishing">Finishing</option><option value="qc">QC</option><option value="rework">Rework</option><option value="reject">Reject</option><option value="warehouse">Gudang</option></select></label>
-          <button id="reset-board" type="button" class="quiet">Reset filter</button>
+        <form id="search-form" class="command-bar">
+          <label class="command-search"><span class="visually-hidden">Cari order atau SKU</span><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><input id="search" type="search" aria-label="Cari order atau SKU" placeholder="Referensi, produk, atau SKU" maxlength="160"></label>
+          <button type="submit" class="production-search action-secondary">Cari order</button>
+          <div class="command-filters">
+            <label class="command-filter"><span>Status</span><select id="status" aria-label="Status"><option value="all">Semua order</option><option value="active">Aktif</option><option value="overdue">Lewat target</option><option value="blocked">Ada kendala terbuka</option><option value="closed">Selesai / ditutup</option></select></label>
+            <label class="command-filter"><span>PIC</span><select id="board-owner" aria-label="PIC order"><option value="">Semua PIC</option></select></label>
+            <label class="command-filter"><span>Posisi</span><select id="board-stage" aria-label="Posisi barang" aria-describedby="production-filter-hint"><option value="all">Semua posisi</option><option value="planned">Belum cutting</option><option value="cutting">Cutting</option><option value="sewing">Sewing</option><option value="finishing">Finishing</option><option value="qc">QC</option><option value="rework">Rework</option><option value="reject">Reject</option><option value="warehouse">Gudang</option></select></label>
+          </div>
+          <div class="command-actions"><button id="reset-board" type="button" class="action-quiet">Reset filter</button></div>
         </form>
-        <p id="production-filter-hint" class="hint">Posisi barang menampilkan order yang masih memiliki saldo di tahap tersebut. Ringkasan di atas mencakup seluruh produksi.</p>
+        <p id="production-filter-hint" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Posisi barang menampilkan order yang masih memiliki saldo di tahap tersebut. Ringkasan di atas mencakup seluruh produksi.</span></p>
+        <div class="workspace-subhead"><h2 id="production-orders-heading" class="workspace-section-title">Order produksi</h2><span id="updated" class="workspace-meta"></span></div>
         <div id="board-message" role="status" class="state" hidden></div>
-        <div id="order-list" class="list-host"></div>
-        <div class="pagination"><span id="page-count" class="hint"></span><div class="actions"><button id="previous" type="button">Sebelumnya</button><button id="next" type="button">Berikutnya</button></div></div>
+        <div id="order-list" class="list-host data-surface"></div>
+        <div class="pagination"><span id="page-count" class="workspace-meta"></span><div class="actions"><button id="previous" type="button" class="action-secondary">Sebelumnya</button><button id="next" type="button" class="action-secondary">Berikutnya</button></div></div>
         </section>
       </section>
       <section id="activity-view" hidden>
@@ -335,7 +337,7 @@
         <div id="activity-list"></div>
         <div class="pagination"><span id="activity-count" class="hint"></span><button id="activity-more" type="button" hidden>Muat aktivitas sebelumnya</button></div>
       </section>
-      <section id="detail-view" hidden><button id="back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content"></div></section>
+      <section id="detail-view" class="workspace-page" hidden><button id="back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content" class="workspace-page"></div></section>
       </div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>

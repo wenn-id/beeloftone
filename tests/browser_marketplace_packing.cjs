@@ -17,13 +17,13 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,pick})=
     if(failList){failList=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Daftar pack sedang sibuk'})});}
     else await route.continue();
   });
-  await page.locator('.order-settings').getByRole('button',{name:'Packing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Packing',exact:true}).click();
   await page.getByText('Daftar pack sedang sibuk',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Coba lagi',exact:true}).click();
   await page.getByText('Belum ada pack marketplace untuk order ini.',{exact:true}).waitFor();
   await page.unroute('**/api/orders/*/marketplace-packs?*');await page.keyboard.press('Escape');
 
-  await page.locator('.order-settings').getByRole('button',{name:'Picking',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Picking',exact:true}).click();
   await page.getByRole('button',{name:'Rincian PICK-PACK-SOURCE',exact:true}).click();
   await page.getByRole('button',{name:'Catat pack',exact:true}).click();
   await page.getByLabel('Referensi pack',{exact:true}).fill('PACK-UI-001');
@@ -60,12 +60,12 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order,pick})=
   await post('/api/marketplace-picks/'+pick.id+'/reverse',{reason:'Pack aktif harus dikoreksi dahulu'},'pack-block-pick',409);
 
   await role(viewer);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Packing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Packing',exact:true}).click();
   await page.getByRole('button',{name:'Rincian PACK-UI-001',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Koreksi pack',exact:true}).count(),0);
 
   await role(admin);await openOrder();
-  await page.locator('.order-settings').getByRole('button',{name:'Packing',exact:true}).click();
+  await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Packing',exact:true}).click();
   await page.getByRole('button',{name:'Rincian PACK-UI-001',exact:true}).click();
   await page.getByRole('button',{name:'Koreksi pack',exact:true}).click();
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH jumlah paket salah');

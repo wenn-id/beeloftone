@@ -133,7 +133,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
 
   await login(admin);
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await installDialogWatch();
 
   // ---- entry: the surface and the backdrop animate from their first frame ------------------
@@ -236,7 +236,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // helper. Cleanup hangs off the native close event so that an abandoned exit cannot leave a
   // timer behind, because that timer would close whatever dialog opens next.
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await trigger.click();
   await page.locator('dialog[open]').waitFor();
   await page.waitForTimeout(400);
@@ -309,7 +309,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
         body: JSON.stringify({sku: 'MOTION-DIALOG-' + Date.now(), name: 'CONTOH gerak dialog',
           color: 'Blue', size: 'M'})}}});
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await openSidebarDestination('Scan bundle');
   await heading('Konfirmasi pencatatan sebelumnya');
   await clearDialogLog();
@@ -377,7 +377,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   // ---- reduced motion: same result, no motion, same close path -----------------------------
   await page.emulateMedia({reducedMotion: 'reduce'});
   await openSidebarDestination('Produksi');
-  await heading('Yang sedang dikerjakan.');
+  await heading('Produksi');
   await clearDialogLog();
   await trigger.click();
   await page.locator('dialog[open]').waitFor();

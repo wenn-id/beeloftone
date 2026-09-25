@@ -81,6 +81,35 @@ LEGACY_VOCABULARY = (
 )
 
 
+# A6.1's migration boundary. These are the ONLY places in the shipped product allowed to name
+# an A6 primitive, and widening this list is the deliberate act each later phase has to perform.
+MIGRATED_SECTIONS = ('board-view', 'detail-view')
+MIGRATED_RENDERERS = frozenset({
+    'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
+    'statusHTML', 'issueBadge',
+    'loadBoard',      # the board: heading, metric strip, command bar, data surface
+    'renderDetail', 'renderHistory', 'renderIssues',
+    'orderForm',      # the create-order form's own fields
+})
+
+
+def section(html, element_id):
+    """The complete markup of one `<section id=...>`, nested sections included.
+
+    Tag counting rather than a lazy regex, because `#board-view` really does contain another
+    `<section>` (the working surface) and `#activity-view` really does sit between the two
+    migrated sections, so neither "up to the first `</section>`" nor "between board and
+    detail" would describe the right text.
+    """
+    start = html.index(f'<section id="{element_id}"')
+    depth = 0
+    for match in re.finditer(r'<section\b|</section>', html[start:]):
+        depth += 1 if match.group().startswith('<section') else -1
+        if depth == 0:
+            return html[start:start + match.end()]
+    raise AssertionError(f'#{element_id} is not a closed section')
+
+
 def rules(css=CSS):
     """(at-rule context, selector, declaration) for every declaration in the A6 stylesheet."""
     return list(walk(parse(css)[0]))
@@ -186,23 +215,90 @@ class PrimitiveInventoryTest(unittest.TestCase):
 
 
 class ZeroProductionImpactTest(unittest.TestCase):
-    def test_primitives_are_inert_against_every_shipped_surface(self):
-        """The core A6.0 promise: loading the sheet redesigns nothing that exists today."""
-        shipped = ''.join((STATIC / name).read_text(encoding='utf-8') for name in
-                          ('style.css', 'workspace.css', 'index.html', 'app.mjs',
-                           'workspace.mjs', 'client.mjs'))
+    def test_primitives_are_inert_outside_the_migrated_workspace(self):
+        """A6.0's containment promise, narrowed by exactly one deliberate migration.
+
+        A6.0 could state this absolutely: no shipped surface used an A6 name, so loading the
+        sheet changed nothing. A6.1 is the first phase allowed to spend that - it migrates the
+        Produksi board, the Produksi order detail and the create-order form onto the
+        primitives - so the promise becomes conditional rather than absent. It is deliberately
+        NOT relaxed to "anything may use these names":
+
+          * the stylesheets and the other three scripts still may not use one at all;
+          * `index.html` may use them only inside `#board-view` and `#detail-view`;
+          * `app.mjs` may use them only inside the Produksi renderers listed below.
+
+        That is what keeps the original job of this test alive. A6.2-A6.8 each migrate another
+        workspace, and each one has to come here and say so; a stray `.data-surface` added to
+        Bahan baku, People, Analitik or a child dialog still fails, which is the whole point.
+        """
         names = {part.strip().lstrip('.').split(':')[0].split('>')[0].split(' ')[0]
                  for _, selector, _ in rules() if selector for part in selector.split(',')}
         names -= {'', 'icon', 'icon-sm', 'icon-lg', 'visually-hidden'}
-        for name in sorted(names):
-            if not name or not re.match(r'^[a-z][\w-]*$', name):
-                continue
-            with self.subTest(primitive=name):
-                # A CSS class matches whole tokens, so `search-field` can never be hit by
-                # `.field`; the boundary here models that exactly.
-                self.assertNotRegex(
-                    shipped, r'class="[^"]*(?<![\w-])' + re.escape(name) + r'(?![\w-])',
-                    f'.{name} is already used by a shipped page - A6.0 may not restyle it')
+        names = sorted(name for name in names if re.match(r'^[a-z][\w-]*$', name))
+        self.assertTrue(names)
+
+        def used(text, name):
+            # A CSS class matches whole tokens, so `search-field` can never be hit by
+            # `.field`; the boundary here models that exactly.
+            return re.search(r'class="[^"]*(?<![\w-])' + re.escape(name) + r'(?![\w-])', text)
+
+        # 1. Nothing outside the migrated markup and the migrated renderers may name a primitive.
+        for source in ('style.css', 'workspace.css', 'workspace.mjs', 'client.mjs'):
+            text = (STATIC / source).read_text(encoding='utf-8')
+            for name in names:
+                with self.subTest(source=source, primitive=name):
+                    self.assertIsNone(used(text, name),
+                                      f'.{name} leaked into {source} - only #board-view, '
+                                      '#detail-view and the Produksi renderers are migrated')
+
+        # 2. index.html, with the two migrated sections removed.
+        rest = HTML
+        for element in MIGRATED_SECTIONS:
+            markup = section(HTML, element)
+            self.assertIn('class=', markup)
+            rest = rest.replace(markup, '')
+        for name in names:
+            with self.subTest(source='index.html', primitive=name):
+                self.assertIsNone(used(rest, name),
+                                  f'.{name} is used by markup outside #board-view / #detail-view')
+
+        # 3. app.mjs, attributed line by line to the top-level symbol that owns the line. The
+        #    ownership walk needs no brace matching - every declaration in this file starts at
+        #    column zero - so it cannot be confused by the `${...}` of a template literal.
+        owners = []
+        for line in APP.split('\n'):
+            found = re.match(r'(?:async\s+)?function\s+([A-Za-z_$][\w$]*)'
+                             r'|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=', line)
+            owners.append(found.group(1) or found.group(2) if found else
+                          (owners[-1] if owners else None))
+        for number, (line, owner) in enumerate(zip(APP.split('\n'), owners), start=1):
+            for name in names:
+                if used(line, name):
+                    with self.subTest(line=number, primitive=name):
+                        self.assertIn(owner, MIGRATED_RENDERERS,
+                                      f'app.mjs:{number} uses .{name} inside {owner!r}, which is '
+                                      'not one of the migrated Produksi renderers')
+
+    def test_the_migration_actually_happened(self):
+        """The other half of a narrowed promise: the exception has to be earning its keep.
+
+        Without this, deleting the Produksi migration and leaving the allowance behind would
+        still pass every assertion above. The detailed board/detail contract lives in
+        tests/test_apple27_production_workspace_contract.py; this is only the A6.0-side proof
+        that the door it opened is actually being used.
+        """
+        board, detail = section(HTML, 'board-view'), section(HTML, 'detail-view')
+        for name in ('workspace-page', 'workspace-heading', 'workspace-title', 'metric-strip',
+                     'command-bar', 'command-search', 'command-filter', 'attention-note',
+                     'data-surface', 'info-panel'):
+            with self.subTest(board=name):
+                self.assertRegex(board, r'class="[^"]*(?<![\w-])' + name + r'(?![\w-])')
+        self.assertRegex(detail, r'class="[^"]*(?<![\w-])workspace-page(?![\w-])')
+        for name in ('data-row', 'data-cell', 'status-chip', 'progress-meter', 'detail-grid',
+                     'timeline-item', 'record-row', 'utility-panel', 'field', 'empty-state'):
+            with self.subTest(renderer=name):
+                self.assertRegex(APP, r'class="[^"]*(?<![\w-])' + name + r'(?![\w-])')
 
     def test_no_legacy_vocabulary_is_restyled(self):
         for legacy in LEGACY_VOCABULARY:
@@ -220,8 +316,10 @@ class ZeroProductionImpactTest(unittest.TestCase):
             with self.subTest(shell_leak=name):
                 self.assertNotRegex(SHELL, r'\.' + re.escape(name) + r'(?![\w-])')
 
-    def test_index_html_changed_only_by_adding_the_stylesheet(self):
-        # Every shell node A5.2/A5.3 froze is still present and unmodified in markup.
+    def test_the_frozen_shell_markup_is_still_intact(self):
+        # A6.0 could say "index.html changed only by adding the stylesheet". A6.1 edits the two
+        # migrated sections, so what this can still promise - and the part that actually matters -
+        # is that every shell node A5.2/A5.3 froze is present and unmodified.
         for anchor in ('<div id="workspace-window" class="workspace-window">',
                        'id="window-close"', 'id="window-minimize"', 'id="window-fullscreen"',
                        '<span id="nav-selection-lens" class="nav-selection-lens" aria-hidden="true" hidden></span>',
@@ -553,7 +651,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.106.0')
+        self.assertEqual(version, '0.107.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

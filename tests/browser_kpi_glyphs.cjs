@@ -23,7 +23,11 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
     return [...document.querySelectorAll(sel + '>div')].map(cell => {
       const dt = cell.querySelector('dt');
       const dd = cell.querySelector('dd');
-      const glyph = dt.querySelector('svg');
+      // Searched from the card, not from the label. Command Center and Aktivitas put the
+      // decorative glyph inside the <dt>; A6.1's migrated board puts the same glyph in the
+      // A6 semantic tile that leads the card. Both are found here, and where the glyph sits
+      // is then asserted per surface rather than assumed to be one layout.
+      const glyph = cell.querySelector('svg');
       const use = glyph ? glyph.querySelector('use') : null;
       return {
         // The label is the dt text with the decorative glyph contributing nothing.
@@ -38,6 +42,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
         // The glyph sits at the end of the first line, opposite the label.
         glyphRight: glyph ? glyph.getBoundingClientRect().right : null,
         dtRight: dt.getBoundingClientRect().right,
+        // ...or, on an A6 metric card, above it, inside a tinted tile.
+        glyphBottom: glyph ? glyph.getBoundingClientRect().bottom : null,
+        dtTop: dt.getBoundingClientRect().top,
+        tileBackground: glyph ? getComputedStyle(glyph.parentElement).backgroundColor : null,
         primary,
         resolvesInSprite: use ? Boolean(document.querySelector(use.getAttribute('href'))) : false,
       };
@@ -54,7 +62,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   if (await page.locator('html').getAttribute('data-theme') === 'dark') await page.locator('#theme').click();
   await closeDialog();
   await openSidebarDestination('Produksi');
-  await page.getByRole('heading', {name: 'Yang sedang dikerjakan.'}).waitFor();
+  await page.getByRole('heading', {name: 'Produksi', exact: true}).waitFor();
   await page.locator('#summary dd').first().waitFor();
 
   const board = await readCards('#summary');
@@ -75,6 +83,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   assert.equal(board[3].value.replace(/\s+/g, ' '),
     `${new Intl.NumberFormat('id-ID').format(summary.rework)} pcs`);
 
+  // A6.1 moved the board onto the A6 metric strip, so the glyph contract changes shape in two
+  // named ways and in no others: the tile leads the card instead of ending the label row, and the
+  // tint is semantic instead of uniformly blue. Everything that made the glyph trustworthy -
+  // decorative, local sprite, resolvable, shared icon scale, one glyph per metric - is unchanged.
   for (const card of board) {
     assert.equal(card.hasGlyph, true, `${card.label} carries a glyph`);
     assert.equal(card.ariaHidden, 'true', `${card.label} glyph is decorative`);
@@ -83,13 +95,34 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
       `${card.label} glyph comes from the local sprite, not an external asset`);
     assert.equal(card.resolvesInSprite, true,
       `${card.label} glyph resolves to a symbol in the inline sprite`);
-    assert.equal(card.glyphColour, card.primary,
-      `${card.label} glyph uses the primary colour like the dashboard KPI glyphs`);
     assert.ok(card.glyphBox >= 14 && card.glyphBox <= 22,
       `${card.label} glyph renders at the shared icon scale (${card.glyphBox}px)`);
-    assert.ok(card.dtRight - card.glyphRight < 4,
-      `${card.label} glyph is aligned to the end of the label row`);
+    assert.ok(card.glyphBottom <= card.dtTop + 1,
+      `${card.label} glyph leads the card above the label (A6 metric tile)`);
+    assert.notEqual(card.tileBackground, 'rgba(0, 0, 0, 0)',
+      `${card.label} glyph sits in a real tinted tile, not loose on the card`);
   }
+  // The colour rule, stated exactly. The two descriptive metrics are always the accent. The two
+  // exception metrics are semantic ONLY while their own count is above zero and fall back to the
+  // neutral card ink at zero, so a healthy board never wears a warning it has not earned.
+  const roles = await page.evaluate(() => {
+    const resolve = value => {
+      const probe = document.createElement('span');
+      probe.style.color = value;
+      document.body.appendChild(probe);
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    };
+    return {accent: resolve('var(--color-accent)'), danger: resolve('var(--color-danger)'),
+      warning: resolve('var(--color-warning)'), neutral: resolve('var(--ink-2)')};
+  });
+  assert.equal(board[0].glyphColour, roles.accent, 'Order aktif is descriptive, so it is the accent');
+  assert.equal(board[2].glyphColour, roles.accent, 'Dalam proses is descriptive, so it is the accent');
+  assert.equal(board[1].glyphColour, summary.overdue > 0 ? roles.danger : roles.neutral,
+    `Lewat target is semantic only above zero (count ${summary.overdue})`);
+  assert.equal(board[3].glyphColour, summary.rework > 0 ? roles.warning : roles.neutral,
+    `Perlu rework is semantic only above zero (count ${summary.rework})`);
   const boardGlyphs = board.map(card => card.glyphHref);
   assert.equal(new Set(boardGlyphs).size, boardGlyphs.length,
     'each board metric gets its own glyph');
@@ -125,6 +158,10 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
     assert.equal(card.hasGlyph, true, `${card.label} carries a glyph`);
     assert.equal(card.ariaHidden, 'true');
     assert.equal(card.glyphColour, card.primary);
+    // Aktivitas is NOT migrated by A6.1, so it still ends the label row with its glyph. This is
+    // where that legacy layout stays covered now that the board has moved off it.
+    assert.ok(card.dtRight - card.glyphRight < 4,
+      `${card.label} glyph is aligned to the end of the label row`);
   }
 
   // No emoji and no remote icon source anywhere in the summary grids.
@@ -150,10 +187,28 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   await page.getByRole('button', {name: 'Mode gelap', exact: true}).click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   const darkCards = await readCards('#summary');
-  for (const card of darkCards) {
-    assert.equal(card.hasGlyph, true);
-    assert.equal(card.glyphColour, card.primary, 'dark mode glyphs follow the dark primary token');
+  // Dark mode is tuned, not inverted, so the same tone policy must hold against the DARK role
+  // tokens rather than the light ones - and every tone must actually have moved.
+  const darkRoles = await page.evaluate(() => {
+    const resolve = value => {
+      const probe = document.createElement('span');
+      probe.style.color = value;
+      document.body.appendChild(probe);
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    };
+    return {accent: resolve('var(--color-accent)'), danger: resolve('var(--color-danger)'),
+      warning: resolve('var(--color-warning)'), neutral: resolve('var(--ink-2)')};
+  });
+  for (const [role, light] of Object.entries(roles)) {
+    assert.notEqual(darkRoles[role], light, `the dark ${role} role is tuned, not inherited`);
   }
+  for (const card of darkCards) assert.equal(card.hasGlyph, true);
+  assert.equal(darkCards[0].glyphColour, darkRoles.accent, 'dark mode keeps Order aktif on the accent');
+  assert.equal(darkCards[2].glyphColour, darkRoles.accent, 'dark mode keeps Dalam proses on the accent');
+  assert.equal(darkCards[1].glyphColour, summary.overdue > 0 ? darkRoles.danger : darkRoles.neutral);
+  assert.equal(darkCards[3].glyphColour, summary.rework > 0 ? darkRoles.warning : darkRoles.neutral);
   await page.screenshot({path: path.join(shots, 'kpi-glyphs-board-dark.png')});
   await page.getByRole('button', {name: 'Mode terang', exact: true}).click();
   await page.waitForFunction(() => (document.documentElement.dataset.theme || 'light') === 'light');

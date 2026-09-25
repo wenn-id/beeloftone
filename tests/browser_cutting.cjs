@@ -15,7 +15,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'6',reason:'CONTOH pengeluaran cutting'},'cut-issue');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-CUTTING/}).click();await page.getByRole('heading',{name:'CONTOH hasil cutting',exact:true}).waitFor();}
-  async function openRuns(){await page.locator('.order-settings').getByRole('button',{name:'Hasil cutting',exact:true}).click();}
+  async function openRuns(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Hasil cutting',exact:true}).click();}
   await role(operator);await openOrder();await openRuns();
   await page.getByText('Belum ada hasil cutting yang dihubungkan dengan pemakaian bahan.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Catat hasil cutting',exact:true}).click();
