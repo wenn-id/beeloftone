@@ -719,6 +719,7 @@ function clearWorkspace() {
   materialsRequest++; materialsOffset = 0; $('batch-list').replaceChildren(); $('material-filter').innerHTML = '<option value="">Semua bahan</option>';
   peopleRequest++; workforceFilters = {work_date:'',status:'all',q:''};
   $('workforce-list').replaceChildren(); $('workforce-summary').replaceChildren();
+  $('workforce-roster-meta').textContent = '';
   productsRequest++; productsCache = []; $('product-list').replaceChildren();
   analyticsRequest++; analyticsReport = null; analyticsFilters = {};
   $('analytics-body').replaceChildren(); $('analytics-heading').textContent='Analitik'; $('analytics-eyebrow').textContent='Analitik';
@@ -2023,6 +2024,9 @@ document.addEventListener('click', event => {
     'audit-events':()=>navigateFromDialog(showAuditEvents),'audit-event':()=>auditEventDialog(id),
     'demand-forecast':showDemandForecast,replenishment:showReplenishment,
     workforce:()=>navigateFromDialog(showPeople),'employee-master':workforceEmployeeMasterDialog,
+    // Reset filter roster: status dan pencarian kembali ke semula, TANGGAL kerja tidak disentuh.
+    // Yang dicari operator adalah "tunjukkan seluruh roster hari itu", bukan hari ini.
+    'reset-workforce-filter':()=>{const form=$('workforce-filter');form.elements.status.value='all';form.elements.q.value='';loadPeople();},
     'new-employee':()=>workforceEmployeeForm(),'edit-employee':()=>workforceEmployeeForm(id),
     'employee-history':()=>workforceEmployeeHistoryDialog(id),
     'attendance-form':()=>workforceAttendanceForm(id,button.dataset.date),
@@ -2531,9 +2535,23 @@ function showScanner(kind) {
       const row=await api.get((kind==='bundle'?'/api/bundles/scan?':'/api/finished-goods-receipts/scan?')+new URLSearchParams({code:input.value.trim()}));
       if(!current())return;
       playScanFeedback(result);
-      result.innerHTML=`<article class="material-event"><h2>Hasil scan terakhir</h2><h3>${e(row.reference)}</h3>
-        <p>${e(row.sku)} · ${e(row.size)} · ${n(kind==='bundle'?row.quantity:row.received_quantity)} pcs</p>
-        <p>Order ${e(row.order_reference)}</p><button type="button" data-action="${kind==='bundle'?'bundle':'finished-goods-receipt'}" data-id="${e(row.id)}">${kind==='bundle'?'Rincian bundle':'Rincian barang jadi'}</button></article>`;
+      // Satu hasil, dan hanya yang terakhir - `.scan-recent` adalah area hasil yang A6.0 sediakan,
+      // bukan riwayat. Isinya sengaja TIDAK memakai permukaan bermaterial: tint keberhasilan hidup
+      // di host `.scan-result`, jadi latar opak di dalamnya akan menutupi satu-satunya umpan balik
+      // yang dimiliki pemindai. Tidak ada status yang dikarang di sini; hanya field yang dikembalikan
+      // endpoint scan.
+      result.innerHTML='<h2 class="workspace-section-title">Hasil scan terakhir</h2>'
+        + '<ul class="scan-recent"><li class="record-row">'
+        + `<span class="metric-icon">${svgIcon('check-circle','icon-sm')}</span>`
+        + '<span class="record-row-copy">'
+        + `<h3 class="data-primary">${e(row.reference)}</h3>`
+        + `<span class="data-secondary">${e(row.sku)} · ${e(row.size)}</span>`
+        + '<dl class="detail-grid detail-grid-compact">'
+        + `<div class="detail-field"><dt>${kind==='bundle'?'Jumlah':'Diterima'}</dt><dd>${n(kind==='bundle'?row.quantity:row.received_quantity)} pcs</dd></div>`
+        + `<div class="detail-field"><dt>Order</dt><dd>${e(row.order_reference)}</dd></div>`
+        + '</dl></span>'
+        + `<span class="record-row-aside"><button type="button" class="action-primary" data-action="${kind==='bundle'?'bundle':'finished-goods-receipt'}" data-id="${e(row.id)}">${kind==='bundle'?'Rincian bundle':'Rincian barang jadi'}</button></span>`
+        + '</li></ul>';
       message(prefix+'-message',''); input.select();
     }catch(error){if(current()){message(prefix+'-message','');fail(error,prefix+'-error');input.select();}}
     finally{if(current())button.disabled=false;}
@@ -2610,7 +2628,69 @@ async function bundleDialog(bundleId) {
   try{
     const bundle=await api.get('/api/bundles/'+encodeURIComponent(bundleId));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    $('dialog-content').innerHTML=`<p class="form-info">${e(bundle.reference)} · ${bundle.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(bundle.quantity)} pcs · ${e(bundle.sku)} · ${e(bundle.size)}</h3><p>${e(bundle.product_name)} · ${e(bundle.color)}</p><p>Dialokasikan ke sewing ${n(bundle.sewing_allocated_quantity)} pcs · belum dialokasikan ${n(bundle.sewing_unassigned_quantity)} pcs</p><p>Lokasi custody sekarang: <strong>${e(bundle.custody_location)}</strong>${bundle.pending_handoff?` · menuju ${e(bundle.pending_handoff.to_location)}, menunggu penerima`:``}</p><p>Hasil cutting ${e(bundle.cutting_reference)} · batch ${e(bundle.batch_reference)} · ${e(bundle.material_code)}</p><p class="reason">${e(bundle.reason)}</p><p class="hint">${e(bundle.actor_name)} · ${purchaseStamp(bundle.created_at)}</p>${bundle.reversal?`<article class="material-event"><h3>Sudah dikoreksi</h3><p class="reason">${e(bundle.reversal.reason)}</p><p class="hint">${e(bundle.reversal.actor_name)} · ${purchaseStamp(bundle.reversal.created_at)}</p></article>`:''}${bundle.status==='active'?`<section class="bundle-label" aria-label="Label bundle ${e(bundle.reference)}"><img src="/api/bundles/${e(encodeURIComponent(bundle.id))}/label.svg" alt="Kode QR bundle ${e(bundle.reference)}"><div><strong>${e(bundle.reference)}</strong><span>${e(bundle.sku)} · ukuran ${e(bundle.size)}</span><span class="bundle-label-qty">${n(bundle.quantity)} pcs</span><span>Order ${e(bundle.order_reference)}</span></div></section>`:''}<div class="actions"><button id="bundle-order">Buka order produksi</button><button data-action="cutting-run" data-id="${e(bundle.cutting_run_id)}">Hasil cutting asal</button><button data-action="material-batch" data-id="${e(bundle.batch_id)}">Batch bahan asal</button><button data-action="bundles" data-id="${e(bundle.order_id)}">Semua bundle</button><button data-action="bundle-handoffs" data-id="${e(bundle.id)}">Riwayat serah-terima</button>${user.role!=='viewer'&&bundle.status==='active'&&!bundle.pending_handoff?`<button data-action="new-bundle-handoff" data-id="${e(bundle.id)}">Serahkan bundle</button>`:``}${user.role!=='viewer'&&bundle.pending_handoff&&bundle.pending_handoff.sender_id!==user.id?`<button data-action="accept-bundle-handoff" data-id="${e(bundle.pending_handoff.id)}">Konfirmasi terima</button>`:``}${user.role==='admin'&&bundle.pending_handoff?`<button data-action="cancel-bundle-handoff" data-id="${e(bundle.pending_handoff.id)}">Batalkan handoff</button>`:``}<button data-action="sewing-jobs" data-id="${e(bundle.order_id)}">Sewing / makloon order</button>${bundle.status==='active'?'<button id="print-bundle">Cetak label</button>':''}${user.role!=='viewer' && bundle.status==='active' && bundle.sewing_unassigned_quantity>0?`<button data-action="new-sewing-job" data-id="${e(bundle.id)}">Kirim ke sewing</button>`:''}${user.role==='admin' && bundle.status==='active'?'<button id="reverse-bundle">Koreksi bundle</button>':''}</div>`;
+    // Hasil langsung dari Scan bundle, jadi urutannya adalah urutan pertanyaan operator: bundle apa
+    // ini, di mana barangnya sekarang, dari mana asalnya, lalu baru apa yang bisa dilakukan. Dua
+    // belas aksi yang dulu satu dinding kapsul kini dikelompokkan menurut MAKNA, dan yang sekadar
+    // MEMBUKA sesuatu menjadi baris utilitas - persis tata bahasa yang dipakai rincian order A6.1.
+    // Tidak ada aksi yang hilang, tidak ada `data-action` atau id yang berubah, dan tidak ada
+    // syarat peran yang dilonggarkan.
+    const handoff=bundle.pending_handoff,active=bundle.status==='active',writer=user.role!=='viewer';
+    const groups=[
+      ['Konteks &amp; asal',[
+        ['bundle-order','Buka order produksi','row','id'],
+        ['cutting-run','Hasil cutting asal','row',bundle.cutting_run_id],
+        ['material-batch','Batch bahan asal','row',bundle.batch_id],
+        ['bundles','Semua bundle','row',bundle.order_id],
+        ['sewing-jobs','Sewing / makloon order','row',bundle.order_id],
+      ]],
+      ['Alur sewing',[
+        writer&&active&&bundle.sewing_unassigned_quantity>0&&['new-sewing-job','Kirim ke sewing','command',bundle.id],
+      ]],
+      ['Custody &amp; serah-terima',[
+        ['bundle-handoffs','Riwayat serah-terima','row',bundle.id],
+        writer&&active&&!handoff&&['new-bundle-handoff','Serahkan bundle','command',bundle.id],
+        writer&&handoff&&handoff.sender_id!==user.id&&['accept-bundle-handoff','Konfirmasi terima','command',handoff.id],
+        user.role==='admin'&&handoff&&['cancel-bundle-handoff','Batalkan handoff','command',handoff.id],
+      ]],
+      ['Utilitas &amp; koreksi',[
+        active&&['print-bundle','Cetak label','command','id'],
+        user.role==='admin'&&active&&['reverse-bundle','Koreksi bundle','destructive','id'],
+      ]],
+    ].map(([title,items])=>{
+      const present=items.filter(Boolean);
+      if(!present.length)return '';
+      const commands=present.filter(([,,weight])=>weight!=='row'),rows=present.filter(([,,weight])=>weight==='row');
+      return `<div class="utility-panel"><p class="utility-panel-title">${title}</p>`
+        + (commands.length?`<div class="action-row">${commands.map(([action,label,weight,target])=>
+          `<button type="button" class="${weight==='destructive'?'action-destructive':'action-secondary'}" ${target==='id'?`id="${action}"`:`data-action="${action}" data-id="${e(target)}"`}>${label}</button>`).join('')}</div>`:'')
+        + (rows.length?`<div class="utility-rows">${rows.map(([action,label,,target])=>
+          `<button type="button" class="record-row" ${target==='id'?`id="${action}"`:`data-action="${action}" data-id="${e(target)}"`}>`
+          + `<span class="record-row-copy"><span class="data-primary">${label}</span></span>${svgIcon('arrow-right','icon-sm')}</button>`).join('')}</div>`:'')
+        + '</div>';
+    }).join('');
+    $('dialog-content').innerHTML=`<p class="workspace-meta">${e(bundle.reference)}</p>`
+      + `<h3 class="data-primary">${n(bundle.quantity)} pcs · ${e(bundle.sku)} · ${e(bundle.size)}</h3>`
+      + `<span class="data-secondary">${e(bundle.product_name)} · ${e(bundle.color)}</span>`
+      + `<span class="chip-row"><span class="status-chip status-chip-${active?'success':'neutral'}"><span class="status-dot" aria-hidden="true"></span>${active?'Aktif':'Sudah dikoreksi'}</span></span>`
+      + '<div class="utility-panel"><p class="utility-panel-title">Posisi bundle sekarang</p>'
+      + '<dl class="detail-grid detail-grid-compact">'
+      + `<div class="detail-field"><dt>Dialokasikan ke sewing</dt><dd>${n(bundle.sewing_allocated_quantity)} <small class="metric-unit">pcs</small></dd></div>`
+      + `<div class="detail-field"><dt>Belum dialokasikan</dt><dd>${n(bundle.sewing_unassigned_quantity)} <small class="metric-unit">pcs</small></dd></div>`
+      + '</dl>'
+      + `<dl class="detail-grid"><div class="detail-field"><dt>Lokasi custody sekarang</dt><dd>${e(bundle.custody_location)}</dd></div></dl>`
+      // Handoff yang belum selesai BUKAN transfer yang sudah terjadi, dan dikatakan begitu.
+      + (handoff?`<p class="attention-note attention-note-info">${svgIcon('truck','icon-sm')}<span class="attention-note-copy"><strong class="attention-note-title">Menuju ${e(handoff.to_location)}</strong><span class="attention-note-reason">Serah-terima belum selesai, menunggu penerima mengonfirmasi.</span></span></p>`:'')
+      + '</div>'
+      + '<div class="utility-panel"><p class="utility-panel-title">Asal bundle</p><dl class="detail-grid">'
+      + `<div class="detail-field"><dt>Hasil cutting</dt><dd>${e(bundle.cutting_reference)}</dd></div>`
+      + `<div class="detail-field"><dt>Batch bahan</dt><dd>${e(bundle.batch_reference)}</dd></div>`
+      + `<div class="detail-field"><dt>Kode bahan</dt><dd>${e(bundle.material_code)}</dd></div>`
+      + '</dl></div>'
+      + `<p class="info-panel">${svgIcon('info','icon-sm')}<span>${e(bundle.reason)}</span></p>`
+      + `<p class="workspace-meta">${e(bundle.actor_name)} · ${purchaseStamp(bundle.created_at)}</p>`
+      + (bundle.reversal?`<div class="utility-panel"><h3 class="workspace-section-title">Sudah dikoreksi</h3><p class="timeline-detail reason">${e(bundle.reversal.reason)}</p><p class="workspace-meta">${e(bundle.reversal.actor_name)} · ${purchaseStamp(bundle.reversal.created_at)}</p></div>`:'')
+      + (active?`<section class="bundle-label" aria-label="Label bundle ${e(bundle.reference)}"><img src="/api/bundles/${e(encodeURIComponent(bundle.id))}/label.svg" alt="Kode QR bundle ${e(bundle.reference)}"><div><strong>${e(bundle.reference)}</strong><span>${e(bundle.sku)} · ukuran ${e(bundle.size)}</span><span class="bundle-label-qty">${n(bundle.quantity)} pcs</span><span>Order ${e(bundle.order_reference)}</span></div></section>`:'')
+      + `<div class="panel-grid">${groups}</div>`;
     $('bundle-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(bundle.order_id);};
     if($('print-bundle'))$('print-bundle').onclick=()=>window.print();
     if($('reverse-bundle'))$('reverse-bundle').onclick=()=>{
@@ -2619,7 +2699,7 @@ async function bundleDialog(bundleId) {
         '/api/bundles/'+encodeURIComponent(bundle.id)+'/reverse',
         `${bundle.reference} · ${n(bundle.quantity)} pcs\nKoreksi melepaskan alokasi identitas bundle. Posisi WIP tidak berubah dan riwayat asli tetap tersimpan.`);
     };
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="bundle" data-id="${e(bundleId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Bundle gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="bundle" data-id="${e(bundleId)}" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 async function sewingJobsDialog(orderId) {
@@ -2972,7 +3052,96 @@ async function finishedGoodsReceiptDialog(receiptId) {
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const sellable=receipt.inventory.some(row=>row.stock_status==='sellable'),hold=receipt.inventory.some(row=>row.stock_status==='hold'),damaged=receipt.inventory.some(row=>row.stock_status==='damaged');
     const reservable=receipt.inventory.some(row=>row.stock_status==='sellable'&&row.available_quantity>0);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(receipt.reference)} · ${receipt.status==='active'?'Aktif':'Sudah dikoreksi'}</p><h3>${n(receipt.received_quantity)} pcs · ${e(receipt.sku)} · ${e(receipt.size)}</h3><article class="material-event"><h3>Inventori sekarang</h3>${receipt.inventory.map(row=>`<p>${e(row.location)} · ${e(row.stock_status)} ${n(row.quantity)} pcs${row.stock_status==='sellable'?` · available ${n(row.available_quantity)} · reserved ${n(row.reserved_quantity)}`:''}</p>`).join('') || '<p>Stok penerimaan ini sudah dilepaskan.</p>'}<p>Diterima awal di ${e(receipt.location)} · ${date(receipt.received_date)}</p><p>SKU dipindai: ${e(receipt.scanned_sku)}</p></article><p>Final QC ${e(receipt.final_qc_reference)} · finishing ${e(receipt.finishing_reference)} · sewing ${e(receipt.sewing_reference)} · bundle ${e(receipt.bundle_reference)}</p><p class="reason">${e(receipt.reason)}</p><p class="hint">${e(receipt.actor_name)} · ${purchaseStamp(receipt.created_at)}</p>${receipt.active_movement_count?`<p class="hint">${n(receipt.active_movement_count)} pergerakan gudang aktif. Koreksi pergerakan tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.active_reservation_count?`<p class="hint">${n(receipt.active_reservation_count)} reservasi marketplace aktif. Lepaskan reservasi tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.active_adjustment_count?`<p class="hint">${n(receipt.active_adjustment_count)} adjustment aktif. Koreksi adjustment tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.active_stock_count_count?`<p class="hint">${n(receipt.active_stock_count_count)} stock opname aktif. Koreksi catatan tersebut sebelum mengoreksi penerimaan.</p>`:''}${receipt.reversal?`<article class="material-event"><h3>Penerimaan barang jadi dikoreksi</h3><p class="reason">${e(receipt.reversal.reason)}</p><p class="hint">${e(receipt.reversal.actor_name)} · ${purchaseStamp(receipt.reversal.created_at)}</p></article>`:''}${receipt.status==='active'?`<section class="bundle-label finished-goods-label" aria-label="Label barang jadi ${e(receipt.reference)}"><img src="/api/finished-goods-receipts/${e(encodeURIComponent(receipt.id))}/label.svg" alt="Kode QR barang jadi ${e(receipt.reference)}"><div><strong>${e(receipt.reference)}</strong><span>${e(receipt.sku)} · ukuran ${e(receipt.size)}</span><span class="bundle-label-qty">${n(receipt.received_quantity)} pcs</span><span>${e(receipt.location)} · ${date(receipt.received_date)}</span><span>Order ${e(receipt.order_reference)}</span></div></section>`:''}<div class="actions"><button data-action="finished-goods-traceability" data-id="${e(receipt.id)}">Jejak stok lengkap</button><button id="finished-goods-order">Buka order produksi</button><button data-action="final-qc-record" data-id="${e(receipt.final_qc_record_id)}">Final QC asal</button><button data-action="finishing-record" data-id="${e(receipt.finishing_record_id)}">Finishing asal</button><button data-action="sewing-job" data-id="${e(receipt.job_id)}">Job sewing asal</button><button data-action="bundle" data-id="${e(receipt.bundle_id)}">Bundle asal</button><button data-action="finished-goods" data-id="${e(receipt.order_id)}">Semua barang jadi</button><button data-action="warehouse" data-id="${e(receipt.order_id)}">Gudang order</button><button data-action="marketplace-reservations" data-id="${e(receipt.order_id)}">Reservasi order</button><button data-action="finished-goods-adjustments" data-id="${e(receipt.order_id)}">Riwayat adjustment</button><button data-action="finished-goods-stock-counts" data-id="${e(receipt.order_id)}">Riwayat stock opname</button>${receipt.status==='active'?'<button id="print-finished-goods">Cetak label barang jadi</button>':''}${user.role!=='viewer'&&receipt.status==='active'?`<button data-action="new-finished-goods-stock-count" data-id="${e(receipt.id)}">Catat stock opname</button>`:''}${user.role!=='viewer'&&receipt.status==='active'?`<button data-action="new-finished-goods-adjustment" data-id="${e(receipt.id)}">Catat adjustment</button>`:''}${user.role!=='viewer'&&receipt.status==='active'&&reservable?`<button data-action="new-marketplace-reservation" data-id="${e(receipt.id)}">Reservasi marketplace</button>`:''}${user.role!=='viewer' && receipt.status==='active' && (sellable||hold||damaged)?`<button data-action="new-warehouse-movement" data-kind="transfer" data-id="${e(receipt.id)}">Transfer lokasi</button>`:''}${user.role!=='viewer' && receipt.status==='active' && hold?`<button data-action="new-warehouse-movement" data-kind="hold_release" data-id="${e(receipt.id)}">Lepaskan hold</button><button data-action="new-warehouse-movement" data-kind="hold_damage" data-id="${e(receipt.id)}">Tandai damaged</button>`:''}${user.role==='admin' && receipt.status==='active' && !receipt.active_movement_count && !receipt.active_reservation_count && !receipt.active_adjustment_count && !receipt.active_stock_count_count?'<button id="reverse-finished-goods">Koreksi penerimaan</button>':''}</div>`;
+    // Hasil langsung dari Scan barang jadi. INVENTORI SEKARANG naik ke atas katalog aksi, karena
+    // pertanyaan pertama di gudang adalah "barangnya masih ada berapa dan boleh dijual atau tidak",
+    // bukan "apa saja yang bisa saya klik". sellable/hold/damaged tetap istilah domainnya sendiri,
+    // dan quantity / available / reserved tetap TIGA angka - menggabungkannya akan menghapus
+    // perbedaan antara stok yang ada dan stok yang boleh dijanjikan.
+    const active=receipt.status==='active',writer=user.role!=='viewer';
+    const blockers=[
+      [receipt.active_movement_count,'pergerakan gudang aktif','Koreksi pergerakan tersebut sebelum mengoreksi penerimaan.'],
+      [receipt.active_reservation_count,'reservasi marketplace aktif','Lepaskan reservasi tersebut sebelum mengoreksi penerimaan.'],
+      [receipt.active_adjustment_count,'adjustment aktif','Koreksi adjustment tersebut sebelum mengoreksi penerimaan.'],
+      [receipt.active_stock_count_count,'stock opname aktif','Koreksi catatan tersebut sebelum mengoreksi penerimaan.'],
+    ].filter(([count])=>count);
+    const stockTone={sellable:'success',hold:'warning',damaged:'danger',picked:'info',packed:'info'};
+    const groups=[
+      ['Jejak &amp; asal',[
+        ['finished-goods-traceability','Jejak stok lengkap','row',receipt.id],
+        ['finished-goods-order','Buka order produksi','row','id'],
+        ['final-qc-record','Final QC asal','row',receipt.final_qc_record_id],
+        ['finishing-record','Finishing asal','row',receipt.finishing_record_id],
+        ['sewing-job','Job sewing asal','row',receipt.job_id],
+        ['bundle','Bundle asal','row',receipt.bundle_id],
+        ['finished-goods','Semua barang jadi','row',receipt.order_id],
+      ]],
+      ['Gudang &amp; stok',[
+        ['warehouse','Gudang order','row',receipt.order_id],
+        ['finished-goods-adjustments','Riwayat adjustment','row',receipt.order_id],
+        ['finished-goods-stock-counts','Riwayat stock opname','row',receipt.order_id],
+        writer&&active&&['new-finished-goods-stock-count','Catat stock opname','command',receipt.id],
+        writer&&active&&['new-finished-goods-adjustment','Catat adjustment','command',receipt.id],
+        writer&&active&&(sellable||hold||damaged)&&['new-warehouse-movement','Transfer lokasi','command',receipt.id,'transfer'],
+        writer&&active&&hold&&['new-warehouse-movement','Lepaskan hold','command',receipt.id,'hold_release'],
+        writer&&active&&hold&&['new-warehouse-movement','Tandai damaged','command',receipt.id,'hold_damage'],
+      ]],
+      ['Marketplace',[
+        ['marketplace-reservations','Reservasi order','row',receipt.order_id],
+        writer&&active&&reservable&&['new-marketplace-reservation','Reservasi marketplace','command',receipt.id],
+      ]],
+      ['Utilitas &amp; koreksi',[
+        active&&['print-finished-goods','Cetak label barang jadi','command','id'],
+        user.role==='admin'&&active&&!receipt.active_movement_count&&!receipt.active_reservation_count&&!receipt.active_adjustment_count&&!receipt.active_stock_count_count&&['reverse-finished-goods','Koreksi penerimaan','destructive','id'],
+      ]],
+    ].map(([title,items])=>{
+      const present=items.filter(Boolean);
+      if(!present.length)return '';
+      const commands=present.filter(([,,weight])=>weight!=='row'),rows=present.filter(([,,weight])=>weight==='row');
+      const attrs=(action,target,kind)=>target==='id'?`id="${action}"`:`data-action="${action}" data-id="${e(target)}"${kind?` data-kind="${kind}"`:''}`;
+      return `<div class="utility-panel"><p class="utility-panel-title">${title}</p>`
+        + (commands.length?`<div class="action-row">${commands.map(([action,label,weight,target,kind])=>
+          `<button type="button" class="${weight==='destructive'?'action-destructive':'action-secondary'}" ${attrs(action,target,kind)}>${label}</button>`).join('')}</div>`:'')
+        + (rows.length?`<div class="utility-rows">${rows.map(([action,label,,target,kind])=>
+          `<button type="button" class="record-row" ${attrs(action,target,kind)}>`
+          + `<span class="record-row-copy"><span class="data-primary">${label}</span></span>${svgIcon('arrow-right','icon-sm')}</button>`).join('')}</div>`:'')
+        + '</div>';
+    }).join('');
+    $('dialog-content').innerHTML=`<p class="workspace-meta">${e(receipt.reference)}</p>`
+      + `<h3 class="data-primary">${n(receipt.received_quantity)} pcs · ${e(receipt.sku)} · ${e(receipt.size)}</h3>`
+      + `<span class="chip-row"><span class="status-chip status-chip-${active?'success':'neutral'}"><span class="status-dot" aria-hidden="true"></span>${active?'Aktif':'Sudah dikoreksi'}</span></span>`
+      + '<section aria-labelledby="finished-goods-inventory-heading">'
+      + '<div class="workspace-subhead"><h3 id="finished-goods-inventory-heading" class="workspace-section-title">Inventori sekarang</h3></div>'
+      + (receipt.inventory.length
+        ? `<ul class="record-list">${receipt.inventory.map(row=>`<li class="record-row">`
+          + `<span class="metric-icon">${svgIcon('box','icon-sm')}</span>`
+          + '<span class="record-row-copy">'
+          + `<span class="data-primary">${e(row.location)}</span>`
+          + `<span class="chip-row"><span class="status-chip status-chip-${stockTone[row.stock_status]||'neutral'}"><span class="status-dot" aria-hidden="true"></span>${e(warehouseStatus[row.stock_status]||row.stock_status)}</span></span>`
+          + '</span><span class="record-row-aside"><dl class="detail-grid detail-grid-compact">'
+          + `<div class="detail-field"><dt>Jumlah</dt><dd>${n(row.quantity)} <small class="metric-unit">pcs</small></dd></div>`
+          + (row.stock_status==='sellable'?`<div class="detail-field"><dt>Available</dt><dd>${n(row.available_quantity)} <small class="metric-unit">pcs</small></dd></div><div class="detail-field"><dt>Reserved</dt><dd>${n(row.reserved_quantity)} <small class="metric-unit">pcs</small></dd></div>`:'')
+          + '</dl></span></li>').join('')}</ul>`
+        : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Stok penerimaan ini sudah dilepaskan.</p><p class="empty-state-copy">Tidak ada saldo sellable, hold, atau damaged yang tersisa dari penerimaan ini.</p></div>`)
+      + '</section>'
+      + '<div class="utility-panel"><p class="utility-panel-title">Sumber penerimaan</p><dl class="detail-grid">'
+      + `<div class="detail-field"><dt>Diterima awal di</dt><dd>${e(receipt.location)}</dd></div>`
+      + `<div class="detail-field"><dt>Tanggal terima</dt><dd>${date(receipt.received_date)}</dd></div>`
+      + `<div class="detail-field"><dt>SKU dipindai</dt><dd>${e(receipt.scanned_sku)}</dd></div>`
+      + '</dl></div>'
+      + '<div class="utility-panel"><p class="utility-panel-title">Jejak produksi</p><dl class="detail-grid">'
+      + `<div class="detail-field"><dt>Final QC</dt><dd>${e(receipt.final_qc_reference)}</dd></div>`
+      + `<div class="detail-field"><dt>Finishing</dt><dd>${e(receipt.finishing_reference)}</dd></div>`
+      + `<div class="detail-field"><dt>Sewing</dt><dd>${e(receipt.sewing_reference)}</dd></div>`
+      + `<div class="detail-field"><dt>Bundle</dt><dd>${e(receipt.bundle_reference)}</dd></div>`
+      + '</dl></div>'
+      + `<p class="info-panel">${svgIcon('info','icon-sm')}<span>${e(receipt.reason)}</span></p>`
+      + `<p class="workspace-meta">${e(receipt.actor_name)} · ${purchaseStamp(receipt.created_at)}</p>`
+      // Setiap kondisi penghalang tetap terlihat dengan angka aslinya: inilah yang menjelaskan
+      // mengapa Koreksi penerimaan tidak tersedia, jadi menyembunyikannya akan menyembunyikan sebabnya.
+      + blockers.map(([count,what,advice])=>`<p class="attention-note">${svgIcon('alert-triangle','icon-sm')}<span class="attention-note-copy"><strong class="attention-note-title">${n(count)} ${what}</strong><span class="attention-note-reason">${advice}</span></span></p>`).join('')
+      + (receipt.reversal?`<div class="utility-panel"><h3 class="workspace-section-title">Penerimaan barang jadi dikoreksi</h3><p class="timeline-detail reason">${e(receipt.reversal.reason)}</p><p class="workspace-meta">${e(receipt.reversal.actor_name)} · ${purchaseStamp(receipt.reversal.created_at)}</p></div>`:'')
+      + (active?`<section class="bundle-label finished-goods-label" aria-label="Label barang jadi ${e(receipt.reference)}"><img src="/api/finished-goods-receipts/${e(encodeURIComponent(receipt.id))}/label.svg" alt="Kode QR barang jadi ${e(receipt.reference)}"><div><strong>${e(receipt.reference)}</strong><span>${e(receipt.sku)} · ukuran ${e(receipt.size)}</span><span class="bundle-label-qty">${n(receipt.received_quantity)} pcs</span><span>${e(receipt.location)} · ${date(receipt.received_date)}</span><span>Order ${e(receipt.order_reference)}</span></div></section>`:'')
+      + `<div class="panel-grid">${groups}</div>`;
     $('finished-goods-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(receipt.order_id);};
     if($('print-finished-goods'))$('print-finished-goods').onclick=()=>window.print();
     if($('reverse-finished-goods'))$('reverse-finished-goods').onclick=()=>{
@@ -2981,7 +3150,7 @@ async function finishedGoodsReceiptDialog(receiptId) {
         '/api/finished-goods-receipts/'+encodeURIComponent(receipt.id)+'/reverse',
         `${receipt.reference} · ${n(receipt.received_quantity)} pcs\nKoreksi melepaskan klasifikasi sellable/hold tanpa mengubah saldo WIP warehouse. Riwayat asli tetap tersimpan.`);
     };
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="finished-goods-receipt" data-id="${e(receiptId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Penerimaan barang jadi gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="finished-goods-receipt" data-id="${e(receiptId)}" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 const traceEventLabels={
@@ -4786,6 +4955,19 @@ async function capacityCalendarForm(workCenterId,workDate) {
 }
 
 const workforceStatusLabels={present:'Hadir',leave:'Cuti',absent:'Absen',unrecorded:'Belum dicatat'};
+// Empat keadaan kehadiran, dipetakan sekali ke nada dan glif A6. Warna bukan satu-satunya
+// kanal: glif memberi bentuk yang berbeda di forced-colors, dan labelnya tetap kata. Cuti
+// bukan kegagalan, jadi nadanya informatif - bukan merah; absen menuntut perhatian, bukan alarm.
+const workforceStatusTone={present:['success','check-circle'],leave:['info','external'],absent:['warning','alert-triangle'],unrecorded:['neutral','clipboard']};
+// Field A6 untuk workflow People. Label eksplisit lewat `for`/`id` menggantikan label pembungkus
+// legacy, dan nama aksesibel setiap kontrol tetap PERSIS kata yang sama - itulah yang dipakai
+// `form.elements[...]`, `getByLabel` dan pembaca layar untuk menemukannya. Prefiks `wf-` dipakai
+// supaya id di dalam dialog tidak pernah bertabrakan dengan kontrol roster di permukaan halaman.
+const workforceField=(name,label,type,attrs='',wide='')=>`<div class="field${wide}"><label class="field-label" for="wf-${name}">${e(label)}</label><input id="wf-${name}" name="${name}" type="${type}" ${attrs}></div>`;
+const workforceSelect=(name,label,options,wide='')=>`<div class="field${wide}"><label class="field-label" for="wf-${name}">${e(label)}</label><select id="wf-${name}" name="${name}">${options}</select></div>`;
+// Fakta yang tidak bisa diubah pemakai, ditampilkan di dalam grid form: bukan input, jadi bukan
+// `.field` yang bisa difokus - tetapi tetap sebaris dengan field lain supaya formnya satu kolom logis.
+const workforceFact=(label,value,help='')=>`<div class="field field-wide full"><span class="field-label">${e(label)}</span><strong class="data-primary">${value}</strong>${help?`<span class="field-help">${help}</span>`:''}</div>`;
 
 async function workforcePage(path,params={}) {
   let items=[],page;
@@ -4814,8 +4996,9 @@ async function loadPeople() {
   const version = epoch, request = ++peopleRequest, form = $('workforce-filter');
   workforceFilters = {...Object.fromEntries(new FormData(form))};
   const rendered = JSON.stringify(workforceFilters);
-  message('workforce-message','Memuat roster karyawan…');
+  pageState('workforce-message','loading','Memuat roster karyawan…');
   $('workforce-summary').hidden = true; $('workforce-list').replaceChildren();
+  $('workforce-roster-meta').textContent = '';
   try{
     const params=workforceFilters;
     const [employees,attendance]=await Promise.all([
@@ -4823,28 +5006,69 @@ async function loadPeople() {
       workforcePage('/api/workforce/attendance',{start_date:params.work_date,end_date:params.work_date,status:'all',q:params.q})
     ]);
     if(version!==epoch||request!==peopleRequest||view!=='people')return;
-    message('workforce-message','');
     const attendanceByEmployee=new Map(attendance.items.map(item=>[item.employee_id,item]));
     const rows=employees.items.map(employee=>({employee,attendance:attendanceByEmployee.get(employee.id)||null}));
     const filtered=rows.filter(row=>params.status==='all'?(true):params.status==='unrecorded'?!row.attendance:row.attendance?.status===params.status);
     const recorded=rows.filter(row=>row.attendance),present=recorded.filter(row=>row.attendance.status==='present');
     const leave=recorded.filter(row=>row.attendance.status==='leave'),absent=recorded.filter(row=>row.attendance.status==='absent');
     const overtime=recorded.reduce((total,row)=>total+row.attendance.overtime_minutes,0);
-    $('workforce-summary').innerHTML=`<div><dt>Karyawan aktif</dt><dd>${n(rows.length)}</dd></div><div><dt>Belum dicatat</dt><dd>${n(rows.length-recorded.length)}</dd></div><div><dt>Hadir</dt><dd>${n(present.length)}</dd></div><div><dt>Cuti</dt><dd>${n(leave.length)}</dd></div><div><dt>Absen</dt><dd>${n(absent.length)}</dd></div><div><dt>Lembur</dt><dd>${e(minuteQty(overtime))}</dd></div>`;
+    const unrecorded=rows.length-recorded.length;
+    // Enam sel karena ini SATU keadaan roster harian, bukan enam KPI: siapa aktif, siapa belum
+    // dicatat, dan bagaimana yang sudah dicatat terbagi. Semuanya dihitung dari seluruh karyawan
+    // aktif yang cocok dengan pencarian - bukan dari baris yang lolos filter status - supaya
+    // menyaring roster tidak pernah mengubah kebenaran harian di atasnya. Nada hanya muncul saat
+    // angkanya memang menuntut tindakan hari ini.
+    $('workforce-summary').innerHTML=[
+      ['Karyawan aktif',rows.length,'orang','users','metric-card-info'],
+      ['Belum dicatat',unrecorded,'orang','clipboard',unrecorded>0?'metric-card-warning':''],
+      ['Hadir',present.length,'orang','check-circle','metric-card-success'],
+      ['Cuti',leave.length,'orang','external','metric-card-info'],
+      ['Absen',absent.length,'orang','alert-triangle',absent.length>0?'metric-card-warning':''],
+      ['Lembur',overtime,'menit','clock','']
+    ].map(([label,value,unit,glyph,tone])=>`<div class="metric-card${tone?' '+tone:''}">`
+      + `<span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+      + `<dt class="metric-label">${label}</dt>`
+      + `<dd class="metric-value">${n(value)} <small class="metric-unit">${unit}</small></dd></div>`).join('');
     $('workforce-summary').hidden=false;
-    $('workforce-list').innerHTML=filtered.length?filtered.map(({employee,attendance:item})=>{
-      const status=item?.status||'unrecorded',statusClass=status==='present'?'done':status==='absent'?'late':'';
+    $('workforce-roster-meta').textContent=`${n(filtered.length)} dari ${n(rows.length)} karyawan aktif`;
+    // Tiga ketiadaan yang berbeda, dan tidak satu pun boleh mengaku sebagai yang lain: filter
+    // status yang tidak cocok, pencarian yang tidak cocok, dan benar-benar belum ada karyawan aktif.
+    if(filtered.length)pageState('workforce-message','');
+    else if(rows.length)pageState('workforce-message','empty','Tidak ada karyawan yang cocok dengan status dan pencarian ini.',
+      'Ubah status atau pencarian, atau reset filter untuk melihat seluruh roster tanggal ini.',
+      '<button type="button" class="action-secondary" data-action="reset-workforce-filter">Reset filter</button>');
+    else if(params.q)pageState('workforce-message','empty','Tidak ada karyawan aktif yang cocok dengan pencarian ini.',
+      'Periksa ejaan kode, nama, atau departemen.',
+      '<button type="button" class="action-secondary" data-action="reset-workforce-filter">Reset filter</button>');
+    else pageState('workforce-message','empty','Belum ada karyawan aktif.',
+      user.role==='admin'?'Tambahkan karyawan untuk mulai mencatat kehadiran harian.':'Minta admin menambahkan karyawan aktif untuk tim.',
+      user.role==='admin'?'<button type="button" class="action-primary" data-action="new-employee">Tambah karyawan pertama</button>':'');
+    $('workforce-list').innerHTML=!filtered.length?'':`<ul class="record-list">${filtered.map(({employee,attendance:item})=>{
+      const status=item?.status||'unrecorded',[tone,glyph]=workforceStatusTone[status];
+      // Hadir punya jam kerja yang nyata; cuti dan absen punya catatan; belum dicatat tidak punya
+      // apa pun, dan mengatakannya adalah informasi - bukan ruang kosong.
       const detail=item?.status==='present'?`${item.clock_in.slice(0,5)}–${item.clock_out.slice(0,5)} · kerja ${minuteQty(item.work_minutes)} · lembur ${minuteQty(item.overtime_minutes)}`:item?.notes||'Belum ada catatan untuk tanggal ini.';
-      return `<article class="workforce-row" data-workforce-employee="${e(employee.id)}"><div><span class="reference">${e(employee.code)} · ${e(employee.department)}</span><h3>${e(employee.name)}</h3><p>${e(detail)}</p>${item?.notes&&item.status==='present'?`<p class="hint">${e(item.notes)}</p>`:''}</div><div class="workforce-row-actions"><span class="status-label ${statusClass}">${e(workforceStatusLabels[status])}</span>${user.role!=='viewer'?`<button type="button" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:''}${item?`<button type="button" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:''}</div></article>`;
-    }).join(''):'<p class="state">Tidak ada karyawan yang cocok dengan status dan pencarian ini.</p>';
+      return `<li class="record-row" data-workforce-employee="${e(employee.id)}">`
+        + `<span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+        + '<span class="record-row-copy">'
+        + `<h3 class="data-primary">${e(employee.name)}</h3>`
+        + `<span class="data-secondary">${e(employee.code)} · ${e(employee.department)}</span>`
+        + `<span class="chip-row"><span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${e(workforceStatusLabels[status])}</span></span>`
+        + `<span class="data-meta">${e(detail)}</span>`
+        + (item?.notes&&item.status==='present'?`<span class="data-meta">${e(item.notes)}</span>`:'')
+        + '</span><span class="record-row-aside">'
+        + (user.role!=='viewer'?`<button type="button" class="action-secondary" data-action="attendance-form" data-id="${e(employee.id)}" data-date="${e(params.work_date)}">${item?'Koreksi':'Catat'} kehadiran</button>`:'')
+        + (item?`<button type="button" class="action-quiet" data-action="attendance-history" data-id="${e(item.id)}">Riwayat</button>`:'')
+        + '</span></li>';
+    }).join('')}</ul>`;
     // Tanggal, status, dan pencarian menggantikan roster; hanya penggantian itu yang memudar
     // sebagai satu unit. Membuka halaman ini dengan filter yang sama tidak memudar.
     const replacing = workforceRendered !== null && workforceRendered !== rendered;
     workforceRendered = rendered;
     if (replacing) playEntryMotion($('workforce-list'), '--motion-base');
   }catch(error){if(version===epoch&&request===peopleRequest&&view==='people'){
-    message('workforce-message',error.message,true);
-    $('workforce-message').insertAdjacentHTML('beforeend','<br><button id="workforce-retry" type="button">Coba lagi</button>');
+    pageState('workforce-message','error','Roster karyawan gagal dimuat.',error.message,
+      '<button id="workforce-retry" type="button" class="action-secondary">Coba lagi</button>');
     $('workforce-retry').onclick=loadPeople;
   }}
 }
@@ -4855,8 +5079,29 @@ async function workforceEmployeeMasterDialog() {
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   try{
     const report=await workforcePage('/api/workforce/employees',{status:'all'});if(!current())return;
-    $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Status dan perubahan master tersimpan sebagai revisi.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role==='admin'?'<button class="primary" data-action="new-employee" type="button">Tambah karyawan</button>':''}</div></div><div class="product-list workforce-master">${report.items.map(item=>`<article class="product-item" data-workforce-master="${e(item.id)}"><div><strong>${e(item.code)} · ${e(item.name)}</strong><span>${e(item.department)} · ${item.active?'aktif':'nonaktif'} · revisi ${n(item.revision)}</span></div><div class="actions">${user.role==='admin'?`<button data-action="edit-employee" data-id="${e(item.id)}" type="button">Ubah</button>`:''}<button data-action="employee-history" data-id="${e(item.id)}" type="button">Riwayat</button></div></article>`).join('')||'<p class="state">Belum ada karyawan.</p>'}</div></div>`;
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="employee-master">Coba lagi</button>`;}
+    // Master data adalah daftar identitas, bukan galeri kartu: satu baris per karyawan, kode dan
+    // nama sebagai identitas, status aktif sebagai chip, dan revisi sebagai konteks yang tenang.
+    $('dialog-content').innerHTML='<div class="workforce-screen">'
+      + '<div class="workspace-subhead">'
+      + `<span class="workspace-meta">${n(report.items.length)} karyawan</span>`
+      + '<span class="action-row"><button data-action="workforce" type="button" class="action-quiet">Kembali ke roster</button>'
+      + (user.role==='admin'?'<button class="action-primary" data-action="new-employee" type="button">Tambah karyawan</button>':'')
+      + '</span></div>'
+      + `<p class="info-panel">${svgIcon('info','icon-sm')}<span>Status dan perubahan master tersimpan sebagai revisi. Kode karyawan tidak dapat diubah setelah dibuat.</span></p>`
+      + (report.items.length
+        ? `<ul id="workforce-master-list" class="record-list">${report.items.map(item=>`<li class="record-row" data-workforce-master="${e(item.id)}">`
+          + `<span class="metric-icon">${svgIcon('user','icon-sm')}</span>`
+          + '<span class="record-row-copy">'
+          + `<span class="data-primary">${e(item.code)} · ${e(item.name)}</span>`
+          + `<span class="data-secondary">${e(item.department)}</span>`
+          + `<span class="chip-row"><span class="status-chip status-chip-${item.active?'success':'neutral'}"><span class="status-dot" aria-hidden="true"></span>${item.active?'Aktif':'Nonaktif'}</span><span class="data-meta">Revisi ${n(item.revision)}</span></span>`
+          + '</span><span class="record-row-aside">'
+          + (user.role==='admin'?`<button data-action="edit-employee" data-id="${e(item.id)}" type="button" class="action-secondary">Ubah</button>`:'')
+          + `<button data-action="employee-history" data-id="${e(item.id)}" type="button" class="action-quiet">Riwayat</button>`
+          + '</span></li>').join('')}</ul>`
+        : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada karyawan.</p><p class="empty-state-copy">Tambahkan karyawan untuk mulai mencatat kehadiran dan permintaan.</p></div>`)
+      + '</div>';
+  }catch(error){if(current())$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Daftar karyawan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="employee-master" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 async function workforceEmployeeForm(employeeId=null) {
@@ -4867,10 +5112,11 @@ async function workforceEmployeeForm(employeeId=null) {
     if(version!==epoch)return;
     const changing=Boolean(employee);
     formDialog(changing?'Ubah karyawan':'Tambah karyawan',
-      (changing?`<p class="full"><strong>${e(employee.code)}</strong></p>`:field('code','Kode karyawan','text','required maxlength="40" autocomplete="off"'))+
-      field('name','Nama karyawan','text','required maxlength="160"')+field('department','Departemen','text','required maxlength="160"')+
-      (changing?'<label>Status<select name="active"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></label>':'')+
-      `<label class="full">${changing?'Alasan perubahan':'Sumber data awal'}<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>{
+      (changing?workforceFact('Kode karyawan',e(employee.code),'Kode karyawan tidak dapat diubah setelah dibuat.')
+        :workforceField('code','Kode karyawan','text','required maxlength="40" autocomplete="off"'))+
+      workforceField('name','Nama karyawan','text','required maxlength="160"')+workforceField('department','Departemen','text','required maxlength="160"')+
+      (changing?workforceSelect('active','Status','<option value="true">Aktif</option><option value="false">Nonaktif</option>'):'')+
+      reasonField(changing?'Alasan perubahan':'Sumber data awal'),form=>{
         const data=new FormData(form);
         return changing?{expected_revision:employee.revision,name:data.get('name').trim(),department:data.get('department').trim(),active:data.get('active')==='true',reason:data.get('reason').trim()}:{code:data.get('code').trim(),name:data.get('name').trim(),department:data.get('department').trim(),reason:data.get('reason').trim()};
       },changing?`/api/workforce/employees/${encodeURIComponent(employee.id)}/changes`:'/api/workforce/employees',changing?`Revisi ${employee.revision}. Kode karyawan tidak dapat diubah.`:'Kode dinormalisasi menjadi huruf besar dan tidak dapat dipakai ulang.');
@@ -4884,12 +5130,17 @@ async function workforceAttendanceForm(employeeId,workDate) {
   try{
     const [employee,report]=await Promise.all([api.get('/api/workforce/employees/'+encodeURIComponent(employeeId)),workforcePage('/api/workforce/attendance',{start_date:workDate,end_date:workDate,employee_id:employeeId})]);
     if(version!==epoch)return;const current=report.items[0]||null;
-    formDialog(current?'Koreksi kehadiran':'Catat kehadiran',`<p class="full"><strong>${e(employee.code)} · ${e(employee.name)}</strong><br><span class="hint">${e(employee.department)}</span></p>`+
-      field('work_date','Tanggal','date',`required readonly value="${e(workDate)}"`)+
-      '<label>Status<select name="status"><option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option></select></label>'+
-      field('clock_in','Jam masuk','time','required')+field('clock_out','Jam pulang','time','required')+
-      field('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')+
-      '<label class="full">Catatan<textarea name="notes" maxlength="1000"></textarea></label><label class="full">Alasan pencatatan atau koreksi<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+    formDialog(current?'Koreksi kehadiran':'Catat kehadiran',
+      workforceFact('Karyawan',`${e(employee.code)} · ${e(employee.name)}`,e(employee.department))+
+      workforceField('work_date','Tanggal','date',`required readonly value="${e(workDate)}"`)+
+      workforceSelect('status','Status','<option value="present">Hadir</option><option value="leave">Cuti</option><option value="absent">Absen</option>')+
+      workforceField('clock_in','Jam masuk','time','required')+workforceField('clock_out','Jam pulang','time','required')+
+      workforceField('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')+
+      // Label tetap PERSIS "Catatan": nama aksesibelnya adalah kontrak, dan menambahkan penanda
+      // opsional ke dalamnya akan mengubah nama itu. Opsionalitas sudah dinyatakan oleh tidak
+      // adanya `required`, dan field ini tetap satu-satunya yang boleh dikirim kosong.
+      '<div class="field field-wide full"><label class="field-label" for="wf-notes">Catatan</label><textarea id="wf-notes" name="notes" maxlength="1000"></textarea></div>'+
+      reasonField('Alasan pencatatan atau koreksi'),form=>{
         const data=new FormData(form),present=data.get('status')==='present';
         return {work_date:data.get('work_date'),expected_revision:current?.revision||0,status:data.get('status'),clock_in:present?data.get('clock_in'):null,clock_out:present?data.get('clock_out'):null,overtime_minutes:present?Number(data.get('overtime_minutes')):0,notes:data.get('notes').trim(),reason:data.get('reason').trim()};
       },`/api/workforce/employees/${encodeURIComponent(employeeId)}/attendance`,current?`Catatan saat ini revisi ${current.revision}. Koreksi menambah revisi baru; catatan lama tetap utuh.`:'Satu catatan per karyawan per tanggal.');
@@ -4905,8 +5156,18 @@ async function workforceEmployeeHistoryDialog(employeeId) {
   const version=epoch;openDialog('Riwayat karyawan','<p class="state">Memuat riwayat karyawan…</p>');const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   try{
     const page=await api.get(`/api/workforce/employees/${encodeURIComponent(employeeId)}/history?limit=100`);if(!current())return;
-    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(page.employee.code)} · ${e(page.employee.name)} · ${e(page.employee.department)}</p><div>${page.items.map(item=>`<article class="history-item"><time>${e(auditStamp(item.created_at))}</time><div><strong>Revisi ${n(item.revision)} · ${item.active?'Aktif':'Nonaktif'}</strong><p>${e(item.name)} · ${e(item.department)}</p><p class="reason">${e(item.reason)}</p><p class="hint">${e(item.actor_name)}</p></div></article>`).join('')}</div>${page.next_before?'<p class="hint">Menampilkan 100 revisi terbaru.</p>':''}<button data-action="employee-master" type="button">Kembali ke daftar karyawan</button></div>`;
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="employee-history" data-id="${e(employeeId)}">Coba lagi</button>`;}
+    // Setiap revisi tetap satu kejadian di garis waktu. Tidak ada revisi yang diringkas atau
+    // digabung: nonaktif adalah perubahan yang perlu dilihat, jadi penandanya diberi nada.
+    $('dialog-content').innerHTML='<div class="workforce-screen">'
+      + `<p class="info-panel">${svgIcon('user','icon-sm')}<span>${e(page.employee.code)} · ${e(page.employee.name)} · ${e(page.employee.department)}</span></p>`
+      + `<ul class="timeline">${page.items.map(item=>`<li class="timeline-item${item.active?'':' timeline-item-warning'}">`
+        + `<time class="timeline-time" datetime="${e(item.created_at)}">${e(auditStamp(item.created_at))}</time>`
+        + `<span class="timeline-event">Revisi ${n(item.revision)} · ${item.active?'Aktif':'Nonaktif'}</span>`
+        + `<span class="timeline-actor">${e(item.name)} · ${e(item.department)} · ${e(item.actor_name)}</span>`
+        + `<p class="timeline-detail reason">${e(item.reason)}</p></li>`).join('')}</ul>`
+      + (page.next_before?'<p class="workspace-meta">Menampilkan 100 revisi terbaru.</p>':'')
+      + '<div class="action-row"><button data-action="employee-master" type="button" class="action-secondary">Kembali ke daftar karyawan</button></div></div>';
+  }catch(error){if(current())$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Riwayat karyawan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="employee-history" data-id="${e(employeeId)}" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 async function workforceAttendanceHistoryDialog(attendanceId) {
@@ -4914,26 +5175,84 @@ async function workforceAttendanceHistoryDialog(attendanceId) {
   const version=epoch;openDialog('Riwayat kehadiran','<p class="state">Memuat riwayat kehadiran…</p>');const modal=dialogVersion,current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
   try{
     const page=await api.get(`/api/workforce/attendance/${encodeURIComponent(attendanceId)}/history?limit=100`);if(!current())return;const attendance=page.attendance;
-    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(attendance.employee_code)} · ${e(attendance.employee_name)}<br>${date(attendance.work_date)}</p><div>${page.items.map(item=>`<article class="history-item"><time>${e(auditStamp(item.created_at))}</time><div><strong>Revisi ${n(item.revision)} · ${e(workforceStatusLabels[item.status])}</strong><p>${item.status==='present'?`${e(item.clock_in.slice(0,5))}–${e(item.clock_out.slice(0,5))} · kerja ${e(minuteQty(item.work_minutes))} · lembur ${e(minuteQty(item.overtime_minutes))}`:'Tanpa jam kerja'}</p>${item.notes?`<p>${e(item.notes)}</p>`:''}<p class="reason">${e(item.reason)}</p><p class="hint">${e(item.actor_name)}</p></div></article>`).join('')}</div>${page.next_before?'<p class="hint">Menampilkan 100 revisi terbaru.</p>':''}<button data-action="workforce" type="button">Kembali ke roster</button></div>`;
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="attendance-history" data-id="${e(attendanceId)}">Coba lagi</button>`;}
+    // Koreksi menambah revisi; revisi lama tidak pernah hilang dan tidak pernah diciutkan.
+    // Nada penanda mengikuti status revisi itu, jadi urutan koreksi terbaca sebagai perjalanan.
+    $('dialog-content').innerHTML='<div class="workforce-screen">'
+      + `<p class="info-panel">${svgIcon('clock','icon-sm')}<span>${e(attendance.employee_code)} · ${e(attendance.employee_name)} · ${date(attendance.work_date)}</span></p>`
+      + `<ul class="timeline">${page.items.map(item=>`<li class="timeline-item timeline-item-${workforceStatusTone[item.status][0]}">`
+        + `<time class="timeline-time" datetime="${e(item.created_at)}">${e(auditStamp(item.created_at))}</time>`
+        + `<span class="timeline-event">Revisi ${n(item.revision)} · ${e(workforceStatusLabels[item.status])}</span>`
+        + `<span class="timeline-actor">${item.status==='present'?`${e(item.clock_in.slice(0,5))}–${e(item.clock_out.slice(0,5))} · kerja ${e(minuteQty(item.work_minutes))} · lembur ${e(minuteQty(item.overtime_minutes))}`:'Tanpa jam kerja'} · ${e(item.actor_name)}</span>`
+        + (item.notes?`<p class="timeline-detail">${e(item.notes)}</p>`:'')
+        + `<p class="timeline-detail reason">${e(item.reason)}</p></li>`).join('')}</ul>`
+      + (page.next_before?'<p class="workspace-meta">Menampilkan 100 revisi terbaru.</p>':'')
+      + '<div class="action-row"><button data-action="workforce" type="button" class="action-secondary">Kembali ke roster</button></div></div>';
+  }catch(error){if(current())$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Riwayat kehadiran gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="attendance-history" data-id="${e(attendanceId)}" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 const workforceRequestLabels={leave:'Cuti',overtime:'Lembur'};
+// Nada keputusan approval. Menunggu adalah pekerjaan yang belum selesai, jadi menuntut perhatian;
+// ditolak adalah keputusan negatif yang final; dibatalkan bukan kegagalan, hanya tidak berlaku lagi.
+const workforceRequestTone={submitted:'warning',pending:'warning',approved:'success',rejected:'danger',cancelled:'neutral'};
 
 async function workforceRequestsDialog() {
   if(guardPending())return;
   const version=epoch;openDialog('Permintaan cuti dan lembur','<p class="state">Memuat permintaan People…</p>');const modal=dialogVersion;
   const current=()=>version===epoch&&modal===dialogVersion&&$('dialog').open;
-  $('dialog-content').innerHTML=`<div class="workforce-screen"><div class="workforce-heading"><p class="hint">Approval memberi izin; kehadiran aktual tetap dicatat terpisah.</p><div class="actions"><button data-action="workforce" type="button">Kembali ke roster</button>${user.role!=='viewer'?'<button class="primary" data-action="new-workforce-request" type="button">Ajukan permintaan</button>':''}<button data-action="approvals" type="button">Inbox approval</button></div></div><form id="workforce-request-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis<select name="kind"><option value="all">Semua jenis</option><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label><label class="full">Cari referensi, karyawan, atau departemen<input name="q" type="search" maxlength="160"></label></div><div class="form-actions"><button class="primary" type="submit">Tampilkan permintaan</button></div></form><p id="workforce-request-message" class="state" role="status"></p><dl id="workforce-request-summary" class="workforce-summary" hidden></dl><div id="workforce-request-list"></div></div>`;
+  // Dialog ini adalah ruang kerja kecil, bukan tumpukan form: identitas, satu command bar, ringkasan
+  // nyata dari API, lalu daftar permintaan. Perbedaan antara IZIN dan KEHADIRAN AKTUAL adalah
+  // kebenaran yang menanggung beban di sini, jadi ia dinyatakan sebelum filter apa pun.
+  $('dialog-content').innerHTML='<div class="workforce-screen">'
+    + '<div class="workspace-subhead"><span class="workspace-meta">Permintaan cuti dan lembur</span>'
+    + '<span class="action-row"><button data-action="workforce" type="button" class="action-quiet">Kembali ke roster</button>'
+    + '<button data-action="approvals" type="button" class="action-quiet">Inbox approval</button>'
+    + (user.role!=='viewer'?'<button class="action-primary" data-action="new-workforce-request" type="button">Ajukan permintaan</button>':'')
+    + '</span></div>'
+    + `<p class="info-panel">${svgIcon('info','icon-sm')}<span>Approval memberi izin; kehadiran aktual tetap dicatat terpisah di roster.</span></p>`
+    + '<form id="workforce-request-filter" class="command-bar">'
+    + '<div class="command-filters">'
+    + '<label class="command-filter"><span>Status</span><select name="status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label>'
+    + '<label class="command-filter"><span>Jenis</span><select name="kind"><option value="all">Semua jenis</option><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label>'
+    + '</div>'
+    + `<label class="command-search"><span class="visually-hidden">Cari referensi, karyawan, atau departemen</span>${svgIcon('search','icon-sm')}<input name="q" type="search" maxlength="160" aria-label="Cari referensi, karyawan, atau departemen" placeholder="Referensi, karyawan, atau departemen"></label>`
+    + '<div class="command-actions"><button class="action-secondary" type="submit">Tampilkan permintaan</button></div>'
+    + '</form>'
+    + '<p id="workforce-request-message" class="state" role="status"></p>'
+    + '<dl id="workforce-request-summary" class="metric-strip" aria-label="Ringkasan permintaan People" hidden></dl>'
+    + '<div id="workforce-request-list"></div></div>';
   const form=$('workforce-request-filter');let generation=0;
   const load=async()=>{
-    const gen=++generation;message('workforce-request-message','Memuat permintaan People…');$('workforce-request-summary').hidden=true;$('workforce-request-list').replaceChildren();
+    const gen=++generation;pageState('workforce-request-message','loading','Memuat permintaan People…');$('workforce-request-summary').hidden=true;$('workforce-request-list').replaceChildren();
     try{
       const params=Object.fromEntries(new FormData(form)),report=await workforcePage('/api/workforce/requests',params);if(!current()||gen!==generation)return;
-      message('workforce-request-message','');
-      $('workforce-request-summary').innerHTML=`<div><dt>Total</dt><dd>${n(report.total)}</dd></div><div><dt>Menunggu</dt><dd>${n(report.summary.submitted)}</dd></div><div><dt>Disetujui</dt><dd>${n(report.summary.approved)}</dd></div><div><dt>Cuti</dt><dd>${n(report.summary.leave)}</dd></div><div><dt>Lembur</dt><dd>${n(report.summary.overtime)}</dd></div>`;$('workforce-request-summary').hidden=false;
-      $('workforce-request-list').innerHTML=report.items.length?report.items.map(item=>`<article class="workforce-row" data-workforce-request="${e(item.id)}"><div><span class="reference">${e(item.reference)} · ${e(item.department)}</span><h3>${e(item.code)} · ${e(item.employee_name)}</h3><p>${e(workforceRequestLabels[item.kind])} · ${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''}${item.kind==='overtime'?' · '+e(minuteQty(item.overtime_minutes)):''}</p><p class="reason">${e(item.reason)}</p></div><div class="workforce-row-actions"><span class="status-label ${item.status==='approved'?'done':item.status==='rejected'?'late':''}">${e(approvalStatus[item.status])}</span><button data-action="workforce-request" data-id="${e(item.id)}" type="button">Rincian</button></div></article>`).join(''):'<p class="state">Belum ada permintaan yang sesuai filter.</p>';
-    }catch(error){if(current()&&gen===generation){message('workforce-request-message',error.message,true);$('workforce-request-message').insertAdjacentHTML('beforeend','<br><button id="workforce-request-retry" type="button">Coba lagi</button>');$('workforce-request-retry').onclick=load;}}
+      // Lima angka, semuanya dari ringkasan API - tidak ada yang disimpulkan di klien.
+      $('workforce-request-summary').innerHTML=[
+        ['Total',report.total,'list',''],
+        ['Menunggu',report.summary.submitted,'clock',report.summary.submitted>0?'metric-card-warning':''],
+        ['Disetujui',report.summary.approved,'check-circle','metric-card-success'],
+        ['Cuti',report.summary.leave,'external','metric-card-info'],
+        ['Lembur',report.summary.overtime,'activity','metric-card-info']
+      ].map(([label,value,glyph,tone])=>`<div class="metric-card${tone?' '+tone:''}">`
+        + `<span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+        + `<dt class="metric-label">${label}</dt>`
+        + `<dd class="metric-value">${n(value)} <small class="metric-unit">permintaan</small></dd></div>`).join('');
+      $('workforce-request-summary').hidden=false;
+      if(report.items.length)pageState('workforce-request-message','');
+      else pageState('workforce-request-message','empty','Belum ada permintaan yang sesuai filter.',
+        'Ubah status, jenis, atau pencarian untuk melihat permintaan lain.');
+      $('workforce-request-list').innerHTML=!report.items.length?'':`<ul class="record-list">${report.items.map(item=>`<li class="record-row" data-workforce-request="${e(item.id)}">`
+        + `<span class="metric-icon">${svgIcon(item.kind==='overtime'?'activity':'external','icon-sm')}</span>`
+        + '<span class="record-row-copy">'
+        + `<h3 class="data-primary">${e(item.code)} · ${e(item.employee_name)}</h3>`
+        + `<span class="data-secondary">${e(item.reference)} · ${e(item.department)}</span>`
+        + `<span class="chip-row"><span class="status-chip status-chip-${workforceRequestTone[item.status]}"><span class="status-dot" aria-hidden="true"></span>${e(approvalStatus[item.status])}</span>`
+        + `<span class="data-meta">${e(workforceRequestLabels[item.kind])} · ${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''}${item.kind==='overtime'?' · '+e(minuteQty(item.overtime_minutes)):''}</span></span>`
+        + `<span class="data-meta reason">${e(item.reason)}</span>`
+        + '</span><span class="record-row-aside">'
+        + `<button data-action="workforce-request" data-id="${e(item.id)}" type="button" class="action-secondary">Rincian</button>`
+        + '</span></li>').join('')}</ul>`;
+    }catch(error){if(current()&&gen===generation){pageState('workforce-request-message','error','Permintaan People gagal dimuat.',error.message,
+      '<button id="workforce-request-retry" type="button" class="action-secondary">Coba lagi</button>');$('workforce-request-retry').onclick=load;}}
   };
   form.onsubmit=event=>{event.preventDefault();load();};await load();
 }
@@ -4944,7 +5263,12 @@ async function workforceRequestForm() {
   try{
     const employees=await workforcePage('/api/workforce/employees',{status:'active'});if(version!==epoch)return;
     if(!employees.items.length){notify('Tambahkan karyawan aktif sebelum membuat permintaan.');return;}
-    formDialog('Ajukan cuti atau lembur',`<label class="full">Karyawan<select name="employee_id">${employees.items.map(item=>option(item.id,`${item.code} · ${item.name} · ${item.department}`)).join('')}</select></label><label>Jenis<select name="kind"><option value="leave">Cuti</option><option value="overtime">Lembur</option></select></label>${field('start_date','Tanggal mulai','date','required')}${field('end_date','Tanggal selesai','date','required')}${field('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')}<label class="full">Alasan permintaan<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>{
+    formDialog('Ajukan cuti atau lembur',
+      workforceSelect('employee_id','Karyawan',employees.items.map(item=>option(item.id,`${item.code} · ${item.name} · ${item.department}`)).join(''),' field-wide full')+
+      workforceSelect('kind','Jenis','<option value="leave">Cuti</option><option value="overtime">Lembur</option>')+
+      workforceField('start_date','Tanggal mulai','date','required')+workforceField('end_date','Tanggal selesai','date','required')+
+      workforceField('overtime_minutes','Lembur (menit)','number','required min="0" max="720" step="1" value="0"')+
+      reasonField('Alasan permintaan'),form=>{
       const data=new FormData(form),kind=data.get('kind'),start=data.get('start_date');return {employee_id:data.get('employee_id'),kind,start_date:start,end_date:kind==='overtime'?start:data.get('end_date'),overtime_minutes:kind==='overtime'?Number(data.get('overtime_minutes')):0,reason:data.get('reason').trim()};
     },'/api/workforce/requests','Permintaan masuk ke inbox approval. Persetujuan tidak otomatis mencatat kehadiran aktual.');
     const form=$('action-form'),toggle=()=>{const overtime=form.elements.kind.value==='overtime';form.elements.end_date.readOnly=overtime;form.elements.overtime_minutes.disabled=!overtime;form.elements.overtime_minutes.required=overtime;if(overtime)form.elements.end_date.value=form.elements.start_date.value;else if(!form.elements.end_date.value)form.elements.end_date.value=form.elements.start_date.value;};
@@ -4958,8 +5282,38 @@ async function workforceRequestDialog(requestId) {
   try{
     const item=await api.get('/api/workforce/requests/'+encodeURIComponent(requestId));if(!current())return;
     const pending=item.status==='submitted',canCancel=pending&&user.role==='operator'&&user.id===item.actor_id;
-    $('dialog-content').innerHTML=`<div class="workforce-screen"><p class="form-info">${e(item.reference)} · ${e(approvalStatus[item.status])}</p><h3>${e(item.code)} · ${e(item.employee_name)}</h3><p>${e(item.department)}${item.employee_active?'':' · karyawan nonaktif'}</p><article class="material-event"><h3>${e(workforceRequestLabels[item.kind])}</h3><p>${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''} · ${n(item.days)} hari${item.kind==='overtime'?' · '+e(minuteQty(item.overtime_minutes)):''}</p><p class="reason">${e(item.reason)}</p><p class="hint">Diajukan ${e(item.actor_name)} · ${e(auditStamp(item.created_at))}</p></article><h3>Riwayat keputusan</h3><div>${item.history.map(event=>`<article class="history-item"><time>${e(auditStamp(event.created_at))}</time><div><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)}</p></div></article>`).join('')}</div><div class="actions"><button data-action="workforce-requests" type="button">Semua permintaan</button><button data-action="workforce" type="button">Roster People</button>${pending&&user.role==='admin'?`<button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="approved" type="button">Setujui</button><button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="rejected" type="button">Tolak</button>`:''}${canCancel?`<button class="quiet" data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="cancelled" type="button">Batalkan</button>`:''}</div></div>`;
-  }catch(error){if(current())$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="workforce-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+    // Identitas `referensi · status` tetap satu baris utuh: itulah kalimat yang dicari operator
+    // ketika ia kembali ke permintaan yang sama, dan chip di bawahnya mengulanginya sebagai warna.
+    // Keputusan dan kehadiran aktual tetap dua hal berbeda, dan dikatakan begitu.
+    $('dialog-content').innerHTML='<div class="workforce-screen">'
+      + `<p class="workspace-meta">${e(item.reference)} · ${e(approvalStatus[item.status])}</p>`
+      + `<h3 class="data-primary">${e(item.code)} · ${e(item.employee_name)}</h3>`
+      + `<span class="data-secondary">${e(item.department)}${item.employee_active?'':' · karyawan nonaktif'}</span>`
+      + `<span class="chip-row"><span class="status-chip status-chip-${workforceRequestTone[item.status]}"><span class="status-dot" aria-hidden="true"></span>${e(approvalStatus[item.status])}</span>`
+      + `<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>${e(workforceRequestLabels[item.kind])}</span></span>`
+      + '<dl class="detail-grid">'
+      + `<div class="detail-field"><dt>Tanggal</dt><dd>${date(item.start_date)}${item.end_date!==item.start_date?'–'+date(item.end_date):''}</dd></div>`
+      + `<div class="detail-field"><dt>Lama</dt><dd>${n(item.days)} hari</dd></div>`
+      + (item.kind==='overtime'?`<div class="detail-field"><dt>Lembur</dt><dd>${e(minuteQty(item.overtime_minutes))}</dd></div>`:'')
+      + `<div class="detail-field"><dt>Diajukan</dt><dd>${e(item.actor_name)}</dd></div>`
+      + `<div class="detail-field"><dt>Waktu pengajuan</dt><dd>${e(auditStamp(item.created_at))}</dd></div>`
+      + '</dl>'
+      + `<p class="info-panel">${svgIcon('info','icon-sm')}<span>${e(item.reason)}</span></p>`
+      + `<p class="info-panel">${svgIcon('shield','icon-sm')}<span>Approval memberi izin. Persetujuan tidak otomatis mencatat kehadiran aktual; kehadiran tetap dicatat di roster.</span></p>`
+      + '<h3 class="workspace-section-title">Riwayat keputusan</h3>'
+      + (item.history.length?`<ul class="timeline">${item.history.map(event=>`<li class="timeline-item timeline-item-${workforceRequestTone[event.status]}">`
+        + `<time class="timeline-time" datetime="${e(event.created_at)}">${e(auditStamp(event.created_at))}</time>`
+        + `<span class="timeline-event">${e(approvalStatus[event.status])}</span>`
+        + `<span class="timeline-actor">${e(event.actor_name)}</span>`
+        + `<p class="timeline-detail reason">${e(event.reason)}</p></li>`).join('')}</ul>`
+        : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada keputusan.</p><p class="empty-state-copy">Permintaan ini masih menunggu di inbox approval.</p></div>`)
+      + '<div class="action-row">'
+      + '<button data-action="workforce-requests" type="button" class="action-quiet">Semua permintaan</button>'
+      + '<button data-action="workforce" type="button" class="action-quiet">Roster People</button>'
+      + (pending&&user.role==='admin'?`<button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="approved" type="button" class="action-primary">Setujui</button><button data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="rejected" type="button" class="action-destructive">Tolak</button>`:'')
+      + (canCancel?`<button class="action-destructive" data-action="workforce-request-decision" data-id="${e(item.id)}" data-status="cancelled" type="button">Batalkan</button>`:'')
+      + '</div></div>';
+  }catch(error){if(current())$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Permintaan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button data-action="workforce-request" data-id="${e(requestId)}" type="button" class="action-secondary">Coba lagi</button></p></div>`;}
 }
 
 async function workforceRequestDecisionForm(requestId,status) {
@@ -4968,7 +5322,9 @@ async function workforceRequestDecisionForm(requestId,status) {
   try{
     const item=await api.get('/api/workforce/requests/'+encodeURIComponent(requestId));if(version!==epoch)return;
     const label={approved:'Setujui',rejected:'Tolak',cancelled:'Batalkan'}[status];
-    formDialog(`${label} permintaan ${workforceRequestLabels[item.kind].toLowerCase()}`,`<p class="full"><strong>${e(item.reference)} · ${e(item.code)} · ${e(item.employee_name)}</strong></p><label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>`,form=>({status,expected_revision:item.revision,reason:new FormData(form).get('reason').trim()}),`/api/workforce/requests/${encodeURIComponent(item.id)}/decisions`,'Keputusan tersimpan permanen di riwayat approval.');
+    formDialog(`${label} permintaan ${workforceRequestLabels[item.kind].toLowerCase()}`,
+      workforceFact('Permintaan',`${e(item.reference)} · ${e(item.code)} · ${e(item.employee_name)}`)+reasonField(),
+      form=>({status,expected_revision:item.revision,reason:new FormData(form).get('reason').trim()}),`/api/workforce/requests/${encodeURIComponent(item.id)}/decisions`,'Keputusan tersimpan permanen di riwayat approval.');
   }catch(error){if(version===epoch)notify(error.message);}
 }
 

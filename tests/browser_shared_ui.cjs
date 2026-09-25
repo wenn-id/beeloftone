@@ -327,7 +327,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
 
   // A section other than the dashboard must be equally dark-correct.
   await openSidebarDestination('People');
-  await page.getByRole('heading', {name: 'Kehadiran tim yang tercatat.', exact: true}).waitFor();
+  await page.getByRole('heading', {name: 'People', exact: true}).waitFor();
   await page.locator('#people-view:not([hidden])').waitFor();
   await page.locator('#workforce-summary').waitFor();
   const peopleDark = await page.evaluate(() => {
@@ -347,7 +347,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   assert.ok(peopleDark.statCells >= 5, 'the roster keeps its stat cells');
   assert.ok(peopleDark.statRadius >= 12, 'roster stats are cards, not a ledger strip');
   assert.ok(peopleDark.statLuminance < 0.4, 'roster stat cards follow the dark tokens');
-  assert.equal(peopleDark.filterRadius, 20, 'the roster filter is the shared toolbar');
+  // A6.3: the roster filter is the A6 command bar, so its radius is the control radius (10px)
+  // rather than the 20px card radius the legacy `.filters` toolbar carried.
+  assert.equal(peopleDark.filterRadius, 10, 'the roster filter is the A6 command bar');
   await page.screenshot({path: path.join(shots, 'shared-ui-people-dark.png')});
   await closeDialog();
   await page.getByRole('button', {name: 'Mode terang', exact: true}).click();

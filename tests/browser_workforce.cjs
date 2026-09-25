@@ -19,7 +19,7 @@ module.exports=async({page,login,admin,operator,viewer,apiPost,work})=>{
   const dialog=()=>page.locator('dialog');
   const openPeople=async()=>{
     await page.getByRole('button',{name:'People',exact:true}).click();
-    await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'People',exact:true}).waitFor();
   };
 
   await role(admin);

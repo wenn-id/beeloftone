@@ -11,7 +11,7 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
 
   await role(operator);
   await openSidebarDestination('People');
-  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'People',exact:true}).waitFor();
   let dialog=page.locator('dialog');
   let fail=true;
   await page.route('**/api/workforce/requests*',async route=>{
@@ -48,7 +48,7 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
 
   await role(viewer);
   await openSidebarDestination('People');
-  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'People',exact:true}).waitFor();
   dialog=page.locator('dialog');
   await page.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   assert.equal(await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).count(),0);
@@ -69,7 +69,7 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
 
   await role(operator);
   await openSidebarDestination('People');
-  await page.getByRole('heading',{name:'Kehadiran tim yang tercatat.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'People',exact:true}).waitFor();
   dialog=page.locator('dialog');
   await page.getByRole('button',{name:'Permintaan cuti / lembur',exact:true}).click();
   await dialog.getByRole('button',{name:'Ajukan permintaan',exact:true}).click();

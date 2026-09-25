@@ -1603,3 +1603,192 @@ label>input,label>select,label>textarea{margin-top:6px}
   #materials-view .command-filter,#materials-view .command-filter>select,
   #products-view .command-search input{min-height:var(--touch-target-min)}
 }
+
+
+
+/* ==========================================================================
+   A6.3 - People + Scan bundle + Scan barang jadi inner-workspace containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1 and A6.2 blocks above do, done once more for the
+   three workflow workspaces A6.3 owns: the bounded column they were approved with, the
+   grouping element's own stacking rhythm, and the handful of neutralisations that stop a
+   legacy rule still shipped for OTHER pages (`.state`, `.error`, `button`, `h3`) from
+   styling migrated markup.
+
+   Nothing here is a component. No A6.0 primitive is redefined and no A6.1 or A6.2
+   selector is touched. Every rule is scoped to an id, to one of the two grouping
+   classes, or to `#dialog-content` + an A6 primitive that only a migrated renderer is
+   allowed to emit - which is what makes the last group safe: an unmigrated dialog cannot
+   be reached by `#dialog-content .utility-rows`, because emitting `.utility-rows` at all
+   is exactly what the A6.0 containment test forbids outside the migrated renderers.
+
+   The legacy vocabulary these surfaces used to render with - `.filters`, `.page-heading`,
+   `.eyebrow`, `.hint`, `.search-field`, `.workforce-summary`, `.workforce-row`,
+   `.workforce-row-actions`, `.workforce-heading`, `.product-list`, `.product-item`,
+   `.history-item`, `.form-info`, `.form-grid`, `.form-actions`, `.filter-form`,
+   `.material-event`, `.scan-result`, `.bundle-label` - is deliberately left intact above.
+   `.filters` is still rendered by Aktivitas, `.page-heading` by eleven other pages,
+   `.form-info`/`.form-grid`/`.form-actions` by every `formDialog()`, `.material-event` and
+   `.history-item` by the production and warehouse child dialogs, and `.scan-result` and
+   `.bundle-label` are still rendered by these very pages (the tint host and the printable
+   label). The four selectors A6.3 stops emitting entirely (`.workforce-summary`,
+   `.workforce-row`, `.workforce-row-actions`, `.workforce-heading`) are left in place
+   rather than cleaned up, because A6.1's documented rule is that inert legacy CSS is
+   removed by the phase that can prove the removal safe on its own, not opportunistically
+   by the next migration.
+   ========================================================================== */
+#people-view,#bundle-scan-view,#finished-goods-scan-view{max-width:1360px;margin-inline:auto}
+/* The roster's grouping element. It deliberately carries no material of its own: the
+   near-opaque surface is the record list, and a second card wrapped around it would put two
+   borders and two shadows between the wallpaper and the rows. */
+.people-work{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+/* Every state host keeps its id, its `role="status"` and its `.state` class, because the
+   request lifecycle, `message()`, `fail()` and the M4 motion contract all address them by
+   exactly those - the motion module asserts that `#workforce-list.className` returns to
+   `list-host` after the replacement fade. Their BOX now comes from the A6 state primitive
+   rendered inside them, so the legacy `.state` card is withdrawn here; without this every
+   loading, empty and error state would draw a second bordered panel around the first.
+   The two scanner hosts are written with `textContent`, not a primitive, so they keep the
+   `.scan-state` row they were given in the markup and only lose the card. */
+#workforce-message,#workforce-request-message,#bundle-scan-message,#finished-goods-scan-message{
+  padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit;
+}
+/* A rejected scan is the one thing on a scanner page that must not be missed, so it keeps a
+   real surface - but an A6 one, built from the danger tokens the rest of the product already
+   uses, instead of the legacy `.error` block's own geometry. `fail()` writes `textContent`
+   here, so the treatment has to live in CSS. */
+#bundle-scan-error,#finished-goods-scan-error{
+  display:flex;align-items:flex-start;gap:.6rem;min-width:0;margin:0;
+  padding:10px 12px;border:1px solid var(--color-danger-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--color-danger-soft);color:var(--color-danger);
+  font-size:var(--type-caption);line-height:1.45;
+}
+/* Secondary information, not a panel. The revision explanation keeps every word and keeps its
+   `aria-describedby` relationship, but it does not need a filled surface to say "read me after
+   the command bar" - size and position already say it. Withdrawing the panel is what buys the
+   roster its place in the first viewport.
+   The measure is bounded for the same reason the page subtitle is: a two-sentence definition of
+   what stays visible and what a correction does is read once and has to be readable, and 1360px
+   of it is not a line, it is a ribbon. */
+#workforce-revision-note{max-width:96ch;padding:1px 0 0;border-radius:0;background:none;font-size:var(--type-metadata);line-height:1.4}
+/* The employee name and the request employee are headings, because a roster row is a record
+   about a person and the browser contract has always exposed them as such. `h3` carries the
+   product's own type scale and margins, neither of which belongs on a row's primary line. */
+#workforce-list h3,#workforce-request-list h3{margin:0;font-size:var(--type-control);font-weight:620;letter-spacing:-.005em}
+/* ---------- A6.3 the daily state is a strip, not six dashboard cards ----------
+   Six figures describing ONE daily roster state have to read as one row. A6.0's shared
+   `auto-fit,minmax(190px,1fr)` is right for a strip whose length it cannot know, but here the
+   length is exactly six and always six: at 1360px it lands on five tracks and orphans the sixth,
+   and a lone card with four empty columns beside it reads as a seventh figure that failed to load.
+   So the count is stated - six across when six fit, otherwise 3+3, then 2+2+2 - and the cells stay
+   compact, because the roster is the page and the state above it is a header, not the content. */
+@media(min-width:1180px){#workforce-summary{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:1179px){#workforce-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#workforce-summary .metric-card{min-height:0;gap:.15rem;padding:11px 13px}
+#workforce-summary .metric-icon{margin-bottom:.05rem}
+#workforce-summary .metric-value{font-size:1.25rem}
+/* Master karyawan is a long identity list inside a dialog whose own primary action sits above
+   it, so the list keeps its own scroll rather than growing the dialog past the viewport.
+   `.record-list` declares `overflow:hidden`, and an id is what re-opens it. */
+#workforce-master-list{max-height:min(460px,58dvh);overflow:auto}
+/* ---------- A6.3 scanner surface ----------
+   The input is the page. A6.0's `.scan-target` already gives the 44px control and the 1.05rem
+   tabular face; what is added here is only the emphasis that makes the eye land on it first -
+   a wider measure than a form field would get, and a label that reads as an instruction rather
+   than a caption. Nothing about the keyboard path changes: no focus rule, no transition. */
+#bundle-scan-form,#finished-goods-scan-form{max-width:44rem}
+/* `.scan-target` is a centred row and `.field` turns it into a column, but `align-items:center`
+   survives that switch and centres the label over the input. A field label is the start of a line
+   of text, not a caption under a picture: it aligns with the control it names. */
+#bundle-scan-form .scan-target,#finished-goods-scan-form .scan-target{align-items:stretch;gap:.45rem}
+#bundle-scan-form .field-label,#finished-goods-scan-form .field-label{font-size:var(--type-caption);font-weight:650}
+/* A6.0 gave `.scan-target input` a 44px floor and a 1.05rem tabular face, and composing the field
+   grammar onto the same element silently takes both away: `.scan-target input` and `.field>input`
+   have IDENTICAL specificity (0,1,1), and `.field>input` is declared later in the sheet, so the
+   scan field was rendering at the compact 34px control height. This restores A6.0's stated intent
+   for the two pages that own it, rather than reordering a shared primitive sheet underneath every
+   other surface that consumes `.field`. The field is the page; it may not be the smallest control
+   on it. */
+#bundle-scan-form .scan-target>input,#finished-goods-scan-form .scan-target>input{
+  min-height:48px;padding:.45rem .7rem;font-size:1.05rem;font-variant-numeric:tabular-nums;
+}
+/* The success tint lives on the `.scan-result` host, so nothing rendered inside it may carry an
+   opaque background - that colour is the only feedback a scanner gives, and the motion contract
+   measures the host's own resting colour. The result row therefore drops the record list's
+   surface, its divider and its hover repaint, and keeps only the layout. */
+#bundle-scan-result .record-row,#finished-goods-scan-result .record-row{
+  padding:10px 0;border-bottom:0;background:none;
+}
+#bundle-scan-result .record-row:hover,#finished-goods-scan-result .record-row:hover{background:none}
+#bundle-scan-result>h2,#finished-goods-scan-result>h2{margin:0 0 .35rem}
+#bundle-scan-result h3,#finished-goods-scan-result h3{margin:0;font-size:var(--type-card-title);font-weight:650}
+/* A scan returns two facts, and they belong beside each other where the eye already is. The shared
+   `auto-fit` track would stretch them across the full width of the page and read as two unrelated
+   columns, so the result shrink-wraps its own grid instead. */
+#bundle-scan-result .detail-grid,#finished-goods-scan-result .detail-grid{
+  grid-template-columns:repeat(2,minmax(0,max-content));gap:.2rem 1.75rem;margin-top:.35rem;
+}
+/* ---------- A6.3 scan-result dialog utility rows ----------
+   The same reasoning A6.1 recorded for the order detail, and the same rules: of the bundle
+   detail's twelve actions seven only OPEN something, and of the finished-goods detail's
+   nineteen, twelve do. Rendering them all as equally loud capsules produced the wall these
+   two dialogs exist to leave behind, so navigational actions become rows in a grouped utility
+   list and only genuine commands stay button-shaped. What is declared here is purely the
+   <button> element resets the `.record-row` primitive has no reason to carry. No action was
+   removed, no `data-action`, `data-kind` or id changed, and no popover or menu was introduced. */
+#dialog-content .utility-rows{display:flex;flex-direction:column;min-width:0}
+#dialog-content .utility-rows>.record-row{
+  min-height:36px;padding:5px 6px;
+  border:0;border-bottom:1px solid var(--workspace-divider);border-radius:0;
+  background:none;box-shadow:none;color:var(--ink);
+  justify-content:flex-start;text-align:left;gap:.6rem;
+  font-size:var(--type-control);font-weight:500;letter-spacing:0;
+}
+#dialog-content .utility-rows>.record-row:last-child{border-bottom:0}
+/* The generic `button:hover` would repaint the row with the control surface and its edge, which
+   is exactly the capsule look these rows exist to leave behind. */
+#dialog-content .utility-rows>.record-row:hover{background:var(--workspace-hover);border-color:var(--workspace-divider);color:var(--ink)}
+#dialog-content .utility-rows>.record-row>.icon{color:var(--muted)}
+#dialog-content .utility-rows>.record-row:hover>.icon{color:var(--ink-2)}
+/* The two result dialogs lead with an identity line and a primary fact rather than a section
+   title, so the shared `#dialog-content>h3` step - sized and spaced for a section break - is
+   withdrawn for that one line only. */
+#dialog-content>h3.data-primary{margin:0;font-size:var(--type-card-title)}
+#dialog-content>.workspace-meta{display:block}
+/* Inventori sekarang keeps three separate numbers per sellable row, and they have to read as a ROW
+   of figures beside the location they belong to. The shared `auto-fit` track collapses to a single
+   column inside a row aside, which stacked quantity/available/reserved vertically and - because a
+   record row centres its children - dragged the location and its chip down to the middle of a tall
+   row. Each figure gets its own track instead, and the row tops-aligns so identity and figures
+   start on the same line. */
+#dialog-content .record-list .record-row{align-items:flex-start}
+#dialog-content .record-row-aside>.detail-grid{
+  grid-auto-flow:column;grid-template-columns:none;gap:.2rem 1.5rem;min-width:0;
+}
+@media(max-width:980px){
+  /* The product's own narrow-width touch floor, restored for the migrated controls that
+     legitimately out-specify it. `button,input,select,textarea{min-height:44px}` is declared
+     globally at this breakpoint, but a class beats a bare element selector, so A6's compact
+     control height would silently drop these below 44px on a narrow viewport. A6.0's
+     `pointer:coarse` step is ADDITIVE to that policy, not a replacement for it: these pages
+     may not lose a target size they already guaranteed. */
+  #people-view button,#bundle-scan-view button,#finished-goods-scan-view button,
+  #people-view .command-filter,#people-view .command-filter>select,
+  #people-view .command-filter>input,#people-view .command-search input{min-height:var(--touch-target-min)}
+  /* A utility row is navigation, so it follows the same floor inside the dialog. */
+  #dialog-content .utility-rows>.record-row{min-height:var(--touch-target-min)}
+}
+@media(max-width:650px){
+  /* A phone shows the scanner at full width: a bounded measure that was emphasis on a desktop
+     becomes an arbitrary indent once the viewport is the measure. */
+  #bundle-scan-form,#finished-goods-scan-form{max-width:none}
+  /* Three figures in a column track need room a phone does not have, so they take the row's own
+     width and share it equally rather than overflowing the dialog. */
+  #dialog-content .record-row-aside>.detail-grid{
+    grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;
+  }
+  /* Six roster figures cannot hold a 140px track at 200% text on a 320px viewport without the
+     labels breaking a word per line, so the strip stops pretending to be a strip and becomes
+     two deliberate columns. The numbers and their units are untouched. */
+  #workforce-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
