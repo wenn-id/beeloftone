@@ -10,7 +10,7 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByRole('button',{name:'Kebutuhan bahan',exact:true}).click();
   await page.getByText(/Perhitungan belum lengkap/).waitFor();
   await page.getByRole('button',{name:'Lihat BOM',exact:true}).click();
-  await page.getByText(/BOM belum diisi. Kebutuhan/).waitFor();
+  await page.getByText(/BOM belum diisi/).waitFor();
   await page.getByRole('button',{name:'Isi BOM',exact:true}).click();
   await page.getByLabel('Bahan BOM',{exact:true}).selectOption(material.id);
   await page.getByLabel('Jumlah per pcs',{exact:true}).fill('0.05');

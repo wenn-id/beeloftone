@@ -78,7 +78,14 @@ def code(source):
 
 
 A61_BLOCK = code_css(CSS)
-A61_BLOCK = A61_BLOCK[A61_BLOCK.index('#board-view,#detail-view{max-width:1360px'):]
+# The A6.1 block used to run to the end of the file, because it WAS the end of the file. A6.2
+# appends its own containment block after it, so the slice is now bounded by that block's first
+# selector instead. This keeps the assertions below meaning exactly what they meant when they were
+# approved - "the A6.1 block is contained to Produksi" - rather than widening their allow-list to
+# cover a later phase's rules, which would have quietly retired the guarantee. A6.2's own block is
+# held to the same standard by tests/test_apple27_materials_master_sku_contract.py.
+A61_BLOCK = A61_BLOCK[A61_BLOCK.index('#board-view,#detail-view{max-width:1360px'):
+                      A61_BLOCK.index('#materials-view,#products-view{max-width:1360px')]
 
 BOARD = section(HTML, 'board-view')
 DETAIL = section(HTML, 'detail-view')
@@ -778,7 +785,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.107.0', 'A6.1 is a visible production migration milestone')
+        self.assertEqual(version, '0.108.0', 'A6.1 stays aligned with the shipped version')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

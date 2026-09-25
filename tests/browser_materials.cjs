@@ -22,7 +22,7 @@ module.exports = async ({page,login,admin,operator,viewer,apiGet,work}) => {
   await page.getByLabel('Jumlah layak pakai',{exact:true}).fill('10.125');
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH - bahan lolos pemeriksaan');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.locator('#batch-list .material-balance').getByText('10,125 m',{exact:true}).waitFor();
+  await page.locator('#batch-list [data-batch-balance]').getByText('10,125 m',{exact:true}).waitFor();
   const batch = (await apiGet('/api/material-batches'))[0];
   await page.getByRole('button',{name:'BATCH-UI-001',exact:true}).click();
   await page.getByText('Penerimaan · 10,125 m',{exact:true}).waitFor();
@@ -52,7 +52,7 @@ module.exports = async ({page,login,admin,operator,viewer,apiGet,work}) => {
   await page.locator('dialog').waitFor({state:'hidden'});
   assert.equal((await apiGet('/api/material-batches/'+batch.id)).balance,'10.125');
   await page.getByRole('button',{name:'Bahan baku',exact:true}).click();
-  await page.locator('#batch-list .material-balance').getByText('10,125 m',{exact:true}).waitFor();
+  await page.locator('#batch-list [data-batch-balance]').getByText('10,125 m',{exact:true}).waitFor();
   await page.evaluate(()=>document.getElementById('notice').hidden=true);
   const artifacts = process.env.BEELOFT_QA_SCREENSHOTS || work;
   await page.screenshot({path:path.join(artifacts,'beeloft-materials-desktop.png'),fullPage:true});

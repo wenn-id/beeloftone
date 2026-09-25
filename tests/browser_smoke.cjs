@@ -136,7 +136,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
     } else await route.continue();
   });
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
-  await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Master SKU',exact:true}).waitFor();
   await productsStarted;
   assert.equal(await page.locator('#products-search').isDisabled(),true);
   assert.equal(await page.locator('#products-clear').isDisabled(),true);
@@ -166,8 +166,8 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await page.locator('.order-row').first().waitFor();
 
   await page.getByRole('button',{name:'Master SKU',exact:true}).click();
-  await page.getByRole('heading',{name:'Satu kode untuk setiap kombinasi produk.',exact:true}).waitFor();
-  await page.waitForFunction(() => document.querySelectorAll('#product-list .product-item').length > 0);
+  await page.getByRole('heading',{name:'Master SKU',exact:true}).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('#product-list .record-row').length > 0);
   assert.equal(await page.locator('#products-search').isDisabled(),false);
   assert.equal(await page.locator('#products-clear').isDisabled(),false);
   await page.getByRole('button',{name:'Tambah SKU',exact:true}).click();
@@ -475,6 +475,9 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_a60_workspace_foundation.cjs');
   // A6.1 runs after the A6.0 foundation review, because it is the first page to consume it.
   await runModule('./browser_production_modern_workspace.cjs');
+  // A6.2 runs after A6.1: it reviews the two master-data workspaces and finishes by re-checking
+  // that Produksi - whose order-material history shares a renderer with Bahan baku - still holds.
+  await runModule('./browser_materials_master_sku_modern.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

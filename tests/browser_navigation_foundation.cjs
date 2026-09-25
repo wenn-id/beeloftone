@@ -27,9 +27,9 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
   const destinations = [
     {name: 'Command center', nav: 'command-center', section: 'command-center-view', heading: 'Command center'},
     {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Produksi'},
-    {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan masuk, pemakaian tercatat.'},
+    {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan baku'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'Kehadiran tim yang tercatat.', content: '#workforce-summary:not([hidden])'},
-    {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Satu kode untuk setiap kombinasi produk.', content: '#product-list .product-item'},
+    {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Master SKU', content: '#product-list .record-row'},
     {name: 'Scan bundle', nav: 'scan-bundle', section: 'bundle-scan-view', heading: 'Scan bundle'},
     {name: 'Scan barang jadi', nav: 'scan-finished-goods', section: 'finished-goods-scan-view', heading: 'Scan barang jadi'},
     {name: 'Cadangan data', nav: 'backup', section: 'backup-view', heading: 'Cadangan data'},

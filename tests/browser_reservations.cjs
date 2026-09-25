@@ -22,7 +22,9 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
   await page.getByRole('button',{name:/DEMO-PROD-002/}).click();
   await page.getByRole('button',{name:'Keluarkan bahan ke order',exact:true}).click();
-  await page.getByLabel('Batch bahan',{exact:true}).selectOption(batch.id);
+  // Scoped to the dialog: A6.2 gave the Bahan baku page a "Batch bahan" region, so an unscoped
+  // label lookup can resolve to that landmark instead of this dialog's own control.
+  await page.locator('#dialog').getByLabel('Batch bahan',{exact:true}).selectOption(batch.id);
   assert.equal(await page.getByLabel('Jumlah dikeluarkan',{exact:true}).getAttribute('max'),'2.000');
   await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'Semua order',exact:false}).click();
@@ -54,7 +56,9 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}),'Reservation 200% overflow');
   await page.evaluate(()=>document.documentElement.style.fontSize='');await page.keyboard.press('Escape');
   await openSidebarDestination('Bahan baku');
-  await page.getByText('Direservasi 5 m',{exact:false}).waitFor();
+  // A6.2 turned the batch row into a table: the reservation is a cell under its own "Direservasi"
+  // column header rather than a "Direservasi 5 m" run of text inside a hint paragraph.
+  await page.locator('#batch-list [data-batch-reserved]').getByText('5 m',{exact:true}).waitFor();
   for(const key of [operator,viewer]){
     await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);
     await page.getByRole('button',{name:/DEMO-PROD-001/}).click();
