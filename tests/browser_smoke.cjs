@@ -491,6 +491,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // module above: those own the business rules and seed the snapshots, runs and COST-UI stock this
   // one reviews the presentation of, and it writes the A6.5 visual-review set.
   await runModule('./browser_ai_integrations_modern_workspaces.cjs');
+  // A6.6 runs after A6.5 and after the smoke flow's own Activity/backup checks, browser_audit_trail
+  // and the navigation/motion suites that own those business and lifecycle rules. It seeds its own
+  // cursor walk, reviews the three migrated workspaces and writes the A6.6 visual-review set.
+  await runModule('./browser_activity_audit_backup_modern_workspaces.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

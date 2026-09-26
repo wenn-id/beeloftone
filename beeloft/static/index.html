@@ -275,11 +275,11 @@
         <div id="integrations-message" class="state" role="status" hidden></div>
         <div id="integrations-body" aria-live="polite"></div>
       </section>
-      <section id="audit-view" hidden>
+      <section id="audit-view" class="workspace-page" hidden>
         <button id="audit-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Audit trail · administrasi</p><h1>Audit trail</h1></div></div>
-        <p class="hint">Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only, urut dari yang terbaru, dan dikelola admin.</p>
-        <div id="audit-body"></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Administrasi · khusus admin</p><h1 class="workspace-title">Audit trail</h1><p class="workspace-subtitle">Telusuri perubahan bisnis dan keputusan approval yang tersimpan sebagai catatan read-only.</p></div></div>
+        <p id="audit-readonly-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg><span>Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only, urut dari yang terbaru, dan dikelola admin. Catatan tidak dapat diubah atau dihapus.</span></p>
+        <div id="audit-body" class="audit-body"></div>
       </section>
       <section id="purchase-requests-view" hidden>
         <button id="purchase-requests-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
@@ -322,14 +322,24 @@
         <p id="finished-goods-scan-message" class="state scan-state" role="status" hidden></p><p id="finished-goods-scan-error" class="error" role="alert" hidden></p>
         <div id="finished-goods-scan-result" class="scan-result" aria-live="polite"></div>
       </section>
-      <section id="backup-view" hidden>
-        <div class="page-heading"><div><p class="eyebrow">Administrasi · database</p><h1>Cadangan data</h1></div></div>
-        <div class="filter-form">
-          <p>Unduh salinan lengkap database Beeloft: order, posisi barang, riwayat, kendala, perubahan jadwal, dan akun.</p>
-          <p class="form-info">File ini memuat seluruh data produksi dan hash kunci akses akun. Simpan di folder pribadi atau drive cadangan yang hanya bisa diakses orang yang berwenang.</p>
-          <p class="hint">Kunci akses asli tidak disertakan. Simpan kunci yang sudah lu miliki untuk masuk setelah pemulihan. Salinan diambil saat unduhan diminta; perubahan setelahnya masuk cadangan berikutnya.</p>
-          <p class="hint">Setelah unduhan selesai, pastikan file .sqlite3 ada di lokasi pilihan lu. Untuk memeriksa cadangan, ikuti langkah pemulihan di README proyek.</p>
-          <p id="backup-message" role="status" hidden></p><button id="download-backup" type="button" class="primary">Unduh cadangan database</button>
+      <section id="backup-view" class="workspace-page" hidden>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Administrasi · khusus admin</p><h1 class="workspace-title">Cadangan data</h1><p class="workspace-subtitle">Unduh salinan database Beeloft yang konsisten untuk arsip dan pemulihan.</p></div></div>
+        <div class="backup-utility" role="group" aria-labelledby="backup-file-heading">
+          <div class="backup-file">
+            <span class="metric-icon" aria-hidden="true"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-database"/></svg></span>
+            <div class="backup-file-copy">
+              <h2 id="backup-file-heading" class="workspace-section-title">Database SQLite · .sqlite3</h2>
+              <p id="backup-contents" class="backup-contents">Unduh salinan lengkap database Beeloft: order, posisi barang, riwayat, kendala, perubahan jadwal, dan akun.</p>
+            </div>
+          </div>
+          <p id="backup-sensitivity" class="attention-note"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg><span class="attention-note-copy"><span class="attention-note-title">File ini sensitif</span><span class="attention-note-reason">File ini memuat seluruh data produksi dan hash kunci akses akun. Simpan di folder pribadi atau drive cadangan yang hanya bisa diakses orang yang berwenang.</span></span></p>
+          <ul class="backup-notes" aria-label="Sebelum dan sesudah mengunduh">
+            <li class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span><strong>Kunci akses.</strong> Kunci akses asli tidak disertakan. Simpan kunci yang sudah lu miliki untuk masuk setelah pemulihan.</span></li>
+            <li class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg><span><strong>Waktu salinan.</strong> Salinan diambil saat unduhan diminta; perubahan setelahnya masuk cadangan berikutnya.</span></li>
+            <li class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-check-circle"/></svg><span><strong>Setelah mengunduh.</strong> Setelah unduhan selesai, pastikan file .sqlite3 ada di lokasi pilihan lu. Untuk memeriksa cadangan, ikuti langkah pemulihan di README proyek. Pemulihan tidak dilakukan dari halaman ini.</span></li>
+          </ul>
+          <div class="field-actions backup-actions"><button id="download-backup" type="button" class="action-primary">Unduh cadangan database</button></div>
+          <p id="backup-message" class="backup-message" role="status" hidden></p>
         </div>
       </section>
       <section id="board-view" class="workspace-page">
@@ -354,15 +364,26 @@
         <div class="pagination"><span id="page-count" class="workspace-meta"></span><div class="actions"><button id="previous" type="button" class="action-secondary">Sebelumnya</button><button id="next" type="button" class="action-secondary">Berikutnya</button></div></div>
         </section>
       </section>
-      <section id="activity-view" hidden>
+      <section id="activity-view" class="workspace-page" hidden>
         <button id="activity-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Laporan aktivitas · waktu Jakarta</p><h1>Catatan produksi.</h1></div></div>
-        <form id="activity-form" class="filters"><label>Dari tanggal<input id="activity-day" type="date" required></label><label>Sampai tanggal<input id="activity-end" type="date" required></label><label>Jenis aktivitas<select id="activity-kind"><option value="all">Semua aktivitas</option><option value="movement">Perpindahan barang</option><option value="reversal">Koreksi perpindahan</option><option value="issue_opened">Kendala dicatat</option><option value="issue_resolved">Kendala selesai</option><option value="order_created">Order dibuat</option><option value="order_changed">Tenggat / PIC diubah</option></select></label><button type="submit">Tampilkan aktivitas</button><button type="button" id="activity-export" disabled>Unduh CSV</button></form>
-        <dl id="activity-summary" class="summary" aria-label="Ringkasan seluruh aktivitas pada rentang terpilih"></dl>
-        <p class="hint">Ringkasan mencakup semua jenis pada rentang terpilih. Gudang bersih = barang masuk dikurangi pembalikannya pada rentang pencatatan; angkanya bisa negatif. Posisi barang saat ini ada di papan produksi. CSV memuat seluruh hasil filter; maksimal 366 hari dan 10.000 catatan.</p>
-        <p id="activity-message" class="state" role="status" hidden></p>
-        <div id="activity-list"></div>
-        <div class="pagination"><span id="activity-count" class="hint"></span><button id="activity-more" type="button" hidden>Muat aktivitas sebelumnya</button></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Laporan aktivitas · waktu Jakarta (WIB)</p><h1 class="workspace-title">Aktivitas</h1><p class="workspace-subtitle">Telusuri catatan produksi dalam waktu Jakarta dan ekspor hasilnya.</p></div></div>
+        <form id="activity-form" class="command-bar" aria-describedby="activity-export-note">
+          <div class="command-filters">
+            <label class="command-filter"><span>Dari tanggal</span><input id="activity-day" type="date" required aria-label="Dari tanggal"></label>
+            <label class="command-filter"><span>Sampai tanggal</span><input id="activity-end" type="date" required aria-label="Sampai tanggal"></label>
+            <label class="command-filter"><span>Jenis aktivitas</span><select id="activity-kind" aria-label="Jenis aktivitas"><option value="all">Semua aktivitas</option><option value="movement">Perpindahan barang</option><option value="reversal">Koreksi perpindahan</option><option value="issue_opened">Kendala dicatat</option><option value="issue_resolved">Kendala selesai</option><option value="order_created">Order dibuat</option><option value="order_changed">Tenggat / PIC diubah</option></select></label>
+          </div>
+          <div class="command-actions"><button type="submit" class="action-secondary">Tampilkan aktivitas</button><button type="button" id="activity-export" class="action-secondary" aria-describedby="activity-export-note" disabled>Unduh CSV</button></div>
+        </form>
+        <div class="workspace-subhead"><h2 id="activity-summary-heading" class="workspace-section-title">Ringkasan rentang</h2><span id="activity-range" class="workspace-meta"></span></div>
+        <dl id="activity-summary" class="metric-strip" aria-label="Ringkasan seluruh aktivitas pada rentang terpilih"></dl>
+        <p id="activity-summary-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Ringkasan mencakup semua jenis pada rentang terpilih. Gudang bersih = barang masuk dikurangi pembalikannya pada rentang pencatatan; angkanya bisa negatif. Posisi barang saat ini ada di papan produksi. <span id="activity-export-note">CSV memuat seluruh hasil filter; maksimal 366 hari dan 10.000 catatan.</span></span></p>
+        <section class="activity-work" aria-labelledby="activity-timeline-heading">
+          <div class="workspace-subhead"><h2 id="activity-timeline-heading" class="workspace-section-title">Linimasa aktivitas</h2><span id="activity-count" class="workspace-meta"></span></div>
+          <p id="activity-message" class="state" role="status" hidden></p>
+          <div class="activity-surface"><ol id="activity-list" class="timeline" aria-labelledby="activity-timeline-heading"></ol></div>
+          <div class="activity-more"><button id="activity-more" type="button" class="action-secondary" hidden>Muat aktivitas sebelumnya</button></div>
+        </section>
       </section>
       <section id="detail-view" class="workspace-page" hidden><button id="back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Semua order</button><div id="detail-message" class="state" role="status" hidden></div><div id="detail-content" class="workspace-page"></div></section>
       </div>

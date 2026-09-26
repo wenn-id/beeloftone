@@ -52,7 +52,8 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'Inbox approval', nav: 'approvals', section: 'approvals-view', heading: 'Satu antrean untuk setiap keputusan.', content: '#approval-list'},
     {name: 'Permintaan pembelian', nav: 'purchase-requests', section: 'purchase-requests-view', heading: 'Pengajuan bahan untuk ditinjau.', content: '#pr-page-list'},
     {name: 'Budget marketing', nav: 'marketing-budgets', section: 'marketing-budgets-view', heading: 'Pengajuan budget kampanye.', content: '#marketing-budget-list'},
-    {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Catatan produksi.'}
+    // A6.6 renamed the Activity page title; the sidebar destination keeps its label.
+    {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Aktivitas'}
   ];
   const visibleSections = () => page.evaluate(() =>
     [...document.querySelectorAll('.workspace-main > section')]

@@ -761,7 +761,7 @@ function clearWorkspace() {
   $('audit-trail').hidden = true;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
-  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
+  $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-range').textContent = ''; $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
   epoch++; boardRequest++; detailRequest++; api.key = ''; api.actorId = ''; user = null; selected = null; boardData = null;
   workspaceChrome.session(null);
   dialogVersion++; modalBusy = false; unresolved = false; dialogReturnFocus=null; $('dialog').close();
@@ -1471,31 +1471,42 @@ async function loadAuditEvents() {
   const current=()=>version===epoch&&request===auditRequest&&view==='audit';
   // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
   auditRendered=null;
-  body.innerHTML='<p class="state">Memuat audit trail…</p>';
+  body.innerHTML=`<p class="loading-state">${svgIcon('refresh')}Memuat audit trail…</p>`;
   let rows=[],before=null;
   try {
     const users=await api.get('/api/users');
     if(!current())return;
-    body.innerHTML=`<form id="audit-filter" class="filter-form"><div class="form-grid">
-        <label class="full">Cari operasi, referensi, pelaku, atau request key<input name="q" maxlength="160" value="${e(auditFilters.q)}"></label>
-        <div><label for="audit-category">Kategori</label><select id="audit-category" name="category"><option value="all">Semua kategori</option>${Object.entries(auditCategories).map(([key,label])=>option(key,label)).join('')}</select></div>
-        <div><label for="audit-actor">Pelaku</label><select id="audit-actor" name="actor_id"><option value="">Semua pelaku</option>${users.map(item=>option(item.id,`${item.name} · ${item.role}`)).join('')}</select></div>
-        ${field('start_date','Tanggal awal','date')}${field('end_date','Tanggal akhir','date')}
-      </div><div class="form-actions"><button type="button" id="audit-reset">Reset</button><button class="primary" type="submit">Terapkan filter</button></div></form>
-      <p id="audit-summary" class="hint" role="status"></p><p id="audit-error" class="error" role="alert" hidden></p>
-      <div id="audit-list" class="list-host"></div><button id="audit-more" type="button">Muat catatan sebelumnya</button>`;
+    // A6.6: one command bar. Search takes the slack; category, actor and the two dates stay
+    // intrinsic; Reset and the explicit submit sit right. Nothing queries on a keystroke.
+    body.innerHTML=`<form id="audit-filter" class="command-bar">
+        <label class="command-search"><span class="visually-hidden">Cari operasi, referensi, pelaku, atau request key</span>${svgIcon('search','icon-sm')}<input name="q" type="search" maxlength="160" value="${e(auditFilters.q)}" aria-label="Cari operasi, referensi, pelaku, atau request key" placeholder="Cari operasi, referensi, pelaku, atau request key"></label>
+        <div class="command-filters">
+          <label class="command-filter"><span>Kategori</span><select id="audit-category" name="category" aria-label="Kategori"><option value="all">Semua kategori</option>${Object.entries(auditCategories).map(([key,label])=>option(key,label)).join('')}</select></label>
+          <label class="command-filter"><span>Pelaku</span><select id="audit-actor" name="actor_id" aria-label="Pelaku"><option value="">Semua pelaku</option>${users.map(item=>option(item.id,`${item.name} · ${item.role}`)).join('')}</select></label>
+          <label class="command-filter"><span>Tanggal awal</span><input name="start_date" type="date" aria-label="Tanggal awal"></label>
+          <label class="command-filter"><span>Tanggal akhir</span><input name="end_date" type="date" aria-label="Tanggal akhir"></label>
+        </div>
+        <div class="command-actions"><button type="button" id="audit-reset" class="action-quiet">Reset</button><button class="action-primary" type="submit">Terapkan filter</button></div></form>
+      <div class="workspace-subhead"><h2 id="audit-ledger-heading" class="workspace-section-title">Catatan audit</h2><p id="audit-summary" class="workspace-meta" role="status"></p></div>
+      <p id="audit-error" class="error" role="alert" hidden></p>
+      <div id="audit-list" class="list-host"></div><div class="audit-more"><button id="audit-more" type="button" class="action-secondary">Muat catatan sebelumnya</button></div>`;
     $('audit-category').value=auditFilters.category;$('audit-actor').value=auditFilters.actor_id;
     $('audit-filter').elements.start_date.value=auditFilters.start_date;
     $('audit-filter').elements.end_date.value=auditFilters.end_date;
+    // A6.6: a ledger, not a feed. Identity first (reference, else operation), then the neutral
+    // category chip and operation, then subject type, then who and when in Jakarta time. The
+    // category is a classification, so every category wears the same neutral chip.
     const render=total=>{
       $('audit-summary').textContent=`${n(total)} catatan sesuai filter.`;
-      $('audit-list').innerHTML=rows.length?rows.map(item=>`<article class="audit-event">
-        <p class="status-label">${e(auditCategories[item.category])}</p>
-        <h4>${e(item.subject_reference||item.operation)}</h4>
-        <p>${e(item.operation)} · ${e(item.subject_type)}</p>
-        <p class="hint">${e(item.actor_name)} · ${e(item.actor_role)} · ${auditStamp(item.created_at)}</p>
-        <button type="button" data-action="audit-event" data-id="${e(item.id)}" aria-label="Rincian audit ${e(item.subject_reference||item.operation)}">Lihat rincian</button>
-      </article>`).join(''):'<p class="state">Tidak ada catatan audit yang sesuai filter.</p>';
+      $('audit-list').innerHTML=rows.length?`<div class="record-list audit-ledger" aria-labelledby="audit-ledger-heading">${rows.map(item=>`<article class="record-row audit-event">
+        <div class="record-row-copy">
+        <div class="chip-row"><span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>${e(auditCategories[item.category])}</span></div>
+        <h3 class="data-primary">${e(item.subject_reference||item.operation)}</h3>
+        <p class="data-secondary">${e(item.operation)} · ${e(item.subject_type)}</p>
+        <p class="data-meta">${e(item.actor_name)} · ${e(item.actor_role)} · <time datetime="${e(item.created_at)}">${auditStamp(item.created_at)}</time></p>
+        </div>
+        <div class="record-row-aside"><button type="button" class="action-secondary" data-action="audit-event" data-id="${e(item.id)}" aria-label="Rincian audit ${e(item.subject_reference||item.operation)}">Lihat rincian</button></div>
+      </article>`).join('')}</div>`:`<div class="empty-state">${svgIcon('history')}<p class="empty-state-title">Tidak ada catatan audit yang sesuai filter.</p><p class="empty-state-copy">Ubah pencarian, kategori, pelaku, atau rentang tanggal, atau tekan Reset untuk melihat seluruh catatan.</p></div>`;
     };
     const load=async reset=>{
       if(reset){rows=[];before=null;}
@@ -1520,24 +1531,29 @@ async function loadAuditEvents() {
     $('audit-reset').onclick=()=>{auditFilters={q:'',category:'all',actor_id:'',start_date:'',end_date:''};loadAuditEvents();};
     $('audit-more').onclick=()=>load(false);
     await load(true);
-  }catch(error){if(current())body.innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-events">Coba lagi</button>`;}
+  }catch(error){if(current())body.innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Audit trail gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button type="button" class="action-secondary" data-action="audit-events">Coba lagi</button></p></div>`;}
 }
 
 async function auditEventDialog(eventId) {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Rincian audit','<p class="state">Memuat rincian audit…</p>');
+  openDialog('Rincian audit',`<p class="loading-state">${svgIcon('refresh')}Memuat rincian audit…</p>`);
   const modal=dialogVersion;
   try{
     const item=await api.get('/api/audit-events/'+encodeURIComponent(eventId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     $('dialog-title').textContent=`Audit · ${item.subject_reference||item.operation}`;
-    $('dialog-content').innerHTML=`<article class="audit-event"><p class="status-label">${e(auditCategories[item.category])}</p>
-      <dl class="requirement-values"><div><dt>Operasi</dt><dd>${e(item.operation)}</dd></div><div><dt>Pelaku</dt><dd>${e(item.actor_name)} · ${e(item.actor_role)}</dd></div><div><dt>Waktu Jakarta</dt><dd>${auditStamp(item.created_at)}</dd></div><div><dt>Objek</dt><dd>${e(item.subject_type)} · ${e(item.subject_id||'-')}</dd></div><div><dt>Referensi</dt><dd>${e(item.subject_reference||'-')}</dd></div><div><dt>Request key</dt><dd>${e(item.request_key)}</dd></div></dl>
-      <h3>Input perubahan</h3><pre class="audit-json">${e(JSON.stringify(item.changes,null,2))}</pre>
-      <h3>Hasil tersimpan</h3><pre class="audit-json">${e(JSON.stringify(item.outcome,null,2))}</pre>
-      <button type="button" data-action="audit-events">Kembali ke audit trail</button></article>`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="audit-event" data-id="${e(eventId)}">Coba lagi</button>`;}
+    // A6.6: focused, immutable evidence. Every field the record carries, then the two stored JSON
+    // documents exactly as JSON.stringify(..., null, 2) prints them - escaped, never merged and never
+    // turned into an inferred diff. The only actions are navigation; nothing here edits a record.
+    const fact=(label,value,extra='')=>`<div class="detail-field${extra}"><dt>${label}</dt><dd>${value}</dd></div>`;
+    $('dialog-content').innerHTML=`<div class="audit-evidence">
+      <dl class="detail-grid audit-facts">${fact('Kategori',`<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>${e(auditCategories[item.category])}</span>`)}${fact('Operasi',`<code>${e(item.operation)}</code>`)}${fact('Pelaku',`${e(item.actor_name)} · ${e(item.actor_role)}`)}${fact('Waktu Jakarta',`<time datetime="${e(item.created_at)}">${auditStamp(item.created_at)}</time>`)}${fact('Objek',`${e(item.subject_type)} · ${e(item.subject_id||'-')}`)}${fact('Referensi',e(item.subject_reference||'-'))}${fact('Request key',`<code>${e(item.request_key)}</code>`,' audit-fact-wide')}</dl>
+      <p class="info-panel">${svgIcon('shield','icon-sm')}<span>Catatan read-only. Input dan hasil di bawah ditampilkan persis seperti tersimpan; nilai rahasia sudah disamarkan saat dicatat.</span></p>
+      <div class="audit-evidence-section"><h3 class="workspace-section-title">Input perubahan</h3><pre class="audit-json" tabindex="0" aria-label="Input perubahan (JSON)">${e(JSON.stringify(item.changes,null,2))}</pre></div>
+      <div class="audit-evidence-section"><h3 class="workspace-section-title">Hasil tersimpan</h3><pre class="audit-json" tabindex="0" aria-label="Hasil tersimpan (JSON)">${e(JSON.stringify(item.outcome,null,2))}</pre></div>
+      <div class="field-actions"><button type="button" class="action-secondary" data-action="audit-events">Kembali ke audit trail</button></div></div>`;
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Rincian audit gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button type="button" class="action-secondary" data-action="audit-event" data-id="${e(eventId)}">Coba lagi</button></p></div>`;}
 }
 // Keluar dialog tidak bisa mengandalkan animasi CSS: `close()` melepas atribut `open` dan
 // elemennya langsung hilang, jadi transisinya tidak akan pernah terlihat. Helper ini menandai
@@ -2242,39 +2258,62 @@ async function loadActivity(more = false) {
     $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-count').textContent = '';
     $('activity-more').hidden = true;
   }
-  $('activity-export').disabled = true; $('activity-more').disabled = true; message('activity-message','Memuat aktivitas…');
+  $('activity-export').disabled = true; $('activity-more').disabled = true; pageState('activity-message','loading','Memuat aktivitas…');
   try {
     const result = await api.get('/api/activity?' + new URLSearchParams(query));
     if (version !== epoch || request !== activityRequest || view !== 'activity') return;
     if (!more) { activityQuery = {start_date:result.start_date,end_date:result.end_date,kind:query.kind,limit:50}; $('activity-day').value = result.start_date; $('activity-end').value = result.end_date; }
     activityRows.push(...result.items); activityCursor = result.next_before;
     const s = result.summary;
+    // A6.6: the four values are the SAME four the endpoint returns, and they describe the whole
+    // selected range across every activity kind - the backend computes them before the kind filter.
+    // They are a compact strip, never the page's centre, and the tile tint is one neutral accent:
+    // a negative warehouse net is a legitimate figure, not an error, so nothing here turns red.
     $('activity-summary').innerHTML = [['Aktivitas tercatat',s.events,'catatan','list'],['Gudang bersih',s.warehouse_net,'pcs','archive'],
       ['Kendala dicatat',s.issues_opened,'catatan','alert-triangle'],['Kendala selesai',s.issues_resolved,'catatan','check-circle']]
-      .map(([label,value,unit,glyph]) => `<div><dt>${label}${svgIcon(glyph)}</dt><dd>${n(value)} <small>${unit}</small></dd></div>`).join('');
-    message('activity-message',activityRows.length ? '' : 'Tidak ada aktivitas yang cocok pada rentang ini.');
-    $('activity-list').innerHTML = activityRows.map(item => {
-      const stamp = new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(item.created_at));
-      let detail = '';
-      if (['movement','reversal'].includes(item.kind)) detail = `${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}`;
-      if (item.kind === 'issue_opened') detail = `${labels[item.to_stage]} · PIC: ${item.details.owner_name}`;
-      if (item.kind === 'issue_resolved') detail = `${labels[item.to_stage]} · ${item.details.description}`;
-      if (item.kind === 'order_changed') detail = `Tenggat: ${date(item.details.old_due_date)} → ${date(item.details.new_due_date)} · PIC: ${item.details.old_owner_name} → ${item.details.new_owner_name}`;
-      return `<article class="history-item activity-item"><time datetime="${e(item.created_at)}">${stamp}</time><div><strong>${activityLabels[item.kind]}</strong>
-        <p><button class="order-title" data-action="detail" data-id="${e(item.order_id)}">${e(item.reference)} · ${e(item.title)}</button></p>
-        ${item.sku ? `<p class="hint">${e(item.sku)}</p>` : ''}${detail ? `<p>${e(detail)}</p>` : ''}
-        ${item.reason ? `<p class="reason">${e(item.reason)}</p>` : ''}<p class="hint">Dicatat ${e(item.actor_name)}</p></div></article>`;
-    }).join('');
+      .map(([label,value,unit,glyph]) => `<div class="metric-card metric-card-info"><span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+        + `<dt class="metric-label">${label}</dt><dd class="metric-value">${n(value)} <small class="metric-unit">${unit}</small></dd></div>`).join('');
+    $('activity-range').textContent = `${date(activityQuery.start_date)} – ${date(activityQuery.end_date)} · waktu Jakarta · semua jenis aktivitas`;
+    if (activityRows.length) pageState('activity-message','');
+    else pageState('activity-message','empty','Tidak ada aktivitas yang cocok pada rentang ini.',
+      'Ubah rentang tanggal atau jenis aktivitas. Ringkasan di atas tetap mencakup semua jenis pada rentang ini.');
+    $('activity-list').innerHTML = activityRows.map(activityEvent).join('');
     $('activity-count').textContent = `${n(activityRows.length)} catatan ditampilkan · ${n(result.total)} cocok saat dimuat`;
     $('activity-more').hidden = !activityCursor;
   } catch (error) {
-    if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message');
+    if (version === epoch && request === activityRequest && view === 'activity') activityFail(error,'Aktivitas gagal dimuat.');
   } finally { if (version === epoch && request === activityRequest) { $('activity-more').disabled = false; $('activity-export').disabled = !activityQuery || exportBusy; } }
+}
+// A6.6: one chronological event, one timeline item. The markers carry a restrained tone for the two
+// kinds that ask for attention (a correction and a newly recorded issue) and for a resolved issue;
+// the event label is always spelled out, so the tone is never the only channel.
+const activityTone = {reversal:' timeline-item-warning',issue_opened:' timeline-item-warning',issue_resolved:' timeline-item-success'};
+const activityStamp = value => new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(value));
+function activityEvent(item) {
+  let detail = '';
+  if (['movement','reversal'].includes(item.kind)) detail = `${n(item.quantity)} pcs · ${labels[item.from_stage]} → ${labels[item.to_stage]}`;
+  if (item.kind === 'issue_opened') detail = `${labels[item.to_stage]} · PIC: ${item.details.owner_name}`;
+  if (item.kind === 'issue_resolved') detail = `${labels[item.to_stage]} · ${item.details.description}`;
+  if (item.kind === 'order_changed') detail = `Tenggat: ${date(item.details.old_due_date)} → ${date(item.details.new_due_date)} · PIC: ${item.details.old_owner_name} → ${item.details.new_owner_name}`;
+  return `<li class="timeline-item activity-item${activityTone[item.kind] || ''}" data-activity-kind="${e(item.kind)}">`
+    + `<time class="timeline-time" datetime="${e(item.created_at)}">${activityStamp(item.created_at)}</time>`
+    + `<p class="timeline-event">${activityLabels[item.kind]}</p>`
+    + `<p class="timeline-detail activity-order"><button type="button" class="order-title" data-action="detail" data-id="${e(item.order_id)}">${e(item.reference)} · ${e(item.title)}</button></p>`
+    + (item.sku ? `<p class="timeline-detail activity-sku">${e(item.sku)}</p>` : '')
+    + (detail ? `<p class="timeline-detail">${e(detail)}</p>` : '')
+    + (item.reason ? `<p class="timeline-detail activity-reason">${e(item.reason)}</p>` : '')
+    + `<p class="timeline-actor">Dicatat ${e(item.actor_name)}</p></li>`;
+}
+// Errors stay inline in the report's own state host. A 401 keeps the product's one session-expiry path.
+function activityFail(error, title) {
+  if (error.status === 401) fail(error,'activity-message');
+  else pageState('activity-message','error',title,error.message);
 }
 
 for (const id of ['activity-day','activity-end','activity-kind']) $(id).addEventListener('input', () => {
   activityRequest++; activityQuery = null; activityCursor = null; activityRows = [];
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-count').textContent = '';
+  $('activity-range').textContent = '';
   $('activity-more').hidden = true; $('activity-export').disabled = true;
 });
 $('activity-export').onclick = async () => {
@@ -2286,7 +2325,7 @@ $('activity-export').onclick = async () => {
     if (version !== epoch || request !== activityRequest || view !== 'activity') return;
     saveDownload(blob,`beeloft-aktivitas-${query.start_date}-${query.end_date}-${query.kind}.csv`);
     notify('CSV siap diunduh. Semua hasil filter disertakan.');
-  } catch (error) { if (version === epoch && request === activityRequest && view === 'activity') fail(error,'activity-message'); }
+  } catch (error) { if (version === epoch && request === activityRequest && view === 'activity') activityFail(error,'CSV belum dapat diunduh.'); }
   finally { exportBusy = false; $('activity-export').textContent = 'Unduh CSV'; $('activity-export').disabled = !activityQuery; }
 };
 
