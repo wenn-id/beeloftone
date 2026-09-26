@@ -49,9 +49,10 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'Audit trail', nav: 'audit-trail', section: 'audit-view', heading: 'Audit trail', content: '#audit-summary'},
     // Milestone E: tiga antrean bisnis adalah halaman workspace. Antrean mungkin
     // kosong di data demo, jadi tunggu container daftar saja, bukan baris.
-    {name: 'Inbox approval', nav: 'approvals', section: 'approvals-view', heading: 'Satu antrean untuk setiap keputusan.', content: '#approval-list'},
-    {name: 'Permintaan pembelian', nav: 'purchase-requests', section: 'purchase-requests-view', heading: 'Pengajuan bahan untuk ditinjau.', content: '#pr-page-list'},
-    {name: 'Budget marketing', nav: 'marketing-budgets', section: 'marketing-budgets-view', heading: 'Pengajuan budget kampanye.', content: '#marketing-budget-list'},
+    // A6.7: each queue's title is now the product noun, as every migrated workspace's is.
+    {name: 'Inbox approval', nav: 'approvals', section: 'approvals-view', heading: 'Inbox approval', content: '#approval-list'},
+    {name: 'Permintaan pembelian', nav: 'purchase-requests', section: 'purchase-requests-view', heading: 'Permintaan pembelian', content: '#pr-page-list'},
+    {name: 'Budget marketing', nav: 'marketing-budgets', section: 'marketing-budgets-view', heading: 'Budget marketing', content: '#marketing-budget-list'},
     // A6.6 renamed the Activity page title; the sidebar destination keeps its label.
     {name: 'Laporan aktivitas', nav: 'activity', section: 'activity-view', heading: 'Aktivitas'}
   ];
@@ -227,7 +228,8 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     } else await route.continue();
   });
   await page.getByRole('button', {name: 'Inbox approval', exact: true}).click();
-  await page.getByRole('heading', {name: 'Satu antrean untuk setiap keputusan.', exact: true}).waitFor();
+  // A6.7: the Inbox title is the product noun.
+  await page.getByRole('heading', {name: 'Inbox approval', exact: true}).waitFor();
   await approvalsStarted;
   await page.getByRole('button', {name: 'Command center', exact: true}).click();
   await page.getByRole('heading', {name: 'Command center', exact:true}).waitFor();
@@ -237,7 +239,8 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     'late approvals response must not repaint the command center');
   assert.notEqual(await page.locator('#approvals-view').getAttribute('hidden'), null,
     'the approvals page must stay hidden after the user left it');
-  assert.equal(await page.locator('#approval-list .material-event').count(), 0,
+  // A6.7: an approval is an A6 record row; the stale-repaint claim moves with it.
+  assert.equal(await page.locator('#approval-list .record-row').count(), 0,
     'late approvals response must not render rows onto the page the user left');
   await page.unroute('**/api/approvals?*');
 

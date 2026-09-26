@@ -495,6 +495,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // and the navigation/motion suites that own those business and lifecycle rules. It seeds its own
   // cursor walk, reviews the three migrated workspaces and writes the A6.6 visual-review set.
   await runModule('./browser_activity_audit_backup_modern_workspaces.cjs');
+  // A6.7 runs after A6.6 and after every purchasing, supplier, budget and approval module above:
+  // those own the business rules and leave approvals of every kind in the inbox. This one seeds its
+  // own queue walk, reviews the three migrated queues and their request sheets, and writes the A6.7
+  // visual-review set.
+  await runModule('./browser_purchasing_budget_approvals_modern_workspaces.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

@@ -63,7 +63,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work,order})=>{
   // muncul dua kali (di halaman approval dan di #dialog-content yang sudah ditutup).
   // Batasi pada daftar di halaman.
   await page.locator('#approval-list').getByText('Target 1 Des 2026 → 15 Des 2026',{exact:true}).waitFor();
-  assert.equal(await page.locator('#approval-list .material-event').count(),2);
+  // A6.7: an approval is an A6 record row in the Inbox's one record list.
+  assert.equal(await page.locator('#approval-list .record-row').count(),2);
   await page.locator('#approvals-view').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS||work,'beeloft-unified-approvals-mobile.png')});
 
   await role(viewer);

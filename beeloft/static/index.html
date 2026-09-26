@@ -281,20 +281,26 @@
         <p id="audit-readonly-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-shield"/></svg><span>Riwayat perubahan bisnis dan keputusan approval. Catatan bersifat read-only, urut dari yang terbaru, dan dikelola admin. Catatan tidak dapat diubah atau dihapus.</span></p>
         <div id="audit-body" class="audit-body"></div>
       </section>
-      <section id="purchase-requests-view" hidden>
+      <section id="purchase-requests-view" class="workspace-page" hidden>
         <button id="purchase-requests-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Purchasing · permintaan pembelian</p><h1>Pengajuan bahan untuk ditinjau.</h1></div><div class="actions"><button id="purchase-requests-refresh" type="button">Muat ulang PR</button><button id="new-purchase-request" class="primary" type="button" hidden>Buat PR</button></div></div>
-        <div id="purchase-requests-body" aria-live="polite"></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Purchasing · permintaan pembelian</p><h1 class="workspace-title">Permintaan pembelian</h1><p class="workspace-subtitle">Ajukan kebutuhan bahan dan tinjau keputusannya sebelum dipesan ke pemasok.</p></div><div class="workspace-actions"><button type="button" data-action="suppliers" class="action-quiet">Master pemasok</button><button type="button" data-action="purchase-orders" class="action-secondary">Daftar PO</button><button id="purchase-requests-refresh" type="button" class="action-quiet">Muat ulang PR</button><button id="new-purchase-request" class="action-primary" type="button" hidden>Buat PR</button></div></div>
+        <p id="purchase-requests-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok; PO dibuat dari rincian PR yang sudah disetujui.</span></p>
+        <div id="purchase-requests-body" class="queue-body" aria-live="polite"></div>
       </section>
-      <section id="marketing-budgets-view" hidden>
+      <section id="marketing-budgets-view" class="workspace-page" hidden>
         <button id="marketing-budgets-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Marketing · pengajuan budget</p><h1>Pengajuan budget kampanye.</h1></div><div class="actions"><button id="marketing-budgets-refresh" type="button">Muat ulang</button><button id="new-marketing-budget" class="primary" type="button" hidden>Ajukan budget</button></div></div>
-        <div id="marketing-budgets-body" aria-live="polite"></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Marketing · pengajuan budget</p><h1 class="workspace-title">Budget marketing</h1><p class="workspace-subtitle">Ajukan plafon kampanye ke manajemen dan pantau keputusannya.</p></div><div class="workspace-actions"><button type="button" data-action="approvals" class="action-quiet">Inbox approval</button><button id="marketing-budgets-refresh" type="button" class="action-quiet">Muat ulang</button><button id="new-marketing-budget" class="action-primary" type="button" hidden>Ajukan budget</button></div></div>
+        <p id="marketing-budgets-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</span></p>
+        <div id="marketing-budgets-body" class="queue-body" aria-live="polite"></div>
       </section>
-      <section id="approvals-view" hidden>
+      <section id="approvals-view" class="workspace-page" hidden>
         <button id="approvals-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
-        <div class="page-heading"><div><p class="eyebrow">Inbox approval · antrean keputusan</p><h1>Satu antrean untuk setiap keputusan.</h1></div><div class="actions"><button id="approvals-refresh" type="button">Muat ulang inbox</button></div></div>
-        <div id="approvals-body" aria-live="polite"></div>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Antrean keputusan · lintas domain</p><h1 class="workspace-title">Inbox approval</h1><p class="workspace-subtitle">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi.</p></div><div class="workspace-actions"><button id="approvals-refresh" type="button" class="action-secondary">Muat ulang inbox</button></div></div>
+        <div class="queue-context">
+          <p id="approvals-source-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Nilai serta konteks asal tetap dibaca dari ledger domainnya. Keputusan diambil di rincian tiap approval.</span></p>
+          <div class="queue-sources" role="group" aria-labelledby="approvals-sources-label"><span id="approvals-sources-label" class="workspace-meta">Daftar asal</span><button type="button" data-action="purchase-requests" class="action-quiet">Semua PR</button><button type="button" data-action="marketing-budgets" class="action-quiet">Semua budget marketing</button><button type="button" data-action="workforce-requests" class="action-quiet">Permintaan People</button><button type="button" data-action="mekari-payroll-summary" class="action-quiet">Payroll Mekari</button></div>
+        </div>
+        <div id="approvals-body" class="queue-body" aria-live="polite"></div>
       </section>
       <section id="bundle-scan-view" class="workspace-page" hidden>
         <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Scan bundle</h1><p class="workspace-subtitle">Pindai label bundle untuk membuka identitas dan statusnya.</p></div></div>
