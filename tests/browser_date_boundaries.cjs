@@ -25,16 +25,17 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer})=>{
   await analytics.getByRole('button',{name:'Coba lagi',exact:true}).waitFor();
   await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('2026-09-30');
   await analytics.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
-  await page.locator('#production-quality-summary .form-info').waitFor();
-  assert.equal(await qualityMessage.isVisible(),false);
+  await page.locator('#production-quality-summary .metric-strip').waitFor();
+  assert.equal(await qualityMessage.locator('.error-state').count(),0);
 
   // Batas aman tepat: 0001-01-14 dengan jendela 7 hari masih dapat dihitung seluruhnya.
   await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('0001-01-14');
   await analytics.getByLabel('Panjang periode (hari)',{exact:true}).fill('7');
   await analytics.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
-  await page.locator('#production-quality-results').getByText(
+  await qualityMessage.getByText(
     'Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
-  assert.equal(await qualityMessage.isVisible(),false,'batas aman tidak boleh ditolak');
+  assert.equal(await qualityMessage.locator('.error-state').count(),0,'batas aman tidak boleh ditolak');
+  assert.equal(await page.locator('#production-quality-results > li').count(),0);
   // Satu hari di luar batas aman ditolak lagi dengan pesan yang sama.
   await analytics.getByLabel('Data sampai tanggal',{exact:true}).fill('0001-01-13');
   await analytics.getByRole('button',{name:'Tampilkan kualitas',exact:true}).click();
@@ -57,8 +58,9 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer})=>{
   // Horizon satu hari berakhir pada tanggal itu sendiri, jadi masih terwakili kalender.
   await analytics.getByLabel('Horizon kalender (hari)',{exact:true}).fill('1');
   await analytics.getByRole('button',{name:'Hitung kapasitas',exact:true}).click();
-  await page.locator('#capacity-plan-summary .form-info').waitFor();
-  assert.equal(await capacityMessage.isVisible(),false,'horizon satu hari di 9999-12-31 tetap sah');
+  await page.locator('#capacity-plan-summary .metric-strip').waitFor();
+  assert.equal(await capacityMessage.locator('.error-state').count(),0,
+    'horizon satu hari di 9999-12-31 tetap sah');
 
   // ---------------------------------------------------------------- investigasi AI (viewer)
   // Investigasi yang disimpan adalah transaksi ber-Idempotency-Key. 500 dulu membuat klien

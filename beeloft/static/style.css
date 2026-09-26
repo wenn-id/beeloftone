@@ -1792,3 +1792,167 @@ label>input,label>select,label>textarea{margin-top:6px}
      two deliberate columns. The numbers and their units are untouched. */
   #workforce-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* ==========================================================================
+   A6.4 - Analitik inner-workspace containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1, A6.2 and A6.3 blocks above do, done once more for the
+   ONE host that twelve reports share. Analitik is different from every phase before it in
+   exactly one way: there is no per-report `<section>` in index.html to scope rules to,
+   because all twelve destinations render into `#analytics-body`. So the grouping vocabulary
+   here is four classes that only a migrated analytics renderer is allowed to emit
+   (`.analytics-report`, `.analytics-filters`, `.analytics-record`, `.analytics-subgroup`
+   and their parts) plus the report-owned ids - which is what makes it safe: an unmigrated
+   surface cannot be reached by `.analytics-record`, because emitting it at all is what the
+   A6.0 containment test forbids outside the allowlisted renderers.
+
+   Nothing here is a component. No A6.0 primitive is redefined and no A6.1, A6.2 or A6.3
+   selector is touched. The quantity-bar family the reports draw their distributions with is
+   NOT here - it is a real primitive and lives in workspace-primitives.css with the rest.
+
+   The legacy vocabulary these twelve reports used to render with - `.filter-form`,
+   `.form-grid`, `.form-actions`, `.form-info`, `.material-event`, `.requirement-values`,
+   `.status-label`, `.hint`, `.page-heading`, `.eyebrow`, `.history-item`, `.product-list` -
+   is deliberately left intact above. `.filter-form` is still rendered by Aktivitas' audit
+   filter, `.form-grid`/`.form-actions`/`.form-info` by every `formDialog()`,
+   `.material-event`/`.requirement-values`/`.status-label`/`.hint` by the production,
+   warehouse, purchasing and Command Center surfaces A6.5-A6.7 still own, and
+   `.product-list` by the Master SKU catalog host. The two selectors A6.4 makes fully inert
+   (`.issue-heading`, `.product-item`) are left in place rather than cleaned up, because
+   A6.1's documented rule is that inert legacy CSS is removed by the phase that can prove
+   the removal safe on its own, and proving it needs the A6.5-A6.7 sweep this phase is not
+   allowed to start.
+   ========================================================================== */
+#analytics-view{max-width:1360px;margin-inline:auto}
+/* The report question. It is the one line that tells the operator what this page can answer,
+   so it gets a bounded measure for the same reason every other page subtitle does: a sentence
+   read once has to be readable, and 1360px of it is a ribbon rather than a line. */
+#analytics-subtitle{max-width:84ch}
+/* The shared report host. `#analytics-body` is replaced wholesale by whichever renderer owns
+   it, so the rhythm between a filter surface, the assumptions, a summary, a comparison and the
+   records cannot live in the markup - the renderer would have to restate it twelve times. The
+   gap is the PANEL step, not the section step: Analitik is meant to read dense, and twenty
+   pixels between two explanatory panels reads as two unrelated pages. */
+#analytics-body{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+#analytics-body>*{min-width:0}
+/* One stacking rhythm for a report or a part of one. Used both for the grouping `<section>`s
+   Kapasitas needs (master, then plan) and for the summary hosts every report writes into. They
+   deliberately carry no material of their own: the near-opaque surfaces are the record list and
+   the metric cards, and a card wrapped around them would put two borders between the wallpaper
+   and the data. */
+.analytics-report{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+.analytics-report>*{min-width:0}
+/* The filter surface is one <form> in two tiers: the command bar the operator touches every
+   day, and the assumptions panel that states the thresholds the numbers depend on. The tiers
+   are stacked rather than merged because forcing ten controls onto one horizontal line is the
+   legacy experience this phase exists to leave behind - and they stay in the SAME form so
+   FormData, the saved filter values and every parameter name are untouched. */
+.analytics-filters{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+/* Every state host keeps its id, its `role="status"` and its `.state` class, because the
+   request lifecycle, `message()` and `pageState()` all address them by exactly those. Their BOX
+   now comes from the A6 state primitive rendered inside them, so the legacy `.state` card is
+   withdrawn here; without this every loading, ready, empty and error state in Analitik would
+   draw a second bordered panel around the first. */
+#wip-ageing-message,#capacity-plan-message,#capacity-plan-boot,#production-quality-message,
+#supplier-performance-message,#material-price-message,#purchase-commitment-message,
+#forecast-message,#replenishment-message,#size-demand-message,#return-insights-message,
+#dead-stock-message,#stock-adjustment-insights-message{
+  padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit;
+}
+/* ---------- A6.4 the composite analytics record ----------
+   Six of the twelve reports describe a subject that owns nested evidence - a work centre owns
+   orders, a supplier owns QC results per unit, a material owns its PO history. A `.record-row`
+   is a ROW and cannot hold that; the legacy answer was `.material-event` inside
+   `.material-event` inside `.material-event`, which is the card-inside-a-card feeling A6.4 is
+   asked to remove. So the record stays ONE list item inside the ONE `.record-list` surface -
+   it gets the list's divider and nothing else. No border of its own, no radius, no shadow, no
+   second background. The nesting becomes typographic, not material. */
+.analytics-record{
+  display:flex;flex-direction:column;gap:.5rem;min-width:0;
+  padding:14px var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider);
+  overflow-wrap:anywhere;
+}
+.analytics-record:last-child{border-bottom:0}
+.analytics-record>p{margin:0}
+/* Identity on the left, status on the right, one line when they fit. `baseline` rather than
+   `center` so a two-line reference does not drag its chip to the middle of the record. */
+.analytics-record-head{display:flex;align-items:baseline;justify-content:space-between;gap:.35rem .9rem;flex-wrap:wrap;min-width:0}
+/* A record is a record ABOUT something, so its primary line has always been a heading and the
+   browser contract exposes it as one. `h3` carries the product's own card-title scale and
+   margins, neither of which belongs on a dense analytical row. */
+.analytics-record-head>h3{min-width:0;margin:0;font-size:var(--type-control);font-weight:620;letter-spacing:-.005em}
+.analytics-record-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:.15rem}
+/* ---------- A6.4 quiet subsection ----------
+   The replacement for a nested card. A rule, a small label, and divider rows: enough to say
+   "these belong to the record above" without another surface. */
+.analytics-subgroup{display:flex;flex-direction:column;gap:.2rem;min-width:0;padding-top:.4rem;border-top:1px solid var(--workspace-divider)}
+.analytics-subgroup-title{margin:0;color:var(--muted);font-size:var(--type-metadata);font-weight:650;letter-spacing:0}
+.analytics-sublist{display:flex;flex-direction:column;min-width:0;margin:0;padding:0;list-style:none}
+.analytics-sublist>li{display:flex;flex-direction:column;gap:.1rem;min-width:0;padding:.45rem 0;border-bottom:1px solid var(--workspace-divider)}
+.analytics-sublist>li:last-child{border-bottom:0}
+.analytics-sublist>li>h5{margin:0}
+.analytics-sublist-title{min-width:0;color:var(--ink);font-size:var(--type-caption);font-weight:620;overflow-wrap:anywhere}
+.analytics-sublist-action{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:.25rem}
+/* A result list with no rows yet - before the first run, after a reset, or when the report
+   answered with nothing - must not draw an empty bordered box under the empty state that
+   already explains why. */
+#analytics-body .record-list:empty{display:none}
+/* The pagination row already has its own top margin for the pages that place it after a table.
+   Inside a flex stack that margin is added to the gap and reads as a dropped footer. */
+#analytics-body .pagination{margin-top:0}
+/* ---------- A6.4 Kapasitas master ----------
+   The work-centre master is a long identity list that sits ABOVE the report it configures, so
+   it keeps its own scroll rather than pushing the plan off the first viewport. `.record-list`
+   declares `overflow:hidden`, and an id is what re-opens it. */
+#capacity-center-master{max-height:min(420px,52dvh);overflow:auto}
+#capacity-center-master h3{margin:0;font-size:var(--type-control);font-weight:620;letter-spacing:-.005em}
+@media(max-width:980px){
+  /* The product's own narrow-width touch floor, restored for the migrated controls that
+     legitimately out-specify it. `button,input,select,textarea{min-height:44px}` is declared
+     globally at this breakpoint, but a class beats a bare element selector, so A6's compact
+     control height would silently drop these below 44px on a narrow viewport. A6.0's
+     `pointer:coarse` step is ADDITIVE to that policy, not a replacement for it: a report may
+     not lose a target size the product already guaranteed. */
+  #analytics-view button,#analytics-view .command-filter,#analytics-view .command-filter>select,
+  #analytics-view .command-filter>input,#analytics-view .command-search input,
+  #analytics-view .field>input,#analytics-view .field>select{min-height:var(--touch-target-min)}
+}
+@media(max-width:650px){
+  /* A phone reads a record as a column. The head stops trying to put identity and status on one
+     line, because at this width "PO-2026-0031 · SUPPLIER-QA" and its chip cannot share a row
+     without one of them wrapping mid-token. */
+  .analytics-record{padding:12px var(--workspace-cell-x)}
+  .analytics-record-head{flex-direction:column;align-items:flex-start;gap:.3rem}
+  /* An analytics filter becomes a labelled field on a phone. A6.0's `.command-filter` is a
+     fixed-height inline row - label beside control - which is right for a bar of short filters. A
+     report's filters are named after the business question they ask ("Data demand sampai tanggal",
+     "Ambang tanpa demand (hari)", "Batas segera jatuh tempo (hari)"), and at 200% text that label
+     alone measures wider than a 320px viewport. Beside a control it cannot fit, and because the
+     label is a `<span>` in an `inline-flex` row it cannot wrap either: measured at 320px/200% the
+     host ran 106px past its own width.
+     So inside Analitik, and only at this breakpoint, the filter turns the corner: label above
+     control, label allowed to wrap, control at full width and at the product's touch floor. The
+     control keeps its name, its type and every attribute - this is layout, not a different field. */
+  #analytics-view .command-filter{
+    flex:1 1 100%;flex-direction:column;align-items:stretch;
+    height:auto;padding:.3rem .6rem;gap:.1rem;
+  }
+  #analytics-view .command-filter>span{overflow-wrap:anywhere;white-space:normal}
+  #analytics-view .command-filter>select,#analytics-view .command-filter>input{
+    width:100%;min-width:0;min-height:var(--touch-target-min);
+  }
+  /* A6.0 gave `.detail-field>dd` `overflow-wrap:anywhere` but not its `<dt>`, which is invisible
+     until a label is long AND the text is large: "Ambang porsi penerimaan" in a 96px compact track
+     at 200% text is wider than the track and the grid cannot shrink it. The wrap is added here
+     rather than in the primitive sheet, because A6.4 is not allowed to change how A6.1, A6.2 and
+     A6.3 render - the cross-product reconciliation of this is A6.8's job. */
+  #analytics-view .detail-field>dt{overflow-wrap:anywhere}
+  /* Two of the twelve reports have a metric whose value is legitimately a WORD rather than a
+     quantity - the WIP signal is a stage name, the open commitment is a formatted rupiah figure -
+     and a 1.5rem face at 200% text makes a single word wider than a 320px card. The figure is
+     narrowed rather than clipped, and mid-word breaking stays available as the last resort so
+     nothing is ever cut off or pushed past the host. */
+  #analytics-view .metric-value{font-size:1.2rem;overflow-wrap:anywhere}
+  #analytics-view .metric-label{overflow-wrap:anywhere}
+}

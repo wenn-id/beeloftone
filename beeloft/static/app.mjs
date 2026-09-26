@@ -522,6 +522,24 @@ function navigateFromDialog(show) {
   show();
 }
 
+// Satu tempat untuk pertanyaan bisnis setiap laporan. Judulnya menamai laporan; subjudul ini
+// mengatakan pertanyaan apa yang dijawabnya, dan itulah satu-satunya alasan ia ada — bukan
+// mengulang judul dengan kata lain. Dikumpulkan di satu peta supaya dua belas kalimat ini bisa
+// dibaca bersama-sama dan tetap konsisten, bukan tersebar di dua belas string markup.
+const analyticsReportQuestions={
+  'wip-ageing-insights':'Order produksi aktif mana yang berhenti bergerak atau menunjukkan sinyal operasional.',
+  'capacity-plan':'Bagaimana beban produksi yang dibutuhkan dibandingkan kapasitas work center yang tersedia.',
+  'production-quality-insights':'Bagaimana hasil final QC periode ini dibandingkan periode sebelumnya yang sama panjang.',
+  'supplier-performance-insights':'Seberapa tepat supplier memenuhi tanggal kedatangan dan bagaimana hasil QC bahannya.',
+  'material-price-insights':'Bagaimana harga satuan bergerak antar PO approved untuk bahan dan supplier yang sama.',
+  'purchase-commitment-insights':'Berapa nilai PO approved yang masih terbuka dan kapan jatuh temponya.',
+  'demand-forecast':'Berapa perkiraan demand tiap SKU pada horizon berikutnya menurut dua periode historis.',
+  'replenishment':'SKU mana yang berisiko stockout dan berapa produksi serta pembelian bahan yang disarankan.',
+  'size-demand-insights':'Ukuran mana dalam satu produk dan warna yang akan habis lebih dulu.',
+  'return-insights':'SKU dan alasan retur mana yang paling besar pada kohort shipment periode ini.',
+  'dead-stock-insights':'Stok sellable mana yang sudah lama mengendap tanpa demand neto.',
+  'stock-adjustment-insights':'Adjustment stok mana yang melewati ambang audit dan perlu ditinjau.'
+};
 // Dua belas anak sidebar Analitik berbagi satu host. Memilih anak mana pun mengaktifkan
 // section yang sama, lalu mengganti judul, filter, dan isi laporan. analyticsRequest dinaikkan
 // di sini (bukan di invalidate() saja) karena berpindah antar laporan tidak menyembunyikan
@@ -533,6 +551,9 @@ function activateAnalyticsReport(navId,title,content) {
   analyticsReport=navId;
   $('analytics-eyebrow').textContent='Analitik · '+$(navId).textContent.trim();
   $('analytics-heading').textContent=title;
+  // Subjudul diambil dari peta di atas, bukan dari argumen, supaya renderer laporan tidak bisa
+  // diam-diam mengubah pertanyaan bisnis yang diiklankan halaman ini.
+  $('analytics-subtitle').textContent=analyticsReportQuestions[navId]||'';
   $('analytics-body').innerHTML=content;
   return analyticsRequest;
 }
@@ -722,7 +743,7 @@ function clearWorkspace() {
   $('workforce-roster-meta').textContent = '';
   productsRequest++; productsCache = []; $('product-list').replaceChildren();
   analyticsRequest++; analyticsReport = null; analyticsFilters = {};
-  $('analytics-body').replaceChildren(); $('analytics-heading').textContent='Analitik'; $('analytics-eyebrow').textContent='Analitik';
+  $('analytics-body').replaceChildren(); $('analytics-heading').textContent='Analitik'; $('analytics-eyebrow').textContent='Analitik'; $('analytics-subtitle').textContent='';
   aiRequest++; aiHistoryRequest++; aiHistoryBefore = null; aiTransaction = null;
   $('ai-results').replaceChildren(); $('ai-history-list').replaceChildren(); message('ai-message',''); message('ai-history-message','');
   integrationsRequest++; $('integrations-body').replaceChildren(); message('integrations-message','');
@@ -4384,44 +4405,159 @@ async function aiActionProposalDialog(proposalId) {
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-action-proposal" data-id="${e(proposalId)}">Coba lagi</button>`;}
 }
 
+// ===================== A6.4 · tata bahasa bersama laporan Analitik =====================
+// Dua belas laporan, satu tata bahasa. Setiap laporan menjawab pertanyaan bisnisnya sendiri,
+// jadi tidak ada satu dashboard yang dipaksakan ke semuanya; yang dibagi adalah URUTAN —
+// identitas laporan → cakupan dan asumsi → angka kunci → perbandingan bila datanya memang
+// mendukung → rincian → bukti pendukung — dan kosakata yang memakai primitif A6.0 apa adanya.
+// Pembantu di bawah ini bukan pustaka komponen kedua: masing-masing hanya menuliskan satu
+// bentuk A6.0 yang sudah ada, supaya dua belas renderer tidak menyalin markup yang sama
+// dua belas kali dan tidak pelan-pelan menyimpang satu dari yang lain.
+const analyticsFilterControl=(label,control)=>`<label class="command-filter"><span>${e(label)}</span>${control}</label>`;
+const analyticsDateFilter=(name,label,value)=>analyticsFilterControl(label,`<input name="${name}" type="date" required value="${e(value)}" aria-label="${e(label)}">`);
+const analyticsNumberFilter=(name,label,attrs)=>analyticsFilterControl(label,`<input name="${name}" type="number" ${attrs} aria-label="${e(label)}">`);
+const analyticsTextFilter=(name,label,attrs)=>analyticsFilterControl(label,`<input name="${name}" type="text" ${attrs} aria-label="${e(label)}">`);
+const analyticsSelectFilter=(name,label,options)=>analyticsFilterControl(label,`<select name="${name}" aria-label="${e(label)}">${options}</select>`);
+const analyticsSearchFilter=(label,placeholder)=>`<label class="command-search"><span class="visually-hidden">${e(label)}</span>${svgIcon('search','icon-sm')}<input name="query" type="search" maxlength="160" aria-label="${e(label)}" placeholder="${e(placeholder)}"></label>`;
+// Asumsi laporan adalah bidang, bukan kontrol toolbar. Ambang, lead time, dan bobot periode
+// dituliskan sebagai `.field` bernama supaya labelnya tetap label sungguhan — bukan placeholder —
+// dan supaya sepuluh kontrol tidak pernah dipaksa berbaris pada satu garis horizontal.
+const analyticsParam=(name,label,type,attrs)=>`<label class="field"><span class="field-label">${e(label)}</span><input name="${name}" type="${type}" ${attrs}></label>`;
+const analyticsParamSelect=(name,label,options)=>`<label class="field"><span class="field-label">${e(label)}</span><select name="${name}">${options}</select></label>`;
+// Panel asumsi TIDAK disembunyikan di balik disclosure. Ambang audit dan lead time adalah bagian
+// dari arti angka yang dibacakan laporan; menyembunyikannya berarti menyembunyikan cakupan hasil.
+// Ia hanya diberi nada yang lebih tenang daripada command bar di atasnya, dan tetap satu <form>
+// yang sama supaya FormData, save/restoreAnalyticsFilters, dan nama parameter tidak berubah.
+const analyticsAssumptions=fields=>`<div class="utility-panel"><p class="utility-panel-title">Parameter &amp; asumsi</p><div class="field-grid">${fields}</div></div>`;
+const analyticsSubmit=(id,label)=>`<div class="command-actions"><button class="action-primary" id="${id}" type="submit">${e(label)}</button></div>`;
+// Satu <form>, dua tingkat: kontrol utama pada command bar, sisanya pada panel asumsi.
+function analyticsFilterForm(formId,primary,search,submitId,submitLabel,assumptions='') {
+  return `<form id="${formId}" class="analytics-filters"><div class="command-bar">`
+    +(primary?`<div class="command-filters">${primary}</div>`:'')+(search||'')
+    +analyticsSubmit(submitId,submitLabel)+'</div>'
+    +(assumptions?analyticsAssumptions(assumptions):'')+'</form>';
+}
+// Kebenaran yang tidak boleh hilang dari sebuah laporan — apa yang TIDAK bisa disimpulkannya —
+// diletakkan di panel informasi tepat di bawah filter, bukan di catatan kaki paling bawah.
+const analyticsNote=text=>`<p class="info-panel">${svgIcon('info','icon-sm')}<span>${text}</span></p>`;
+const analyticsChip=(tone,label)=>`<span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${e(label)}</span>`;
+// Hanya keluaran laporan yang sesungguhnya menjadi metrik, dan tingkat pertama dibatasi tiga
+// sampai lima kartu. Angka pendukung tetap tinggal di detail-grid atau di badan record.
+function analyticsMetrics(ariaLabel,cards) {
+  return `<dl class="metric-strip" aria-label="${e(ariaLabel)}">${cards.map(([label,value,unit,glyph,tone])=>
+    `<div class="metric-card${tone?' '+tone:''}"><span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+    +`<dt class="metric-label">${e(label)}</dt><dd class="metric-value">${value}${unit?` <small class="metric-unit">${e(unit)}</small>`:''}</dd></div>`).join('')}</dl>`;
+}
+const analyticsFacts=(facts,compact=true)=>`<dl class="detail-grid${compact?' detail-grid-compact':''}">${facts.map(([label,value])=>
+  `<div class="detail-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+// Distribusi kuantitas. Geometri batang dihitung lokal HANYA sebagai lebar; angka yang tercetak
+// selalu nilai yang dikembalikan API, dan batangnya `aria-hidden` karena label serta angkanya
+// sudah teks sungguhan. Tidak ada pustaka grafik, canvas, sumbu, animasi, atau timer.
+function analyticsBars(rows) {
+  const peak=Math.max(0,...rows.map(row=>Math.abs(Number(row.share)||0)));
+  return `<dl class="analytics-bar-list">${rows.map(row=>{
+    const width=peak>0?Math.abs(Number(row.share)||0)/peak*100:0;
+    return '<div class="analytics-bar-row">'
+      +`<dt class="analytics-bar-label">${e(row.label)}</dt>`
+      +`<dd class="analytics-bar-value">${row.value}</dd>`
+      +`<span class="analytics-bar-track" aria-hidden="true"><span class="analytics-bar-fill${row.tone?' analytics-bar-fill-'+row.tone:''}" style="--analytics-bar:${width.toFixed(1)}%"></span></span>`
+      +(row.note?`<span class="analytics-bar-note">${row.note}</span>`:'')+'</div>';
+  }).join('')}</dl>`;
+}
+const analyticsSubhead=(title,metaId='')=>`<div class="workspace-subhead"><h2 class="workspace-section-title">${e(title)}</h2>`
+  +(metaId?`<span id="${metaId}" class="workspace-meta"></span>`:'')+'</div>';
+// Subbagian tenang di dalam satu record: judul kecil dan baris berpembatas, bukan kartu di
+// dalam kartu di dalam kartu. Inilah yang menggantikan `.material-event` bersarang.
+const analyticsSubgroup=(title,rows)=>`<div class="analytics-subgroup"><h4 class="analytics-subgroup-title">${e(title)}</h4><ul class="analytics-sublist">${rows}</ul></div>`;
+const analyticsOpen=(action,id,label)=>`<button type="button" class="action-secondary" data-action="${action}" data-id="${e(id)}">${e(label)}</button>`;
+// Satu presentasi paginasi untuk setiap laporan yang memakai 25 baris. Batas endpoint tidak
+// berubah dan tidak ada infinite scroll: tombolnya tetap tombol, dan hitungannya jujur.
+const analyticsPager=(moreId,label)=>`<div class="pagination"><span id="${moreId}-count" class="workspace-meta"></span><div class="actions"><button id="${moreId}" type="button" class="action-secondary" hidden>${e(label)}</button></div></div>`;
+function analyticsPagerCount(moreId,shown,total,unit) {
+  $(moreId+'-count').textContent=total?`${n(shown)} dari ${n(total)} ${unit}`:`0 ${unit}`;
+}
+// Keadaan siap untuk laporan yang menunggu operator menekan tombol. Ia TIDAK memicu permintaan
+// apa pun — hanya menjelaskan bahwa laporan belum dijalankan, supaya halaman tidak tampil kosong.
+function analyticsReady(messageId,copy) {
+  pageState(messageId,'empty','Laporan belum dijalankan',copy);
+}
+function analyticsFail(messageId,retryId,text,handler) {
+  pageState(messageId,'error',text,'',`<button id="${retryId}" type="button" class="action-secondary">Coba lagi</button>`);
+  $(retryId).onclick=handler;
+}
+
 function showDemandForecast() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('demand-forecast','Forecast demand per SKU',`<form id="forecast-form" class="filter-form">
-    <p class="hint">Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang tiap periode (hari)','number','required min="7" max="90" step="1" value="28"')}
-      ${field('horizon_days','Horizon forecast (hari)','number','required min="1" max="180" step="1" value="30"')}
-      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
-      <label class="full">Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="forecast-submit" type="submit">Hitung forecast</button></div>
-  </form><p id="forecast-message" class="state" role="status" hidden></p><div id="forecast-results"></div>`);
+  const request=activateAnalyticsReport('demand-forecast','Forecast demand per SKU',
+    analyticsFilterForm('forecast-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Panjang tiap periode (hari)','required min="7" max="90" step="1" value="28"')
+      +analyticsNumberFilter('horizon_days','Horizon forecast (hari)','required min="1" max="180" step="1" value="30"')
+      +analyticsTextFilter('marketplace','Marketplace','maxlength="160" placeholder="Semua marketplace"'),
+      analyticsSearchFilter('Cari SKU atau produk','Kode, nama, warna, atau ukuran'),
+      'forecast-submit','Hitung forecast')
+    +analyticsNote('Forecast memakai dua periode historis yang sama panjang. Demand terbaru berbobot 70% dan periode sebelumnya 30%. Retur aktif mengurangi demand pada tanggal pengiriman asal.')
+    // §74: batas laporan ini disebutkan di atas hasil, bukan sebagai catatan kaki, karena inilah
+    // yang membedakannya dari rekomendasi stok. Forecast tidak tahu apa pun tentang stok.
+    +analyticsNote('Hasil berupa estimasi desimal. Angka ini belum memperhitungkan stok tersedia, stok dalam perjalanan, lead time, MOQ, atau safety stock.')
+    +'<div id="forecast-results" class="analytics-report"></div><div id="forecast-message" class="state" role="status" hidden></div>');
   const version=epoch,form=$('forecast-form'),button=$('forecast-submit');
   restoreAnalyticsFilters('demand-forecast',form);
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='demand-forecast'&&request===analyticsRequest;
+  analyticsReady('forecast-message','Atur periode, horizon, dan filter, lalu tekan Hitung forecast untuk menjalankan laporan.');
   const load=async()=>{
     if(!current())return;
     button.disabled=true;button.textContent='Menghitung…';
-    message('forecast-message','Menghitung demand dari shipment dan retur aktif…');
+    pageState('forecast-message','loading','Menghitung demand dari shipment dan retur aktif…');
     $('forecast-results').replaceChildren();
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','100');params.set('offset','0');
       const report=await api.get('/api/demand-forecast?'+params);
       if(!current())return;
-      message('forecast-message','');
+      pageState('forecast-message','');
       const trends={new:'Demand baru',up:'Naik',down:'Turun',flat:'Stabil'};
-      $('forecast-results').innerHTML=`<p class="form-info">Riwayat ${date(report.history_start)}–${date(report.as_of)}<br>Periode lama berakhir ${date(report.previous_period_end)} · periode terbaru mulai ${date(report.recent_period_start)}<br>Horizon ${n(report.horizon_days)} hari · total forecast ${n(Number(report.total_forecast_quantity))} pcs</p>
-        <p class="hint">Hasil berupa estimasi desimal. Angka ini belum memperhitungkan stok tersedia, stok dalam perjalanan, lead time, MOQ, atau safety stock.</p>
-        ${report.items.length?report.items.map(row=>`<article class="material-event" data-forecast-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${n(Number(row.forecast_quantity))} pcs</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><p class="status-label ${row.history_status==='no_history'?'late':''}">${row.history_status==='no_history'?'Belum ada riwayat demand':e(trends[row.trend])+(row.trend_percent!==null?' '+e(row.trend_percent)+'%':'')}</p><dl class="requirement-values"><div><dt>Periode sebelumnya</dt><dd>${n(row.previous_net_demand)} pcs neto</dd></div><div><dt>Periode terbaru</dt><dd>${n(row.recent_net_demand)} pcs neto</dd></div><div><dt>Rata-rata historis</dt><dd>${n(Number(row.historical_daily_rate))} pcs/hari</dd></div><div><dt>Rate forecast</dt><dd>${n(Number(row.forecast_daily_rate))} pcs/hari</dd></div></dl><p class="hint">Shipment ${n(row.shipment_count)} · retur lama ${n(row.previous_returned_quantity)} pcs · retur terbaru ${n(row.recent_returned_quantity)} pcs${row.marketplaces.length?' · '+e(row.marketplaces.join(', ')):''}</p></article>`).join(''):'<p class="state">Tidak ada SKU yang cocok dengan filter.</p>'}
-        ${report.total>report.items.length?`<p class="hint">Menampilkan ${n(report.items.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</p>`:''}`;
+      const tones={new:'info',up:'warning',down:'info',flat:'neutral'};
+      const window=n(report.window_days);
+      $('forecast-results').innerHTML=analyticsMetrics('Ringkasan forecast demand',[
+          ['Total forecast',n(Number(report.total_forecast_quantity)),'pcs','trend','metric-card-info'],
+          ['Horizon',n(report.horizon_days),'hari','clock',''],
+          ['SKU terhitung',n(report.total),'SKU','layers','']
+        ])
+        +analyticsFacts([['Riwayat',`${date(report.history_start)}–${date(report.as_of)}`],
+          ['Periode lama berakhir',date(report.previous_period_end)],
+          ['Periode terbaru mulai',date(report.recent_period_start)]])
+        +analyticsSubhead('Forecast per SKU')
+        +(report.items.length?`<ul class="record-list">${report.items.map(row=>{
+          // §75: perbandingan tiga nilai. Ketiganya pcs dan label masing-masing MENYEBUTKAN
+          // panjang periodenya, jadi batang tidak bisa menyiratkan bahwa horizon sama panjang
+          // dengan window historis. Angka yang tercetak selalu nilai yang dikembalikan API.
+          const bars=analyticsBars([
+            {label:`Demand neto periode sebelumnya · ${window} hari`,value:`${n(row.previous_net_demand)} pcs`,share:row.previous_net_demand,tone:'neutral'},
+            {label:`Demand neto periode terbaru · ${window} hari`,value:`${n(row.recent_net_demand)} pcs`,share:row.recent_net_demand},
+            {label:`Forecast horizon · ${n(report.horizon_days)} hari`,value:`${n(Number(row.forecast_quantity))} pcs`,share:Number(row.forecast_quantity),tone:'success'}
+          ]);
+          const variant=[row.color,row.size].filter(Boolean);
+          return `<li class="analytics-record" data-forecast-sku="${e(row.sku)}">`
+            +'<div class="analytics-record-head">'
+            +`<h3 class="data-primary">${e(row.sku)} · ${n(Number(row.forecast_quantity))} pcs</h3>`
+            +`<span class="chip-row">${row.history_status==='no_history'?analyticsChip('neutral','Belum ada riwayat demand'):analyticsChip(tones[row.trend]||'neutral',trends[row.trend]+(row.trend_percent!==null?' '+row.trend_percent+'%':''))}</span>`
+            +'</div>'
+            +`<p class="data-secondary">${e(row.name)}${variant.length?' · '+e(variant.join(' / ')):''}</p>`
+            +bars
+            +analyticsFacts([['Rata-rata historis',`${n(Number(row.historical_daily_rate))} pcs/hari`],
+              ['Rate forecast',`${n(Number(row.forecast_daily_rate))} pcs/hari`],
+              ['Shipment',n(row.shipment_count)],
+              ['Retur lama',`${n(row.previous_returned_quantity)} pcs`],
+              ['Retur terbaru',`${n(row.recent_returned_quantity)} pcs`]])
+            +(row.marketplaces.length?`<p class="data-meta">${e(row.marketplaces.join(', '))}</p>`:'')
+            +'</li>';
+        }).join('')}</ul>`:'')
+        // §76: batas 100 hasil tanpa load-more. Yang ditawarkan tetap mempersempit pencarian.
+        +(report.total>report.items.length?`<p class="info-panel">${svgIcon('info','icon-sm')}<span>Menampilkan ${n(report.items.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</span></p>`:'');
+      if(!report.items.length)pageState('forecast-message','empty','Tidak ada SKU yang cocok dengan filter.','Ubah marketplace, pencarian, atau panjang periode lalu jalankan laporan kembali.');
     }catch(error){
-      if(current()){
-        message('forecast-message',error.message,true);
-        $('forecast-message').insertAdjacentHTML('beforeend','<br><button id="forecast-retry" type="button">Coba lagi</button>');
-        $('forecast-retry').onclick=load;
-      }
+      if(current())analyticsFail('forecast-message','forecast-retry',error.message,load);
     }finally{if(current()){button.disabled=false;button.textContent='Hitung forecast';}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('demand-forecast',form);load();};
@@ -4430,43 +4566,81 @@ $('demand-forecast').onclick=showDemandForecast;
 
 function showReturnInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('return-insights','Analisis retur per SKU',`<form id="return-insights-form" class="filter-form">
-    <p class="hint">Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="90"')}
-      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
-      <label>Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="return-insights-submit" type="submit">Tampilkan analisis</button></div>
-  </form><p id="return-insights-message" class="state" role="status" hidden></p><div id="return-insights-summary"></div><div id="return-insights-results"></div><button id="return-insights-more" type="button" hidden>Muat SKU berikutnya</button>`);
+  const request=activateAnalyticsReport('return-insights','Analisis retur per SKU',
+    analyticsFilterForm('return-insights-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Panjang periode (hari)','required min="7" max="365" step="1" value="90"')
+      +analyticsTextFilter('marketplace','Marketplace','maxlength="160" placeholder="Semua marketplace"'),
+      analyticsSearchFilter('Cari SKU atau produk','Kode, nama, warna, atau ukuran'),
+      'return-insights-submit','Tampilkan analisis')
+    +analyticsNote('Kohort memakai shipment dalam periode yang dipilih. Retur aktif sampai tanggal laporan dikelompokkan per SKU, ukuran, dan marketplace berdasarkan alasan yang dicatat tim.')
+    // §94: pengelompokan alasan tidak boleh berubah artinya, jadi definisinya ikut dicetak.
+    +analyticsNote('Sizing = terlalu kecil atau besar. Halaman produk = barang atau warna tidak sesuai. Rate memakai jumlah retur dibagi jumlah yang dikirim dalam kohort.')
+    +'<div id="return-insights-summary" class="analytics-report"></div><div id="return-insights-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Retur per SKU dan marketplace')
+    +'<ul id="return-insights-results" class="record-list"></ul>'
+    +analyticsPager('return-insights-more','Muat SKU berikutnya'));
   const version=epoch,form=$('return-insights-form'),submit=$('return-insights-submit');
   restoreAnalyticsFilters('return-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='return-insights'&&request===analyticsRequest;
+  analyticsReady('return-insights-message','Atur periode dan marketplace, lalu tekan Tampilkan analisis untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('return-insights-summary').replaceChildren();$('return-insights-results').replaceChildren();}
     const gen=generation,more=$('return-insights-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('return-insights-message',offset?'Memuat SKU berikutnya…':'Menghitung retur dari shipment dalam periode…');
+    pageState('return-insights-message','loading',offset?'Memuat SKU berikutnya…':'Menghitung retur dari shipment dalam periode…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/return-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('return-insights-message','');
-      if(!offset)$('return-insights-summary').innerHTML=`<p class="form-info">Periode ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.shipped_quantity)} pcs dikirim · ${n(report.summary.returned_quantity)} pcs kembali · rate retur ${e(report.summary.return_rate)}%</p><dl class="requirement-values"><div><dt>Sizing</dt><dd>${n(report.summary.sizing_quantity)} pcs</dd></div><div><dt>Halaman produk</dt><dd>${n(report.summary.product_page_quantity)} pcs</dd></div><div><dt>Defect</dt><dd>${n(report.summary.defect_quantity)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(report.summary.other_quantity)} pcs</dd></div></dl><p class="hint">Sizing = terlalu kecil atau besar. Halaman produk = barang atau warna tidak sesuai. Rate memakai jumlah retur dibagi jumlah yang dikirim dalam kohort.</p>`;
-      const html=report.items.map(row=>`<article class="material-event" data-return-insight-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${e(row.marketplace)}</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Dikirim</dt><dd>${n(row.shipped_quantity)} pcs</dd></div><div><dt>Diretur</dt><dd>${n(row.returned_quantity)} pcs</dd></div><div><dt>Rate retur</dt><dd><strong>${e(row.return_rate)}%</strong></dd></div><div><dt>Terlalu kecil</dt><dd>${n(row.reason_quantities.too_small)} pcs</dd></div><div><dt>Terlalu besar</dt><dd>${n(row.reason_quantities.too_big)} pcs</dd></div><div><dt>Barang tidak sesuai</dt><dd>${n(row.reason_quantities.wrong_item)} pcs</dd></div><div><dt>Warna tidak sesuai</dt><dd>${n(row.reason_quantities.color_mismatch)} pcs</dd></div><div><dt>Defect</dt><dd>${n(row.reason_quantities.defect)} pcs</dd></div><div><dt>Alasan lain</dt><dd>${n(row.reason_quantities.other)} pcs</dd></div></dl><p class="hint">${n(row.shipment_count)} shipment${row.latest_returned_date?' · retur terakhir '+date(row.latest_returned_date):' · belum ada retur pada kohort'}</p></article>`).join('');
-      appendRows('return-insights-results',html);
-      if(!offset&&!report.items.length)$('return-insights-results').innerHTML='<p class="state">Tidak ada shipment yang cocok dengan filter pada periode ini.</p>';
-      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
-    }catch(error){
-      if(current()&&gen===generation){
-        message('return-insights-message',error.message,true);
-        $('return-insights-message').insertAdjacentHTML('beforeend','<br><button id="return-insights-retry" type="button">Coba lagi</button>');
-        $('return-insights-retry').onclick=()=>load();
+      pageState('return-insights-message','');
+      if(!offset){
+        const s=report.summary;
+        $('return-insights-summary').innerHTML=analyticsMetrics('Ringkasan retur kohort',[
+            ['Dikirim',n(s.shipped_quantity),'pcs','truck',''],
+            ['Diretur',n(s.returned_quantity),'pcs','undo',s.returned_quantity>0?'metric-card-warning':''],
+            ['Rate retur',e(s.return_rate)+'%','','gauge','metric-card-info']
+          ])
+          +analyticsFacts([['Periode',`${date(report.period_start)}–${date(report.as_of)}`],
+            ['SKU · marketplace',n(report.total)]])
+          // §95: geometri segmen berasal langsung dari kuantitas alasan yang dikembalikan API.
+          // Label dan angkanya tetap terlihat, dan tidak ada klaim sebab-akibat.
+          +analyticsSubhead('Distribusi alasan retur')
+          +analyticsBars([
+            {label:'Sizing',value:`${n(s.sizing_quantity)} pcs`,share:s.sizing_quantity,tone:'warning'},
+            {label:'Halaman produk',value:`${n(s.product_page_quantity)} pcs`,share:s.product_page_quantity},
+            {label:'Defect',value:`${n(s.defect_quantity)} pcs`,share:s.defect_quantity,tone:'danger'},
+            {label:'Alasan lain',value:`${n(s.other_quantity)} pcs`,share:s.other_quantity,tone:'neutral'}
+          ]);
       }
+      const html=report.items.map(row=>{
+        const variant=[row.color,row.size].filter(Boolean);
+        const q=row.reason_quantities;
+        return `<li class="analytics-record" data-return-insight-sku="${e(row.sku)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.sku)} · ${e(row.marketplace)}</h3>`
+          // Chipnya menyatakan keadaan, bukan mengulang angka: rate eksaknya tetap dicetak di
+          // bawah bersama jumlah kirim dan retur, tempat ia bisa dibandingkan.
+          +`<span class="chip-row">${analyticsChip(Number(row.returned_quantity)>0?'warning':'success',Number(row.returned_quantity)>0?'Ada retur':'Tidak ada retur')}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.name)}${variant.length?' · '+e(variant.join(' / ')):''}</p>`
+          +analyticsFacts([['Dikirim',`${n(row.shipped_quantity)} pcs`],['Diretur',`${n(row.returned_quantity)} pcs`],
+            ['Rate retur',`<strong>${e(row.return_rate)}%</strong>`],
+            ['Terlalu kecil',`${n(q.too_small)} pcs`],['Terlalu besar',`${n(q.too_big)} pcs`],
+            ['Barang tidak sesuai',`${n(q.wrong_item)} pcs`],['Warna tidak sesuai',`${n(q.color_mismatch)} pcs`],
+            ['Defect',`${n(q.defect)} pcs`],['Alasan lain',`${n(q.other)} pcs`]])
+          +`<p class="data-meta">${n(row.shipment_count)} shipment${row.latest_returned_date?' · retur terakhir '+date(row.latest_returned_date):' · belum ada retur pada kohort'}</p>`
+          +'</li>';
+      }).join('');
+      appendRows('return-insights-results',html);
+      if(!offset&&!report.items.length)pageState('return-insights-message','empty','Tidak ada shipment yang cocok dengan filter pada periode ini.','Ubah marketplace, pencarian, atau panjang periode lalu jalankan laporan kembali.');
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
+      analyticsPagerCount('return-insights-more',offset,report.total,'SKU');
+    }catch(error){
+      if(current()&&gen===generation)analyticsFail('return-insights-message','return-insights-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('return-insights',form);load(true);};
@@ -4511,49 +4685,73 @@ $('return-insights').onclick=showReturnInsights;
 
 function showSizeDemandInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('size-demand-insights','Analisis demand per ukuran',`<form id="size-demand-form" class="filter-form">
-    <p class="hint">Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.</p>
-    <div class="form-grid">
-      ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang tiap periode (hari)','number','required min="7" max="90" step="1" value="28"')}
-      ${field('lookahead_days','Horizon risiko (hari)','number','required min="1" max="180" step="1" value="30"')}
-      ${field('marketplace','Marketplace demand','text','maxlength="160" placeholder="Semua marketplace"')}
-      <label class="full">Cari keluarga produk atau SKU<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="size-demand-submit" type="submit">Tampilkan analisis</button></div>
-  </form><p id="size-demand-message" class="state" role="status" hidden></p><div id="size-demand-summary"></div><div id="size-demand-results"></div><button id="size-demand-more" type="button" hidden>Muat keluarga berikutnya</button>`);
+  const request=activateAnalyticsReport('size-demand-insights','Analisis demand per ukuran',
+    analyticsFilterForm('size-demand-form',
+      analyticsDateFilter('as_of','Data demand sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Panjang tiap periode (hari)','required min="7" max="90" step="1" value="28"')
+      +analyticsNumberFilter('lookahead_days','Horizon risiko (hari)','required min="1" max="180" step="1" value="30"')
+      +analyticsTextFilter('marketplace','Marketplace demand','maxlength="160" placeholder="Semua marketplace"'),
+      analyticsSearchFilter('Cari keluarga produk atau SKU','Kode, nama, warna, atau ukuran'),
+      'size-demand-submit','Tampilkan analisis')
+    +analyticsNote('Bandingkan ukuran dalam produk dan warna yang sama. Sistem memakai demand neto dua periode serta stok tersedia saat ini untuk menunjukkan ukuran yang berisiko habis lebih dulu.')
+    // §87 dan §88: cakupan filter marketplace dan arti "pemimpin konsisten" adalah dua hal yang
+    // paling mudah disalahartikan pada laporan ini, jadi keduanya tetap tercetak.
+    +analyticsNote('Filter marketplace hanya membatasi demand. Stok memakai seluruh inventori internal saat laporan dimuat. “Pemimpin konsisten” berarti demand neto ukuran tersebut berada di peringkat pertama pada kedua periode, bukan bukti stockout historis.')
+    +'<div id="size-demand-summary" class="analytics-report"></div><div id="size-demand-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Keluarga produk dan ukurannya')
+    +'<ul id="size-demand-results" class="record-list"></ul>'
+    +analyticsPager('size-demand-more','Muat keluarga berikutnya'));
   const version=epoch,form=$('size-demand-form'),submit=$('size-demand-submit');
   restoreAnalyticsFilters('size-demand-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='size-demand-insights'&&request===analyticsRequest;
+  analyticsReady('size-demand-message','Atur periode demand dan horizon risiko, lalu tekan Tampilkan analisis untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('size-demand-summary').replaceChildren();$('size-demand-results').replaceChildren();}
     const gen=generation,more=$('size-demand-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('size-demand-message',offset?'Memuat keluarga berikutnya…':'Menghitung demand dan days of cover per ukuran…');
+    pageState('size-demand-message','loading',offset?'Memuat keluarga berikutnya…':'Menghitung demand dan days of cover per ukuran…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/size-demand-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('size-demand-message','');
-      if(!offset)$('size-demand-summary').innerHTML=`<p class="form-info">Riwayat ${date(report.history_start)}–${date(report.as_of)}<br>${n(report.summary.families)} keluarga · ${n(report.summary.size_variants)} ukuran · ${n(report.summary.families_out_of_stock+report.summary.families_within_lookahead)} keluarga perlu perhatian dalam ${n(report.lookahead_days)} hari</p><p class="hint">Filter marketplace hanya membatasi demand. Stok memakai seluruh inventori internal saat laporan dimuat. “Pemimpin konsisten” berarti demand neto ukuran tersebut berada di peringkat pertama pada kedua periode, bukan bukti stockout historis.</p>`;
+      pageState('size-demand-message','');
+      if(!offset){
+        const s=report.summary,attention=s.families_out_of_stock+s.families_within_lookahead;
+        $('size-demand-summary').innerHTML=analyticsMetrics('Ringkasan demand per ukuran',[
+            ['Keluarga produk',n(s.families),'','layers',''],
+            ['Ukuran',n(s.size_variants),'SKU','ruler',''],
+            [`Perlu perhatian ≤ ${n(report.lookahead_days)} hari`,n(attention),'keluarga','alert-triangle',attention>0?'metric-card-warning':'metric-card-success']
+          ])
+          +analyticsFacts([['Riwayat',`${date(report.history_start)}–${date(report.as_of)}`],
+            ['Horizon risiko',`${n(report.lookahead_days)} hari`]]);
+      }
       const statuses={out_of_stock:'Stok tersedia sudah habis',within_lookahead:'Berisiko dalam horizon',later:'Risiko di luar horizon',no_observed_demand:'Belum ada demand teramati'};
+      const tones={out_of_stock:'danger',within_lookahead:'warning',later:'info',no_observed_demand:'neutral'};
       const html=report.items.map(family=>{
         const first=family.first_stockout_sizes.join(', '),consistent=family.consistent_leader_sizes.join(', ');
-        const sizes=family.sizes.map(row=>`<div data-size-demand-sku="${e(row.sku)}"><dt>${e(row.size)} · ${e(row.sku)}</dt><dd>Stok tersedia ${n(row.available_quantity)} pcs · demand lama ${n(row.previous_net_demand)} pcs · demand terbaru ${n(row.recent_net_demand)} pcs${row.days_of_cover===null?' · days of cover belum tersedia':' · '+n(Number(row.days_of_cover))+' hari'+(row.projected_stockout_date?' · estimasi '+date(row.projected_stockout_date):'')}${row.consistent_demand_leader?' · pemimpin demand konsisten':''}</dd></div>`).join('');
-        return `<article class="material-event" data-size-demand-family="${e(family.name)}"><h3>${e(family.name)}${family.color?' · '+e(family.color):''}</h3><p class="status-label ${family.risk_status==='out_of_stock'||family.risk_status==='within_lookahead'?'late':'done'}">${e(statuses[family.risk_status])}</p>${first?`<p><strong>Risiko habis lebih dulu: ${e(first)}</strong>${family.first_stockout_date?' · '+date(family.first_stockout_date):''}</p>`:''}${consistent?`<p>Pemimpin demand konsisten: ${e(consistent)}</p>`:''}<dl class="requirement-values">${sizes}</dl></article>`;
+        const sizes=family.sizes.map(row=>`<li data-size-demand-sku="${e(row.sku)}">`
+          +`<span class="analytics-sublist-title">${e(row.size)} · ${e(row.sku)}</span>`
+          +`<span class="data-meta">Stok tersedia ${n(row.available_quantity)} pcs · demand lama ${n(row.previous_net_demand)} pcs · demand terbaru ${n(row.recent_net_demand)} pcs${row.days_of_cover===null?' · days of cover belum tersedia':' · '+n(Number(row.days_of_cover))+' hari'+(row.projected_stockout_date?' · estimasi '+date(row.projected_stockout_date):'')}${row.consistent_demand_leader?' · pemimpin demand konsisten':''}</span>`
+          +'</li>').join('');
+        return `<li class="analytics-record" data-size-demand-family="${e(family.name)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(family.name)}${family.color?' · '+e(family.color):''}</h3>`
+          +`<span class="chip-row">${analyticsChip(tones[family.risk_status]||'neutral',statuses[family.risk_status])}</span>`
+          +'</div>'
+          +(first?`<p class="data-secondary"><strong>Risiko habis lebih dulu: ${e(first)}</strong>${family.first_stockout_date?' · '+date(family.first_stockout_date):''}</p>`:'')
+          +(consistent?`<p class="data-meta">Pemimpin demand konsisten: ${e(consistent)}</p>`:'')
+          +analyticsSubgroup('Ukuran dalam keluarga ini',sizes)
+          +'</li>';
       }).join('');
       appendRows('size-demand-results',html);
-      if(!offset&&!report.items.length)$('size-demand-results').innerHTML='<p class="state">Belum ada keluarga produk dengan minimal dua ukuran yang cocok dengan filter.</p>';
+      if(!offset&&!report.items.length)pageState('size-demand-message','empty','Belum ada keluarga produk dengan minimal dua ukuran yang cocok dengan filter.','Ubah pencarian atau marketplace, lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat keluarga berikutnya';
+      analyticsPagerCount('size-demand-more',offset,report.total,'keluarga');
     }catch(error){
-      if(current()&&gen===generation){
-        message('size-demand-message',error.message,true);
-        $('size-demand-message').insertAdjacentHTML('beforeend','<br><button id="size-demand-retry" type="button">Coba lagi</button>');
-        $('size-demand-retry').onclick=()=>load();
-      }
+      if(current()&&gen===generation)analyticsFail('size-demand-message','size-demand-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('size-demand-insights',form);load(true);};
@@ -4563,45 +4761,75 @@ $('size-demand-insights').onclick=showSizeDemandInsights;
 
 function showDeadStockInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('dead-stock-insights','Analisis dead stock',`<form id="dead-stock-form" class="filter-form">
-    <p class="hint">Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.</p>
-    <div class="form-grid">
-      ${field('as_of','Data demand sampai tanggal','date',`required value="${today}"`)}
-      ${field('inactivity_days','Ambang tanpa demand (hari)','number','required min="7" max="730" step="1" value="90"')}
-      ${field('marketplace','Marketplace demand','text','maxlength="160" placeholder="Semua marketplace"')}
-      <label>Status<select name="status"><option value="dead_stock_candidate">Kandidat dead stock</option><option value="aging_no_sales">Stok baru tanpa penjualan</option><option value="moving">Masih bergerak</option><option value="all">Semua stok tersedia</option></select></label>
-      <label class="full">Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="dead-stock-submit" type="submit">Tampilkan analisis</button></div>
-  </form><p id="dead-stock-message" class="state" role="status" hidden></p><div id="dead-stock-summary"></div><div id="dead-stock-results"></div><button id="dead-stock-more" type="button" hidden>Muat SKU berikutnya</button>`);
+  const request=activateAnalyticsReport('dead-stock-insights','Analisis dead stock',
+    analyticsFilterForm('dead-stock-form',
+      analyticsDateFilter('as_of','Data demand sampai tanggal',today)
+      +analyticsNumberFilter('inactivity_days','Ambang tanpa demand (hari)','required min="7" max="730" step="1" value="90"')
+      +analyticsTextFilter('marketplace','Marketplace demand','maxlength="160" placeholder="Semua marketplace"')
+      +analyticsSelectFilter('status','Status','<option value="dead_stock_candidate">Kandidat dead stock</option><option value="aging_no_sales">Stok baru tanpa penjualan</option><option value="moving">Masih bergerak</option><option value="all">Semua stok tersedia</option>'),
+      analyticsSearchFilter('Cari SKU atau produk','Kode, nama, warna, atau ukuran'),
+      'dead-stock-submit','Tampilkan analisis')
+    // §98: definisi kandidat tidak dilonggarkan dan tidak ditafsirkan ulang.
+    +analyticsNote('Kandidat dead stock adalah stok sellable yang masih tersedia, umur lot tertuanya sudah melewati ambang, dan tidak mempunyai demand neto dalam periode yang sama.')
+    // §100 dan §101: cakupan filter marketplace, dan alasan laporan ini TIDAK menghitung rupiah.
+    +analyticsNote('Filter marketplace hanya membatasi demand. Stok dan umur lot memakai posisi inventori internal saat laporan dimuat. Nilai rupiah belum dihitung karena valuasi stok per lot belum tersedia.')
+    +'<div id="dead-stock-summary" class="analytics-report"></div><div id="dead-stock-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Stok tersedia menurut umur dan demand')
+    +'<ul id="dead-stock-results" class="record-list"></ul>'
+    +analyticsPager('dead-stock-more','Muat SKU berikutnya'));
   const version=epoch,form=$('dead-stock-form'),submit=$('dead-stock-submit');
   restoreAnalyticsFilters('dead-stock-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='dead-stock-insights'&&request===analyticsRequest;
+  analyticsReady('dead-stock-message','Atur ambang tanpa demand dan status, lalu tekan Tampilkan analisis untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('dead-stock-summary').replaceChildren();$('dead-stock-results').replaceChildren();}
     const gen=generation,more=$('dead-stock-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('dead-stock-message',offset?'Memuat SKU berikutnya…':'Memeriksa umur stok dan demand neto…');
+    pageState('dead-stock-message','loading',offset?'Memuat SKU berikutnya…':'Memeriksa umur stok dan demand neto…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/dead-stock-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('dead-stock-message','');
-      if(!offset)$('dead-stock-summary').innerHTML=`<p class="form-info">Periode demand ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.dead_stock_candidates)} kandidat · ${n(report.summary.dead_stock_quantity)} pcs tersedia · ${n(report.summary.aging_no_sales_products)} SKU masih terlalu baru untuk disebut dead stock</p><p class="hint">Filter marketplace hanya membatasi demand. Stok dan umur lot memakai posisi inventori internal saat laporan dimuat. Nilai rupiah belum dihitung karena valuasi stok per lot belum tersedia.</p>`;
-      const statuses={dead_stock_candidate:'Kandidat dead stock',aging_no_sales:'Stok baru tanpa penjualan',moving:'Masih bergerak'};
-      const html=report.items.map(row=>`<article class="material-event" data-dead-stock-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${n(row.available_quantity)} pcs tersedia</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><p class="status-label ${row.status==='dead_stock_candidate'?'late':'done'}">${e(statuses[row.status])}</p><dl class="requirement-values"><div><dt>Umur lot tertua</dt><dd>${n(row.oldest_stock_age_days)} hari</dd></div><div><dt>Demand neto periode</dt><dd>${n(row.recent_net_demand)} pcs</dd></div><div><dt>Shipment / retur</dt><dd>${n(row.recent_shipped_quantity)} / ${n(row.recent_returned_quantity)} pcs</dd></div><div><dt>Rate demand</dt><dd>${n(Number(row.recent_daily_rate))} pcs/hari</dd></div><div><dt>Days of cover</dt><dd>${row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'}</dd></div><div><dt>Lot aktif</dt><dd>${n(row.active_lot_count)}</dd></div></dl><p class="hint">${row.oldest_available_receipt_date?'Lot tersedia sejak '+date(row.oldest_available_receipt_date):'Tanggal lot belum tersedia'}${row.newest_available_receipt_date&&row.newest_available_receipt_date!==row.oldest_available_receipt_date?' · lot terbaru '+date(row.newest_available_receipt_date):''}<br>${row.last_net_sale_date?'Penjualan neto terakhir '+date(row.last_net_sale_date)+' · '+n(row.days_since_last_net_sale)+' hari lalu':'Belum ada penjualan neto aktif sampai tanggal laporan.'}</p></article>`).join('');
-      appendRows('dead-stock-results',html);
-      if(!offset&&!report.items.length)$('dead-stock-results').innerHTML='<p class="state">Tidak ada SKU yang cocok dengan status dan filter ini.</p>';
-      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
-    }catch(error){
-      if(current()&&gen===generation){
-        message('dead-stock-message',error.message,true);
-        $('dead-stock-message').insertAdjacentHTML('beforeend','<br><button id="dead-stock-retry" type="button">Coba lagi</button>');
-        $('dead-stock-retry').onclick=()=>load();
+      pageState('dead-stock-message','');
+      if(!offset){
+        const s=report.summary;
+        $('dead-stock-summary').innerHTML=analyticsMetrics('Ringkasan dead stock',[
+            ['Kandidat dead stock',n(s.dead_stock_candidates),'SKU','archive',s.dead_stock_candidates>0?'metric-card-warning':'metric-card-success'],
+            ['Stok kandidat',n(s.dead_stock_quantity),'pcs','box',''],
+            ['Terlalu baru untuk disebut dead stock',n(s.aging_no_sales_products),'SKU','clock','']
+          ])
+          +analyticsFacts([['Periode demand',`${date(report.period_start)}–${date(report.as_of)}`],
+            ['Ambang tanpa demand',`${n(report.inactivity_days)} hari`]]);
       }
+      const statuses={dead_stock_candidate:'Kandidat dead stock',aging_no_sales:'Stok baru tanpa penjualan',moving:'Masih bergerak'};
+      const tones={dead_stock_candidate:'warning',aging_no_sales:'info',moving:'success'};
+      const html=report.items.map(row=>{
+        const variant=[row.color,row.size].filter(Boolean);
+        return `<li class="analytics-record" data-dead-stock-sku="${e(row.sku)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.sku)} · ${n(row.available_quantity)} pcs tersedia</h3>`
+          +`<span class="chip-row">${analyticsChip(tones[row.status]||'neutral',statuses[row.status])}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.name)}${variant.length?' · '+e(variant.join(' / ')):''}</p>`
+          +analyticsFacts([['Umur lot tertua',`${n(row.oldest_stock_age_days)} hari`],
+            ['Demand neto periode',`${n(row.recent_net_demand)} pcs`],
+            ['Shipment / retur',`${n(row.recent_shipped_quantity)} / ${n(row.recent_returned_quantity)} pcs`],
+            ['Rate demand',`${n(Number(row.recent_daily_rate))} pcs/hari`],
+            ['Days of cover',row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'],
+            ['Lot aktif',n(row.active_lot_count)]])
+          +`<p class="data-meta">${row.oldest_available_receipt_date?'Lot tersedia sejak '+date(row.oldest_available_receipt_date):'Tanggal lot belum tersedia'}${row.newest_available_receipt_date&&row.newest_available_receipt_date!==row.oldest_available_receipt_date?' · lot terbaru '+date(row.newest_available_receipt_date):''}</p>`
+          +`<p class="data-meta">${row.last_net_sale_date?'Penjualan neto terakhir '+date(row.last_net_sale_date)+' · '+n(row.days_since_last_net_sale)+' hari lalu':'Belum ada penjualan neto aktif sampai tanggal laporan.'}</p>`
+          +'</li>';
+      }).join('');
+      appendRows('dead-stock-results',html);
+      if(!offset&&!report.items.length)pageState('dead-stock-message','empty','Tidak ada SKU yang cocok dengan status dan filter ini.','Ubah status, ambang, atau pencarian lalu jalankan laporan kembali.');
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat SKU berikutnya';
+      analyticsPagerCount('dead-stock-more',offset,report.total,'SKU');
+    }catch(error){
+      if(current()&&gen===generation)analyticsFail('dead-stock-message','dead-stock-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('dead-stock-insights',form);load(true);};
@@ -4611,53 +4839,90 @@ $('dead-stock-insights').onclick=showDeadStockInsights;
 
 function showStockAdjustmentInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('stock-adjustment-insights','Audit adjustment stok',`<form id="stock-adjustment-insights-form" class="filter-form">
-    <p class="hint">Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="30"')}
-      ${field('quantity_threshold','Ambang jumlah (pcs)','number','required min="1" max="1000000000" step="1" value="5"')}
-      ${field('percentage_threshold','Ambang porsi penerimaan (%)','number','required min="1" max="100" step="1" value="20"')}
-      ${field('repeat_threshold','Ambang pengulangan','number','required min="2" max="100" step="1" value="3"')}
-      <label>Klasifikasi<select name="classification"><option value="flagged">Perlu diperiksa</option><option value="high">Risiko tinggi</option><option value="review">Perlu tinjauan</option><option value="normal">Normal</option><option value="all">Semua adjustment</option></select></label>
-      <label>Sumber<select name="source"><option value="all">Semua sumber</option><option value="manual">Manual</option><option value="stock_count">Stock opname</option></select></label>
-      <label>Status catatan<select name="record_status"><option value="all">Aktif dan dikoreksi</option><option value="active">Aktif</option><option value="corrected">Sudah dikoreksi</option></select></label>
-      <label>Status stok<select name="stock_status"><option value="all">Semua status stok</option><option value="sellable">Sellable</option><option value="hold">Hold</option><option value="damaged">Damaged</option></select></label>
-      ${field('location','Lokasi stok','text','maxlength="160" placeholder="Semua lokasi"')}
-      <label class="full">Cari adjustment atau SKU<input name="query" type="search" maxlength="160" placeholder="Referensi, SKU, produk, order, atau alasan"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="stock-adjustment-insights-submit" type="submit">Tampilkan audit</button></div>
-  </form><p id="stock-adjustment-insights-message" class="state" role="status" hidden></p><div id="stock-adjustment-insights-summary"></div><div id="stock-adjustment-insights-results"></div><button id="stock-adjustment-insights-more" type="button" hidden>Muat adjustment berikutnya</button>`);
+  // §106: sebelas kontrol tidak dipaksa menjadi satu toolbar horizontal. Periode, klasifikasi,
+  // sumber, dan pencarian adalah pertanyaan sehari-hari dan tinggal di command bar; ambang,
+  // status catatan, status stok, dan lokasi adalah ASUMSI laporan dan tinggal di panel di
+  // bawahnya — tetap di dalam <form> yang sama, tetap terlihat, nama parameter tidak berubah.
+  const request=activateAnalyticsReport('stock-adjustment-insights','Audit adjustment stok',
+    analyticsFilterForm('stock-adjustment-insights-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Panjang periode (hari)','required min="7" max="365" step="1" value="30"')
+      +analyticsSelectFilter('classification','Klasifikasi','<option value="flagged">Perlu diperiksa</option><option value="high">Risiko tinggi</option><option value="review">Perlu tinjauan</option><option value="normal">Normal</option><option value="all">Semua adjustment</option>')
+      +analyticsSelectFilter('source','Sumber','<option value="all">Semua sumber</option><option value="manual">Manual</option><option value="stock_count">Stock opname</option>'),
+      analyticsSearchFilter('Cari adjustment atau SKU','Referensi, SKU, produk, order, atau alasan'),
+      'stock-adjustment-insights-submit','Tampilkan audit',
+      analyticsParam('quantity_threshold','Ambang jumlah (pcs)','number','required min="1" max="1000000000" step="1" value="5"')
+      +analyticsParam('percentage_threshold','Ambang porsi penerimaan (%)','number','required min="1" max="100" step="1" value="20"')
+      +analyticsParam('repeat_threshold','Ambang pengulangan','number','required min="2" max="100" step="1" value="3"')
+      +analyticsParamSelect('record_status','Status catatan','<option value="all">Aktif dan dikoreksi</option><option value="active">Aktif</option><option value="corrected">Sudah dikoreksi</option>')
+      +analyticsParamSelect('stock_status','Status stok','<option value="all">Semua status stok</option><option value="sellable">Sellable</option><option value="hold">Hold</option><option value="damaged">Damaged</option>')
+      +analyticsParam('location','Lokasi stok','text','maxlength="160" placeholder="Semua lokasi"'))
+    +analyticsNote('Adjustment ditandai bila jumlah atau porsinya terhadap penerimaan melewati ambang, berulang pada SKU dan bucket yang sama, atau sudah dikoreksi.')
+    // §104 dan §109: ini sinyal audit. Bukan bukti kehilangan stok, kecurangan, atau kesalahan.
+    +analyticsNote('Sinyal adalah alat audit, bukan bukti kehilangan stok. Status koreksi memakai posisi catatan saat laporan dimuat.')
+    +'<div id="stock-adjustment-insights-summary" class="analytics-report"></div><div id="stock-adjustment-insights-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Adjustment dalam periode')
+    +'<ul id="stock-adjustment-insights-results" class="record-list"></ul>'
+    +analyticsPager('stock-adjustment-insights-more','Muat adjustment berikutnya'));
   const version=epoch,form=$('stock-adjustment-insights-form'),submit=$('stock-adjustment-insights-submit');
   restoreAnalyticsFilters('stock-adjustment-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='stock-adjustment-insights'&&request===analyticsRequest;
+  analyticsReady('stock-adjustment-insights-message','Atur periode, klasifikasi, dan ambang audit, lalu tekan Tampilkan audit untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('stock-adjustment-insights-summary').replaceChildren();$('stock-adjustment-insights-results').replaceChildren();}
     const gen=generation,more=$('stock-adjustment-insights-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('stock-adjustment-insights-message',offset?'Memuat adjustment berikutnya…':'Memeriksa pola adjustment…');
+    pageState('stock-adjustment-insights-message','loading',offset?'Memuat adjustment berikutnya…':'Memeriksa pola adjustment…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/stock-adjustment-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('stock-adjustment-insights-message','');
-      if(!offset)$('stock-adjustment-insights-summary').innerHTML=`<p class="form-info">Periode ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.flagged_adjustments)} perlu diperiksa · ${n(report.summary.high_risk_adjustments)} risiko tinggi · ${n(report.summary.flagged_absolute_quantity)} pcs volume absolut ditandai</p><p class="hint">Sinyal adalah alat audit, bukan bukti kehilangan stok. Status koreksi memakai posisi catatan saat laporan dimuat.</p>`;
+      pageState('stock-adjustment-insights-message','');
+      if(!offset){
+        const s=report.summary;
+        $('stock-adjustment-insights-summary').innerHTML=analyticsMetrics('Ringkasan audit adjustment',[
+            ['Perlu diperiksa',n(s.flagged_adjustments),'catatan','shield',s.flagged_adjustments>0?'metric-card-warning':'metric-card-success'],
+            ['Risiko tinggi',n(s.high_risk_adjustments),'catatan','alert-triangle',s.high_risk_adjustments>0?'metric-card-danger':''],
+            ['Volume absolut ditandai',n(s.flagged_absolute_quantity),'pcs','box','']
+          ])
+          +analyticsFacts([['Periode',`${date(report.period_start)}–${date(report.as_of)}`],
+            ['Ambang jumlah',`${n(report.quantity_threshold)} pcs`],
+            ['Ambang porsi penerimaan',`${n(report.percentage_threshold)}%`],
+            ['Ambang pengulangan',`${n(report.repeat_threshold)} catatan`]]);
+      }
       const classes={high:'Risiko tinggi',review:'Perlu tinjauan',normal:'Normal'};
+      const classTones={high:'danger',review:'warning',normal:'success'};
       const sources={manual:'Manual',stock_count:'Stock opname'};
       const flags={large_quantity:'Jumlah melewati ambang',large_receipt_share:'Porsi penerimaan melewati ambang',repeated_bucket:'Berulang pada SKU dan bucket yang sama',corrected_record:'Catatan sudah dikoreksi'};
-      const html=report.items.map(row=>`<article class="material-event" data-stock-adjustment-insight="${e(row.id)}"><p class="status-label ${row.classification==='high'?'late':row.classification==='normal'?'done':''}">${e(classes[row.classification])}</p><h3>${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3><p>${e(row.sku)} · ${e(row.product_name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Porsi penerimaan</dt><dd>${e(row.receipt_share_percent)}%</dd></div><div><dt>Pengulangan bucket</dt><dd>${n(row.bucket_adjustment_count)} catatan</dd></div><div><dt>Volume bucket</dt><dd>${n(row.bucket_absolute_quantity)} pcs</dd></div><div><dt>Sumber</dt><dd>${e(sources[row.source])}</dd></div><div><dt>Status catatan</dt><dd>${row.record_status==='active'?'Aktif':'Sudah dikoreksi'}</dd></div><div><dt>Tanggal</dt><dd>${date(row.adjusted_date)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flags[flag]).join(' · ')):'Tidak melewati ambang audit.'}</p><p class="hint">${e(row.location)} · ${e(warehouseStatus[row.stock_status])}<br>Penerimaan ${e(row.receipt_reference)} · order ${e(row.order_reference)} · dicatat ${e(row.actor_name)}</p><button data-action="finished-goods-adjustment" data-id="${e(row.id)}">Buka adjustment</button></article>`).join('');
+      const html=report.items.map(row=>{
+        const variant=[row.color,row.size].filter(Boolean);
+        return `<li class="analytics-record" data-stock-adjustment-insight="${e(row.id)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.reference)} · ${row.quantity_delta>0?'+':''}${n(row.quantity_delta)} pcs</h3>`
+          +`<span class="chip-row">${analyticsChip(classTones[row.classification]||'neutral',classes[row.classification])}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.sku)} · ${e(row.product_name)}${variant.length?' · '+e(variant.join(' / ')):''}</p>`
+          +analyticsFacts([['Porsi penerimaan',`${e(row.receipt_share_percent)}%`],
+            ['Pengulangan bucket',`${n(row.bucket_adjustment_count)} catatan`],
+            ['Volume bucket',`${n(row.bucket_absolute_quantity)} pcs`],
+            ['Sumber',e(sources[row.source])],
+            ['Status catatan',row.record_status==='active'?'Aktif':'Sudah dikoreksi'],
+            ['Tanggal',date(row.adjusted_date)]])
+          +`<p class="data-secondary">${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flags[flag]).join(' · ')):'Tidak melewati ambang audit.'}</p>`
+          +`<p class="data-meta">${e(row.location)} · ${e(warehouseStatus[row.stock_status])}</p>`
+          +`<p class="data-meta">Penerimaan ${e(row.receipt_reference)} · order ${e(row.order_reference)} · dicatat ${e(row.actor_name)}</p>`
+          +`<div class="analytics-record-actions">${analyticsOpen('finished-goods-adjustment',row.id,'Buka adjustment')}</div>`
+          +'</li>';
+      }).join('');
       appendRows('stock-adjustment-insights-results',html);
-      if(!offset&&!report.items.length)$('stock-adjustment-insights-results').innerHTML='<p class="state">Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.</p>';
+      if(!offset&&!report.items.length)pageState('stock-adjustment-insights-message','empty','Tidak ada adjustment yang cocok dengan klasifikasi dan filter ini.','Ubah klasifikasi, sumber, ambang, atau pencarian lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat adjustment berikutnya';
+      analyticsPagerCount('stock-adjustment-insights-more',offset,report.total,'adjustment');
     }catch(error){
-      if(current()&&gen===generation){
-        message('stock-adjustment-insights-message',error.message,true);
-        $('stock-adjustment-insights-message').insertAdjacentHTML('beforeend','<br><button id="stock-adjustment-insights-retry" type="button">Coba lagi</button>');
-        $('stock-adjustment-insights-retry').onclick=()=>load();
-      }
+      if(current()&&gen===generation)analyticsFail('stock-adjustment-insights-message','stock-adjustment-insights-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('stock-adjustment-insights',form);load(true);};
@@ -4667,47 +4932,87 @@ $('stock-adjustment-insights').onclick=showStockAdjustmentInsights;
 
 function showSupplierPerformanceInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('supplier-performance-insights','Kinerja supplier',`<form id="supplier-performance-form" class="filter-form">
-    <p class="hint">PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Periode jatuh tempo PO (hari)','number','required min="7" max="730" step="1" value="90"')}
-      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua supplier</option></select></label>
-      <label class="full">Cari supplier atau PO<input name="query" type="search" maxlength="160" placeholder="Kode, nama supplier, atau referensi PO"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="supplier-performance-submit" type="submit">Tampilkan kinerja</button></div>
-  </form><p id="supplier-performance-message" class="state" role="status" hidden></p><div id="supplier-performance-summary"></div><div id="supplier-performance-results"></div><button id="supplier-performance-more" type="button" hidden>Muat supplier berikutnya</button>`);
+  const request=activateAnalyticsReport('supplier-performance-insights','Kinerja supplier',
+    analyticsFilterForm('supplier-performance-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Periode jatuh tempo PO (hari)','required min="7" max="730" step="1" value="90"')
+      +analyticsSelectFilter('status','Status','<option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua supplier</option>'),
+      analyticsSearchFilter('Cari supplier atau PO','Kode, nama supplier, atau referensi PO'),
+      'supplier-performance-submit','Tampilkan kinerja')
+    +analyticsNote('PO dikelompokkan menurut supplier dan tanggal perkiraan datang. Kedatangan aktif pertama mengukur ketepatan awal; hasil QC tetap dipisahkan per satuan bahan.')
+    // §54: aturan penahan beban. Kuantitas bahan TIDAK pernah dijumlahkan lintas satuan, jadi
+    // laporan ini juga tidak memvisualkannya pada satu sumbu bersama.
+    +analyticsNote('Kuantitas bahan tidak dijumlahkan lintas satuan. Keputusan kualitas hanya memakai kedatangan QC aktif.')
+    +'<div id="supplier-performance-summary" class="analytics-report"></div><div id="supplier-performance-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Supplier dengan PO jatuh tempo pada periode')
+    +'<ul id="supplier-performance-results" class="record-list"></ul>'
+    +analyticsPager('supplier-performance-more','Muat supplier berikutnya'));
   const version=epoch,form=$('supplier-performance-form'),submit=$('supplier-performance-submit');
   restoreAnalyticsFilters('supplier-performance-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='supplier-performance-insights'&&request===analyticsRequest;
+  analyticsReady('supplier-performance-message','Atur periode jatuh tempo PO dan status, lalu tekan Tampilkan kinerja untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('supplier-performance-summary').replaceChildren();$('supplier-performance-results').replaceChildren();}
     const gen=generation,more=$('supplier-performance-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('supplier-performance-message',offset?'Memuat supplier berikutnya…':'Menghitung ketepatan kedatangan dan hasil QC…');
+    pageState('supplier-performance-message','loading',offset?'Memuat supplier berikutnya…':'Menghitung ketepatan kedatangan dan hasil QC…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/supplier-performance-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('supplier-performance-message','');
-      if(!offset)$('supplier-performance-summary').innerHTML=`<p class="form-info">PO jatuh tempo ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.attention_suppliers)} supplier perlu perhatian · ${n(report.summary.overdue_no_arrival)} PO terlambat tanpa kedatangan · ${n(report.summary.late_first_arrivals)} kedatangan awal terlambat</p><p class="hint">Kuantitas bahan tidak dijumlahkan lintas satuan. Keputusan kualitas hanya memakai kedatangan QC aktif.</p>`;
+      pageState('supplier-performance-message','');
+      if(!offset){
+        const s=report.summary;
+        $('supplier-performance-summary').innerHTML=analyticsMetrics('Ringkasan kinerja supplier',[
+            ['Supplier perlu perhatian',n(s.attention_suppliers),'','alert-triangle',s.attention_suppliers>0?'metric-card-warning':'metric-card-success'],
+            ['PO terlambat tanpa kedatangan',n(s.overdue_no_arrival),'PO','clock',s.overdue_no_arrival>0?'metric-card-danger':''],
+            ['Kedatangan awal terlambat',n(s.late_first_arrivals),'PO','truck','']
+          ])
+          +analyticsFacts([['PO jatuh tempo',`${date(report.period_start)}–${date(report.as_of)}`],
+            ['Supplier terhitung',n(report.total)]]);
+      }
       const flagLabels={overdue_no_arrival:'PO terlambat tanpa kedatangan',late_first_arrival:'Kedatangan awal terlambat',overdue_incomplete:'PO lewat jadwal belum lengkap',closed_shortfall:'PO ditutup dengan kekurangan',quality_reject:'Ada bahan reject',quality_hold:'Ada bahan masih hold'};
       const fulfillment={received:'Diterima lengkap',partial:'Diterima sebagian',pending:'Belum diterima'};
       const quantityList=rows=>rows.map(unit=>`${n(Number(unit.quantity))} ${e(unit.unit)}`).join(' · ')||'Belum ada';
       const delay=row=>row.first_arrival_delay_days===null?'Belum ada kedatangan aktif':row.first_arrival_delay_days>0?`${n(row.first_arrival_delay_days)} hari terlambat`:row.first_arrival_delay_days<0?`${n(Math.abs(row.first_arrival_delay_days))} hari lebih awal`:'Tepat pada tanggal perkiraan';
-      const html=report.items.map(row=>`<article class="material-event" data-supplier-performance="${e(row.supplier_id)}"><p class="status-label ${row.status==='attention'?'late':'done'}">${row.status==='attention'?'Perlu perhatian':'Sehat'}</p><h3>${e(row.supplier_code)} · ${e(row.supplier_name)}</h3><dl class="requirement-values"><div><dt>PO periode</dt><dd>${n(row.purchase_order_count)}</dd></div><div><dt>Tepat waktu</dt><dd>${n(row.on_time_first_arrivals)}</dd></div><div><dt>Terlambat datang</dt><dd>${n(row.late_first_arrivals)}</dd></div><div><dt>Terlambat tanpa kedatangan</dt><dd>${n(row.overdue_no_arrival)}</dd></div><div><dt>Belum lengkap lewat jadwal</dt><dd>${n(row.overdue_incomplete_purchase_orders)}</dd></div><div><dt>Kekurangan saat ditutup</dt><dd>${n(row.closed_shortfall_purchase_orders)}</dd></div></dl><p>${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flagLabels[flag]).join(' · ')):'Tidak ada sinyal yang memerlukan perhatian.'}</p><p class="hint">Dipesan ${quantityList(row.ordered_by_unit)}<br>Diterima layak pakai ${quantityList(row.received_by_unit)}</p>${row.quality_by_unit.map(unit=>`<article class="material-event"><strong>QC ${e(unit.unit)} · ${n(unit.intake_count)} kedatangan</strong><p>Datang ${n(Number(unit.arrived))} · layak ${n(Number(unit.accepted))} · reject ${n(Number(unit.rejected))} · hold ${n(Number(unit.held))}</p><p class="hint">Usable ${e(unit.usable_rate)}% · reject ${e(unit.reject_rate)}%</p></article>`).join('')||'<p class="hint">Belum ada kedatangan melalui QC pada PO periode ini.</p>'}<h4>PO dalam periode</h4>${row.purchase_orders.map(po=>`<article class="material-event"><strong>${e(po.reference)} · ${e(fulfillment[po.fulfillment])}</strong><p>Perkiraan ${date(po.expected_date)} · ${e(delay(po))}</p><button data-action="purchase-order" data-id="${e(po.id)}">Buka PO</button></article>`).join('')}</article>`).join('');
+      const html=report.items.map(row=>{
+        // Satu baris per satuan bahan. Ini BUKAN kartu bersarang: baris berpembatas di dalam
+        // satu record, sehingga m, kg, dan pcs tetap terpisah tanpa menambah satu lapis kartu.
+        const quality=row.quality_by_unit.map(unit=>'<li>'
+          +`<span class="analytics-sublist-title">QC ${e(unit.unit)} · ${n(unit.intake_count)} kedatangan</span>`
+          +`<span class="data-meta">Datang ${n(Number(unit.arrived))} · layak ${n(Number(unit.accepted))} · reject ${n(Number(unit.rejected))} · hold ${n(Number(unit.held))}</span>`
+          +`<span class="data-meta">Usable ${e(unit.usable_rate)}% · reject ${e(unit.reject_rate)}%</span>`
+          +'</li>').join('');
+        const orders=row.purchase_orders.map(po=>'<li>'
+          +`<span class="analytics-sublist-title">${e(po.reference)} · ${e(fulfillment[po.fulfillment])}</span>`
+          +`<span class="data-meta">Perkiraan ${date(po.expected_date)} · ${e(delay(po))}</span>`
+          +`<span class="analytics-sublist-action">${analyticsOpen('purchase-order',po.id,'Buka PO')}</span>`
+          +'</li>').join('');
+        return `<li class="analytics-record" data-supplier-performance="${e(row.supplier_id)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.supplier_code)} · ${e(row.supplier_name)}</h3>`
+          +`<span class="chip-row">${analyticsChip(row.status==='attention'?'warning':'success',row.status==='attention'?'Perlu perhatian':'Sehat')}</span>`
+          +'</div>'
+          +analyticsFacts([['PO periode',n(row.purchase_order_count)],['Tepat waktu',n(row.on_time_first_arrivals)],
+            ['Terlambat datang',n(row.late_first_arrivals)],['Terlambat tanpa kedatangan',n(row.overdue_no_arrival)],
+            ['Belum lengkap lewat jadwal',n(row.overdue_incomplete_purchase_orders)],
+            ['Kekurangan saat ditutup',n(row.closed_shortfall_purchase_orders)]])
+          +`<p class="data-secondary">${row.flags.length?'Sinyal: '+e(row.flags.map(flag=>flagLabels[flag]).join(' · ')):'Tidak ada sinyal yang memerlukan perhatian.'}</p>`
+          +`<p class="data-meta">Dipesan ${quantityList(row.ordered_by_unit)}</p>`
+          +`<p class="data-meta">Diterima layak pakai ${quantityList(row.received_by_unit)}</p>`
+          +(quality?analyticsSubgroup('Hasil QC per satuan',quality):`<p class="data-meta">Belum ada kedatangan melalui QC pada PO periode ini.</p>`)
+          +analyticsSubgroup('PO dalam periode',orders)
+          +'</li>';
+      }).join('');
       appendRows('supplier-performance-results',html);
-      if(!offset&&!report.items.length)$('supplier-performance-results').innerHTML='<p class="state">Tidak ada supplier yang cocok dengan status dan filter periode ini.</p>';
+      if(!offset&&!report.items.length)pageState('supplier-performance-message','empty','Tidak ada supplier yang cocok dengan status dan filter periode ini.','Ubah status atau perpanjang periode jatuh tempo PO, lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat supplier berikutnya';
+      analyticsPagerCount('supplier-performance-more',offset,report.total,'supplier');
     }catch(error){
-      if(current()&&gen===generation){
-        message('supplier-performance-message',error.message,true);
-        $('supplier-performance-message').insertAdjacentHTML('beforeend','<br><button id="supplier-performance-retry" type="button">Coba lagi</button>');
-        $('supplier-performance-retry').onclick=()=>load();
-      }
+      if(current()&&gen===generation)analyticsFail('supplier-performance-message','supplier-performance-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('supplier-performance-insights',form);load(true);};
@@ -4717,47 +5022,84 @@ $('supplier-performance-insights').onclick=showSupplierPerformanceInsights;
 
 function showMaterialPriceInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('material-price-insights','Pergerakan harga bahan',`<form id="material-price-form" class="filter-form">
-    <p class="hint">Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Periode pencatatan PO (hari)','number','required min="7" max="730" step="1" value="90"')}
-      <label>Status perubahan<select name="status"><option value="changed">Harga berubah</option><option value="increased">Naik</option><option value="decreased">Turun</option><option value="stable">Tetap</option><option value="single_observation">Baru satu harga</option><option value="all">Semua status</option></select></label>
-      <label class="full">Cari bahan, supplier, atau PO<input name="query" type="search" maxlength="160" placeholder="Kode, nama, atau referensi PO"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="material-price-submit" type="submit">Tampilkan harga</button></div>
-  </form><p id="material-price-message" class="state" role="status" hidden></p><div id="material-price-summary"></div><div id="material-price-results"></div><button id="material-price-more" type="button" hidden>Muat harga berikutnya</button>`);
+  const request=activateAnalyticsReport('material-price-insights','Pergerakan harga bahan',
+    analyticsFilterForm('material-price-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsNumberFilter('window_days','Periode pencatatan PO (hari)','required min="7" max="730" step="1" value="90"')
+      +analyticsSelectFilter('status','Status perubahan','<option value="changed">Harga berubah</option><option value="increased">Naik</option><option value="decreased">Turun</option><option value="stable">Tetap</option><option value="single_observation">Baru satu harga</option><option value="all">Semua status</option>'),
+      analyticsSearchFilter('Cari bahan, supplier, atau PO','Kode, nama, atau referensi PO'),
+      'material-price-submit','Tampilkan harga')
+    // §58 dan §59: pasangan bahan+supplier, dan sumbu waktunya adalah tanggal PENCATATAN PO.
+    +analyticsNote('Harga dibandingkan dari PO approved untuk material dan supplier yang sama. Tanggal pencatatan PO dipakai agar perubahan harga tidak bergantung pada jadwal kedatangan.')
+    // §61: semantik ringkasan yang sudah ada tidak diubah diam-diam.
+    +analyticsNote('Ringkasan mencakup hasil pencarian sebelum filter status. Harga supplier berbeda tidak dicampur menjadi satu tren.')
+    +'<div id="material-price-summary" class="analytics-report"></div><div id="material-price-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Pasangan bahan dan supplier')
+    +'<ul id="material-price-results" class="record-list"></ul>'
+    +analyticsPager('material-price-more','Muat harga berikutnya'));
   const version=epoch,form=$('material-price-form'),submit=$('material-price-submit');
   restoreAnalyticsFilters('material-price-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='material-price-insights'&&request===analyticsRequest;
+  analyticsReady('material-price-message','Atur periode pencatatan PO dan status perubahan, lalu tekan Tampilkan harga untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('material-price-summary').replaceChildren();$('material-price-results').replaceChildren();}
     const gen=generation,more=$('material-price-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('material-price-message',offset?'Memuat pergerakan harga berikutnya…':'Membandingkan harga dari PO approved…');
+    pageState('material-price-message','loading',offset?'Memuat pergerakan harga berikutnya…':'Membandingkan harga dari PO approved…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/material-price-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('material-price-message','');
-      if(!offset)$('material-price-summary').innerHTML=`<p class="form-info">PO tercatat ${date(report.period_start)}–${date(report.as_of)}<br>${n(report.summary.changed_series)} dari ${n(report.summary.series)} pasangan bahan dan supplier berubah · ${n(report.summary.increased_series)} naik · ${n(report.summary.decreased_series)} turun</p><p class="hint">Ringkasan mencakup hasil pencarian sebelum filter status. Harga supplier berbeda tidak dicampur menjadi satu tren.</p>`;
+      pageState('material-price-message','');
+      if(!offset){
+        const s=report.summary;
+        $('material-price-summary').innerHTML=analyticsMetrics('Ringkasan pergerakan harga bahan',[
+            ['Harga berubah',`${n(s.changed_series)} / ${n(s.series)}`,'pasangan','tag',s.changed_series>0?'metric-card-info':''],
+            ['Naik',n(s.increased_series),'pasangan','trend',s.increased_series>0?'metric-card-warning':''],
+            ['Turun',n(s.decreased_series),'pasangan','trend',s.decreased_series>0?'metric-card-success':'']
+          ])
+          +analyticsFacts([['PO tercatat',`${date(report.period_start)}–${date(report.as_of)}`],
+            ['Pasangan ditampilkan',n(report.total)]]);
+      }
       const labels={increased:'Harga naik',decreased:'Harga turun',stable:'Harga tetap',single_observation:'Baru satu harga'};
+      const tones={increased:'warning',decreased:'success',stable:'neutral',single_observation:'info'};
       const price=value=>rupiah(value);
       const signedPrice=value=>`${Number(value)>0?'+':Number(value)<0?'-':''}${price(value.replace('-',''))}`;
       const movement=row=>row.status==='single_observation'?'Belum dapat dibandingkan':`${signedPrice(row.price_change)} · ${Number(row.price_change_percent)>0?'+':''}${e(row.price_change_percent)}%`;
-      const html=report.items.map(row=>`<article class="material-event" data-material-price="${e(row.material_id)}:${e(row.supplier_id)}"><p class="status-label ${row.status==='increased'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.material_code)} · ${e(row.material_name)}</h3><p>${e(row.supplier_code)} · ${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Harga awal</dt><dd>${e(price(row.earliest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Harga terbaru</dt><dd>${e(price(row.latest_unit_price))} / ${e(row.unit)}</dd></div><div><dt>Perubahan</dt><dd>${movement(row)}</dd></div><div><dt>Harga minimum</dt><dd>${e(price(row.minimum_unit_price))}</dd></div><div><dt>Harga maksimum</dt><dd>${e(price(row.maximum_unit_price))}</dd></div><div><dt>Harga rata-rata</dt><dd>${e(price(row.average_unit_price))}</dd></div></dl><p class="hint">${n(row.observation_count)} harga PO · awal ${date(row.earliest_recorded_date)} · terbaru ${date(row.latest_recorded_date)}</p><h4>Riwayat harga PO</h4>${row.history.map(po=>`<article class="material-event"><strong>${e(po.purchase_order_reference)} · ${e(price(po.unit_price))} / ${e(row.unit)}</strong><p>Dicatat ${date(po.recorded_date)} · perkiraan datang ${date(po.expected_date)}</p><button data-action="purchase-order" data-id="${e(po.purchase_order_id)}">Buka PO</button></article>`).join('')}</article>`).join('');
+      const html=report.items.map(row=>{
+        // §63: tidak ada grafik harga pasar palsu. Hanya perbandingan eksak awal → terbaru pada
+        // satuan yang sama, dan riwayat PO di bawahnya sebagai buktinya.
+        const bars=analyticsBars([
+          {label:`Harga awal · ${date(row.earliest_recorded_date)}`,value:`${e(price(row.earliest_unit_price))} / ${e(row.unit)}`,share:Number(row.earliest_unit_price),tone:'neutral'},
+          {label:`Harga terbaru · ${date(row.latest_recorded_date)}`,value:`${e(price(row.latest_unit_price))} / ${e(row.unit)}`,share:Number(row.latest_unit_price),tone:row.status==='increased'?'warning':row.status==='decreased'?'success':''}
+        ]);
+        const history=row.history.map(po=>'<li>'
+          +`<span class="analytics-sublist-title">${e(po.purchase_order_reference)} · ${e(price(po.unit_price))} / ${e(row.unit)}</span>`
+          +`<span class="data-meta">Dicatat ${date(po.recorded_date)} · perkiraan datang ${date(po.expected_date)}</span>`
+          +`<span class="analytics-sublist-action">${analyticsOpen('purchase-order',po.purchase_order_id,'Buka PO')}</span>`
+          +'</li>').join('');
+        return `<li class="analytics-record" data-material-price="${e(row.material_id)}:${e(row.supplier_id)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.material_code)} · ${e(row.material_name)}</h3>`
+          +`<span class="chip-row">${analyticsChip(tones[row.status]||'neutral',labels[row.status])}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.supplier_code)} · ${e(row.supplier_name)}</p>`
+          +bars
+          +analyticsFacts([['Perubahan',movement(row)],['Harga minimum',e(price(row.minimum_unit_price))],
+            ['Harga maksimum',e(price(row.maximum_unit_price))],['Harga rata-rata',e(price(row.average_unit_price))],
+            ['Harga PO teramati',n(row.observation_count)]])
+          +analyticsSubgroup('Riwayat harga PO',history)
+          +'</li>';
+      }).join('');
       appendRows('material-price-results',html);
-      if(!offset&&!report.items.length)$('material-price-results').innerHTML='<p class="state">Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.</p>';
+      if(!offset&&!report.items.length)pageState('material-price-message','empty','Tidak ada pergerakan harga yang cocok dengan status dan filter periode ini.','Ubah status perubahan atau perpanjang periode pencatatan PO, lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat harga berikutnya';
+      analyticsPagerCount('material-price-more',offset,report.total,'pasangan');
     }catch(error){
-      if(current()&&gen===generation){
-        message('material-price-message',error.message,true);
-        $('material-price-message').insertAdjacentHTML('beforeend','<br><button id="material-price-retry" type="button">Coba lagi</button>');
-        $('material-price-retry').onclick=()=>load();
-      }
+      if(current()&&gen===generation)analyticsFail('material-price-message','material-price-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('material-price-insights',form);load(true);};
@@ -4767,45 +5109,82 @@ $('material-price-insights').onclick=showMaterialPriceInsights;
 
 function showPurchaseCommitmentInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('purchase-commitment-insights','Komitmen pembelian terbuka',`<form id="purchase-commitment-form" class="filter-form">
-    <p class="hint">Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.</p>
-    <div class="form-grid">
-      ${field('as_of','Hitung umur per tanggal','date',`required value="${today}"`)}
-      ${field('due_soon_days','Batas segera jatuh tempo (hari)','number','required min="1" max="90" step="1" value="7"')}
-      <label>Status jadwal<select name="status"><option value="open">Semua komitmen terbuka</option><option value="overdue">Terlambat</option><option value="due_soon">Segera jatuh tempo</option><option value="scheduled">Terjadwal</option><option value="fulfilled">Diterima lengkap, belum ditutup</option><option value="all">Semua PO aktif</option></select></label>
-      <label class="full">Cari PO, PR, supplier, atau bahan<input name="query" type="search" maxlength="160" placeholder="Referensi, kode, atau nama"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="purchase-commitment-submit" type="submit">Tampilkan komitmen</button></div>
-  </form><p id="purchase-commitment-message" class="state" role="status" hidden></p><div id="purchase-commitment-summary"></div><div id="purchase-commitment-results"></div><button id="purchase-commitment-more" type="button" hidden>Muat PO berikutnya</button>`);
+  const request=activateAnalyticsReport('purchase-commitment-insights','Komitmen pembelian terbuka',
+    analyticsFilterForm('purchase-commitment-form',
+      analyticsDateFilter('as_of','Hitung umur per tanggal',today)
+      +analyticsNumberFilter('due_soon_days','Batas segera jatuh tempo (hari)','required min="1" max="90" step="1" value="7"')
+      +analyticsSelectFilter('status','Status jadwal','<option value="open">Semua komitmen terbuka</option><option value="overdue">Terlambat</option><option value="due_soon">Segera jatuh tempo</option><option value="scheduled">Terjadwal</option><option value="fulfilled">Diterima lengkap, belum ditutup</option><option value="all">Semua PO aktif</option>'),
+      analyticsSearchFilter('Cari PO, PR, supplier, atau bahan','Referensi, kode, atau nama'),
+      'purchase-commitment-submit','Tampilkan komitmen')
+    // §65: semesta laporan tidak diperluas. Pending, ditolak, dibatalkan, ditutup tetap di luar.
+    +analyticsNote('Nilai terbuka adalah nilai PO approved aktif yang belum menjadi penerimaan bahan layak pakai. PO pending, ditolak, dibatalkan, dan ditutup tidak masuk laporan.')
+    // §68: "approved" adalah status workflow, bukan bukti transfer bank. Kata "Paid" tidak dipakai.
+    +analyticsNote('Nilai penerimaan hanya memakai bahan layak pakai. Payment approved berarti siap dibayar dan belum membuktikan transfer bank.')
+    +'<div id="purchase-commitment-summary" class="analytics-report"></div><div id="purchase-commitment-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('PO dengan komitmen terbuka')
+    +'<ul id="purchase-commitment-results" class="record-list"></ul>'
+    +analyticsPager('purchase-commitment-more','Muat PO berikutnya'));
   const version=epoch,form=$('purchase-commitment-form'),submit=$('purchase-commitment-submit');
   restoreAnalyticsFilters('purchase-commitment-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='purchase-commitment-insights'&&request===analyticsRequest;
+  analyticsReady('purchase-commitment-message','Atur tanggal posisi dan status jadwal, lalu tekan Tampilkan komitmen untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('purchase-commitment-summary').replaceChildren();$('purchase-commitment-results').replaceChildren();}
     const gen=generation,more=$('purchase-commitment-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('purchase-commitment-message',offset?'Memuat PO berikutnya…':'Menghitung komitmen PO aktif…');
+    pageState('purchase-commitment-message','loading',offset?'Memuat PO berikutnya…':'Menghitung komitmen PO aktif…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/purchase-commitment-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('purchase-commitment-message','');
-      if(!offset)$('purchase-commitment-summary').innerHTML=`<p class="form-info">Posisi ${date(report.as_of)} · jatuh tempo dekat sampai ${date(report.due_soon_end)}<br>${n(report.summary.open_purchase_orders)} PO terbuka · ${n(report.summary.overdue_purchase_orders)} terlambat · komitmen ${e(rupiah(report.summary.open_commitment_value))}</p><p class="hint">Nilai penerimaan hanya memakai bahan layak pakai. Payment approved berarti siap dibayar dan belum membuktikan transfer bank.</p>`;
-      const labels={overdue:'Terlambat',due_soon:'Segera jatuh tempo',scheduled:'Terjadwal',fulfilled:'Diterima lengkap, belum ditutup'};
-      const schedule=row=>row.status==='overdue'?`${n(row.overdue_days)} hari terlambat`:row.status==='fulfilled'?'Komitmen penerimaan selesai':`Perkiraan datang ${date(row.expected_date)}`;
-      const html=report.items.map(row=>`<article class="material-event" data-purchase-commitment="${e(row.purchase_order_id)}"><p class="status-label ${row.status==='overdue'?'late':'done'}">${e(labels[row.status])}</p><h3>${e(row.purchase_order_reference)} · ${e(row.supplier_code)}</h3><p>${e(row.supplier_name)}</p><dl class="requirement-values"><div><dt>Nilai PO</dt><dd>${e(rupiah(row.purchase_order_value))}</dd></div><div><dt>Diterima layak pakai</dt><dd>${e(rupiah(row.usable_received_value))}</dd></div><div><dt>Komitmen terbuka</dt><dd><strong>${e(rupiah(row.open_commitment_value))}</strong></dd></div><div><dt>Payment menunggu approval</dt><dd>${e(rupiah(row.payment_pending))}</dd></div><div><dt>Payment approved</dt><dd>${e(rupiah(row.payment_approved))}</dd></div><div><dt>Belum diajukan payment</dt><dd>${e(rupiah(row.payment_unrequested))}</dd></div></dl><p>${e(schedule(row))}</p><p class="hint">PO dicatat ${date(row.created_date)} · PR ${e(row.purchase_request_reference)}</p><h4>Rincian bahan</h4>${row.lines.map(line=>`<article class="material-event"><strong>${e(line.code)} · ${e(line.name)}</strong><p>Dipesan ${e(materialQty(line.ordered_quantity,line.unit))} · diterima layak ${e(materialQty(line.usable_received_quantity,line.unit))} · terbuka ${e(materialQty(line.open_quantity,line.unit))}</p><p class="hint">${e(rupiah(line.unit_price))}/${e(line.unit)} · komitmen ${e(rupiah(line.open_commitment_value))}</p></article>`).join('')}<button data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button></article>`).join('');
-      appendRows('purchase-commitment-results',html);
-      if(!offset&&!report.items.length)$('purchase-commitment-results').innerHTML='<p class="state">Tidak ada komitmen PO yang cocok dengan status dan filter ini.</p>';
-      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat PO berikutnya';
-    }catch(error){
-      if(current()&&gen===generation){
-        message('purchase-commitment-message',error.message,true);
-        $('purchase-commitment-message').insertAdjacentHTML('beforeend','<br><button id="purchase-commitment-retry" type="button">Coba lagi</button>');
-        $('purchase-commitment-retry').onclick=()=>load();
+      pageState('purchase-commitment-message','');
+      if(!offset){
+        const s=report.summary;
+        $('purchase-commitment-summary').innerHTML=analyticsMetrics('Ringkasan komitmen pembelian',[
+            ['Komitmen terbuka',e(rupiah(s.open_commitment_value)),'','wallet','metric-card-info'],
+            ['PO terbuka',n(s.open_purchase_orders),'PO','file',''],
+            ['PO terlambat',n(s.overdue_purchase_orders),'PO','alert-triangle',s.overdue_purchase_orders>0?'metric-card-danger':'metric-card-success']
+          ])
+          +analyticsFacts([['Posisi',date(report.as_of)],
+            ['Jatuh tempo dekat sampai',date(report.due_soon_end)],
+            ['PO ditampilkan',n(report.total)]]);
       }
+      const labels={overdue:'Terlambat',due_soon:'Segera jatuh tempo',scheduled:'Terjadwal',fulfilled:'Diterima lengkap, belum ditutup'};
+      const tones={overdue:'danger',due_soon:'warning',scheduled:'info',fulfilled:'success'};
+      const schedule=row=>row.status==='overdue'?`${n(row.overdue_days)} hari terlambat`:row.status==='fulfilled'?'Komitmen penerimaan selesai':`Perkiraan datang ${date(row.expected_date)}`;
+      const html=report.items.map(row=>{
+        const lines=row.lines.map(line=>'<li>'
+          +`<span class="analytics-sublist-title">${e(line.code)} · ${e(line.name)}</span>`
+          +`<span class="data-meta">Dipesan ${e(materialQty(line.ordered_quantity,line.unit))} · diterima layak ${e(materialQty(line.usable_received_quantity,line.unit))} · terbuka ${e(materialQty(line.open_quantity,line.unit))}</span>`
+          +`<span class="data-meta">${e(rupiah(line.unit_price))}/${e(line.unit)} · komitmen ${e(rupiah(line.open_commitment_value))}</span>`
+          +'</li>').join('');
+        return `<li class="analytics-record" data-purchase-commitment="${e(row.purchase_order_id)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.purchase_order_reference)} · ${e(row.supplier_code)}</h3>`
+          +`<span class="chip-row">${analyticsChip(tones[row.status]||'neutral',labels[row.status])}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.supplier_name)}</p>`
+          +analyticsFacts([['Nilai PO',e(rupiah(row.purchase_order_value))],
+            ['Diterima layak pakai',e(rupiah(row.usable_received_value))],
+            ['Komitmen terbuka',`<strong>${e(rupiah(row.open_commitment_value))}</strong>`],
+            ['Payment menunggu approval',e(rupiah(row.payment_pending))],
+            ['Payment approved',e(rupiah(row.payment_approved))],
+            ['Belum diajukan payment',e(rupiah(row.payment_unrequested))]])
+          +`<p class="data-secondary">${e(schedule(row))}</p>`
+          +`<p class="data-meta">PO dicatat ${date(row.created_date)} · PR ${e(row.purchase_request_reference)}</p>`
+          +analyticsSubgroup('Rincian bahan',lines)
+          +`<div class="analytics-record-actions">${analyticsOpen('purchase-order',row.purchase_order_id,'Buka PO')}</div>`
+          +'</li>';
+      }).join('');
+      appendRows('purchase-commitment-results',html);
+      if(!offset&&!report.items.length)pageState('purchase-commitment-message','empty','Tidak ada komitmen PO yang cocok dengan status dan filter ini.','Ubah status jadwal atau pencarian, lalu jalankan laporan kembali.');
+      offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat PO berikutnya';
+      analyticsPagerCount('purchase-commitment-more',offset,report.total,'PO');
+    }catch(error){
+      if(current()&&gen===generation)analyticsFail('purchase-commitment-message','purchase-commitment-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('purchase-commitment-insights',form);load(true);};
@@ -4817,64 +5196,114 @@ function showWipAgeingInsights() {
   const today=jakartaToday();
   const ownerOptions=(boardData?.owners||[]).map(owner=>option(owner.id,
     owner.name+(owner.active?'':' (akun nonaktif)'))).join('');
-  const request=activateAnalyticsReport('wip-ageing-insights','WIP ageing & sinyal hambatan',`<form id="wip-ageing-form" class="filter-form">
-    <p class="hint">Umur dihitung sejak movement produksi terakhir per order, atau sejak order dibuat bila belum pernah bergerak. Posisi tahap memakai saldo ledger saat ini.</p>
-    <div class="form-grid">
-      ${field('as_of','Posisi per tanggal','date',`required value="${today}"`)}
-      ${field('idle_days','Batas tidak bergerak (hari)','number','required min="1" max="365" step="1" value="7"')}
-      <label>Status perhatian<select name="status"><option value="attention">Perlu perhatian</option><option value="stalled">Tidak bergerak</option><option value="overdue">Lewat tenggat</option><option value="blocked">Ada kendala</option><option value="rework">Ada rework</option><option value="moving">Bergerak tanpa sinyal</option><option value="all">Semua order aktif</option></select></label>
-      <label>Posisi tahap<select name="stage"><option value="all">Semua tahap aktif</option>${['planned','cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
-      <label>PIC order<select name="owner_id"><option value="">Semua PIC</option>${ownerOptions}</select></label>
-      <label class="full">Cari order, PIC, SKU, produk, atau kendala<input name="query" type="search" maxlength="160" placeholder="Referensi, nama, atau isi kendala"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="wip-ageing-submit" type="submit">Tampilkan WIP</button></div>
-  </form><p id="wip-ageing-message" class="state" role="status" hidden></p><div id="wip-ageing-summary"></div><div id="wip-ageing-stages"></div><div id="wip-ageing-results"></div><button id="wip-ageing-more" type="button" hidden>Muat order berikutnya</button>`);
+  const request=activateAnalyticsReport('wip-ageing-insights','WIP ageing & sinyal hambatan',
+    analyticsFilterForm('wip-ageing-form',
+      analyticsDateFilter('as_of','Posisi per tanggal',today)
+      +analyticsSelectFilter('status','Status perhatian','<option value="attention">Perlu perhatian</option><option value="stalled">Tidak bergerak</option><option value="overdue">Lewat tenggat</option><option value="blocked">Ada kendala</option><option value="rework">Ada rework</option><option value="moving">Bergerak tanpa sinyal</option><option value="all">Semua order aktif</option>')
+      +analyticsSelectFilter('stage','Posisi tahap',`<option value="all">Semua tahap aktif</option>${['planned','cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}`)
+      +analyticsSelectFilter('owner_id','PIC order',`<option value="">Semua PIC</option>${ownerOptions}`),
+      analyticsSearchFilter('Cari order, PIC, SKU, produk, atau kendala','Referensi, nama, atau isi kendala'),
+      'wip-ageing-submit','Tampilkan WIP',
+      // Batas tidak bergerak adalah ambang, bukan pertanyaan harian: ia menentukan APA yang
+      // disebut "tidak bergerak" pada seluruh laporan, jadi tempatnya bersama asumsi lain.
+      analyticsParam('idle_days','Batas tidak bergerak (hari)','number','required min="1" max="365" step="1" value="7"'))
+    // §25: umur dihitung dari movement terakhir, BUKAN dari tenggat. Posisi memakai saldo ledger.
+    +analyticsNote('Umur dihitung sejak movement produksi terakhir per order, atau sejak order dibuat bila belum pernah bergerak. Posisi tahap memakai saldo ledger saat ini.')
+    // §26: laporan ini tidak menghitung kapasitas, jadi ia tidak boleh menyebut hasilnya bottleneck.
+    +analyticsNote('Sinyal memakai saldo pada order yang melewati batas tidak bergerak. Kapasitas target belum dihitung karena master line, jam kerja, dan kalender kapasitas belum tersedia.')
+    +'<div id="wip-ageing-summary" class="analytics-report"></div><div id="wip-ageing-stages" class="analytics-report"></div><div id="wip-ageing-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Order produksi aktif')
+    +'<ul id="wip-ageing-results" class="record-list"></ul>'
+    +analyticsPager('wip-ageing-more','Muat order berikutnya'));
   const version=epoch,form=$('wip-ageing-form'),submit=$('wip-ageing-submit');
   restoreAnalyticsFilters('wip-ageing-insights',form);
   let offset=0,generation=0;
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='wip-ageing-insights'&&request===analyticsRequest;
+  analyticsReady('wip-ageing-message','Atur tanggal posisi, batas tidak bergerak, dan filter, lalu tekan Tampilkan WIP untuk menjalankan laporan.');
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('wip-ageing-summary').replaceChildren();$('wip-ageing-stages').replaceChildren();$('wip-ageing-results').replaceChildren();}
     const gen=generation,more=$('wip-ageing-more');
     submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('wip-ageing-message',offset?'Memuat order berikutnya…':'Membaca posisi dan aktivitas WIP…');
+    pageState('wip-ageing-message','loading',offset?'Memuat order berikutnya…':'Membaca posisi dan aktivitas WIP…');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/wip-ageing-insights?'+params);
       if(!current()||gen!==generation)return;
-      message('wip-ageing-message','');
+      pageState('wip-ageing-message','');
       if(!offset){
-        const signal=report.summary.bottleneck_signal_stage?labels[report.summary.bottleneck_signal_stage]:'Belum ada';
-        $('wip-ageing-summary').innerHTML=`<p class="form-info">Umur dihitung hingga ${date(report.as_of)} · batas ${n(report.idle_days)} hari<br>${n(report.summary.active_orders)} order aktif · ${n(report.summary.attention_orders)} perlu perhatian · ${n(report.summary.stalled_quantity)} pcs tidak bergerak<br>Sinyal hambatan terbesar: <strong>${e(signal)}</strong></p><p class="hint">Sinyal memakai saldo pada order yang melewati batas tidak bergerak. Kapasitas target belum dihitung karena master line, jam kerja, dan kalender kapasitas belum tersedia.</p>`;
-        $('wip-ageing-stages').innerHTML=`<h3>Posisi per tahap</h3><dl class="requirement-values">${report.stages.filter(row=>row.quantity).map(row=>`<div><dt>${e(labels[row.stage])}</dt><dd>${n(row.quantity)} pcs</dd><small>${n(row.orders)} order · ${n(row.stalled_quantity)} pcs tidak bergerak</small></div>`).join('')}</dl>`;
+        const s=report.summary;
+        const signal=s.bottleneck_signal_stage?labels[s.bottleneck_signal_stage]:'Belum ada';
+        $('wip-ageing-summary').innerHTML=analyticsMetrics('Ringkasan WIP ageing',[
+            ['Order aktif',n(s.active_orders),'order','clipboard',''],
+            ['Perlu perhatian',n(s.attention_orders),'order','alert-triangle',s.attention_orders>0?'metric-card-warning':'metric-card-success'],
+            ['Tidak bergerak',n(s.stalled_quantity),'pcs','clock',s.stalled_quantity>0?'metric-card-warning':''],
+            // §26: labelnya tetap "Sinyal hambatan terbesar". Laporan ini tidak menghitung
+            // kapasitas, jadi ia tidak boleh menamai hasilnya sebagai hambatan yang terbukti.
+            ['Sinyal hambatan terbesar',e(signal),'','activity','metric-card-info']
+          ])
+          +analyticsFacts([['Umur dihitung hingga',date(report.as_of)],
+            ['Batas tidak bergerak',`${n(report.idle_days)} hari`],
+            ['Order ditampilkan',n(report.total)]]);
+        // §27: distribusi tahap memakai SALDO SAAT INI. Batangnya dinormalisasi terhadap tahap
+        // terbesar dan urutannya urutan proses — tetapi ia bukan funnel, dan catatannya
+        // mengatakan begitu, karena angka-angka ini bukan throughput kumulatif.
+        const stages=report.stages.filter(row=>row.quantity);
+        $('wip-ageing-stages').innerHTML=stages.length?analyticsSubhead('Posisi per tahap')
+          +analyticsBars(stages.map(row=>({label:labels[row.stage],value:`${n(row.quantity)} pcs`,
+            note:`${n(row.orders)} order · ${n(row.stalled_quantity)} pcs tidak bergerak`,
+            share:row.quantity,tone:row.stalled_quantity>0?'warning':''})))
+          +`<p class="info-panel">${svgIcon('info','icon-sm')}<span>Angka tahap adalah saldo ledger saat ini, bukan throughput kumulatif. Batang hanya membandingkan besarnya saldo antar tahap dan tidak menyatakan konversi dari satu tahap ke tahap berikutnya.</span></p>`:'';
       }
       const flagLabels={overdue:'Lewat tenggat',blocked:'Ada kendala',stalled:'Tidak bergerak',rework:'Ada rework'};
+      // §22: arti aslinya dipertahankan. Lewat tenggat dan kendala memang kritis; tidak bergerak
+      // dan rework menuntut perhatian tanpa menjadi alarm merah.
+      const flagTones={overdue:'danger',blocked:'danger',stalled:'warning',rework:'warning'};
       const html=report.items.map(row=>{
-        const flags=row.flags.length?row.flags.map(flag=>`<span class="status-label late">${e(flagLabels[flag])}</span>`).join(' '):'<span class="status-label done">Bergerak</span>';
+        const flags=row.flags.length?row.flags.map(flag=>analyticsChip(flagTones[flag]||'warning',flagLabels[flag])).join(''):analyticsChip('success','Bergerak');
         const positions=row.positions.map(position=>`${e(labels[position.stage])} ${n(position.quantity)} pcs`).join(' · ');
-        const products=row.products.map(product=>`<p>${e(product.sku)} · ${e(product.name)}${product.size?` · ${e(product.size)}`:''}${product.color?` · ${e(product.color)}`:''} · ${n(product.quantity)} pcs</p>`).join('');
-        const blockers=row.open_issues.length?`<h4>Kendala terbuka</h4>${row.open_issues.map(issue=>`<p class="reason">${e(labels[issue.stage])} · ${e(issue.description)} · PIC ${e(issue.owner_name)}</p>`).join('')}`:'';
+        const products=row.products.map(product=>`<li><span class="analytics-sublist-title">${e(product.sku)} · ${e(product.name)}${product.size?` · ${e(product.size)}`:''}${product.color?` · ${e(product.color)}`:''}</span><span class="data-meta">${n(product.quantity)} pcs</span></li>`).join('');
+        const blockers=row.open_issues.length?analyticsSubgroup('Kendala terbuka',row.open_issues.map(issue=>
+          `<li><span class="analytics-sublist-title">${e(labels[issue.stage])}</span><span class="data-meta">${e(issue.description)} · PIC ${e(issue.owner_name)}</span></li>`).join('')):'';
         const after=row.activity_after_as_of?' · ada movement setelah tanggal posisi':'';
         const late=row.overdue_days?` · ${n(row.overdue_days)} hari lewat tenggat`:'';
-        return `<article class="material-event" data-wip-ageing="${e(row.order_id)}"><div class="issue-heading"><h3>${e(row.reference)} · ${e(row.title)}</h3><div>${flags}</div></div><p>${e(row.owner_name)} · tenggat ${date(row.due_date)}</p><dl class="requirement-values"><div><dt>Aktif</dt><dd>${n(row.active_quantity)} pcs</dd></div><div><dt>Belum cutting</dt><dd>${n(row.planned_quantity)} pcs</dd></div><div><dt>Dalam proses</dt><dd>${n(row.in_process_quantity)} pcs</dd></div><div><dt>Tanpa movement</dt><dd><strong>${n(row.inactive_days)} hari</strong></dd></div><div><dt>Kendala terbuka</dt><dd>${n(row.open_issue_count)}</dd></div><div><dt>Rework</dt><dd>${n(row.rework_quantity)} pcs</dd></div></dl><p><strong>Posisi:</strong> ${positions}</p><p class="hint">Aktivitas produksi terakhir ${date(row.latest_activity_date)} · ${e(row.activity_basis==='order_created'?'belum ada movement':'movement terakhir')}${after}${late}</p><h4>SKU</h4>${products}${blockers}<button data-action="detail" data-id="${e(row.order_id)}">Buka order</button></article>`;
+        return `<li class="analytics-record" data-wip-ageing="${e(row.order_id)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.reference)} · ${e(row.title)}</h3>`
+          +`<span class="chip-row">${flags}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.owner_name)} · tenggat ${date(row.due_date)}</p>`
+          +analyticsFacts([['Aktif',`${n(row.active_quantity)} pcs`],['Belum cutting',`${n(row.planned_quantity)} pcs`],
+            ['Dalam proses',`${n(row.in_process_quantity)} pcs`],['Tanpa movement',`<strong>${n(row.inactive_days)} hari</strong>`],
+            ['Kendala terbuka',n(row.open_issue_count)],['Rework',`${n(row.rework_quantity)} pcs`]])
+          +`<p class="data-secondary"><strong>Posisi:</strong> ${positions}</p>`
+          +`<p class="data-meta">Aktivitas produksi terakhir ${date(row.latest_activity_date)} · ${e(row.activity_basis==='order_created'?'belum ada movement':'movement terakhir')}${after}${late}</p>`
+          +analyticsSubgroup('SKU',products)
+          +blockers
+          +`<div class="analytics-record-actions">${analyticsOpen('detail',row.order_id,'Buka order')}</div>`
+          +'</li>';
       }).join('');
       appendRows('wip-ageing-results',html);
-      if(!offset&&!report.items.length)$('wip-ageing-results').innerHTML='<p class="state">Tidak ada order aktif yang cocok dengan status dan filter ini.</p>';
+      if(!offset&&!report.items.length)pageState('wip-ageing-message','empty','Tidak ada order aktif yang cocok dengan status dan filter ini.','Ubah status perhatian, posisi tahap, PIC, atau pencarian lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat order berikutnya';
+      analyticsPagerCount('wip-ageing-more',offset,report.total,'order');
     }catch(error){
-      if(current()&&gen===generation){
-        message('wip-ageing-message',error.message,true);
-        $('wip-ageing-message').insertAdjacentHTML('beforeend','<br><button id="wip-ageing-retry" type="button">Coba lagi</button>');
-        $('wip-ageing-retry').onclick=()=>load();
-      }
+      if(current()&&gen===generation)analyticsFail('wip-ageing-message','wip-ageing-retry',error.message,()=>load());
     }finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('wip-ageing-insights',form);load(true);};
   $('wip-ageing-more').onclick=()=>load();
 }
 $('wip-ageing-insights').onclick=showWipAgeingInsights;
+
+// Bidang A6 untuk tiga alur master kapasitas. Mereka ikut A6.4 karena ketiganya tertanam langsung
+// di dalam alur laporan kapasitas, bukan pekerjaan sampingan. Infrastruktur formDialog() bersama
+// TIDAK diubah: bidang-bidang ini hanya dititipkan ke dalamnya, persis seperti yang dilakukan
+// A6.2 dan A6.3, sehingga tidak ada form lain di produk ini yang tersentuh.
+const capacityField=(name,label,type,attrs='')=>`<div class="field"><label class="field-label" for="cap-${name}">${e(label)}</label><input id="cap-${name}" name="${name}" type="${type}" ${attrs}></div>`;
+const capacitySelect=(name,label,options)=>`<div class="field"><label class="field-label" for="cap-${name}">${e(label)}</label><select id="cap-${name}" name="${name}">${options}</select></div>`;
+const capacityFact=(label,value)=>`<div class="field field-wide full"><span class="field-label">${e(label)}</span><strong class="data-primary">${value}</strong></div>`;
 
 async function capacityWorkCenterForm(workCenterId=null) {
   if(guardPending())return;
@@ -4889,21 +5318,23 @@ async function capacityWorkCenterForm(workCenterId=null) {
   }
   const stageOptions=['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('');
   if(current){
-    formDialog('Ubah work center',field('name','Nama work center','text','required maxlength="160"')+
-      field('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1"')+
-      '<label>Status<select name="active"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></label>'+
-      '<label class="full">Alasan perubahan<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+    // §39: tahap dan kode tetap tidak dapat diubah lewat alur ini, dan setiap perubahan tetap
+    // menyimpan revisi dengan expected_revision. Yang berubah di A6.4 hanya presentasi bidangnya.
+    formDialog('Ubah work center',capacityField('name','Nama work center','text','required maxlength="160"')+
+      capacityField('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1"')+
+      capacitySelect('active','Status','<option value="true">Aktif</option><option value="false">Nonaktif</option>')+
+      reasonField('Alasan perubahan'),form=>{
         const data=new FormData(form);return {expected_revision:current.revision,name:data.get('name').trim(),
           daily_minutes:Number(data.get('daily_minutes')),active:data.get('active')==='true',reason:data.get('reason').trim()};
       },`/api/work-centers/${encodeURIComponent(current.id)}/changes`,`${current.code} · ${labels[current.stage]} · revisi ${current.revision}`);
     const form=$('action-form');form.elements.name.value=current.name;form.elements.daily_minutes.value=current.daily_minutes;
     form.elements.active.value=String(Boolean(current.active));
   }else{
-    formDialog('Tambah work center',field('code','Kode work center','text','required maxlength="40"')+
-      field('name','Nama work center','text','required maxlength="160"')+
-      `<label>Tahap<select name="stage">${stageOptions}</select></label>`+
-      field('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1" value="480"')+
-      '<label class="full">Dasar kapasitas<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+    formDialog('Tambah work center',capacityField('code','Kode work center','text','required maxlength="40"')+
+      capacityField('name','Nama work center','text','required maxlength="160"')+
+      capacitySelect('stage','Tahap',stageOptions)+
+      capacityField('daily_minutes','Kapasitas hari kerja (menit)','number','required min="1" max="100000" step="1" value="480"')+
+      reasonField('Dasar kapasitas'),form=>{
         const data=new FormData(form);return {code:data.get('code').trim(),name:data.get('name').trim(),stage:data.get('stage'),
           daily_minutes:Number(data.get('daily_minutes')),reason:data.get('reason').trim()};
       },'/api/work-centers','Kapasitas harian berlaku untuk Senin sampai Jumat. Sabtu dan Minggu nol kecuali diberi override kalender.');
@@ -4922,10 +5353,12 @@ async function capacityRoutingStandardForm(productId,stage) {
   if(version!==epoch)return;
   const available=centers.filter(row=>row.stage===stage);
   if(!available.length)return notify(`Tambahkan work center ${labels[stage]} yang aktif terlebih dahulu.`);
-  formDialog('Standar waktu SKU',`<p class="full"><strong>${e(standard.sku)} · ${e(standard.name)}</strong></p>
-    <label>Work center<select name="work_center_id">${available.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>`+
-    field('minutes_per_unit','Menit per pcs','number','required min="0.001" max="100000" step="0.001"')+
-    '<label class="full">Dasar standar waktu<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+  // §40: hanya work center AKTIF yang tahapnya cocok boleh dipilih, dan batas menit per pcs
+  // tetap 0,001–100000 dengan step 0,001.
+  formDialog('Standar waktu SKU',capacityFact('SKU',`${e(standard.sku)} · ${e(standard.name)}`)+
+    capacitySelect('work_center_id','Work center',available.map(row=>option(row.id,`${row.code} · ${row.name}`)).join(''))+
+    capacityField('minutes_per_unit','Menit per pcs','number','required min="0.001" max="100000" step="0.001"')+
+    reasonField('Dasar standar waktu'),form=>{
       const data=new FormData(form);return {expected_revision:standard.revision,work_center_id:data.get('work_center_id'),
         minutes_per_unit:data.get('minutes_per_unit'),reason:data.get('reason').trim()};
     },`/api/products/${encodeURIComponent(productId)}/routing-standards/${stage}`,
@@ -4944,9 +5377,11 @@ async function capacityCalendarForm(workCenterId,workDate) {
     new URLSearchParams({start_date:workDate,end_date:workDate}));
   if(version!==epoch)return;
   const current=calendar.items[0];
-  formDialog('Override kalender kapasitas',field('work_date','Tanggal kerja','date',`required readonly value="${e(workDate)}"`)+
-    field('available_minutes','Kapasitas tersedia (menit)','number',`required min="0" max="100000" step="1" value="${e(current?.available_minutes??calendar.work_center.daily_minutes)}"`)+
-    '<label class="full">Alasan override<textarea name="reason" required maxlength="1000"></textarea></label>',form=>{
+  // §41: tanggal tetap readonly, dan arti nilainya dipertahankan — 0 berarti libur, angka yang
+  // lebih besar dari kapasitas harian dapat berarti lembur.
+  formDialog('Override kalender kapasitas',capacityField('work_date','Tanggal kerja','date',`required readonly value="${e(workDate)}"`)+
+    capacityField('available_minutes','Kapasitas tersedia (menit)','number',`required min="0" max="100000" step="1" value="${e(current?.available_minutes??calendar.work_center.daily_minutes)}"`)+
+    reasonField('Alasan override'),form=>{
       const data=new FormData(form);return {work_date:data.get('work_date'),expected_revision:current?.revision||0,
         available_minutes:Number(data.get('available_minutes')),reason:data.get('reason').trim()};
     },`/api/work-centers/${encodeURIComponent(workCenterId)}/calendar`,
@@ -5330,31 +5765,60 @@ async function workforceRequestDecisionForm(requestId,status) {
 
 async function showCapacityPlan() {
   const version=epoch;
-  const request=activateAnalyticsReport('capacity-plan','Kapasitas produksi','<p class="state">Memuat master kapasitas...</p>');
+  // §13: laporan ini SUDAH berjalan otomatis saat dibuka, dan itu dipertahankan apa adanya —
+  // dua master di-fetch lebih dulu, lalu `await load(true)` di akhir. Tidak ada permintaan baru
+  // yang ditambahkan dan tidak ada yang dihilangkan.
+  const request=activateAnalyticsReport('capacity-plan','Kapasitas produksi','<div id="capacity-plan-boot" class="state" role="status"></div>');
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='capacity-plan'&&request===analyticsRequest;
+  pageState('capacity-plan-boot','loading','Memuat master kapasitas...');
   try{
     const [centers,products]=await Promise.all([allRows('/api/work-centers'),allRows('/api/products')]);
     if(!current())return;
     const today=jakartaToday();
     const activeCenters=centers.filter(row=>row.active);
-    const admin=user.role==='admin'?`<section><h3>Master kapasitas</h3><p class="hint">Admin mengelola kapasitas dalam menit. Semua perubahan disimpan sebagai revisi.</p>
-      <div class="product-list">${centers.map(row=>`<div class="product-item"><div><strong>${e(row.code)} · ${e(row.name)}</strong><span>${e(labels[row.stage])} · ${n(row.daily_minutes)} menit/hari · ${row.active?'aktif':'nonaktif'} · revisi ${n(row.revision)}</span></div><button data-action="edit-work-center" data-id="${e(row.id)}">Ubah</button></div>`).join('')||'<p>Belum ada work center.</p>'}</div>
-      <div class="actions"><button data-action="new-work-center">Tambah work center</button></div>
-      <div class="filter-form"><div class="form-grid"><label>SKU untuk standar<select id="capacity-standard-product">${products.map(row=>option(row.id,`${row.sku} · ${row.name}`)).join('')}</select></label>
-      <label>Tahap standar<select id="capacity-standard-stage">${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label></div>
-      <div class="form-actions"><button id="capacity-standard-open" type="button" ${products.length?'':'disabled'}>Atur standar waktu</button></div></div>
-      <div class="filter-form"><div class="form-grid"><label>Work center kalender<select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
-      ${field('capacity_calendar_date','Tanggal override','date',`id="capacity-calendar-date" value="${today}"`)}</div>
-      <div class="form-actions"><button id="capacity-calendar-open" type="button" ${activeCenters.length?'':'disabled'}>Atur kapasitas tanggal</button></div></div></section>`:'';
-    $('analytics-body').innerHTML=`${admin}<section><h3>Rencana kapasitas</h3><form id="capacity-plan-form" class="filter-form"><p class="hint">Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.</p><div class="form-grid">
-      ${field('as_of','Mulai per tanggal','date',`required value="${today}"`)}
-      ${field('horizon_days','Horizon kalender (hari)','number','required min="1" max="90" step="1" value="14"')}
-      ${field('warning_percent','Peringatan utilisasi (%)','number','required min="1" max="100" step="1" value="80"')}
-      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="overloaded">Overload</option><option value="deadline_risk">Risiko deadline</option><option value="near_capacity">Mendekati kapasitas</option><option value="available">Masih tersedia</option><option value="idle">Tanpa beban</option><option value="all">Semua</option></select></label>
-      <label>Tahap<select name="stage"><option value="all">Semua tahap</option>${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>
-      <label>Work center<select name="work_center_id"><option value="">Semua work center aktif</option>${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>
-      </div><div class="form-actions"><button class="primary" id="capacity-plan-submit" type="submit">Hitung kapasitas</button></div></form>
-      <p id="capacity-plan-message" class="state" role="status" hidden></p><div id="capacity-plan-summary"></div><div id="capacity-plan-gaps"></div><div id="capacity-plan-results"></div><button id="capacity-plan-more" type="button" hidden>Muat work center berikutnya</button></section>`;
+    // §38: hanya admin yang melihat perkakas master kapasitas. Peran lain tidak mendapat kontrol.
+    const admin=user.role==='admin'?'<section class="analytics-report" aria-labelledby="capacity-master-heading">'
+      +'<div class="workspace-subhead"><h2 id="capacity-master-heading" class="workspace-section-title">Master kapasitas</h2></div>'
+      +analyticsNote('Admin mengelola kapasitas dalam menit. Semua perubahan disimpan sebagai revisi.')
+      +`<ul id="capacity-center-master" class="record-list">${centers.map(row=>'<li class="record-row">'
+        +`<span class="metric-icon">${svgIcon('gauge','icon-sm')}</span>`
+        +'<span class="record-row-copy">'
+        +`<h3 class="data-primary">${e(row.code)} · ${e(row.name)}</h3>`
+        +`<span class="data-secondary">${e(labels[row.stage])} · ${n(row.daily_minutes)} menit/hari · ${row.active?'aktif':'nonaktif'} · revisi ${n(row.revision)}</span>`
+        +'</span>'
+        +`<span class="record-row-aside"><button type="button" class="action-secondary" data-action="edit-work-center" data-id="${e(row.id)}">Ubah</button></span>`
+        +'</li>').join('')}</ul>`
+      +(centers.length?'':`<p class="info-panel">${svgIcon('info','icon-sm')}<span>Belum ada work center.</span></p>`)
+      +'<div class="action-row"><button type="button" class="action-primary" data-action="new-work-center">Tambah work center</button></div>'
+      +'<div class="panel-grid">'
+      +'<div class="utility-panel"><p class="utility-panel-title">Standar waktu SKU</p><div class="field-grid">'
+      +`<label class="field"><span class="field-label">SKU untuk standar</span><select id="capacity-standard-product">${products.map(row=>option(row.id,`${row.sku} · ${row.name}`)).join('')}</select></label>`
+      +`<label class="field"><span class="field-label">Tahap standar</span><select id="capacity-standard-stage">${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}</select></label>`
+      +`</div><div class="field-actions"><button id="capacity-standard-open" type="button" class="action-secondary" ${products.length?'':'disabled'}>Atur standar waktu</button></div></div>`
+      +'<div class="utility-panel"><p class="utility-panel-title">Override kalender</p><div class="field-grid">'
+      +`<label class="field"><span class="field-label">Work center kalender</span><select id="capacity-calendar-center">${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}</select></label>`
+      +`<label class="field"><span class="field-label">Tanggal override</span><input id="capacity-calendar-date" name="capacity_calendar_date" type="date" value="${e(today)}"></label>`
+      +`</div><div class="field-actions"><button id="capacity-calendar-open" type="button" class="action-secondary" ${activeCenters.length?'':'disabled'}>Atur kapasitas tanggal</button></div></div>`
+      +'</div></section>':'';
+    $('analytics-body').innerHTML=admin
+      +'<section class="analytics-report" aria-labelledby="capacity-plan-heading">'
+      +'<div class="workspace-subhead"><h2 id="capacity-plan-heading" class="workspace-section-title">Rencana kapasitas</h2></div>'
+      +analyticsFilterForm('capacity-plan-form',
+        analyticsDateFilter('as_of','Mulai per tanggal',today)
+        +analyticsSelectFilter('status','Status','<option value="attention">Perlu perhatian</option><option value="overloaded">Overload</option><option value="deadline_risk">Risiko deadline</option><option value="near_capacity">Mendekati kapasitas</option><option value="available">Masih tersedia</option><option value="idle">Tanpa beban</option><option value="all">Semua</option>')
+        +analyticsSelectFilter('stage','Tahap',`<option value="all">Semua tahap</option>${['cutting','sewing','finishing','qc','rework'].map(value=>option(value,labels[value])).join('')}`)
+        +analyticsSelectFilter('work_center_id','Work center',`<option value="">Semua work center aktif</option>${activeCenters.map(row=>option(row.id,`${row.code} · ${row.name}`)).join('')}`),
+        '','capacity-plan-submit','Hitung kapasitas',
+        analyticsParam('horizon_days','Horizon kalender (hari)','number','required min="1" max="90" step="1" value="14"')
+        +analyticsParam('warning_percent','Peringatan utilisasi (%)','number','required min="1" max="100" step="1" value="80"'))
+      +analyticsNote('Beban memakai saldo WIP saat ini dan standar menit untuk seluruh tahap yang masih harus dilalui sampai QC.')
+      // §33: estimasi, bukan janji jadwal. Catatan ini tidak boleh hilang.
+      +analyticsNote('Hari kerja default Senin sampai Jumat. Override kalender terbaru berlaku per tanggal. Angka ini adalah estimasi standar, bukan janji jadwal produksi.')
+      +'<div id="capacity-plan-summary" class="analytics-report"></div><div id="capacity-plan-gaps" class="analytics-report"></div><div id="capacity-plan-message" class="state" role="status" hidden></div>'
+      +analyticsSubhead('Work center pada horizon')
+      +'<ul id="capacity-plan-results" class="record-list"></ul>'
+      +analyticsPager('capacity-plan-more','Muat work center berikutnya')
+      +'</section>';
     if(user.role==='admin'){
       $('capacity-standard-open').onclick=()=>capacityRoutingStandardForm($('capacity-standard-product').value,$('capacity-standard-stage').value);
       $('capacity-calendar-open').onclick=()=>capacityCalendarForm($('capacity-calendar-center').value,$('capacity-calendar-date').value);
@@ -5362,131 +5826,307 @@ async function showCapacityPlan() {
     const form=$('capacity-plan-form'),submit=$('capacity-plan-submit');let offset=0,generation=0;
     restoreAnalyticsFilters('capacity-plan',form);
     const statusLabels={overloaded:'Overload',deadline_risk:'Risiko deadline',near_capacity:'Mendekati kapasitas',available:'Masih tersedia',idle:'Tanpa beban'};
+    const statusTones={overloaded:'danger',deadline_risk:'danger',near_capacity:'warning',available:'success',idle:'neutral'};
     const load=async(reset=false)=>{
       if(!current())return;
       if(reset){generation++;offset=0;$('capacity-plan-summary').replaceChildren();$('capacity-plan-gaps').replaceChildren();$('capacity-plan-results').replaceChildren();}
       const gen=generation,more=$('capacity-plan-more');submit.disabled=true;more.disabled=true;more.hidden=true;
-      message('capacity-plan-message',offset?'Memuat work center berikutnya...':'Menghitung beban dan kalender kapasitas...');
+      pageState('capacity-plan-message','loading',offset?'Memuat work center berikutnya...':'Menghitung beban dan kalender kapasitas...');
       try{
         const params=new URLSearchParams(Object.fromEntries(new FormData(form)));params.set('limit','25');params.set('offset',String(offset));
         const report=await api.get('/api/capacity-plan?'+params);if(!current()||gen!==generation)return;
-        message('capacity-plan-message','');
+        pageState('capacity-plan-message','');
         if(!offset){
-          $('capacity-plan-summary').innerHTML=`<p class="form-info">${date(report.as_of)} sampai ${date(report.horizon_end)}<br>${n(report.summary.work_centers)} work center aktif · ${n(report.summary.attention_work_centers)} perlu perhatian · ${n(report.summary.at_risk_orders)} order berisiko<br>Beban ${e(minuteQty(report.summary.required_minutes))} · tersedia ${e(minuteQty(report.summary.available_minutes))}</p><p class="hint">Hari kerja default Senin sampai Jumat. Override kalender terbaru berlaku per tanggal. Angka ini adalah estimasi standar, bukan janji jadwal produksi.</p>`;
-          $('capacity-plan-gaps').innerHTML=report.coverage_gaps.length?`<h3>Data kapasitas belum lengkap</h3><p class="hint">${n(report.summary.coverage_gaps)} kebutuhan tahap belum punya standar aktif, mencakup ${n(report.summary.missing_standard_quantity)} pcs.</p>${report.coverage_gaps.slice(0,25).map(gap=>`<article class="material-event"><strong>${e(gap.order_reference)} · ${e(gap.sku)}</strong><p>${e(labels[gap.stage])} · ${n(gap.quantity)} pcs · ${gap.kind==='inactive_work_center'?'work center nonaktif':'standar waktu belum diisi'}</p></article>`).join('')}`:'';
+          const s=report.summary;
+          $('capacity-plan-summary').innerHTML=analyticsMetrics('Ringkasan rencana kapasitas',[
+              ['Work center aktif',n(s.work_centers),'','gauge',''],
+              ['Perlu perhatian',n(s.attention_work_centers),'','alert-triangle',s.attention_work_centers>0?'metric-card-warning':'metric-card-success'],
+              ['Order berisiko',n(s.at_risk_orders),'order','clipboard',s.at_risk_orders>0?'metric-card-danger':''],
+              ['Beban',e(minuteQty(s.required_minutes)),'','activity','metric-card-info']
+            ])
+            +analyticsFacts([['Horizon',`${date(report.as_of)} – ${date(report.horizon_end)}`],
+              ['Kapasitas tersedia',e(minuteQty(s.available_minutes))],
+              ['Work center ditampilkan',n(report.total)]]);
+          // §34: celah cakupan tetap kelas satu. Ia tidak disembunyikan demi visual yang bersih.
+          $('capacity-plan-gaps').innerHTML=report.coverage_gaps.length
+            ?'<div class="attention-note attention-note-critical">'
+              +svgIcon('alert-triangle')
+              +'<span class="attention-note-copy"><strong class="attention-note-title">Data kapasitas belum lengkap</strong>'
+              +`<span class="attention-note-reason">${n(report.summary.coverage_gaps)} kebutuhan tahap belum punya standar aktif, mencakup ${n(report.summary.missing_standard_quantity)} pcs. Beban tahap tersebut tidak ikut dihitung.</span></span></div>`
+              +`<ul class="analytics-sublist">${report.coverage_gaps.slice(0,25).map(gap=>'<li>'
+                +`<span class="analytics-sublist-title">${e(gap.order_reference)} · ${e(gap.sku)}</span>`
+                +`<span class="data-meta">${e(labels[gap.stage])} · ${n(gap.quantity)} pcs · ${gap.kind==='inactive_work_center'?'work center nonaktif':'standar waktu belum diisi'}</span>`
+                +'</li>').join('')}</ul>`
+            :'';
         }
         const html=report.items.map(row=>{
-          const attention=['overloaded','deadline_risk','near_capacity'].includes(row.status);
-          const utilization=row.utilization_percent===null?'Belum terukur':`${e(row.utilization_percent)}%`;
-          const orders=row.orders.map(order=>`<article class="material-event"><h4>${e(order.order_reference)} · ${e(order.order_title)}</h4><p>Target ${date(order.due_date)} · beban ${e(minuteQty(order.required_minutes))} · kapasitas sampai target ${e(minuteQty(order.available_minutes_by_due))}</p>${order.at_risk?`<p class="reason">Kurang ${e(minuteQty(order.capacity_shortfall_minutes))} sebelum target.</p>`:''}${order.products.map(product=>`<p class="hint">${e(product.sku)} · ${n(product.quantity)} pcs × ${e(minuteQty(product.minutes_per_unit))}/pcs = ${e(minuteQty(product.required_minutes))}</p>`).join('')}<button data-action="detail" data-id="${e(order.order_id)}">Buka order</button></article>`).join('');
+          // §36: utilisasi yang dikembalikan API dipakai apa adanya. Bila null, laporan berkata
+          // "Belum terukur" dan TIDAK menghitung persentase pengganti.
+          const percent=row.utilization_percent===null?null:Number(row.utilization_percent);
+          const meter=percent===null
+            ?'<p class="data-secondary">Utilisasi belum terukur</p>'
+            :'<div class="progress-meter">'
+              +`<span class="progress-track${percent>=100?' progress-track-danger':percent>=80?' progress-track-warning':' progress-track-success'}" role="progressbar" aria-valuemin="0" aria-valuemax="${Math.max(100,Math.ceil(percent))}" aria-valuenow="${e(row.utilization_percent)}" aria-label="Utilisasi ${e(row.code)}">`
+              +`<span class="progress-fill" style="--progress-value:${Math.min(100,percent).toFixed(1)}%"></span></span>`
+              +`<strong class="progress-value">${e(row.utilization_percent)}%</strong></div>`;
+          const orders=row.orders.map(order=>'<li>'
+            +`<h5 class="analytics-sublist-title">${e(order.order_reference)} · ${e(order.order_title)}</h5>`
+            +`<span class="data-meta">Target ${date(order.due_date)} · beban ${e(minuteQty(order.required_minutes))} · kapasitas sampai target ${e(minuteQty(order.available_minutes_by_due))}</span>`
+            +(order.at_risk?`<span class="data-secondary">Kurang ${e(minuteQty(order.capacity_shortfall_minutes))} sebelum target.</span>`:'')
+            +order.products.map(product=>`<span class="data-meta">${e(product.sku)} · ${n(product.quantity)} pcs × ${e(minuteQty(product.minutes_per_unit))}/pcs = ${e(minuteQty(product.required_minutes))}</span>`).join('')
+            +`<span class="analytics-sublist-action">${analyticsOpen('detail',order.order_id,'Buka order')}</span>`
+            +'</li>').join('');
           const calendar=row.days.map(day=>`${date(day.date)} ${n(day.available_minutes)} menit${day.source==='override'?' (override)':''}`).join(' · ');
-          return `<article class="material-event" data-capacity-center="${e(row.id)}"><div class="issue-heading"><h3>${e(row.code)} · ${e(row.name)}</h3><span class="status-label ${attention?'late':'done'}">${e(statusLabels[row.status])}</span></div><p>${e(labels[row.stage])} · utilisasi ${utilization}</p><dl class="requirement-values"><div><dt>Beban</dt><dd>${e(minuteQty(row.required_minutes))}</dd></div><div><dt>Tersedia</dt><dd>${e(minuteQty(row.available_minutes))}</dd></div><div><dt>Sisa</dt><dd>${e(minuteQty(row.remaining_minutes))}</dd></div><div><dt>Overload</dt><dd>${e(minuteQty(row.overload_minutes))}</dd></div><div><dt>Order</dt><dd>${n(row.order_count)}</dd></div><div><dt>Berisiko</dt><dd>${n(row.at_risk_order_count)}</dd></div></dl><p class="hint">Kalender: ${calendar}</p>${orders||'<p class="state">Tidak ada beban order pada horizon ini.</p>'}</article>`;
+          return `<li class="analytics-record" data-capacity-center="${e(row.id)}">`
+            +'<div class="analytics-record-head">'
+            +`<h3 class="data-primary">${e(row.code)} · ${e(row.name)}</h3>`
+            +`<span class="chip-row">${analyticsChip(statusTones[row.status]||'neutral',statusLabels[row.status])}</span>`
+            +'</div>'
+            +`<p class="data-secondary">${e(labels[row.stage])}</p>`
+            +meter
+            +analyticsFacts([['Beban',e(minuteQty(row.required_minutes))],['Tersedia',e(minuteQty(row.available_minutes))],
+              ['Sisa',e(minuteQty(row.remaining_minutes))],['Overload',e(minuteQty(row.overload_minutes))],
+              ['Order',n(row.order_count)],['Berisiko',n(row.at_risk_order_count)]])
+            +`<p class="data-meta">Kalender: ${calendar}</p>`
+            +(orders?analyticsSubgroup('Beban order pada horizon',orders):'<p class="data-meta">Tidak ada beban order pada horizon ini.</p>')
+            +'</li>';
         }).join('');
         appendRows('capacity-plan-results',html);
-        if(!offset&&!report.items.length)$('capacity-plan-results').innerHTML='<p class="state">Tidak ada work center yang cocok dengan status dan filter ini.</p>';
+        if(!offset&&!report.items.length)pageState('capacity-plan-message','empty','Tidak ada work center yang cocok dengan status dan filter ini.','Ubah status, tahap, atau work center lalu jalankan laporan kembali.');
         offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat work center berikutnya';
-      }catch(error){if(current()&&gen===generation){message('capacity-plan-message',error.message,true);$('capacity-plan-message').insertAdjacentHTML('beforeend','<br><button id="capacity-plan-retry" type="button">Coba lagi</button>');$('capacity-plan-retry').onclick=()=>load();}}
+        analyticsPagerCount('capacity-plan-more',offset,report.total,'work center');
+      }catch(error){if(current()&&gen===generation)analyticsFail('capacity-plan-message','capacity-plan-retry',error.message,()=>load());}
       finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
     };
     form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('capacity-plan',form);load(true);};$('capacity-plan-more').onclick=()=>load();await load(true);
-  }catch(error){if(current())$('analytics-body').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="capacity-plan">Coba lagi</button>`;}
+  }catch(error){if(current())$('analytics-body').innerHTML='<div class="error-state">'+svgIcon('alert-octagon')
+    +`<p class="error-state-title">${e(error.message)}</p>`
+    +'<p class="error-state-action"><button type="button" class="action-secondary" data-action="capacity-plan">Coba lagi</button></p></div>';}
 }
 $('capacity-plan').onclick=showCapacityPlan;
 
 function showProductionQualityInsights() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('production-quality-insights','Kualitas produksi',`<form id="production-quality-form" class="filter-form">
-    <p class="hint">Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.</p>
-    <div class="form-grid">
-      ${field('as_of','Data sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="30"')}
-      ${field('warning_percent','Batas rework + reject (%)','number','required min="1" max="100" step="1" value="5"')}
-      ${field('change_threshold','Batas perubahan (poin persentase)','number','required min="1" max="100" step="1" value="1"')}
-      ${field('query','Cari vendor, line, SKU, order, atau defect','search','maxlength="160"')}
-      <label>Jenis pengerjaan<select name="assignment_type"><option value="all">Internal dan makloon</option><option value="internal">Internal</option><option value="makloon">Makloon</option></select></label>
-      <label>Status<select name="status"><option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua</option></select></label>
-    </div><div class="form-actions"><button class="primary" id="production-quality-submit" type="submit">Tampilkan kualitas</button></div>
-  </form><p id="production-quality-message" class="state" role="status" hidden></p><div id="production-quality-summary"></div><div id="production-quality-results"></div><button id="production-quality-more" type="button" hidden>Muat penanggung jawab berikutnya</button>`);
+  const request=activateAnalyticsReport('production-quality-insights','Kualitas produksi',
+    analyticsFilterForm('production-quality-form',
+      analyticsDateFilter('as_of','Data sampai tanggal',today)
+      +analyticsSelectFilter('assignment_type','Jenis pengerjaan','<option value="all">Internal dan makloon</option><option value="internal">Internal</option><option value="makloon">Makloon</option>')
+      +analyticsSelectFilter('status','Status','<option value="attention">Perlu perhatian</option><option value="healthy">Sehat</option><option value="all">Semua</option>'),
+      analyticsSearchFilter('Cari vendor, line, SKU, order, atau defect','Vendor, line, SKU, order, atau defect'),
+      'production-quality-submit','Tampilkan kualitas',
+      analyticsParam('window_days','Panjang periode (hari)','number','required min="7" max="365" step="1" value="30"')
+      +analyticsParam('warning_percent','Batas rework + reject (%)','number','required min="1" max="100" step="1" value="5"')
+      +analyticsParam('change_threshold','Batas perubahan (poin persentase)','number','required min="1" max="100" step="1" value="1"'))
+    +analyticsNote('Bandingkan final QC aktif pada periode terpilih dengan periode sebelumnya yang sama panjang. Koreksi final QC tidak ikut dihitung.')
+    // §45: yield first pass hanya dari inspeksi awal, jadi satu pcs tidak dihitung dua kali.
+    +analyticsNote('Perlu perhatian berarti rework + reject mencapai batas atau trennya memburuk melewati ambang perubahan. Yield first pass dihitung hanya dari inspeksi awal, sehingga satu pcs yang diperiksa ulang setelah rework tidak dihitung dua kali.')
+    +'<div id="production-quality-summary" class="analytics-report"></div><div id="production-quality-message" class="state" role="status" hidden></div>'
+    +analyticsSubhead('Penanggung jawab final QC')
+    +'<ul id="production-quality-results" class="record-list"></ul>'
+    +analyticsPager('production-quality-more','Muat penanggung jawab berikutnya'));
   const version=epoch,current=()=>version===epoch&&view==='analytics'&&analyticsReport==='production-quality-insights'&&request===analyticsRequest;
   const form=$('production-quality-form'),submit=$('production-quality-submit');let offset=0,generation=0;
   restoreAnalyticsFilters('production-quality-insights',form);
+  // §49: kata-kata tren tidak diubah dan tidak diberi nuansa prediktif.
   const trendLabels={worsening:'Memburuk',improving:'Membaik',stable:'Stabil',new_baseline:'Baseline baru'};
+  const trendTones={worsening:'danger',improving:'success',stable:'neutral',new_baseline:'info'};
   const assignmentLabels={internal:'Internal',makloon:'Makloon'};
   const delta=value=>value===null?'Belum ada pembanding':`${Number(value)>0?'+':''}${e(value)} poin`;
   const load=async(reset=false)=>{
     if(!current())return;
     if(reset){generation++;offset=0;$('production-quality-summary').replaceChildren();$('production-quality-results').replaceChildren();}
     const gen=generation,more=$('production-quality-more');submit.disabled=true;more.disabled=true;more.hidden=true;
-    message('production-quality-message',offset?'Memuat penanggung jawab berikutnya...':'Menghitung yield dan tren defect...');
+    pageState('production-quality-message','loading',offset?'Memuat penanggung jawab berikutnya...':'Menghitung yield dan tren defect...');
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));params.set('limit','25');params.set('offset',String(offset));
       const report=await api.get('/api/production-quality-insights?'+params);if(!current()||gen!==generation)return;
-      message('production-quality-message','');
+      pageState('production-quality-message','');
       if(!offset){
         const s=report.summary;
-        $('production-quality-summary').innerHTML=`<p class="form-info">${date(report.current_period_start)} sampai ${date(report.as_of)} dibanding ${date(report.previous_period_start)} sampai ${date(report.previous_period_end)}<br>${n(s.inspected_quantity)} pcs diperiksa · yield ${e(s.first_pass_yield_percent)}% · rework + reject ${e(s.nonconforming_rate_percent)}% · perubahan ${delta(s.nonconforming_rate_change_points)}<br>Inspeksi ulang ${n(s.reinspected_quantity)} pcs dari ${n(s.reinspection_record_count)} catatan · diterima ${n(s.reinspection_accepted_quantity)} · rework ${n(s.reinspection_rework_quantity)} · reject ${n(s.reinspection_reject_quantity)}<br>${n(s.groups)} penanggung jawab · ${n(s.attention_groups)} perlu perhatian</p><p class="hint">Perlu perhatian berarti rework + reject mencapai batas atau trennya memburuk melewati ambang perubahan. Yield first pass dihitung hanya dari inspeksi awal, sehingga satu pcs yang diperiksa ulang setelah rework tidak dihitung dua kali.</p>`;
+        $('production-quality-summary').innerHTML=analyticsMetrics('Ringkasan kualitas produksi',[
+            ['Diperiksa',n(s.inspected_quantity),'pcs','check-circle',''],
+            ['Yield first pass',e(s.first_pass_yield_percent)+'%','','gauge','metric-card-info'],
+            ['Rework + reject',e(s.nonconforming_rate_percent)+'%','','alert-triangle',Number(s.nonconforming_rate_percent)>0?'metric-card-warning':'metric-card-success'],
+            // §115: hanya keluaran laporan yang menjadi metrik, dan metrik adalah ANGKA. Perubahan
+            // poin persentase bisa berbunyi "Belum ada pembanding", yang merupakan kalimat, bukan
+            // besaran — tempatnya di bawah bersama konteks periode.
+            ['Perlu perhatian',n(s.attention_groups),'penanggung jawab','user',s.attention_groups>0?'metric-card-warning':'metric-card-success']
+          ])
+          +analyticsFacts([['Periode ini',`${date(report.current_period_start)} – ${date(report.as_of)}`],
+            ['Periode pembanding',`${date(report.previous_period_start)} – ${date(report.previous_period_end)}`],
+            ['Perubahan rework + reject',delta(s.nonconforming_rate_change_points)],
+            ['Penanggung jawab',n(s.groups)]])
+          // §45: inspeksi ulang tetap dipisahkan dari inspeksi awal, bukan digabung ke yield.
+          +analyticsSubhead('Inspeksi ulang pada periode ini')
+          +analyticsFacts([['Diperiksa ulang',`${n(s.reinspected_quantity)} pcs`],
+            ['Catatan inspeksi ulang',n(s.reinspection_record_count)],
+            ['Diterima',`${n(s.reinspection_accepted_quantity)} pcs`],
+            ['Rework',`${n(s.reinspection_rework_quantity)} pcs`],
+            ['Reject',`${n(s.reinspection_reject_quantity)} pcs`]]);
       }
       const html=report.items.map(row=>{
         const attention=row.status==='attention',c=row.current,p=row.previous;
-        const defects=row.defect_types.length?row.defect_types.map(item=>`<li><strong>${e(item.defect_type||'Tanpa jenis defect')}</strong>: ${n(item.nonconforming_quantity)} pcs dari ${n(item.record_count)} catatan</li>`).join(''):'<li>Tidak ada defect atau rework pada periode ini.</li>';
-        const sources=row.responsible_sources.length?row.responsible_sources.map(item=>`<li><strong>${e(item.responsible_source||'Sumber belum diisi')}</strong>: ${n(item.nonconforming_quantity)} pcs</li>`).join(''):'<li>Tidak ada sumber masalah pada periode ini.</li>';
-        const skus=row.skus.map(item=>`<article class="material-event"><strong>${e(item.sku)} · ${e(item.product_name)}</strong>${item.inspected_quantity?`<p>${e(item.color)} · ${e(item.size)} · ${n(item.inspected_quantity)} pcs diperiksa · rework + reject ${e(item.nonconforming_rate_percent)}%</p>`:`<p>${e(item.color)} · ${e(item.size)} · belum ada inspeksi awal pada periode ini</p>`}${item.reinspected_quantity?`<p>Inspeksi ulang ${n(item.reinspected_quantity)} pcs · gagal lagi ${n(item.reinspection_nonconforming_quantity)} pcs (${e(item.reinspection_nonconforming_rate_percent)}%)</p>`:''}</article>`).join('');
-        const records=row.recent_records.map(item=>`<article class="material-event"><strong>${e(item.reference)} · ${e(item.order_reference)}</strong><p>${inspectionBadge(item)}</p><p>${date(item.inspection_date)} · ${e(item.sku)} · diterima ${n(item.accepted_quantity)}, rework ${n(item.rework_quantity)}, reject ${n(item.reject_quantity)}</p><p>${e(item.defect_type||'Tanpa jenis defect')} · ${e(item.responsible_source||'Sumber belum diisi')}</p><button data-action="final-qc-record" data-id="${e(item.id)}">Buka final QC ${e(item.reference)}</button></article>`).join('');
-        return `<article class="material-event" data-production-quality="${e(row.assignment_type)}-${e(row.assignee)}"><div class="issue-heading"><h3>${e(row.assignee)}</h3><span class="status-label ${attention?'late':'done'}">${attention?'Perlu perhatian':'Sehat'}</span></div><p>${e(assignmentLabels[row.assignment_type])} · tren <strong>${e(trendLabels[row.trend])}</strong> · ${delta(row.nonconforming_rate_change_points)}</p><dl class="requirement-values"><div><dt>Diperiksa</dt><dd>${n(c.inspected_quantity)} pcs</dd></div><div><dt>Yield</dt><dd>${e(c.first_pass_yield_percent)}%</dd></div><div><dt>Rework + reject</dt><dd>${e(c.nonconforming_rate_percent)}%</dd></div><div><dt>Rework</dt><dd>${e(c.rework_rate_percent)}%</dd></div><div><dt>Reject</dt><dd>${e(c.reject_rate_percent)}%</dd></div><div><dt>Periode lalu</dt><dd>${e(p.nonconforming_rate_percent)}%</dd></div><div><dt>Inspeksi ulang</dt><dd>${n(c.reinspected_quantity)} pcs</dd></div></dl><h4>Jenis defect</h4><ul>${defects}</ul><h4>Sumber penanggung jawab</h4><ul>${sources}</ul><h4>SKU periode ini</h4>${skus}<h4>Final QC terbaru</h4>${records}</article>`;
+        // §47: perbandingan periode ini dengan periode lalu memakai nilai yang dikembalikan API.
+        // Tidak ada klaim signifikansi statistik.
+        const bars=analyticsBars([
+          {label:'Rework + reject periode lalu',value:`${e(p.nonconforming_rate_percent)}%`,share:Number(p.nonconforming_rate_percent),tone:'neutral'},
+          {label:'Rework + reject periode ini',value:`${e(c.nonconforming_rate_percent)}%`,share:Number(c.nonconforming_rate_percent),tone:attention?'danger':'warning'},
+          {label:'Yield first pass periode ini',value:`${e(c.first_pass_yield_percent)}%`,share:Number(c.first_pass_yield_percent),tone:'success'}
+        ]);
+        const defects=row.defect_types.length?row.defect_types.map(item=>'<li>'
+          +`<span class="analytics-sublist-title">${e(item.defect_type||'Tanpa jenis defect')}</span>`
+          +`<span class="data-meta">${n(item.nonconforming_quantity)} pcs dari ${n(item.record_count)} catatan</span></li>`).join('')
+          :'<li><span class="data-meta">Tidak ada defect atau rework pada periode ini.</span></li>';
+        const sources=row.responsible_sources.length?row.responsible_sources.map(item=>'<li>'
+          +`<span class="analytics-sublist-title">${e(item.responsible_source||'Sumber belum diisi')}</span>`
+          +`<span class="data-meta">${n(item.nonconforming_quantity)} pcs</span></li>`).join('')
+          :'<li><span class="data-meta">Tidak ada sumber masalah pada periode ini.</span></li>';
+        const skus=row.skus.map(item=>'<li>'
+          +`<span class="analytics-sublist-title">${e(item.sku)} · ${e(item.product_name)}</span>`
+          +(item.inspected_quantity
+            ?`<span class="data-meta">${e(item.color)} · ${e(item.size)} · ${n(item.inspected_quantity)} pcs diperiksa · rework + reject ${e(item.nonconforming_rate_percent)}%</span>`
+            :`<span class="data-meta">${e(item.color)} · ${e(item.size)} · belum ada inspeksi awal pada periode ini</span>`)
+          +(item.reinspected_quantity?`<span class="data-meta">Inspeksi ulang ${n(item.reinspected_quantity)} pcs · gagal lagi ${n(item.reinspection_nonconforming_quantity)} pcs (${e(item.reinspection_nonconforming_rate_percent)}%)</span>`:'')
+          +'</li>').join('');
+        const records=row.recent_records.map(item=>'<li>'
+          +`<span class="analytics-sublist-title">${e(item.reference)} · ${e(item.order_reference)}</span>`
+          +`<span class="chip-row">${inspectionBadge(item)}</span>`
+          +`<span class="data-meta">${date(item.inspection_date)} · ${e(item.sku)} · diterima ${n(item.accepted_quantity)}, rework ${n(item.rework_quantity)}, reject ${n(item.reject_quantity)}</span>`
+          +`<span class="data-meta">${e(item.defect_type||'Tanpa jenis defect')} · ${e(item.responsible_source||'Sumber belum diisi')}</span>`
+          +`<span class="analytics-sublist-action">${analyticsOpen('final-qc-record',item.id,'Buka final QC '+item.reference)}</span>`
+          +'</li>').join('');
+        return `<li class="analytics-record" data-production-quality="${e(row.assignment_type)}-${e(row.assignee)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.assignee)}</h3>`
+          +`<span class="chip-row">${analyticsChip(attention?'warning':'success',attention?'Perlu perhatian':'Sehat')}${analyticsChip(trendTones[row.trend]||'neutral',trendLabels[row.trend])}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(assignmentLabels[row.assignment_type])} · ${delta(row.nonconforming_rate_change_points)}</p>`
+          +bars
+          +analyticsFacts([['Diperiksa',`${n(c.inspected_quantity)} pcs`],['Yield',`${e(c.first_pass_yield_percent)}%`],
+            ['Rework + reject',`${e(c.nonconforming_rate_percent)}%`],['Rework',`${e(c.rework_rate_percent)}%`],
+            ['Reject',`${e(c.reject_rate_percent)}%`],['Periode lalu',`${e(p.nonconforming_rate_percent)}%`],
+            ['Inspeksi ulang',`${n(c.reinspected_quantity)} pcs`]])
+          +analyticsSubgroup('Jenis defect',defects)
+          +analyticsSubgroup('Sumber penanggung jawab',sources)
+          +(skus?analyticsSubgroup('SKU periode ini',skus):'')
+          +(records?analyticsSubgroup('Final QC terbaru',records):'')
+          +'</li>';
       }).join('');
       appendRows('production-quality-results',html);
-      if(!offset&&!report.items.length)$('production-quality-results').innerHTML='<p class="state">Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.</p>';
+      if(!offset&&!report.items.length)pageState('production-quality-message','empty','Tidak ada penanggung jawab yang cocok dengan status dan filter periode ini.','Ubah status, jenis pengerjaan, atau ambang lalu jalankan laporan kembali.');
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat penanggung jawab berikutnya';
-    }catch(error){if(current()&&gen===generation){message('production-quality-message',error.message,true);$('production-quality-message').insertAdjacentHTML('beforeend','<br><button id="production-quality-retry" type="button">Coba lagi</button>');$('production-quality-retry').onclick=()=>load();}}
+      analyticsPagerCount('production-quality-more',offset,report.total,'penanggung jawab');
+    }catch(error){if(current()&&gen===generation)analyticsFail('production-quality-message','production-quality-retry',error.message,()=>load());}
     finally{if(current()&&gen===generation){submit.disabled=false;more.disabled=false;}}
   };
+  // §13: laporan ini memang berjalan otomatis saat dibuka. Perilaku itu dipertahankan.
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('production-quality-insights',form);load(true);};$('production-quality-more').onclick=()=>load();load(true);
 }
 $('production-quality-insights').onclick=showProductionQualityInsights;
 
 function showReplenishment() {
   const today=jakartaToday();
-  const request=activateAnalyticsReport('replenishment','Risiko stockout & rekomendasi',`<form id="replenishment-form" class="filter-form">
-    <p class="hint">Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.</p>
-    <div class="form-grid">
-      ${field('as_of','Forecast sampai tanggal','date',`required value="${today}"`)}
-      ${field('window_days','Panjang window demand (hari)','number','required min="7" max="90" step="1" value="28"')}
-      ${field('lead_time_days','Lead time replenishment (hari)','number','required min="1" max="180" step="1" value="14"')}
-      ${field('review_period_days','Periode review stok (hari)','number','required min="1" max="180" step="1" value="30"')}
-      ${field('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')}
-      ${field('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"')}
-      ${field('marketplace','Marketplace','text','maxlength="160" placeholder="Semua marketplace"')}
-      <label>Cari SKU atau produk<input name="query" type="search" maxlength="160" placeholder="Kode, nama, warna, atau ukuran"></label>
-    </div>
-    <div class="form-actions"><button class="primary" id="replenishment-submit" type="submit">Hitung rekomendasi</button></div>
-  </form><p id="replenishment-message" class="state" role="status" hidden></p><div id="replenishment-results"></div>`);
+  const request=activateAnalyticsReport('replenishment','Risiko stockout & rekomendasi',
+    analyticsFilterForm('replenishment-form',
+      analyticsDateFilter('as_of','Forecast sampai tanggal',today)
+      +analyticsTextFilter('marketplace','Marketplace','maxlength="160" placeholder="Semua marketplace"'),
+      analyticsSearchFilter('Cari SKU atau produk','Kode, nama, warna, atau ukuran'),
+      'replenishment-submit','Hitung rekomendasi',
+      // §78: keenam parameter perencanaan adalah ASUMSI yang menentukan arti hasilnya, jadi mereka
+      // tetap terlihat sebagai bidang berlabel — bukan disembunyikan di balik disclosure.
+      analyticsParam('window_days','Panjang window demand (hari)','number','required min="7" max="90" step="1" value="28"')
+      +analyticsParam('lead_time_days','Lead time replenishment (hari)','number','required min="1" max="180" step="1" value="14"')
+      +analyticsParam('review_period_days','Periode review stok (hari)','number','required min="1" max="180" step="1" value="30"')
+      +analyticsParam('safety_stock_days','Safety stock (hari)','number','required min="0" max="90" step="1" value="7"')
+      +analyticsParam('batch_multiple','Kelipatan batch produksi (pcs)','number','required min="1" max="100000" step="1" value="1"'))
+    +analyticsNote('Stok tersedia dan produksi berjalan dibandingkan dengan demand selama lead time, periode review, dan safety stock. Kebutuhan produksi baru diterjemahkan ke bahan memakai BOM terbaru.')
+    // §83: apa yang BELUM ikut menentukan hasil disebutkan di depan, bukan di catatan kaki.
+    +analyticsNote('Stok adalah posisi saat ini. Pipeline hanya menghitung order produksi, PR, dan PO bertanggal target di dalam horizon. Estimasi stockout memakai stok tersedia tanpa mengasumsikan tanggal kedatangan produksi berjalan. Harga, supplier, MOQ bahan, serta kapasitas produksi belum menentukan hasil.')
+    +'<div id="replenishment-results" class="analytics-report"></div><div id="replenishment-message" class="state" role="status" hidden></div>');
   const version=epoch,form=$('replenishment-form'),button=$('replenishment-submit');
   restoreAnalyticsFilters('replenishment',form);
   const current=()=>version===epoch&&view==='analytics'&&analyticsReport==='replenishment'&&request===analyticsRequest;
+  analyticsReady('replenishment-message','Atur lead time, periode review, dan safety stock, lalu tekan Hitung rekomendasi untuk menjalankan laporan.');
   const load=async()=>{
     if(!current())return;
     button.disabled=true;button.textContent='Menghitung…';
-    message('replenishment-message','Menggabungkan forecast, stok, produksi, BOM, PR, dan PO…');
+    pageState('replenishment-message','loading','Menggabungkan forecast, stok, produksi, BOM, PR, dan PO…');
     $('replenishment-results').replaceChildren();
     try{
       const params=new URLSearchParams(Object.fromEntries(new FormData(form)));
       params.set('limit','100');params.set('offset','0');
       const report=await api.get('/api/replenishment-recommendations?'+params);
       if(!current())return;
-      message('replenishment-message','');
+      pageState('replenishment-message','');
+      // §80: enam keadaan risiko yang berbeda tetap berbeda. Tidak ada yang digabung.
       const risks={out_of_stock:'Stok habis',stockout_before_replenishment:'Stockout sebelum replenishment',
         below_safety_stock:'Di bawah safety stock',covered:'Stok tercakup',
         insufficient_history:'Riwayat demand belum cukup',no_demand:'Tidak ada demand pada window'};
-      const products=report.product_recommendations.map(row=>`<article class="material-event" data-replenishment-sku="${e(row.sku)}"><h3>${e(row.sku)} · ${e(risks[row.stockout_risk])}</h3><p>${e(row.name)}${[row.color,row.size].filter(Boolean).length?' · '+e([row.color,row.size].filter(Boolean).join(' / ')):''}</p><dl class="requirement-values"><div><dt>Demand forecast</dt><dd>${n(Number(row.forecast_daily_rate))} pcs/hari</dd></div><div><dt>Stok tersedia</dt><dd>${n(row.available_quantity)} pcs</dd></div><div><dt>Produksi berjalan</dt><dd>${n(row.inbound_production_quantity)} pcs</dd></div><div><dt>Days of cover</dt><dd>${row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'}</dd></div><div><dt>Reorder point</dt><dd>${n(row.reorder_point_quantity)} pcs</dd></div><div><dt>Target stok</dt><dd>${n(row.target_stock_quantity)} pcs</dd></div><div><dt>Rekomendasi produksi</dt><dd><strong>${n(row.recommended_production_quantity)} pcs</strong></dd></div></dl><p class="hint">Sellable ${n(row.sellable_quantity)} · terreservasi ${n(row.reserved_quantity)} · hold ${n(row.hold_quantity)} · batch ${n(row.batch_multiple)} pcs${row.projected_stockout_date?' · estimasi stockout '+date(row.projected_stockout_date):''}</p></article>`).join('');
-      const materials=report.material_purchase_recommendations.map(row=>`<article class="material-event" data-replenishment-material="${e(row.code)}"><h3>${e(row.code)} · ${e(row.name)}</h3><p class="status-label ${row.status==='purchase'?'late':'done'}">${row.status==='purchase'?'Perlu pembelian baru':'Kebutuhan tercakup'}</p><dl class="requirement-values"><div><dt>Kebutuhan produksi berjalan</dt><dd>${e(materialQty(row.existing_production_requirement,row.unit))}</dd></div><div><dt>Kebutuhan rekomendasi baru</dt><dd>${e(materialQty(row.recommended_production_requirement,row.unit))}</dd></div><div><dt>Stok bahan</dt><dd>${e(materialQty(row.on_hand_quantity,row.unit))}</dd></div><div><dt>PR terbuka</dt><dd>${e(materialQty(row.open_purchase_request_quantity,row.unit))}</dd></div><div><dt>PO terbuka</dt><dd>${e(materialQty(row.open_purchase_order_quantity,row.unit))}</dd></div><div><dt>Rekomendasi beli</dt><dd><strong>${e(materialQty(row.recommended_purchase_quantity,row.unit))}</strong></dd></div></dl></article>`).join('');
-      const gaps=report.coverage_gaps.map(gap=>`<p>SKU ${e(gap.sku)} belum mempunyai BOM untuk ${gap.context==='active_production'?'produksi yang sedang berjalan':'rekomendasi produksi baru'}.</p>`).join('');
-      $('replenishment-results').innerHTML=`<p class="form-info">Horizon perencanaan sampai ${date(report.planning_horizon_end)} · ${n(report.coverage_days)} hari<br>${n(report.summary.recommended_production_quantity)} pcs direkomendasikan untuk produksi · ${n(report.summary.materials_to_purchase)} bahan perlu dibeli</p><p class="hint">Stok adalah posisi saat ini. Pipeline hanya menghitung order produksi, PR, dan PO bertanggal target di dalam horizon. Estimasi stockout memakai stok tersedia tanpa mengasumsikan tanggal kedatangan produksi berjalan.</p>${gaps?`<article class="material-event"><h3>Data yang perlu dilengkapi</h3>${gaps}</article>`:''}<h3>Risiko dan rekomendasi produksi</h3>${products||'<p class="state">Tidak ada SKU yang cocok dengan filter.</p>'}${report.total>report.product_recommendations.length?`<p class="hint">Menampilkan ${n(report.product_recommendations.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</p>`:''}<h3>Rekomendasi pembelian bahan</h3>${materials||'<p class="state">Belum ada kebutuhan bahan yang dapat dihitung.</p>'}<p class="hint">Rekomendasi pembelian mengurangi stok bahan, PR terbuka, dan sisa PO terbuka. Harga, supplier, MOQ bahan, serta kapasitas produksi belum menentukan hasil.</p>`;
+      const riskTones={out_of_stock:'danger',stockout_before_replenishment:'danger',below_safety_stock:'warning',
+        covered:'success',insufficient_history:'info',no_demand:'neutral'};
+      const products=report.product_recommendations.map(row=>{
+        const variant=[row.color,row.size].filter(Boolean);
+        // Nama risiko sudah menjadi judul record, seperti pada versi sebelumnya. Chip di sini
+        // hanya menambahkan kanal nada dan titik status untuk keadaan yang menuntut tindakan —
+        // bukan mengulang judul dengan suara yang sama besar.
+        return `<li class="analytics-record" data-replenishment-sku="${e(row.sku)}">`
+          +'<div class="analytics-record-head">'
+          +`<h3 class="data-primary">${e(row.sku)} · ${e(risks[row.stockout_risk])}</h3>`
+          +`<span class="chip-row">${analyticsChip(riskTones[row.stockout_risk]||'neutral',`${n(row.recommended_production_quantity)} pcs disarankan`)}</span>`
+          +'</div>'
+          +`<p class="data-secondary">${e(row.name)}${variant.length?' · '+e(variant.join(' / ')):''}</p>`
+          +analyticsFacts([['Demand forecast',`${n(Number(row.forecast_daily_rate))} pcs/hari`],
+            ['Stok tersedia',`${n(row.available_quantity)} pcs`],
+            ['Produksi berjalan',`${n(row.inbound_production_quantity)} pcs`],
+            ['Days of cover',row.days_of_cover===null?'Belum tersedia':n(Number(row.days_of_cover))+' hari'],
+            ['Reorder point',`${n(row.reorder_point_quantity)} pcs`],
+            ['Target stok',`${n(row.target_stock_quantity)} pcs`],
+            ['Rekomendasi produksi',`<strong>${n(row.recommended_production_quantity)} pcs</strong>`]])
+          +`<p class="data-meta">Sellable ${n(row.sellable_quantity)} · terreservasi ${n(row.reserved_quantity)} · hold ${n(row.hold_quantity)} · batch ${n(row.batch_multiple)} pcs${row.projected_stockout_date?' · estimasi stockout '+date(row.projected_stockout_date):''}</p>`
+          +'</li>';
+      }).join('');
+      const materials=report.material_purchase_recommendations.map(row=>`<li class="analytics-record" data-replenishment-material="${e(row.code)}">`
+        +'<div class="analytics-record-head">'
+        +`<h3 class="data-primary">${e(row.code)} · ${e(row.name)}</h3>`
+        +`<span class="chip-row">${analyticsChip(row.status==='purchase'?'warning':'success',row.status==='purchase'?'Perlu pembelian baru':'Kebutuhan tercakup')}</span>`
+        +'</div>'
+        // §81: kuantitas bahan selalu memakai satuannya sendiri dan tidak pernah dijumlahkan
+        // lintas satuan yang tidak sepadan.
+        +analyticsFacts([['Kebutuhan produksi berjalan',e(materialQty(row.existing_production_requirement,row.unit))],
+          ['Kebutuhan rekomendasi baru',e(materialQty(row.recommended_production_requirement,row.unit))],
+          ['Stok bahan',e(materialQty(row.on_hand_quantity,row.unit))],
+          ['PR terbuka',e(materialQty(row.open_purchase_request_quantity,row.unit))],
+          ['PO terbuka',e(materialQty(row.open_purchase_order_quantity,row.unit))],
+          ['Rekomendasi beli',`<strong>${e(materialQty(row.recommended_purchase_quantity,row.unit))}</strong>`]])
+        +'</li>').join('');
+      // §82: BOM yang belum ada BUKAN kebutuhan bahan nol, jadi celahnya dinyatakan eksplisit.
+      const gaps=report.coverage_gaps.map(gap=>'<li>'
+        +`<span class="analytics-sublist-title">SKU ${e(gap.sku)}</span>`
+        +`<span class="data-meta">Belum mempunyai BOM untuk ${gap.context==='active_production'?'produksi yang sedang berjalan':'rekomendasi produksi baru'}.</span>`
+        +'</li>').join('');
+      const s=report.summary;
+      $('replenishment-results').innerHTML=analyticsMetrics('Ringkasan rekomendasi stok',[
+          ['Rekomendasi produksi',n(s.recommended_production_quantity),'pcs','box','metric-card-info'],
+          ['Bahan perlu dibeli',n(s.materials_to_purchase),'bahan','cart',s.materials_to_purchase>0?'metric-card-warning':'metric-card-success'],
+          ['Horizon perencanaan',n(report.coverage_days),'hari','clock','']
+        ])
+        +analyticsFacts([['Horizon sampai',date(report.planning_horizon_end)],
+          ['SKU dihitung',n(report.total)]])
+        +(gaps?'<div class="attention-note attention-note-critical">'+svgIcon('alert-triangle')
+          +'<span class="attention-note-copy"><strong class="attention-note-title">Data yang perlu dilengkapi</strong>'
+          +'<span class="attention-note-reason">BOM yang belum ada bukan berarti kebutuhan bahannya nol.</span></span></div>'
+          +`<ul class="analytics-sublist">${gaps}</ul>`:'')
+        +analyticsSubhead('Risiko dan rekomendasi produksi')
+        // Dua daftar dalam satu hasil, jadi keadaan kosongnya harus berdiri di tempat daftarnya —
+        // bukan pada satu host status bersama yang tidak bisa mengatakan daftar mana yang kosong.
+        +(products?`<ul class="record-list">${products}</ul>`:`<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Tidak ada SKU yang cocok dengan filter.</p><p class="empty-state-copy">Ubah marketplace, pencarian, atau window demand lalu hitung ulang rekomendasi.</p></div>`)
+        // §84: batas 100 hasil, tanpa load-more palsu.
+        +(report.total>report.product_recommendations.length?`<p class="info-panel">${svgIcon('info','icon-sm')}<span>Menampilkan ${n(report.product_recommendations.length)} dari ${n(report.total)} SKU. Persempit pencarian untuk melihat SKU lain.</span></p>`:'')
+        +analyticsSubhead('Rekomendasi pembelian bahan')
+        +(materials?`<ul class="record-list">${materials}</ul>`:`<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada kebutuhan bahan yang dapat dihitung.</p><p class="empty-state-copy">Kebutuhan bahan muncul setelah ada rekomendasi produksi dengan BOM yang lengkap.</p></div>`)
+        +`<p class="info-panel">${svgIcon('info','icon-sm')}<span>Rekomendasi pembelian mengurangi stok bahan, PR terbuka, dan sisa PO terbuka.</span></p>`;
     }catch(error){
-      if(current()){
-        message('replenishment-message',error.message,true);
-        $('replenishment-message').insertAdjacentHTML('beforeend','<br><button id="replenishment-retry" type="button">Coba lagi</button>');
-        $('replenishment-retry').onclick=load;
-      }
+      if(current())analyticsFail('replenishment-message','replenishment-retry',error.message,load);
     }finally{if(current()){button.disabled=false;button.textContent='Hitung rekomendasi';}}
   };
   form.onsubmit=event=>{event.preventDefault();saveAnalyticsFilters('replenishment',form);load();};

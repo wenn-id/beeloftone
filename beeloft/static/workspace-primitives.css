@@ -448,6 +448,45 @@
 .detail-field>dt{color:var(--muted);font-size:var(--type-metadata);font-weight:600}
 .detail-field>dd{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 
+/* ---------- quantity bars ----------
+   Added by A6.4, which is the first phase to migrate a workspace whose whole job is
+   comparing quantities to each other. The rest of the sheet can already say "this many"
+   (`.metric-value`), "this many out of that many" (`.progress-meter`) and "these facts
+   belong to one record" (`.detail-grid`); what it could not say is "these five labelled
+   quantities belong to ONE distribution and here is their relative size", which is the
+   single shape Analitik needed in five different reports - WIP stage balances, return
+   reasons, forecast previous/recent/projected, quality current-vs-previous, and a
+   material's first-versus-latest price.
+
+   It is deliberately the smallest thing that can carry that meaning:
+   - It is a real `<dl>`. The label and the number are a description list because that is
+     what they are, and both are REAL TEXT that exists whether or not the bar renders.
+   - The bar is `aria-hidden` decoration and is never the only channel. Its width comes
+     from an inline `--analytics-bar` the caller computes purely for geometry; the figure
+     printed in `.analytics-bar-value` is always the exact value the API returned, never a
+     percentage this sheet invented.
+   - There is no library, no canvas, no axis, no legend, no tooltip and no motion. A track
+     and a fill are two boxes; growing them from zero would be a chart animation, which the
+     product does not have and this does not introduce.
+   The label/value pair shares one row and the track spans beneath them, so a long SKU or a
+   200% text size lengthens the row instead of squeezing the number off it. */
+.analytics-bar-list{display:flex;flex-direction:column;gap:.6rem;min-width:0;margin:0}
+.analytics-bar-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:.2rem .75rem;min-width:0}
+.analytics-bar-label{min-width:0;color:var(--ink-2);font-size:var(--type-metadata);font-weight:600;overflow-wrap:anywhere}
+.analytics-bar-value{grid-column:2;justify-self:end;margin:0;color:var(--ink);font-size:var(--type-control);font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.analytics-bar-track{grid-column:1/-1;height:6px;border-radius:var(--radius-pill);background:var(--workspace-surface-secondary);overflow:hidden}
+.analytics-bar-fill{--analytics-bar:0%;--analytics-bar-color:var(--color-accent);display:block;width:var(--analytics-bar);height:100%;border-radius:inherit;background:var(--analytics-bar-color)}
+/* Tones mean what they mean elsewhere in the sheet, and the caller only reaches for one
+   when the report's own semantics say so - a return reason is not a failure, an overloaded
+   work centre is. Default accent stays the normal case. */
+.analytics-bar-fill-success{--analytics-bar-color:var(--color-success)}
+.analytics-bar-fill-warning{--analytics-bar-color:var(--color-warning)}
+.analytics-bar-fill-danger{--analytics-bar-color:var(--color-danger)}
+.analytics-bar-fill-neutral{--analytics-bar-color:var(--color-separator-strong)}
+/* The supporting clause a distribution row often needs - "8 order · 120 pcs tidak bergerak".
+   It is metadata under the bar, not a second value competing with the first. */
+.analytics-bar-note{grid-column:1/-1;min-width:0;color:var(--muted);font-size:var(--type-metadata);overflow-wrap:anywhere}
+
 /* ---------- scan surface ----------
    Bounded foundation only; A6.3 owns the Scan Bundle and Scan Barang Jadi
    workflows. What is settled here is the shape: one large focused input region,
@@ -583,6 +622,12 @@
      scrolling for data whose whole value is being comparable at a glance, so the
      compact grid keeps wrapping in columns and only narrows its track. */
   .detail-grid-compact{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+  /* A label and a figure cannot share a line on a phone once the label is a product family
+     name and the figure is tabular: the two-column track was measured pushing the number off
+     the row at 200% text. The row becomes one column - label, figure, bar - which is the same
+     reading order and never overflows. */
+  .analytics-bar-row{grid-template-columns:minmax(0,1fr)}
+  .analytics-bar-value{grid-column:1;justify-self:start;white-space:normal}
   .timeline-item{grid-template-columns:minmax(0,1fr)}
   .timeline-time{grid-column:1}
   .timeline-event,.timeline-actor,.timeline-detail{grid-column:1}
@@ -667,6 +712,11 @@
   .status-dot{background:CanvasText}
   .progress-track{border:1px solid CanvasText;background:Canvas}
   .progress-fill{background:Highlight}
+  /* A quantity bar survives forced colours as an outline plus a Highlight fill, exactly like
+     the progress track. It is allowed to lose its tone - tone was never the meaning here,
+     because the label and the exact figure beside it are real text that the mode keeps. */
+  .analytics-bar-track{border:1px solid CanvasText;background:Canvas}
+  .analytics-bar-fill{background:Highlight;forced-color-adjust:none}
   /* The native element needs the same treatment through its two shadow parts, and
      `forced-color-adjust:none` is what allows the filled portion to keep a Highlight
      fill instead of being flattened to the system background - without it the bar

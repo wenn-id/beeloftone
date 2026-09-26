@@ -55,7 +55,7 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
   await analytics.getByText('Tidak ada supplier yang cocok dengan status dan filter periode ini.',{exact:true}).waitFor();
   await page.locator('#supplier-performance-form select[name="status"]').selectOption('attention');
   await analytics.getByRole('button',{name:'Tampilkan kinerja',exact:true}).click();
-  const po=item.locator('.material-event').filter({has:page.getByText('PO-RETUR · Diterima sebagian',{exact:true})});
+  const po=item.locator('.analytics-sublist>li').filter({has:page.getByText('PO-RETUR · Diterima sebagian',{exact:true})});
   await po.getByRole('button',{name:'Buka PO',exact:true}).click();
   await page.getByText('PO-RETUR · Ditutup',{exact:true}).waitFor();
   await page.keyboard.press('Escape');
