@@ -37,7 +37,9 @@ module.exports=async({page,login,openSidebarDestination,viewer,apiGet,apiPost,wo
   await item.getByRole('heading',{name:'Line QC <A>',exact:true}).waitFor();
   await item.getByText('Perlu perhatian',{exact:true}).waitFor();
   await item.getByText('Jahitan <loncat>',{exact:true}).waitFor();
-  await item.getByText('Yield').waitFor();
+  // A6.4 also prints "Yield first pass periode ini" as a comparison bar label, so the field
+  // label is matched exactly rather than by substring. Stricter, not weaker.
+  await item.getByText('Yield',{exact:true}).waitFor();
   assert.ok((await item.innerText()).includes('75.00%'));
   assert.equal(await item.locator('script').count(),0);
   await page.unroute('**/api/production-quality-insights?*');

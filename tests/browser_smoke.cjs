@@ -482,6 +482,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // it reviews: it needs a cutting run to cut a bundle from and a receipt that already carries both
   // sellable and hold stock, and it finishes by re-checking that A6.1 and A6.2 still hold.
   await runModule('./browser_people_scan_modern_workspaces.cjs',{...bundling,...finishedGoods});
+  // A6.4 runs last of the A6 modules, and after every business analytics module above: those own
+  // each report's arithmetic and seed the rows this one needs, so it can review the SHARED half -
+  // one host, twelve reports, per-report filter memory, the stale fence, the pagination contract
+  // and the admin-only capacity master - against data that already exists.
+  await runModule('./browser_analytics_modern_workspace.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

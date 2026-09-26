@@ -39,7 +39,7 @@ module.exports=async({page,login,viewer,apiGet,work})=>{
     exact:true}).waitFor();
   await item.getByText('CONTOH <uji teks>',{exact:false}).waitFor();
   await item.getByText('Bergerak',{exact:true}).waitFor();
-  assert.ok((await item.innerText()).includes('Belum cutting 50 pcs'));
+  assert.match(await item.innerText(),/Belum cutting\s+50 pcs/);
   await page.unroute('**/api/wip-ageing-insights?*');
 
   await page.setViewportSize({width:390,height:844});

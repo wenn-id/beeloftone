@@ -92,8 +92,16 @@ LEGACY_VOCABULARY = (
 # finishing) are deliberately NOT on this list and still fail if they start emitting A6 markup.
 # The list stays an enumeration rather than a pattern on purpose: an unrelated workspace or an
 # unrelated dialog that starts emitting A6 markup still fails this contract.
+# A6.4 adds the ONE host twelve analytics reports share, plus the twelve report renderers by
+# name and the three Capacity master forms that are embedded directly in the capacity report's
+# own workflow. The reports' own shared markup helpers come with them, because they exist only to
+# stop twelve renderers from restating the same A6 markup twelve times. Everything else Analitik
+# merely LINKS to - the purchase order, final QC, finished-goods adjustment and production order
+# dialogs - is deliberately NOT on this list and still fails if it starts emitting A6 markup:
+# those belong to other workflows and to A6.5-A6.7.
 MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view',
-                     'people-view', 'bundle-scan-view', 'finished-goods-scan-view')
+                     'people-view', 'bundle-scan-view', 'finished-goods-scan-view',
+                     'analytics-view')
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -123,6 +131,25 @@ MIGRATED_RENDERERS = frozenset({
     'showScanner',    # the shared scanner lifecycle and its one result record
     'bundleDialog',             # the direct destination of Scan bundle
     'finishedGoodsReceiptDialog',   # the direct destination of Scan barang jadi
+    # ---- A6.4: Analitik ----
+    # The shared grammar the twelve reports are composed from. Each one writes exactly one A6.0
+    # shape; none of them is a component, and none of them is reachable from a non-analytics
+    # renderer because nothing else calls them.
+    'analyticsFilterControl', 'analyticsDateFilter', 'analyticsNumberFilter',
+    'analyticsTextFilter', 'analyticsSelectFilter', 'analyticsSearchFilter',
+    'analyticsParam', 'analyticsParamSelect', 'analyticsAssumptions', 'analyticsSubmit',
+    'analyticsFilterForm', 'analyticsNote', 'analyticsChip', 'analyticsMetrics',
+    'analyticsFacts', 'analyticsBars', 'analyticsSubhead', 'analyticsSubgroup',
+    'analyticsOpen', 'analyticsPager', 'analyticsReady', 'analyticsFail',
+    # The twelve report renderers. This is the whole of Analitik; there is no thirteenth.
+    'showWipAgeingInsights', 'showCapacityPlan', 'showProductionQualityInsights',
+    'showSupplierPerformanceInsights', 'showMaterialPriceInsights',
+    'showPurchaseCommitmentInsights', 'showDemandForecast', 'showReplenishment',
+    'showSizeDemandInsights', 'showReturnInsights', 'showDeadStockInsights',
+    'showStockAdjustmentInsights',
+    # ---- A6.4: Kapasitas master, embedded in the capacity report's own workflow ----
+    'capacityField', 'capacitySelect', 'capacityFact',
+    'capacityWorkCenterForm', 'capacityRoutingStandardForm', 'capacityCalendarForm',
 })
 
 
@@ -684,7 +711,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.109.0')
+        self.assertEqual(version, '0.110.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

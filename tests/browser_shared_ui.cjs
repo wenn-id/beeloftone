@@ -180,12 +180,22 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await openSidebarDestination('WIP ageing');
   await page.locator('#analytics-view').waitFor();
   await page.locator('#wip-ageing-form').waitFor();
+  // A6.4 made this literal rather than coincidental: an analytics report's filter surface is the
+  // SAME `.command-bar` primitive the Produksi board is built from, so the two are compared to each
+  // other instead of to a hard-coded radius. The report's <form> is now the two-tier wrapper that
+  // holds the bar and the assumptions panel, and carries no surface of its own.
   const dialogFilter = await page.evaluate(() => {
-    const style = getComputedStyle(document.querySelector('#wip-ageing-form'));
-    return {radius: parseFloat(style.borderRadius), border: parseFloat(style.borderTopWidth)};
+    const read = node => {
+      const style = getComputedStyle(node);
+      return {radius: parseFloat(style.borderRadius), border: parseFloat(style.borderTopWidth)};
+    };
+    return {analytics: read(document.querySelector('#wip-ageing-form .command-bar')),
+            board: read(document.querySelector('#search-form'))};
   });
-  assert.equal(dialogFilter.radius, 20, 'analytics filters use the shared toolbar surface');
-  assert.ok(dialogFilter.border > 0);
+  assert.deepEqual(dialogFilter.analytics, dialogFilter.board,
+    'analytics filters use the shared toolbar surface');
+  assert.ok(dialogFilter.analytics.radius > 0);
+  assert.ok(dialogFilter.analytics.border > 0);
 
   // ---- loading, empty and error must be three distinguishable states ----------------
   // Loading: hold the response open and assert the surface announces progress.
@@ -394,14 +404,20 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     return {
       fits: host.getBoundingClientRect().width <= window.innerWidth,
       noSideScroll: host.scrollWidth <= host.clientWidth,
-      // The admin master section is grouped rather than sharing one grid with the plan filter.
-      groupedForms: host.querySelectorAll('.filter-form').length,
+      // The admin master section is still grouped rather than sharing one grid with the plan
+      // filter. A6.4 renames the grouping: the two master tool groups are A6 utility panels and
+      // the plan filter is its own two-tier form, so the separation is now structural.
+      groupedForms: host.querySelectorAll('.utility-panel').length,
+      planForms: host.querySelectorAll('form.analytics-filters').length,
+      masterList: host.querySelectorAll('#capacity-center-master').length,
     };
   });
   assert.equal(mobileAnalytics.fits, true, 'the analytics page fits the mobile viewport');
   assert.equal(mobileAnalytics.noSideScroll, true, 'the analytics page does not scroll sideways on mobile');
   assert.ok(mobileAnalytics.groupedForms >= 2,
     'the capacity master controls are grouped into their own toolbars');
+  assert.equal(mobileAnalytics.planForms, 1, 'the plan filter is one form, separate from the master');
+  assert.equal(mobileAnalytics.masterList, 1, 'the work-centre master is its own record list');
   assert.equal(await noPageOverflow(), true);
   await page.screenshot({path: path.join(shots, 'shared-ui-capacity-mobile.png')});
   await page.setViewportSize({width: 1440, height: 900});

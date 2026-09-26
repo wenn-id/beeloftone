@@ -34,7 +34,7 @@ module.exports=async({page,login,admin,viewer,apiGet,apiPost,work})=>{
   await page.getByRole('button',{name:'Kapasitas produksi',exact:true}).click();
   const analytics=page.locator('#analytics-view');
   const dialog=page.locator('dialog');
-  const centerMaster=analytics.locator('.product-item').filter({hasText:center.code});
+  const centerMaster=analytics.locator('#capacity-center-master .record-row').filter({hasText:center.code});
   await centerMaster.getByRole('button',{name:'Ubah',exact:true}).click();
   assert.equal(await dialog.getByLabel('Nama work center',{exact:true}).inputValue(),'Sewing <utama>');
   assert.equal(await dialog.getByLabel('Kapasitas hari kerja (menit)',{exact:true}).inputValue(),'10');
@@ -61,7 +61,7 @@ module.exports=async({page,login,admin,viewer,apiGet,apiPost,work})=>{
   await card.getByRole('heading',{name:`${center.code} · Sewing <utama>`,exact:true}).waitFor();
   await card.getByRole('heading',{name:`${order.reference} · ${order.title}`,exact:true}).waitFor();
   await card.getByText(product.sku,{exact:false}).waitFor();
-  await card.locator('.status-label').getByText('Overload',{exact:true}).waitFor();
+  await card.locator('.status-chip').getByText('Overload',{exact:true}).waitFor();
   assert.equal(await analytics.getByRole('button',{name:'Tambah work center',exact:true}).count(),0);
   assert.ok((await card.innerText()).includes('30 pcs × 10 menit/pcs = 300 menit'));
   await page.unroute('**/api/capacity-plan?*');

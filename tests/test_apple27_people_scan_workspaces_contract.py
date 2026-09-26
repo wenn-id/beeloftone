@@ -105,7 +105,11 @@ PRODUCTS = section(HTML, 'products-view')
 # counterpart is now bounded above by this same marker, so the blocks are checked separately and
 # neither test can silently start covering the other's rules.
 A63_MARKER = '#people-view,#bundle-scan-view,#finished-goods-scan-view{max-width:1360px'
-A63_BLOCK = code_css(CSS)[code_css(CSS).index(A63_MARKER):]
+# A6.4 appended the Analitik block after this one, so A6.3's slice is now bounded above by the
+# A6.4 marker - the same deliberate act A6.2 performed when A6.3 arrived. Without it every rule
+# A6.4 writes would be read as an A6.3 rule and fail A6.3's own containment gate.
+A64_MARKER = '#analytics-view{max-width:1360px'
+A63_BLOCK = code_css(CSS)[code_css(CSS).index(A63_MARKER):code_css(CSS).index(A64_MARKER)]
 
 LOAD_PEOPLE = renderer('loadPeople')
 SHOW_PEOPLE = renderer('showPeople')
@@ -972,7 +976,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.109.0', 'A6.3 is the visible workspace migration milestone')
+        self.assertEqual(version, '0.110.0', 'A6.3 is the visible workspace migration milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
