@@ -170,7 +170,11 @@ ANALYTICS_RENDERERS = '\n'.join(BODIES.values())
 
 # The A6.4 containment block: from its first selector to the end of the stylesheet.
 A64_MARKER = '#analytics-view{max-width:1360px'
-A64_BLOCK = code_css(CSS)[code_css(CSS).index(A64_MARKER):]
+# A6.5 appended the Tanya Beeloft + Integrasi block after this one, so A6.4's slice is now bounded
+# above by the A6.5 marker - the same deliberate act A6.3 and A6.4 performed for their
+# predecessors. Without it every rule A6.5 writes would be read as an A6.4 rule.
+A65_MARKER = '#ai-view,#integrations-view{max-width:1360px'
+A64_BLOCK = code_css(CSS)[code_css(CSS).index(A64_MARKER):code_css(CSS).index(A65_MARKER)]
 
 
 class SharedHostTest(unittest.TestCase):
@@ -1094,7 +1098,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'),
                             re.M).group(1)
-        self.assertEqual(version, '0.110.0', 'A6.4 is the visible workspace milestone')
+        self.assertEqual(version, '0.111.0', 'A6.4 is the visible workspace milestone')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

@@ -82,7 +82,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer})=>{
   // Tanggal yang sah tetap dapat disimpan dari halaman yang sama.
   await page.locator('#ai-form').getByLabel('Data sampai tanggal',{exact:true}).fill('2026-12-13');
   await page.getByRole('button',{name:'Analisis dan simpan',exact:true}).click();
-  await page.locator('#ai-results .ai-answer').waitFor();
+  // A6.5: the answer surface is `.investigation-answer`; `.ai-answer` is no longer emitted.
+  await page.locator('#ai-results .investigation-answer').waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(admin);
