@@ -44,7 +44,9 @@ module.exports=async({page,login,openSidebarDestination,admin,operator,viewer,ap
   await aiResults.getByText('Analisis lokal · tidak mengirim data keluar · hanya baca · fokus COST-UI',{exact:true}).waitFor();
   assert.ok(investigationKeys[0]);
   assert.equal(new Set(investigationKeys).size,1);
-  assert.equal(await page.locator('.ai-answer aman').count(),0);
+  // A6.5: the answer surface is `.investigation-answer`; the escaping claim moves with it.
+  assert.equal(await page.locator('.investigation-answer').count(),1);
+  assert.equal(await page.locator('.investigation-answer aman').count(),0);
   assert.equal(await page.getByRole('button',{name:'Ajukan untuk approval',exact:true}).count(),0);
   assert.ok(await page.locator('[data-ai-recommendation="create_production_order"]').getByText('Perlu approval',{exact:true}).isVisible());
   assert.ok(await page.locator('[data-ai-recommendation="create_purchase_request"]').getByText('Belum dijalankan',{exact:false}).isVisible());

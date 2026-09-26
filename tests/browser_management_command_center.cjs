@@ -151,7 +151,8 @@ module.exports=async({page,login,viewer,apiGet,apiPost,work})=>{
   await page.getByRole('button',{name:'Command center',exact:true}).click();
   await page.locator('[data-command-snapshot="integrations"]').getByRole('button',{name:'Buka kesehatan integrasi'}).click();
   // Milestone D: tombol ini sekarang mengaktifkan halaman integrations-view, bukan dialog.
-  await page.getByRole('heading',{name:'Status integrasi dan source of truth.',exact:true}).waitFor();
+  // A6.5: the Integrasi page title is now the product noun, as every migrated workspace's is.
+  await page.getByRole('heading',{name:'Integrasi',level:1,exact:true}).waitFor();
   assert.equal(await page.locator('#dialog[open]').count(),0,'kesehatan integrasi bukan dialog lagi');
   assert.equal(await page.locator('#integrations').getAttribute('aria-current'),'page');
   console.log('Management command center browser QA PASS: consolidated snapshots, exception queue, retry, viewer, drill-down, mobile/200%.');

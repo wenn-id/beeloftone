@@ -37,14 +37,14 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     // Milestone D: Tanya Beeloft, Integrasi, dan Audit trail adalah halaman workspace.
     // riwayat investigasi dimuat terpisah dari permintaan tulisan, jadi tunggu riwayatnya
     // tuntas sebelum mengukur lebar halaman.
-    {name: 'Tanya Beeloft', nav: 'ai-brain', section: 'ai-view', heading: 'Analisis operasional dari ledger sendiri.',
+    {name: 'Tanya Beeloft', nav: 'ai-brain', section: 'ai-view', heading: 'Tanya Beeloft',
       content: '#ai-form',
       ready: () => page.waitForFunction(() => {
         const message = document.getElementById('ai-history-message');
         return document.getElementById('ai-history-list').children.length > 0
           || (message && message.textContent && message.textContent !== 'Memuat riwayat investigasi…');
       })},
-    {name: 'Integrasi', nav: 'integrations', section: 'integrations-view', heading: 'Status integrasi dan source of truth.',
+    {name: 'Integrasi', nav: 'integrations', section: 'integrations-view', heading: 'Integrasi',
       content: '[data-integration-system]'},
     {name: 'Audit trail', nav: 'audit-trail', section: 'audit-view', heading: 'Audit trail', content: '#audit-summary'},
     // Milestone E: tiga antrean bisnis adalah halaman workspace. Antrean mungkin

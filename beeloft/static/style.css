@@ -1956,3 +1956,217 @@ label>input,label>select,label>textarea{margin-top:6px}
   #analytics-view .metric-value{font-size:1.2rem;overflow-wrap:anywhere}
   #analytics-view .metric-label{overflow-wrap:anywhere}
 }
+
+
+/* ==========================================================================
+   A6.5 - Tanya Beeloft + Integrasi inner-workspace containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1-A6.4 blocks above do, done once more for the two
+   workspaces A6.5 owns and the dialogs they launch. They share ONE small evidence
+   grammar (`.evidence-*`) because both read evidence - one investigates the ledger,
+   the other inspects vendor snapshots - but they are deliberately NOT one page
+   composition: Tanya Beeloft is a composer above an answer, Integrasi is a set of
+   system surfaces with scope rows.
+
+   Everything here is reachable only from markup a migrated A6.5 renderer emits: the
+   two section ids, the A6.5-owned host ids inside them and inside the dialogs, and
+   the `.investigation*` / `.integration*` / `.evidence*` / `.ai-*` names that only
+   those renderers write. Nothing here is a component and no A6.0 primitive is
+   redefined; the A6.1-A6.4 blocks are not touched.
+
+   The legacy vocabulary these surfaces used to render with - `.page-heading`,
+   `.eyebrow`, `.filter-form`, `.form-grid`, `.form-actions`, `.form-info`,
+   `.material-event`, `.status-label`, `.requirement-values`, `.history-section`,
+   `.history-heading`, `.ai-answer`, `.ai-prompts` - is left intact above: every one
+   of them is still rendered by a surface A6.6-A6.7 own (Activity, Audit, Purchasing,
+   Approval Inbox) or by `formDialog()` itself. `.ai-answer` and `.ai-prompts` become
+   inert here and are left for A6.8's proven sweep, as A6.1's rule requires.
+   `.ai-assumptions` stays in the markup because showAi() addresses
+   `details.ai-assumptions`; its legacy box is withdrawn below by id, not removed.
+   ========================================================================== */
+#ai-view,#integrations-view{max-width:1360px;margin-inline:auto}
+#ai-view .workspace-subtitle,#integrations-view .workspace-subtitle{max-width:72ch}
+
+/* ---------- A6.5 question composer ----------
+   The composer is the page's one primary interactive surface, so it is the one near-opaque
+   surface above the fold. It is a form, not a chat box: an explicit label, restrained starter
+   chips, a closed assumptions disclosure, and one confident primary action on the right. */
+#ai-form{
+  display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px 18px;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);
+  background:var(--workspace-surface);box-shadow:var(--workspace-shadow);
+}
+#ai-form>*{min-width:0}
+#ai-form>.workspace-subhead{align-items:center}
+.ai-trust{display:flex;align-items:center;gap:.35rem;margin:0;min-width:0}
+.ai-trust>.icon{flex:0 0 auto;color:var(--muted)}
+/* Starters are prompts, not destinations: pill-sized, one quiet tone, wrapping in reading order. */
+.ai-starters{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.ai-starters>.field-label{margin-right:.2rem}
+.ai-starters>.filter-chip{border-color:var(--workspace-edge);background:var(--workspace-surface-secondary);color:var(--ink-2)}
+.ai-starters>.filter-chip:hover{border-color:var(--color-separator-strong);background:var(--workspace-hover);color:var(--ink)}
+/* Three lines is enough to see a whole business question; the control still grows on demand. */
+#ai-question{min-height:4.6rem;max-height:40dvh}
+/* The assumptions stay a native disclosure (showAi() closes `details.ai-assumptions` on every
+   activation). The legacy card around it is withdrawn and replaced by the A6 secondary panel
+   material, so six planning parameters read as secondary to the question above them. */
+#ai-form .ai-assumptions{margin:0;padding:9px 14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary)}
+#ai-form .ai-assumptions>summary{min-height:26px;color:var(--ink);font-size:var(--type-control);font-weight:620;cursor:pointer}
+#ai-form .ai-assumptions[open]>summary{margin-bottom:.35rem}
+#ai-form .ai-assumptions>.field-help{margin:0 0 .7rem}
+#ai-form .field-actions{margin-top:0}
+/* Disabled after an uncertain save: the form stays readable but visibly locked. */
+#ai-form :disabled:not(button){opacity:.72;cursor:not-allowed}
+
+/* ---------- A6.5 request status ----------
+   `#ai-message` keeps its id, its `role="status"` and its `.state` class, because
+   message(), reauthenticate() and the logout-safety suite address it by exactly those. Its
+   legacy centred card becomes a left-aligned status panel; `.error` - which message() toggles -
+   raises it to the danger tint so an uncertain save is never a quiet toast. */
+#ai-message{margin:0;padding:10px 14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);color:var(--ink-2);font-size:var(--type-caption);line-height:1.5;text-align:left}
+#ai-message.error{border-color:var(--color-danger-edge);background:var(--color-danger-soft);color:var(--ink)}
+#ai-message>button{margin-top:.5rem}
+/* Page-level state hosts whose box now comes from the A6 state rendered inside them. */
+#ai-history-message,#integrations-message{padding:0;border:0;border-radius:0;background:none;color:var(--muted);text-align:left;font-size:var(--type-caption)}
+/* The dialog-owned hosts that message() still writes plain text into. */
+#integration-run-message,#payroll-payment-message,#payroll-accounting-message{margin:0 0 var(--workspace-panel-gap);padding:8px 12px;border:0;border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);color:var(--ink-2);text-align:left;font-size:var(--type-caption)}
+#integration-run-message.error,#payroll-payment-message.error,#payroll-accounting-message.error{background:var(--color-danger-soft);color:var(--color-danger);font-weight:600}
+#integration-run-message:empty,#payroll-payment-message:empty,#payroll-accounting-message:empty{display:none}
+
+/* ---------- A6.5 investigation result ----------
+   One answer surface, then evidence. The answer is the only raised surface in the result; the
+   facts, findings and recommendations below it are sections on the page canvas with their own
+   record lists, so a recommendation can never outrank the evidence it came from. */
+#ai-results:empty{display:none}
+.investigation{display:flex;flex-direction:column;gap:var(--workspace-section-gap);min-width:0;margin:0}
+.investigation>*{min-width:0}
+.investigation-context{display:flex;align-items:center;justify-content:space-between;gap:.5rem 1rem;flex-wrap:wrap;min-width:0}
+.investigation-context>.workspace-meta{margin:0}
+.investigation-answer{
+  display:flex;flex-direction:column;gap:.55rem;min-width:0;margin:0;padding:18px 20px;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);
+  background:var(--workspace-surface);box-shadow:var(--workspace-shadow);overflow-wrap:anywhere;
+}
+.investigation-answer>*{margin:0}
+.investigation-answer-title{color:var(--ink);font-size:var(--type-section-title);font-weight:680;letter-spacing:-.015em}
+.investigation-question{display:block;padding-left:.75rem;border-left:2px solid var(--workspace-divider);color:var(--ink-2);font-size:var(--type-caption);line-height:1.5}
+.investigation-question>.field-label{display:block;margin-bottom:.1rem}
+.investigation-answer-text{color:var(--ink);font-size:var(--type-body);line-height:1.6;white-space:pre-line}
+.investigation-trust{display:flex;align-items:flex-start;gap:.35rem;color:var(--muted);font-size:var(--type-metadata)}
+.investigation-trust>.icon{flex:0 0 auto;margin-top:.1rem}
+/* The facts are evidence, so they sit on a near-opaque surface like every other evidence list
+   rather than floating on the wallpaper; secondary material keeps them quieter than the answer. */
+.investigation .evidence-section>.detail-grid{padding:12px var(--workspace-cell-x);border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface)}
+.investigation-feedback{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:620;font-variant-numeric:tabular-nums}
+.investigation-limits{min-width:0;padding:9px 14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary)}
+.investigation-limits>summary{color:var(--ink-2);font-size:var(--type-caption);font-weight:620;cursor:pointer}
+.investigation-limits>ul{margin:.5rem 0 0;padding-left:1.1rem;color:var(--ink-2);font-size:var(--type-caption);line-height:1.5}
+.investigation-proposal-title{margin:0;color:var(--ink);font-size:var(--type-card-title);font-weight:650;overflow-wrap:anywhere}
+#dialog-content>h3.investigation-proposal-title{margin:0 0 var(--workspace-panel-gap)}
+
+/* ---------- A6.5 investigation history ---------- */
+#ai-history{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0;scroll-margin-top:1rem}
+#ai-history-list:empty,#integration-run-list:empty,#payroll-payment-results:empty,#payroll-accounting-results:empty{display:none}
+#ai-history-list .record-row{align-items:flex-start}
+#ai-history-list h3{margin:.2rem 0 0}
+.investigation-history-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.ai-history-more,.evidence-more{display:flex;justify-content:center;min-width:0}
+.ai-history-more:has(>[hidden]),.evidence-more:has(>[hidden]){display:none}
+
+/* ---------- A6.5 Integrasi page ----------
+   Context first, then the systems side by side where there is room for two readable columns,
+   so the first viewport at 1440 shows the beginning of both. A system is ONE surface: identity
+   and health in its head, scope rows inside it, utilities in its foot. The health chip carries
+   the status; the surface itself is never tinted red or green. */
+#integrations-body{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+#integrations-body>*{min-width:0}
+.integration-context{display:flex;align-items:center;justify-content:space-between;gap:.5rem 1rem;flex-wrap:wrap;min-width:0}
+.integration-context>.info-panel{flex:1 1 32rem}
+.integration-context>.workspace-meta{margin:0}
+.integration-systems{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,28rem),1fr));gap:var(--workspace-panel-gap);align-items:start;min-width:0}
+.integration-system{
+  display:flex;flex-direction:column;min-width:0;overflow:hidden;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);
+  background:var(--workspace-surface);box-shadow:var(--workspace-shadow);
+}
+.integration-system-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem 1rem;flex-wrap:wrap;padding:14px var(--workspace-cell-x) 12px;border-bottom:1px solid var(--workspace-divider)}
+.integration-system-copy{min-width:0;flex:1 1 12rem}
+.integration-system-copy>*{margin:0}
+.integration-mapping{display:flex;align-items:center;justify-content:space-between;gap:.5rem 1rem;flex-wrap:wrap;padding:10px var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider);background:var(--workspace-surface-secondary)}
+.integration-mapping-copy{display:flex;flex-direction:column;gap:.1rem;min-width:0;flex:1 1 16rem}
+.integration-mapping-count{margin:0;color:var(--ink);font-size:var(--type-control);font-weight:600;overflow-wrap:anywhere}
+.integration-scopes{display:flex;flex-direction:column;min-width:0;margin:0;padding:0;list-style:none}
+.integration-scopes .record-row{align-items:flex-start}
+.integration-scopes h3{margin:0}
+.integration-scopes .field-error,#integration-run-list .field-error{margin:.3rem 0 0}
+.integration-utilities{display:flex;flex-direction:column;gap:.75rem;min-width:0;padding:12px var(--workspace-cell-x) 14px;border-top:1px solid var(--workspace-divider)}
+.integration-utility{display:flex;flex-direction:column;gap:.4rem;min-width:0}
+
+/* ---------- A6.5 evidence grammar ----------
+   One shape for every snapshot, reconciliation and investigation record. A dialog body is plain
+   block flow, so the evidence blocks a migrated renderer writes at the top level get the panel
+   rhythm here; nested ones take the rhythm of their own section instead. */
+#dialog-content>.evidence-block{margin:0 0 var(--workspace-panel-gap)}
+#dialog-content>.evidence-block:last-child{margin-bottom:0}
+#payroll-payment-summary,#payroll-accounting-summary{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0;margin-bottom:var(--workspace-panel-gap)}
+#payroll-payment-summary:empty,#payroll-accounting-summary:empty{display:none}
+.evidence-identity{display:flex;align-items:center;justify-content:space-between;gap:.35rem .9rem;flex-wrap:wrap;min-width:0}
+.evidence-identity>.workspace-meta{margin:0;overflow-wrap:anywhere}
+.evidence-section{display:flex;flex-direction:column;gap:.6rem;min-width:0}
+.evidence-section>.workspace-subhead>h3{margin:0;font-size:var(--type-card-title)}
+.evidence-nav{padding-top:.1rem}
+.evidence-quiet{margin:0;padding:10px var(--workspace-cell-x);border:1px dashed var(--workspace-edge);border-radius:var(--workspace-panel-radius);color:var(--muted);font-size:var(--type-caption)}
+.evidence-list>.evidence-quiet{border:0;border-radius:0}
+.evidence-reason{margin:0;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.evidence-record{display:flex;flex-direction:column;gap:.35rem;min-width:0;padding:12px var(--workspace-cell-x);border-bottom:1px solid var(--workspace-divider);overflow-wrap:anywhere}
+.evidence-record:last-child{border-bottom:0}
+.evidence-record>*{margin:0}
+.evidence-record-head{display:flex;align-items:baseline;justify-content:space-between;gap:.35rem .9rem;flex-wrap:wrap;min-width:0}
+.evidence-record-title{min-width:0;margin:0;color:var(--ink);font-size:var(--type-control);font-weight:620;letter-spacing:-.005em;overflow-wrap:anywhere}
+.evidence-record-line{color:var(--ink-2);font-size:var(--type-caption);line-height:1.5;font-variant-numeric:tabular-nums}
+.evidence-record-meta{color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums}
+.evidence-record>.detail-grid{padding-top:.2rem}
+.evidence-record>.attention-note{margin-top:.15rem;padding:8px 12px}
+.evidence-lines{display:flex;flex-wrap:wrap;gap:.25rem .4rem;min-width:0;margin:0;padding:0;list-style:none}
+.evidence-lines>li{min-width:0;padding:.05rem .45rem;border-radius:var(--radius-compact);background:var(--workspace-surface-secondary);color:var(--ink-2);font-size:var(--type-metadata);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.evidence-metrics .metric-card{min-height:0}
+/* The note's copy is a flex item beside its glyph; without a zero floor its longest word sets the
+   minimum width and a 320px dialog at 200% text overflows by that word. */
+.info-panel.evidence-block>span,.integration-context>.info-panel>span{min-width:0;overflow-wrap:anywhere}
+
+@media(max-width:980px){
+  /* The product's narrow-width touch floor, restored for migrated controls that out-specify it,
+     exactly as A6.1-A6.4 did for theirs. */
+  #ai-view button,#integrations-view button,#ai-view .command-filter,#ai-view .command-filter>select,
+  #ai-view .command-search input,#ai-view .field>input,#ai-view .field>select,
+  #dialog-content .evidence-block button{min-height:var(--touch-target-min)}
+}
+@media(max-width:650px){
+  #ai-form{padding:14px}
+  #ai-form>.workspace-subhead{align-items:flex-start}
+  .ai-starters>.filter-chip{white-space:normal;text-align:left}
+  #ai-form .field-actions-end{justify-content:stretch}
+  #ai-form .field-actions-end>button{flex:1 1 auto}
+  .investigation-answer{padding:14px}
+  .evidence-record-head{flex-direction:column;align-items:flex-start;gap:.3rem}
+  /* A spelled-out action ("Buka hasil tindakan", "Rincian snapshot listing") is wider than a
+     320px dialog at 200% text; it wraps inside its own button instead of widening the dialog. */
+  #dialog-content .evidence-block button,#ai-view .investigation button,#integrations-view .integration-system button{max-width:100%;white-space:normal;text-align:center;overflow-wrap:anywhere}
+  #dialog-content .attention-note.evidence-block>button{flex:1 1 100%;margin-left:0}
+  .evidence-identity{flex-direction:column;align-items:flex-start}
+  /* A filter in these views is a labelled field on a phone, for the same measured reason A6.4
+     gave its reports: an inline label beside a control cannot wrap at 320px/200%. */
+  #ai-view .command-filter,#dialog-content .evidence-block .command-filter{flex:1 1 100%;flex-direction:column;align-items:stretch;height:auto;padding:.3rem .6rem;gap:.1rem}
+  #ai-view .command-filter>span,#dialog-content .evidence-block .command-filter>span{overflow-wrap:anywhere;white-space:normal}
+  #ai-view .command-filter>select,#dialog-content .evidence-block .command-filter>select{width:100%;min-width:0;min-height:var(--touch-target-min)}
+  /* Short counts stay comparable in columns; a rupiah figure is allowed to wrap rather than be
+     cut off, and a long label or cursor wraps deliberately instead of widening the dialog. */
+  .evidence-metrics .metric-value{font-size:1.15rem;overflow-wrap:anywhere}
+  .evidence-metrics .metric-label,#dialog-content .evidence-block .detail-field>dt,#ai-view .detail-field>dt{overflow-wrap:anywhere}
+  .evidence-record .chip-row .status-chip,.investigation .chip-row .status-chip,.integration-system .status-chip,.evidence-identity .status-chip{white-space:normal}
+}
+/* No A6.5 forced-colors block, on purpose. Every surface this block draws carries a real 1px
+   border, which forced-colors mode repaints as CanvasText over a Canvas background; shadows and
+   tints are dropped by the mode itself. Meaning lives in chip text, headings and the A6.0
+   `.status-dot`, which workspace-primitives.css already maps. The product keeps exactly four
+   forced-colors contracts (A4, A5.2, A5.3, A6.0), and A6.5 does not add a fifth. */

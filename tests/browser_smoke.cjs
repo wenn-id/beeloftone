@@ -487,6 +487,10 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // one host, twelve reports, per-report filter memory, the stale fence, the pagination contract
   // and the admin-only capacity master - against data that already exists.
   await runModule('./browser_analytics_modern_workspace.cjs');
+  // A6.5 runs after A6.4 and after every AI, integration, snapshot and payroll-reconciliation
+  // module above: those own the business rules and seed the snapshots, runs and COST-UI stock this
+  // one reviews the presentation of, and it writes the A6.5 visual-review set.
+  await runModule('./browser_ai_integrations_modern_workspaces.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

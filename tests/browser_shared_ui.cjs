@@ -431,10 +431,13 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     const outer = document.querySelector('[data-integration-system]');
     const inner = outer.querySelector('[data-integration-scope]');
     const radius = node => parseFloat(getComputedStyle(node).borderRadius);
-    return {outer: radius(outer), inner: inner ? radius(inner) : null,
-      chips: outer.querySelectorAll('.status-label').length};
+    // A6.5: the system is one A6 surface at the workspace surface radius, its scopes are rows
+    // inside it, and health is stated with the shared A6 status chip.
+    const token = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--workspace-surface-radius'));
+    return {outer: radius(outer), token, inner: inner ? radius(inner) : null,
+      chips: outer.querySelectorAll('.status-chip').length};
   });
-  assert.equal(nesting.outer, 20, 'an integration system is a primary surface');
+  assert.equal(nesting.outer, nesting.token, 'an integration system is a primary surface');
   assert.ok(nesting.inner !== null && nesting.inner < nesting.outer,
     'a surface nested inside one steps its radius down');
   assert.ok(nesting.chips > 0, 'integration health is stated with a labelled chip');

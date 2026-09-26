@@ -3864,10 +3864,107 @@ async function contributionMarginDialog(orderId) {
 
 const integrationHealth={healthy:'Sehat',failed:'Gagal',stale:'Stale',never_synced:'Belum pernah sync',incomplete:'Belum lengkap'};
 
+// ===================== A6.5 · tata bahasa bukti bersama =====================
+// Tanya Beeloft dan Integrasi membaca hal yang sama dengan cara berbeda: yang satu menyelidiki
+// ledger, yang lain memeriksa snapshot vendor. Keduanya menampilkan BUKTI — identitas, status,
+// angka, catatan, dan navigasi ke bukti berikutnya — jadi keduanya memakai satu kosakata kecil di
+// bawah ini. Setiap pembantu hanya menuliskan satu bentuk A6.0 yang sudah ada (status-chip,
+// detail-grid, metric-strip, info-panel, record-list, empty/error/loading). Ini bukan sistem
+// komponen kedua dan bukan desain obrolan: tidak ada gelembung, avatar, atau animasi jawaban.
+// Semua nilai dari API melewati e() di pemanggil atau di sini; pembantu yang menerima `html`
+// menerima markup yang SUDAH di-escape oleh pemanggilnya.
+const healthTone={healthy:'success',failed:'danger',stale:'warning',never_synced:'neutral',incomplete:'warning'};
+const evidenceChip=(tone,label)=>`<span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${e(label)}</span>`;
+const evidenceFacts=(facts,compact=true)=>`<dl class="detail-grid evidence-block${compact?' detail-grid-compact':''}">${facts.map(([label,value])=>
+  `<div class="detail-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+// Angka kepala sebuah snapshot atau rekonsiliasi. Nilainya teks apa adanya dari API — tanpa
+// satuan tambahan di dalam <dd> — supaya "Rp360.000,50" tetap satu string yang dapat dicari.
+function evidenceMetrics(ariaLabel,cards) {
+  return `<dl class="metric-strip evidence-metrics evidence-block" aria-label="${e(ariaLabel)}">${cards.map(([label,value,glyph,tone])=>
+    `<div class="metric-card${tone?' metric-card-'+tone:''}"><span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+    +`<dt class="metric-label">${e(label)}</dt><dd class="metric-value">${value}</dd></div>`).join('')}</dl>`;
+}
+const evidenceNote=(html,glyph='info')=>`<p class="info-panel evidence-block">${svgIcon(glyph,'icon-sm')}<span>${html}</span></p>`;
+const evidenceLoading=text=>`<p class="loading-state evidence-block">${svgIcon('refresh')}${e(text)}</p>`;
+function evidenceFail(text,action,id='',label='Coba lagi') {
+  return `<div class="error-state evidence-block">${svgIcon('alert-octagon')}<p class="error-state-title">Data belum dapat dimuat.</p>`
+    +`<p class="error-state-copy">${e(text)}</p><p class="error-state-action"><button type="button" class="action-secondary" data-action="${action}"${id?` data-id="${e(id)}"`:''}>${e(label)}</button></p></div>`;
+}
+const evidenceEmpty=(title,copy='')=>`<div class="empty-state evidence-block">${svgIcon('inbox')}<p class="empty-state-title">${e(title)}</p>${copy?`<p class="empty-state-copy">${e(copy)}</p>`:''}</div>`;
+const evidenceLink=(action,label,id='',weight='action-quiet')=>`<button type="button" class="${weight}" data-action="${action}"${id?` data-id="${e(id)}"`:''}>${e(label)}</button>`;
+const evidenceNav=(...links)=>`<div class="action-row evidence-nav evidence-block">${links.join('')}</div>`;
+const evidenceQuiet=text=>`<p class="evidence-quiet evidence-block">${e(text)}</p>`;
+const evidenceSection=(title,body,meta='')=>`<section class="evidence-section evidence-block"><div class="workspace-subhead"><h3 class="workspace-section-title">${e(title)}</h3>${meta?`<span class="workspace-meta">${meta}</span>`:''}</div>${body}</section>`;
+// Satu record bukti di dalam SATU record-list: identitas dan status pada baris kepala, lalu
+// baris-baris pendukungnya. Tidak ada kartu di dalam kartu; bersarangnya tipografis.
+function evidenceRecord(title,{chips='',body='',attrs='',actions=''}={}) {
+  return `<li class="evidence-record"${attrs}><div class="evidence-record-head"><h4 class="evidence-record-title">${title}</h4>`
+    +(chips?`<span class="chip-row">${chips}</span>`:'')+'</div>'+body
+    +(actions?`<div class="action-row">${actions}</div>`:'')+'</li>';
+}
+const evidenceList=(items,empty)=>items.length?`<ul class="record-list evidence-list evidence-block">${items.join('')}</ul>`:evidenceQuiet(empty);
+const evidenceLine=html=>`<p class="evidence-record-line">${html}</p>`;
+const evidenceMeta=html=>`<p class="evidence-record-meta">${html}</p>`;
+const evidenceLines=items=>items.length?`<ul class="evidence-lines">${items.map(item=>`<li>${item}</li>`).join('')}</ul>`:'';
+const evidenceAttention=(title,reason,tone='')=>`<div class="attention-note evidence-block${tone?' attention-note-'+tone:''}">${svgIcon(tone==='critical'?'alert-octagon':'alert-triangle','icon-sm')}`
+  +`<div class="attention-note-copy"><p class="attention-note-title">${e(title)}</p><p class="attention-note-reason">${e(reason)}</p></div></div>`;
+// Identitas snapshot: kapan, dan status sinkronisasinya. Karantina adalah PERHATIAN, bukan
+// kegagalan sistem, jadi nadanya warning — hanya kesehatan dari ledger run yang boleh "Gagal".
+const snapshotIdentity=(stamp,succeeded,partialLabel)=>`<div class="evidence-identity evidence-block"><p class="workspace-meta">${stamp}</p>${evidenceChip(succeeded?'success':'warning',succeeded?'Berhasil':partialLabel)}</div>`;
+const quarantineLabel=(issue,unmapped='SKU belum dipetakan')=>issue==='unmapped'?unmapped:'Mapping tidak konsisten';
+// Konteks snapshot yang sama untuk setiap rincian: angka baca, error connector bila ada, lalu
+// cursor, alasan, dan pencatat. Cursor dan alasan adalah teks vendor, jadi selalu di-escape.
+function snapshotContext(row,counts) {
+  return evidenceFacts(counts)
+    +(row.error?evidenceAttention('Error connector',row.error,'critical'):'')
+    +evidenceFacts([['Cursor eksternal',e(row.external_cursor||'tidak dicatat')],['Alasan / konteks',`<span class="evidence-reason">${e(row.reason)}</span>`],['Dicatat oleh',e(row.actor_name)]],false);
+}
+// Riwayat snapshot: satu tata bahasa untuk delapan riwayat. Immutable, terbaru dahulu, batas 100
+// dari endpoint masing-masing, tanpa paginasi tambahan dan tanpa tombol impor atau kirim.
+function snapshotHistory(rows,{title,counts,status,detail,label,empty,back,intro='Snapshot immutable dari connector worker, terbaru dahulu.'}) {
+  return evidenceNote(e(intro),'history')
+    +(rows.length?`<ul class="record-list evidence-list evidence-block">${rows.map(row=>{const [tone,text]=status(row);
+      return `<li class="record-row"><div class="record-row-copy"><h3 class="data-primary">${title(row)}</h3><span class="data-secondary">${counts(row)}</span></div>`
+        +`<div class="record-row-aside">${evidenceChip(tone,text)}<button type="button" class="action-secondary" data-action="${detail}" data-id="${e(row.id)}">${e(label)}</button></div></li>`;}).join('')}</ul>`
+      :evidenceEmpty(empty,'Connector worker harus mengirim snapshot sebelum riwayat ini berisi.'))
+    +evidenceNav(back);
+}
+const acceptedStatus=row=>row.sync_status==='succeeded'?['success','Berhasil']:['warning','Ada karantina'];
+const snapshotCounts=row=>`Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}`;
+
 function showIntegrations() {
   if (guardPending()) return;
   activateWorkspace('integrations');
   loadIntegrations();
+}
+// A6.5: satu sistem = satu permukaan. Identitas dan kesehatan di kepala, scope sebagai baris,
+// lalu utilitas snapshot/rekonsiliasi yang dikelompokkan — bukan dinding tombol. Tombol Jubelio
+// tetap hanya muncul saat product_mapping ada, dan tombol Mekari hanya untuk sistem mekari.
+function integrationSystem(system,age) {
+  const id=`integration-system-${e(system.system)}`;
+  const group=(title,buttons)=>`<div class="integration-utility"><p class="utility-panel-title">${e(title)}</p><div class="action-row">${buttons.map(([action,label])=>evidenceLink(action,label,'','action-secondary')).join('')}</div></div>`;
+  const mapping=system.product_mapping?`<div class="integration-mapping"><div class="integration-mapping-copy"><span class="field-label">Identitas SKU</span>`
+    +`<p class="integration-mapping-count">Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p>`
+    +`<span class="field-help">Mapping menghubungkan identitas SKU Beeloft dengan SKU di Jubelio.</span></div>${evidenceLink('products','Buka Master SKU','','action-secondary')}</div>`:'';
+  const utilities=system.product_mapping
+    ?group('Snapshot vendor',[['jubelio-order-summary','Order & penjualan Jubelio'],['jubelio-return-summary','Retur Jubelio'],['jubelio-listing-summary','Listing Jubelio']])
+      +group('Rekonsiliasi',[['jubelio-stock-reconciliation','Rekonsiliasi stok Jubelio']])
+    :system.system==='mekari'
+      ?group('Snapshot akuntansi',[['mekari-finance-summary','Keuangan Mekari'],['mekari-payables-summary','Utang Mekari'],['mekari-receivables-summary','Piutang Mekari'],['mekari-payroll-summary','Payroll Mekari']])
+        +group('Rekonsiliasi payroll',[['payroll-payment-reconciliation','Pembayaran payroll'],['payroll-accounting-reconciliation','Akuntansi payroll']])
+      :'';
+  const scopes=system.scopes.map(scope=>`<li class="record-row integration-scope" data-integration-scope="${e(scope.scope)}"><div class="record-row-copy">`
+    +`<h3 class="data-primary">${e(scope.domain)}</h3><span class="data-secondary">Source of truth: ${e(scope.source_of_truth)} · inbound read-only</span>`
+    +`<span class="data-meta">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</span>`
+    +(scope.latest_run?.error?`<p class="field-error">${svgIcon('alert-triangle','icon-sm')}<span>${e(scope.latest_run.error)}</span></p>`:'')
+    +`</div><div class="record-row-aside">${evidenceChip(healthTone[scope.health]||'neutral',integrationHealth[scope.health]||scope.health)}`
+    +(scope.latest_run?evidenceLink('integration-run','Rincian run terbaru',scope.latest_run.id):'')+'</div></li>').join('');
+  return `<section class="integration-system" data-integration-system="${e(system.system)}" aria-labelledby="${id}">`
+    +`<div class="integration-system-head"><div class="integration-system-copy"><h2 id="${id}" class="workspace-section-title">${e(system.label)}</h2>`
+    +`<p class="workspace-meta">${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p></div>`
+    +evidenceChip(healthTone[system.health]||'neutral',integrationHealth[system.health]||system.health)+'</div>'
+    +mapping+`<ul class="integration-scopes" aria-label="Scope ${e(system.label)}">${scopes}</ul>`
+    +(utilities?`<div class="integration-utilities">${utilities}</div>`:'')+'</section>';
 }
 // Milestone D: kesehatan integrasi, source of truth, dan run terbaru hidup di halaman.
 // Rincian run dan rekonsiliasi tetap dialog terfokus.
@@ -3878,22 +3975,23 @@ async function loadIntegrations(refresh = false) {
   // tujuan ini dari sidebar belum punya konteks untuk dipertahankan, jadi tetap memakai keadaan
   // memuat biasa. Tidak ada filter di halaman ini, jadi tidak ada yang bisa "digantikan".
   const holding=refresh&&integrationsReport&&markRefreshing('integrations-body');
-  if(!holding){message('integrations-message','Memuat kontrak dan status sinkronisasi…');$('integrations-body').replaceChildren();}
+  if(!holding){pageState('integrations-message','loading','Memuat kontrak dan status sinkronisasi…');$('integrations-body').replaceChildren();}
   try{
     const report=await api.get('/api/integrations');
     if(!current())return;
     settleRefreshing('integrations-body');
     const age=value=>value===null?'Belum ada run':value<60?`${n(value)} menit lalu`:`${n(Math.floor(value/60))} jam lalu`;
-    message('integrations-message','');integrationsReport=true;
-    $('integrations-body').innerHTML=`<p class="hint">Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.</p><p class="form-info">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p>${report.systems.map(system=>`<section class="material-event" data-integration-system="${e(system.system)}"><p class="status-label ${system.health==='healthy'?'done':'late'}">${e(integrationHealth[system.health])}</p><h3>${e(system.label)}</h3>${system.product_mapping?`<p>Mapping SKU: ${n(system.product_mapping.mapped_products)} dari ${n(system.product_mapping.total_products)} terhubung · ${n(system.product_mapping.unmapped_products)} belum dipetakan.</p><div class="actions"><button data-action="products">Buka Master SKU</button><button data-action="jubelio-order-summary">Order & penjualan Jubelio</button><button data-action="jubelio-return-summary">Retur Jubelio</button><button data-action="jubelio-listing-summary">Listing Jubelio</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi stok Jubelio</button></div>`:''}${system.system==='mekari'?'<div class="actions"><button data-action="mekari-finance-summary">Keuangan Mekari</button><button data-action="mekari-payables-summary">Utang Mekari</button><button data-action="mekari-receivables-summary">Piutang Mekari</button><button data-action="mekari-payroll-summary">Payroll Mekari</button><button data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button data-action="payroll-accounting-reconciliation">Akuntansi payroll</button></div>':''}<p>${n(system.attention_count)} dari ${n(system.scopes.length)} scope perlu perhatian.</p>${system.scopes.map(scope=>`<article class="material-event" data-integration-scope="${e(scope.scope)}"><p class="status-label ${scope.health==='healthy'?'done':'late'}">${e(integrationHealth[scope.health])}</p><h4>${e(scope.domain)}</h4><p>Source of truth: ${e(scope.source_of_truth)} · inbound read-only</p><p class="hint">${e(age(scope.age_minutes))}${scope.latest_run?` · dibaca ${n(scope.latest_run.records_read)} · ditulis ${n(scope.latest_run.records_written)}`:''}</p>${scope.latest_run?.error?`<p class="error">${e(scope.latest_run.error)}</p>`:''}${scope.latest_run?`<button data-action="integration-run" data-id="${e(scope.latest_run.id)}">Rincian run terbaru</button>`:''}</article>`).join('')}</section>`).join('')}`;
+    pageState('integrations-message','');integrationsReport=true;
+    $('integrations-body').innerHTML=`<div class="integration-context">${evidenceNote('Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.','shield')}`
+      +`<p class="workspace-meta">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p></div>`
+      +`<div class="integration-systems">${report.systems.map(system=>integrationSystem(system,age)).join('')}</div>`;
   }catch(error){
-    // Pesan dan tombolnya adalah sibling, seperti saat ini menjadi dialog: elemen pesan
-    // harus tetap berisi hanya teks statusnya agar status error dapat dicocokkan tepat.
-    // Kesalahan selalu muncul seketika dan tanpa peredupan: peredupan dilepas lebih dahulu.
+    // Kesalahan selalu muncul seketika dan tanpa peredupan: peredupan dilepas lebih dahulu, dan
+    // laporan lama tidak lagi dianggap terkini (integrationsReport=false).
     if(!current())return;
     settleRefreshing('integrations-body');integrationsReport=false;
-    message('integrations-message','');
-    $('integrations-body').innerHTML=`<p class="error">${e(error.message)}</p><button id="integrations-retry" type="button">Coba lagi</button>`;
+    pageState('integrations-message','');
+    $('integrations-body').innerHTML=`<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Status integrasi belum dapat dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button id="integrations-retry" type="button" class="action-secondary">Coba lagi</button></p></div>`;
     $('integrations-retry').onclick=()=>loadIntegrations();
   }
 }
@@ -3901,7 +3999,9 @@ $('integrations').onclick=showIntegrations;
 
 async function integrationRunsDialog() {
   if(guardPending())return;
-  openDialog('Riwayat sinkronisasi',`<p class="hint">Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.</p><form id="integration-run-filter" class="filter-form"><div class="form-grid"><label>Sistem<select name="system"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label>Status<select name="status"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="integrations">Kesehatan integrasi</button></div></form><p id="integration-run-message" class="state" role="status"></p><div id="integration-run-list"></div><button id="integration-run-more" type="button">Muat run sebelumnya</button>`);
+  openDialog('Riwayat sinkronisasi',evidenceNote('Ledger run dari connector atau worker integrasi. Catatan terbaru ditampilkan lebih dahulu dan tidak dapat diubah.','history')
+    +`<form id="integration-run-filter" class="command-bar evidence-block"><div class="command-filters"><label class="command-filter"><span>Sistem</span><select name="system" aria-label="Sistem"><option value="all">Semua sistem</option><option value="jubelio">Jubelio</option><option value="mekari">Mekari</option></select></label><label class="command-filter"><span>Status</span><select name="status" aria-label="Status run"><option value="all">Semua status</option><option value="succeeded">Berhasil</option><option value="failed">Gagal</option></select></label></div><div class="command-actions"><button type="submit" class="action-secondary">Terapkan filter</button><button type="button" class="action-quiet" data-action="integrations">Kesehatan integrasi</button></div></form>`
+    +'<p id="integration-run-message" class="state" role="status"></p><ul id="integration-run-list" class="record-list evidence-block" aria-label="Run sinkronisasi"></ul><div class="evidence-more evidence-block"><button id="integration-run-more" type="button" class="action-secondary">Muat run sebelumnya</button></div>');
   const version=epoch,modal=dialogVersion,form=$('integration-run-filter'),list=$('integration-run-list'),more=$('integration-run-more');
   let before=null,generation=0;
   const load=async reset=>{
@@ -3915,7 +4015,11 @@ async function integrationRunsDialog() {
       const rows=await api.get('/api/integration-sync-runs?'+query);
       if(version!==epoch||modal!==dialogVersion||!$('dialog').open||request!==generation)return;
       message('integration-run-message',rows.length?'':list.children.length?'Tidak ada run yang lebih lama.':'Belum ada run sinkronisasi yang cocok.');
-      list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="status-label ${row.status==='succeeded'?'done':'late'}">${row.status==='succeeded'?'Berhasil':'Gagal'}</p><h3>${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)}</h3><p>Dibaca ${n(row.records_read)} · ditulis ${n(row.records_written)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Selesai ${purchaseStamp(row.finished_at)} · dicatat ${e(row.actor_name)}</p><button data-action="integration-run" data-id="${e(row.id)}">Buka rincian run</button></article>`).join(''));
+      list.insertAdjacentHTML('beforeend',rows.map(row=>`<li class="record-row"><div class="record-row-copy"><h3 class="data-primary">${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)}</h3>`
+        +`<span class="data-secondary">Dibaca ${n(row.records_read)} · ditulis ${n(row.records_written)}</span>`
+        +(row.error?`<p class="field-error">${svgIcon('alert-triangle','icon-sm')}<span>${e(row.error)}</span></p>`:'')
+        +`<span class="data-meta">Selesai ${purchaseStamp(row.finished_at)} · dicatat ${e(row.actor_name)}</span></div>`
+        +`<div class="record-row-aside">${evidenceChip(row.status==='succeeded'?'success':'danger',row.status==='succeeded'?'Berhasil':'Gagal')}${evidenceLink('integration-run','Buka rincian run',row.id,'action-secondary')}</div></li>`).join(''));
       before=rows.at(-1)?.sequence||before;more.hidden=rows.length<50;
     }catch(error){if(version===epoch&&modal===dialogVersion&&request===generation)message('integration-run-message',error.message,true);}
     finally{if(version===epoch&&modal===dialogVersion&&request===generation)more.disabled=false;}
@@ -3925,237 +4029,435 @@ async function integrationRunsDialog() {
 
 async function integrationRunDialog(runId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian sinkronisasi','<p class="state">Memuat run sinkronisasi…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Rincian sinkronisasi',evidenceLoading('Memuat run sinkronisasi…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/integration-sync-runs/'+encodeURIComponent(runId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const duration=Math.max(0,Math.round((new Date(row.finished_at)-new Date(row.started_at))/1000));
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)} · ${row.status==='succeeded'?'Berhasil':'Gagal'}</p><dl class="requirement-values"><div><dt>Mulai</dt><dd>${purchaseStamp(row.started_at)}</dd></div><div><dt>Selesai</dt><dd>${purchaseStamp(row.finished_at)}</dd></div><div><dt>Durasi</dt><dd>${n(duration)} detik</dd></div><div><dt>Record dibaca</dt><dd>${n(row.records_read)}</dd></div><div><dt>Record ditulis</dt><dd>${n(row.records_written)}</dd></div></dl>${row.error?`<h3>Error connector</h3><p class="error">${e(row.error)}</p>`:''}<h3>Alasan / konteks</h3><p class="reason">${e(row.reason)}</p><p class="hint">Cursor eksternal: ${e(row.external_cursor||'tidak dicatat')}<br>Dicatat ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><div class="actions"><button data-action="integration-runs">Riwayat sinkronisasi</button><button data-action="integrations">Kesehatan integrasi</button></div>`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="integration-run" data-id="${e(runId)}">Coba lagi</button>`;}
+    const succeeded=row.status==='succeeded';
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">${e(row.system==='jubelio'?'Jubelio':'Mekari')} · ${e(row.scope)} · ${succeeded?'Berhasil':'Gagal'}</p>${evidenceChip(succeeded?'success':'danger',succeeded?'Berhasil':'Gagal')}</div>`
+      +evidenceFacts([['Mulai',purchaseStamp(row.started_at)],['Selesai',purchaseStamp(row.finished_at)],['Durasi',`${n(duration)} detik`],['Record dibaca',n(row.records_read)],['Record ditulis',n(row.records_written)]])
+      +(row.error?evidenceAttention('Error connector',row.error,'critical'):'')
+      +evidenceSection('Alasan / konteks',`<p class="evidence-reason">${e(row.reason)}</p>`)
+      +evidenceFacts([['Cursor eksternal',e(row.external_cursor||'tidak dicatat')],['Dicatat oleh',e(row.actor_name)],['Dicatat pada',purchaseStamp(row.created_at)]],false)
+      +evidenceNote('Run adalah catatan immutable dari connector. Layar ini hanya membaca riwayat; tidak ada sinkronisasi ulang, perubahan, atau penghapusan run dari sini.','shield')
+      +evidenceNav(evidenceLink('integration-runs','Riwayat sinkronisasi'),evidenceLink('integrations','Kesehatan integrasi'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'integration-run',runId);}
 }
 
 async function jubelioStockReconciliationDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Rekonsiliasi stok Jubelio','<p class="state">Membandingkan snapshot vendor dan ledger Beeloft…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Rekonsiliasi stok Jubelio',evidenceLoading('Membandingkan snapshot vendor dan ledger Beeloft…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/jubelio/finished-goods-reconciliation');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot stok Jubelio. Connector worker harus mengirim snapshot sebelum rekonsiliasi tersedia.</p><div class="actions"><button data-action="jubelio-stock-snapshots">Riwayat snapshot</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
-    const s=report.summary;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · ${report.snapshot.sync_status==='succeeded'?'Berhasil':'Ada data dikarantina'}</p><dl class="requirement-values"><div><dt>SKU cocok</dt><dd>${n(s.matched)}</dd></div><div><dt>Selisih stok</dt><dd>${n(s.mismatched)}</dd></div><div><dt>Tidak ada di snapshot</dt><dd>${n(s.missing_from_snapshot)}</dd></div><div><dt>Dikarantina</dt><dd>${n(s.quarantined)}</dd></div></dl><p class="hint">Perbandingan memakai available Jubelio (sellable dikurangi reserved) dan available ledger Beeloft. Snapshot tidak menulis atau menyesuaikan stok Beeloft.</p><div class="actions"><button data-action="jubelio-stock-snapshots">Riwayat snapshot</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per SKU terpetakan</h3>${report.items.map(row=>`<article class="material-event"><p class="status-label ${row.status==='matched'?'done':'late'}">${row.status==='matched'?'Cocok':row.status==='mismatched'?'Selisih':'Tidak ada di snapshot'}</p><h4>${e(row.sku)} · ${e(row.product_name)}</h4><p>Beeloft ${n(row.beeloft_available_quantity)} pcs · Jubelio ${row.jubelio_available_quantity===null?'tidak tersedia':n(row.jubelio_available_quantity)+' pcs'}${row.variance_quantity===null?'':` · selisih ${n(row.variance_quantity)} pcs`}</p></article>`).join('')||'<p class="state">Belum ada SKU yang dipetakan.</p>'}<h3>Karantina identifier</h3>${report.quarantine.map(row=>`<article class="material-event"><p class="status-label late">${row.issue==='unmapped'?'Belum dipetakan':'Mapping tidak konsisten'}</p><h4>${e(row.external_sku)} · ${e(row.external_id)}</h4><p>${e(row.detail)}</p></article>`).join('')||'<p class="state">Tidak ada record yang dikarantina.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-stock-reconciliation">Coba lagi</button>`;}
+    const nav=evidenceNav(evidenceLink('jubelio-stock-snapshots','Riwayat snapshot','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot stok Jubelio.','Connector worker harus mengirim snapshot sebelum rekonsiliasi tersedia. Tanpa snapshot belum ada perbandingan yang dijalankan.')+nav;return;}
+    const s=report.summary,status={matched:['success','Cocok'],mismatched:['warning','Selisih'],missing_from_snapshot:['neutral','Tidak ada di snapshot']};
+    $('dialog-content').innerHTML=snapshotIdentity(`Snapshot ${purchaseStamp(report.snapshot.snapshot_at)}`,report.snapshot.sync_status==='succeeded','Ada data dikarantina')
+      +evidenceMetrics('Ringkasan rekonsiliasi stok',[['SKU cocok',n(s.matched),'check-circle','success'],['Selisih stok',n(s.mismatched),'alert-triangle',s.mismatched?'warning':''],['Tidak ada di snapshot',n(s.missing_from_snapshot),'inbox',''],['Dikarantina',n(s.quarantined),'alert-octagon',s.quarantined?'warning':'']])
+      +evidenceNote('Perbandingan memakai available Jubelio (sellable dikurangi reserved) dan available ledger Beeloft. Snapshot tidak menulis atau menyesuaikan stok Beeloft.','shield')+nav
+      +evidenceSection('Per SKU terpetakan',evidenceList(report.items.map(row=>{const [tone,label]=status[row.status]||['neutral',row.status];
+        return evidenceRecord(`${e(row.sku)} · ${e(row.product_name)}`,{chips:evidenceChip(tone,label),
+          body:evidenceLine(`Beeloft ${n(row.beeloft_available_quantity)} pcs · Jubelio ${row.jubelio_available_quantity===null?'tidak tersedia':n(row.jubelio_available_quantity)+' pcs'}${row.variance_quantity===null?'':` · selisih ${n(row.variance_quantity)} pcs`}`)});}),'Belum ada SKU yang dipetakan.'))
+      +evidenceSection('Karantina identifier',evidenceList(report.quarantine.map(row=>evidenceRecord(`${e(row.external_sku)} · ${e(row.external_id)}`,
+        {chips:evidenceChip('warning',quarantineLabel(row.issue,'Belum dipetakan')),body:evidenceLine(e(row.detail))})),'Tidak ada record yang dikarantina.'),`${n(report.quarantine.length)} record · tidak dipetakan otomatis`);
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-stock-reconciliation');}
 }
+
 
 async function jubelioStockSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot stok Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/jubelio/finished-goods-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label ${row.sync_status==='succeeded'?'done':'late'}">${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p><button data-action="jubelio-stock-snapshot" data-id="${e(row.id)}">Rincian snapshot</button></article>`).join('')||'<p class="state">Belum ada snapshot stok Jubelio.</p>'}<button data-action="jubelio-stock-reconciliation">Rekonsiliasi terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-stock-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot stok Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/jubelio/finished-goods-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:snapshotCounts,status:acceptedStatus,
+      detail:'jubelio-stock-snapshot',label:'Rincian snapshot',empty:'Belum ada snapshot stok Jubelio.',back:evidenceLink('jubelio-stock-reconciliation','Rekonsiliasi terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-stock-snapshots');}
 }
 
 async function jubelioStockSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot stok Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/jubelio/finished-goods-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · ${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p><h3>Record diterima</h3>${row.items.map(item=>`<article class="material-event"><h4>${e(item.sku)} ← ${e(item.external_sku)}</h4><p>Sellable ${n(item.sellable_quantity)} · reserved ${n(item.reserved_quantity)} · available ${n(item.sellable_quantity-item.reserved_quantity)}</p></article>`).join('')||'<p class="state">Tidak ada record diterima.</p>'}<h3>Record dikarantina</h3>${row.quarantine.map(item=>`<article class="material-event"><h4>${e(item.external_sku)} · ${e(item.external_id)}</h4><p class="error">${e(item.detail)}</p></article>`).join('')||'<p class="state">Tidak ada record dikarantina.</p>'}<div class="actions"><button data-action="jubelio-stock-snapshots">Riwayat snapshot</button><button data-action="jubelio-stock-reconciliation">Rekonsiliasi terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-stock-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot stok Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/jubelio/finished-goods-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),row.sync_status==='succeeded','Ada karantina')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Diterima',n(row.accepted_count)],['Dikarantina',n(row.rejected_count)]])
+      +evidenceSection('Record diterima',evidenceList(row.items.map(item=>evidenceRecord(`${e(item.sku)} ← ${e(item.external_sku)}`,
+        {body:evidenceLine(`Sellable ${n(item.sellable_quantity)} · reserved ${n(item.reserved_quantity)} · available ${n(item.sellable_quantity-item.reserved_quantity)}`)})),'Tidak ada record diterima.'))
+      +evidenceSection('Record dikarantina',evidenceList(row.quarantine.map(item=>evidenceRecord(`${e(item.external_sku)} · ${e(item.external_id)}`,
+        {chips:evidenceChip('warning','Dikarantina'),body:evidenceLine(e(item.detail))})),'Tidak ada record dikarantina.'))
+      +evidenceNav(evidenceLink('jubelio-stock-snapshots','Riwayat snapshot'),evidenceLink('jubelio-stock-reconciliation','Rekonsiliasi terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-stock-snapshot',batchId);}
 }
 
 const jubelioOrderStatus={pending:'Menunggu',processing:'Diproses',completed:'Selesai',cancelled:'Dibatalkan'};
+const jubelioOrderTone={pending:'info',processing:'info',completed:'success',cancelled:'neutral'};
 async function jubelioOrderSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Order & penjualan Jubelio','<p class="state">Memuat snapshot order terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Order & penjualan Jubelio',evidenceLoading('Memuat snapshot order terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/jubelio/order-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot order Jubelio. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="jubelio-order-snapshots">Riwayat snapshot order</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
+    const nav=evidenceNav(evidenceLink('jubelio-order-snapshots','Riwayat snapshot order','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot order Jubelio.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
     const s=report.summary;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · ${report.snapshot.sync_status==='succeeded'?'Berhasil':'Ada order dikarantina'}</p><dl class="requirement-values"><div><dt>Order diterima</dt><dd>${n(s.accepted_orders)}</dd></div><div><dt>Order dikarantina</dt><dd>${n(s.quarantined_orders)}</dd></div><div><dt>Unit selesai</dt><dd>${n(s.units)}</dd></div><div><dt>Penjualan kotor selesai</dt><dd>${rupiah(s.gross_revenue)}</dd></div><div><dt>Menunggu</dt><dd>${n(s.pending)}</dd></div><div><dt>Diproses</dt><dd>${n(s.processing)}</dd></div><div><dt>Selesai</dt><dd>${n(s.completed)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(s.cancelled)}</dd></div></dl><p class="hint">Unit dan penjualan kotor hanya menghitung order berstatus selesai. Snapshot ini read-only dan tidak membuat order produksi, reservasi, shipment, atau settlement Beeloft.</p><div class="actions"><button data-action="jubelio-order-snapshots">Riwayat snapshot order</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per marketplace</h3>${report.marketplaces.map(row=>`<article class="material-event"><h4>${e(row.marketplace)}</h4><p>${n(row.orders)} order · ${n(row.units)} unit · ${rupiah(row.gross_revenue)}</p></article>`).join('')||'<p class="state">Tidak ada order diterima.</p>'}<h3>Order diterima</h3>${report.orders.map(order=>`<article class="material-event"><p class="status-label ${order.status==='completed'?'done':order.status==='cancelled'?'':'late'}">${e(jubelioOrderStatus[order.status])}</p><h4>${e(order.external_order_reference)} · ${e(order.marketplace)}</h4><p>${n(order.total_quantity)} unit · ${rupiah(order.gross_revenue)}</p><p class="hint">${purchaseStamp(order.ordered_at)} · ${order.lines.map(line=>e(line.sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada order diterima.</p>'}<h3>Order dikarantina</h3>${report.quarantine.map(order=>`<article class="material-event"><p class="status-label late">${order.issue==='unmapped'?'SKU belum dipetakan':'Mapping tidak konsisten'}</p><h4>${e(order.external_order_reference)} · ${e(order.marketplace)}</h4><p>${e(order.detail)}</p><p class="hint">${order.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada order dikarantina.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-order-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=snapshotIdentity(`Snapshot ${purchaseStamp(report.snapshot.snapshot_at)}`,report.snapshot.sync_status==='succeeded','Ada order dikarantina')
+      +evidenceMetrics('Ringkasan order Jubelio',[['Order diterima',n(s.accepted_orders),'cart',''],['Order dikarantina',n(s.quarantined_orders),'alert-octagon',s.quarantined_orders?'warning':''],['Unit selesai',n(s.units),'box',''],['Penjualan kotor selesai',rupiah(s.gross_revenue),'wallet','']])
+      +evidenceSection('Status order',evidenceFacts([['Menunggu',n(s.pending)],['Diproses',n(s.processing)],['Selesai',n(s.completed)],['Dibatalkan',n(s.cancelled)]]))
+      +evidenceNote('Unit dan penjualan kotor hanya menghitung order berstatus selesai. Snapshot ini read-only dan tidak membuat order produksi, reservasi, shipment, atau settlement Beeloft.','shield')+nav
+      +evidenceSection('Per marketplace',evidenceList(report.marketplaces.map(row=>evidenceRecord(e(row.marketplace),{body:evidenceLine(`${n(row.orders)} order · ${n(row.units)} unit · ${rupiah(row.gross_revenue)}`)})),'Tidak ada order diterima.'))
+      +evidenceSection('Order diterima',evidenceList(report.orders.map(order=>evidenceRecord(`${e(order.external_order_reference)} · ${e(order.marketplace)}`,
+        {chips:evidenceChip(jubelioOrderTone[order.status]||'neutral',jubelioOrderStatus[order.status]),
+         body:evidenceLine(`${n(order.total_quantity)} unit · ${rupiah(order.gross_revenue)}`)+evidenceMeta(purchaseStamp(order.ordered_at))
+           +evidenceLines(order.lines.map(line=>e(line.sku)+' × '+n(line.quantity)))})),'Tidak ada order diterima.'))
+      +evidenceSection('Order dikarantina',evidenceList(report.quarantine.map(order=>evidenceRecord(`${e(order.external_order_reference)} · ${e(order.marketplace)}`,
+        {chips:evidenceChip('warning',quarantineLabel(order.issue)),body:evidenceLine(e(order.detail))
+          +evidenceLines(order.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)))})),'Tidak ada order dikarantina.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-order-summary');}
 }
 
 async function jubelioOrderSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot order Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/jubelio/order-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label ${row.sync_status==='succeeded'?'done':'late'}">${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p><button data-action="jubelio-order-snapshot" data-id="${e(row.id)}">Rincian snapshot order</button></article>`).join('')||'<p class="state">Belum ada snapshot order Jubelio.</p>'}<button data-action="jubelio-order-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-order-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot order Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/jubelio/order-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:snapshotCounts,status:acceptedStatus,
+      detail:'jubelio-order-snapshot',label:'Rincian snapshot order',empty:'Belum ada snapshot order Jubelio.',back:evidenceLink('jubelio-order-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-order-snapshots');}
 }
 
 async function jubelioOrderSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot order Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/jubelio/order-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · ${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p><h3>Order diterima</h3>${row.orders.map(order=>`<article class="material-event"><h4>${e(order.external_order_reference)} · ${e(order.marketplace)}</h4><p>${e(jubelioOrderStatus[order.status])} · ${n(order.total_quantity)} unit · ${rupiah(order.gross_revenue)}</p>${order.lines.map(line=>`<p>${e(line.sku)} ← ${e(line.external_sku)} · ${n(line.quantity)} unit · ${rupiah(line.gross_revenue)}</p>`).join('')}</article>`).join('')||'<p class="state">Tidak ada order diterima.</p>'}<h3>Order dikarantina</h3>${row.quarantine.map(order=>`<article class="material-event"><h4>${e(order.external_order_reference)} · ${e(order.marketplace)}</h4><p class="error">${e(order.detail)}</p><p>${order.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada order dikarantina.</p>'}<div class="actions"><button data-action="jubelio-order-snapshots">Riwayat snapshot order</button><button data-action="jubelio-order-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-order-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot order Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/jubelio/order-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),row.sync_status==='succeeded','Ada karantina')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Diterima',n(row.accepted_count)],['Dikarantina',n(row.rejected_count)]])
+      +evidenceSection('Order diterima',evidenceList(row.orders.map(order=>evidenceRecord(`${e(order.external_order_reference)} · ${e(order.marketplace)}`,
+        {chips:evidenceChip(jubelioOrderTone[order.status]||'neutral',jubelioOrderStatus[order.status]),body:evidenceLine(`${n(order.total_quantity)} unit · ${rupiah(order.gross_revenue)}`)
+          +evidenceLines(order.lines.map(line=>`${e(line.sku)} ← ${e(line.external_sku)} · ${n(line.quantity)} unit · ${rupiah(line.gross_revenue)}`))})),'Tidak ada order diterima.'))
+      +evidenceSection('Order dikarantina',evidenceList(row.quarantine.map(order=>evidenceRecord(`${e(order.external_order_reference)} · ${e(order.marketplace)}`,
+        {chips:evidenceChip('warning','Dikarantina'),body:evidenceLine(e(order.detail))+evidenceLines(order.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)))})),'Tidak ada order dikarantina.'))
+      +evidenceNav(evidenceLink('jubelio-order-snapshots','Riwayat snapshot order'),evidenceLink('jubelio-order-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-order-snapshot',batchId);}
 }
 
 const jubelioReturnStatus={requested:'Diajukan',in_transit:'Dalam perjalanan',received:'Diterima',refunded:'Refund selesai',rejected:'Ditolak',cancelled:'Dibatalkan'};
+const jubelioReturnTone={requested:'info',in_transit:'info',received:'success',refunded:'success',rejected:'neutral',cancelled:'neutral'};
 async function jubelioReturnSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Retur Jubelio','<p class="state">Memuat snapshot retur terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Retur Jubelio',evidenceLoading('Memuat snapshot retur terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/jubelio/return-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot retur Jubelio. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="jubelio-return-snapshots">Riwayat snapshot retur</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
+    const nav=evidenceNav(evidenceLink('jubelio-return-snapshots','Riwayat snapshot retur','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot retur Jubelio.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
     const s=report.summary;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · ${report.snapshot.sync_status==='succeeded'?'Berhasil':'Ada retur dikarantina'}</p><dl class="requirement-values"><div><dt>Retur diterima</dt><dd>${n(s.accepted_returns)}</dd></div><div><dt>Retur dikarantina</dt><dd>${n(s.quarantined_returns)}</dd></div><div><dt>Unit sudah diterima</dt><dd>${n(s.received_units)}</dd></div><div><dt>Refund selesai</dt><dd>${rupiah(s.refunded_amount)}</dd></div><div><dt>Diajukan</dt><dd>${n(s.requested)}</dd></div><div><dt>Dalam perjalanan</dt><dd>${n(s.in_transit)}</dd></div><div><dt>Diterima</dt><dd>${n(s.received)}</dd></div><div><dt>Sudah refund</dt><dd>${n(s.refunded)}</dd></div><div><dt>Ditolak</dt><dd>${n(s.rejected)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(s.cancelled)}</dd></div></dl><p class="hint">Unit diterima hanya menghitung status diterima dan refund selesai. Nilai refund hanya menghitung status refund selesai. Snapshot ini tidak mengubah stok atau retur internal Beeloft.</p><div class="actions"><button data-action="jubelio-return-snapshots">Riwayat snapshot retur</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per marketplace</h3>${report.marketplaces.map(row=>`<article class="material-event"><h4>${e(row.marketplace)}</h4><p>${n(row.returns)} retur · ${n(row.received_units)} unit diterima · ${rupiah(row.refunded_amount)}</p></article>`).join('')||'<p class="state">Tidak ada retur diterima.</p>'}<h3>Per SKU diterima</h3>${report.products.map(row=>`<article class="material-event"><h4>${e(row.sku)} · ${e(row.product_name)}</h4><p>${n(row.received_units)} unit diterima</p></article>`).join('')||'<p class="state">Belum ada unit retur diterima.</p>'}<h3>Retur vendor</h3>${report.returns.map(item=>`<article class="material-event"><p class="status-label ${['received','refunded'].includes(item.status)?'done':['rejected','cancelled'].includes(item.status)?'':'late'}">${e(jubelioReturnStatus[item.status])}</p><h4>${e(item.external_return_reference)} · ${e(item.marketplace)}</h4><p>Order ${e(item.external_order_reference)} · ${n(item.total_quantity)} unit · refund ${rupiah(item.refund_amount)}</p><p class="hint">${purchaseStamp(item.updated_at)} · ${item.lines.map(line=>e(line.sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada retur diterima.</p>'}<h3>Retur dikarantina</h3>${report.quarantine.map(item=>`<article class="material-event"><p class="status-label late">${item.issue==='unmapped'?'SKU belum dipetakan':'Mapping tidak konsisten'}</p><h4>${e(item.external_return_reference)} · ${e(item.marketplace)}</h4><p>${e(item.detail)}</p><p class="hint">${item.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada retur dikarantina.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-return-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=snapshotIdentity(`Snapshot ${purchaseStamp(report.snapshot.snapshot_at)}`,report.snapshot.sync_status==='succeeded','Ada retur dikarantina')
+      +evidenceMetrics('Ringkasan retur Jubelio',[['Retur diterima',n(s.accepted_returns),'undo',''],['Retur dikarantina',n(s.quarantined_returns),'alert-octagon',s.quarantined_returns?'warning':''],['Unit sudah diterima',n(s.received_units),'box',''],['Refund selesai',rupiah(s.refunded_amount),'wallet','']])
+      +evidenceSection('Status retur',evidenceFacts([['Diajukan',n(s.requested)],['Dalam perjalanan',n(s.in_transit)],['Diterima',n(s.received)],['Sudah refund',n(s.refunded)],['Ditolak',n(s.rejected)],['Dibatalkan',n(s.cancelled)]]))
+      +evidenceNote('Unit diterima hanya menghitung status diterima dan refund selesai. Nilai refund hanya menghitung status refund selesai. Snapshot ini tidak mengubah stok atau retur internal Beeloft.','shield')+nav
+      +evidenceSection('Per marketplace',evidenceList(report.marketplaces.map(row=>evidenceRecord(e(row.marketplace),{body:evidenceLine(`${n(row.returns)} retur · ${n(row.received_units)} unit diterima · ${rupiah(row.refunded_amount)}`)})),'Tidak ada retur diterima.'))
+      +evidenceSection('Per SKU diterima',evidenceList(report.products.map(row=>evidenceRecord(`${e(row.sku)} · ${e(row.product_name)}`,{body:evidenceLine(`${n(row.received_units)} unit diterima`)})),'Belum ada unit retur diterima.'))
+      +evidenceSection('Retur vendor',evidenceList(report.returns.map(item=>evidenceRecord(`${e(item.external_return_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip(jubelioReturnTone[item.status]||'neutral',jubelioReturnStatus[item.status]),
+         body:evidenceLine(`Order ${e(item.external_order_reference)} · ${n(item.total_quantity)} unit · refund ${rupiah(item.refund_amount)}`)+evidenceMeta(purchaseStamp(item.updated_at))
+           +evidenceLines(item.lines.map(line=>e(line.sku)+' × '+n(line.quantity)))})),'Tidak ada retur diterima.'))
+      +evidenceSection('Retur dikarantina',evidenceList(report.quarantine.map(item=>evidenceRecord(`${e(item.external_return_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip('warning',quarantineLabel(item.issue)),body:evidenceLine(e(item.detail))
+          +evidenceLines(item.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)))})),'Tidak ada retur dikarantina.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-return-summary');}
 }
 
 async function jubelioReturnSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot retur Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/jubelio/return-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label ${row.sync_status==='succeeded'?'done':'late'}">${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p><button data-action="jubelio-return-snapshot" data-id="${e(row.id)}">Rincian snapshot retur</button></article>`).join('')||'<p class="state">Belum ada snapshot retur Jubelio.</p>'}<button data-action="jubelio-return-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-return-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot retur Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/jubelio/return-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:snapshotCounts,status:acceptedStatus,
+      detail:'jubelio-return-snapshot',label:'Rincian snapshot retur',empty:'Belum ada snapshot retur Jubelio.',back:evidenceLink('jubelio-return-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-return-snapshots');}
 }
 
 async function jubelioReturnSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot retur Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/jubelio/return-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · ${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p><h3>Retur diterima</h3>${row.returns.map(item=>`<article class="material-event"><h4>${e(item.external_return_reference)} · ${e(item.marketplace)}</h4><p>${e(jubelioReturnStatus[item.status])} · order ${e(item.external_order_reference)} · ${n(item.total_quantity)} unit · refund ${rupiah(item.refund_amount)}</p>${item.lines.map(line=>`<p>${e(line.sku)} ← ${e(line.external_sku)} · ${n(line.quantity)} unit</p>`).join('')}</article>`).join('')||'<p class="state">Tidak ada retur diterima.</p>'}<h3>Retur dikarantina</h3>${row.quarantine.map(item=>`<article class="material-event"><h4>${e(item.external_return_reference)} · ${e(item.marketplace)}</h4><p class="error">${e(item.detail)}</p><p>${item.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)).join(' · ')}</p></article>`).join('')||'<p class="state">Tidak ada retur dikarantina.</p>'}<div class="actions"><button data-action="jubelio-return-snapshots">Riwayat snapshot retur</button><button data-action="jubelio-return-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-return-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot retur Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/jubelio/return-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),row.sync_status==='succeeded','Ada karantina')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Diterima',n(row.accepted_count)],['Dikarantina',n(row.rejected_count)]])
+      +evidenceSection('Retur diterima',evidenceList(row.returns.map(item=>evidenceRecord(`${e(item.external_return_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip(jubelioReturnTone[item.status]||'neutral',jubelioReturnStatus[item.status]),
+         body:evidenceLine(`Order ${e(item.external_order_reference)} · ${n(item.total_quantity)} unit · refund ${rupiah(item.refund_amount)}`)
+           +evidenceLines(item.lines.map(line=>`${e(line.sku)} ← ${e(line.external_sku)} · ${n(line.quantity)} unit`))})),'Tidak ada retur diterima.'))
+      +evidenceSection('Retur dikarantina',evidenceList(row.quarantine.map(item=>evidenceRecord(`${e(item.external_return_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip('warning','Dikarantina'),body:evidenceLine(e(item.detail))+evidenceLines(item.lines.map(line=>e(line.external_sku)+' × '+n(line.quantity)))})),'Tidak ada retur dikarantina.'))
+      +evidenceNav(evidenceLink('jubelio-return-snapshots','Riwayat snapshot retur'),evidenceLink('jubelio-return-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-return-snapshot',batchId);}
 }
 
 const jubelioListingStatus={active:'Aktif',inactive:'Nonaktif',draft:'Draft',blocked:'Diblokir'};
+const jubelioListingTone={active:'success',inactive:'neutral',draft:'neutral',blocked:'warning'};
 async function jubelioListingSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Listing Jubelio','<p class="state">Memuat snapshot listing terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Listing Jubelio',evidenceLoading('Memuat snapshot listing terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/jubelio/listing-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot listing Jubelio. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="jubelio-listing-snapshots">Riwayat snapshot listing</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
+    const nav=evidenceNav(evidenceLink('jubelio-listing-snapshots','Riwayat snapshot listing','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot listing Jubelio.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
     const s=report.summary,price=value=>value===null?'—':rupiah(value);
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · ${report.snapshot.sync_status==='succeeded'?'Berhasil':'Ada listing dikarantina'}</p><dl class="requirement-values"><div><dt>Listing diterima</dt><dd>${n(s.accepted_listings)}</dd></div><div><dt>Listing dikarantina</dt><dd>${n(s.quarantined_listings)}</dd></div><div><dt>Produk aktif</dt><dd>${n(s.active_products)}</dd></div><div><dt>Aktif</dt><dd>${n(s.active)}</dd></div><div><dt>Nonaktif</dt><dd>${n(s.inactive)}</dd></div><div><dt>Draft</dt><dd>${n(s.draft)}</dd></div><div><dt>Diblokir</dt><dd>${n(s.blocked)}</dd></div><div><dt>Harga aktif terendah</dt><dd>${price(s.min_active_price)}</dd></div><div><dt>Harga aktif tertinggi</dt><dd>${price(s.max_active_price)}</dd></div></dl><p class="hint">Snapshot ini hanya membaca listing vendor. Data ini tidak mengubah master produk, harga internal, atau stok Beeloft.</p><div class="actions"><button data-action="jubelio-listing-snapshots">Riwayat snapshot listing</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per marketplace</h3>${report.marketplaces.map(row=>`<article class="material-event"><h4>${e(row.marketplace)}</h4><p>${n(row.listings)} listing · ${n(row.active)} aktif · ${n(row.active_products)} produk aktif</p><p class="hint">Nonaktif ${n(row.inactive)} · draft ${n(row.draft)} · diblokir ${n(row.blocked)}</p></article>`).join('')||'<p class="state">Tidak ada listing diterima.</p>'}<h3>Listing vendor</h3>${report.listings.map(item=>`<article class="material-event"><p class="status-label ${item.status==='active'?'done':item.status==='blocked'?'late':''}">${e(jubelioListingStatus[item.status])}</p><h4>${e(item.listing_reference)} · ${e(item.marketplace)}</h4><p>${e(item.listing_title)} · ${rupiah(item.listed_price)}</p><p class="hint">${e(item.sku)} ← ${e(item.external_sku)} · ${purchaseStamp(item.updated_at)}</p></article>`).join('')||'<p class="state">Tidak ada listing diterima.</p>'}<h3>Listing dikarantina</h3>${report.quarantine.map(item=>`<article class="material-event"><p class="status-label late">${item.issue==='unmapped'?'SKU belum dipetakan':'Mapping tidak konsisten'}</p><h4>${e(item.listing_reference)} · ${e(item.marketplace)}</h4><p>${e(item.detail)}</p><p class="hint">${e(item.external_sku)} · ${e(item.listing_title)}</p></article>`).join('')||'<p class="state">Tidak ada listing dikarantina.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-listing-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=snapshotIdentity(`Snapshot ${purchaseStamp(report.snapshot.snapshot_at)}`,report.snapshot.sync_status==='succeeded','Ada listing dikarantina')
+      +evidenceMetrics('Ringkasan listing Jubelio',[['Listing diterima',n(s.accepted_listings),'tag',''],['Listing dikarantina',n(s.quarantined_listings),'alert-octagon',s.quarantined_listings?'warning':''],['Produk aktif',n(s.active_products),'box','']])
+      +evidenceSection('Status dan harga listing',evidenceFacts([['Aktif',n(s.active)],['Nonaktif',n(s.inactive)],['Draft',n(s.draft)],['Diblokir',n(s.blocked)],['Harga aktif terendah',price(s.min_active_price)],['Harga aktif tertinggi',price(s.max_active_price)]]))
+      +evidenceNote('Snapshot ini hanya membaca listing vendor. Data ini tidak mengubah master produk, harga internal, atau stok Beeloft.','shield')+nav
+      +evidenceSection('Per marketplace',evidenceList(report.marketplaces.map(row=>evidenceRecord(e(row.marketplace),{body:evidenceLine(`${n(row.listings)} listing · ${n(row.active)} aktif · ${n(row.active_products)} produk aktif`)
+        +evidenceMeta(`Nonaktif ${n(row.inactive)} · draft ${n(row.draft)} · diblokir ${n(row.blocked)}`)})),'Tidak ada listing diterima.'))
+      +evidenceSection('Listing vendor',evidenceList(report.listings.map(item=>evidenceRecord(`${e(item.listing_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip(jubelioListingTone[item.status]||'neutral',jubelioListingStatus[item.status]),body:evidenceLine(`${e(item.listing_title)} · ${rupiah(item.listed_price)}`)
+          +evidenceMeta(`${e(item.sku)} ← ${e(item.external_sku)} · ${purchaseStamp(item.updated_at)}`)})),'Tidak ada listing diterima.'))
+      +evidenceSection('Listing dikarantina',evidenceList(report.quarantine.map(item=>evidenceRecord(`${e(item.listing_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip('warning',quarantineLabel(item.issue)),body:evidenceLine(e(item.detail))+evidenceMeta(`${e(item.external_sku)} · ${e(item.listing_title)}`)})),'Tidak ada listing dikarantina.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-listing-summary');}
 }
 
 async function jubelioListingSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot listing Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/jubelio/listing-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label ${row.sync_status==='succeeded'?'done':'late'}">${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p><button data-action="jubelio-listing-snapshot" data-id="${e(row.id)}">Rincian snapshot listing</button></article>`).join('')||'<p class="state">Belum ada snapshot listing Jubelio.</p>'}<button data-action="jubelio-listing-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-listing-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot listing Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/jubelio/listing-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:snapshotCounts,status:acceptedStatus,
+      detail:'jubelio-listing-snapshot',label:'Rincian snapshot listing',empty:'Belum ada snapshot listing Jubelio.',back:evidenceLink('jubelio-listing-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-listing-snapshots');}
 }
 
 async function jubelioListingSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot listing Jubelio','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/jubelio/listing-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · ${row.sync_status==='succeeded'?'Berhasil':'Ada karantina'}</p><p>Dibaca ${n(row.records_read)} · diterima ${n(row.accepted_count)} · dikarantina ${n(row.rejected_count)}</p>${row.error?`<p class="error">${e(row.error)}</p>`:''}<p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p><h3>Listing diterima</h3>${row.listings.map(item=>`<article class="material-event"><h4>${e(item.listing_reference)} · ${e(item.marketplace)}</h4><p>${e(jubelioListingStatus[item.status])} · ${e(item.listing_title)} · ${rupiah(item.listed_price)}</p><p>${e(item.sku)} ← ${e(item.external_sku)}</p></article>`).join('')||'<p class="state">Tidak ada listing diterima.</p>'}<h3>Listing dikarantina</h3>${row.quarantine.map(item=>`<article class="material-event"><h4>${e(item.listing_reference)} · ${e(item.marketplace)}</h4><p class="error">${e(item.detail)}</p><p>${e(item.external_sku)} · ${e(item.listing_title)}</p></article>`).join('')||'<p class="state">Tidak ada listing dikarantina.</p>'}<div class="actions"><button data-action="jubelio-listing-snapshots">Riwayat snapshot listing</button><button data-action="jubelio-listing-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="jubelio-listing-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot listing Jubelio',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/jubelio/listing-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),row.sync_status==='succeeded','Ada karantina')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Diterima',n(row.accepted_count)],['Dikarantina',n(row.rejected_count)]])
+      +evidenceSection('Listing diterima',evidenceList(row.listings.map(item=>evidenceRecord(`${e(item.listing_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip(jubelioListingTone[item.status]||'neutral',jubelioListingStatus[item.status]),body:evidenceLine(`${e(item.listing_title)} · ${rupiah(item.listed_price)}`)
+          +evidenceMeta(`${e(item.sku)} ← ${e(item.external_sku)}`)})),'Tidak ada listing diterima.'))
+      +evidenceSection('Listing dikarantina',evidenceList(row.quarantine.map(item=>evidenceRecord(`${e(item.listing_reference)} · ${e(item.marketplace)}`,
+        {chips:evidenceChip('warning','Dikarantina'),body:evidenceLine(e(item.detail))+evidenceMeta(`${e(item.external_sku)} · ${e(item.listing_title)}`)})),'Tidak ada listing dikarantina.'))
+      +evidenceNav(evidenceLink('jubelio-listing-snapshots','Riwayat snapshot listing'),evidenceLink('jubelio-listing-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'jubelio-listing-snapshot',batchId);}
 }
 
+
 const financeRupiah=value=>value.startsWith('-')?'-'+rupiah(value.slice(1)):rupiah(value);
-const financePeriodCard=period=>`<article class="material-event"><p class="eyebrow">${date(period.period_start)}–${date(period.period_end)} · ${e(period.currency)}</p><h3>${e(period.source_report_id)}</h3><dl class="requirement-values"><div><dt>Pendapatan bersih</dt><dd>${financeRupiah(period.net_revenue)}</dd></div><div><dt>Laba kotor</dt><dd>${financeRupiah(period.gross_profit)}</dd></div><div><dt>Laba bersih</dt><dd>${financeRupiah(period.net_profit)}</dd></div><div><dt>Kas</dt><dd>${financeRupiah(period.cash_balance)}</dd></div><div><dt>Piutang</dt><dd>${financeRupiah(period.receivables_balance)}</dd></div><div><dt>Utang</dt><dd>${financeRupiah(period.payables_balance)}</dd></div><div><dt>Posisi likuiditas</dt><dd>${financeRupiah(period.net_liquidity)}</dd></div></dl></article>`;
+const financePeriodCard=period=>evidenceRecord(e(period.source_report_id),{chips:evidenceChip('neutral',period.currency),
+  body:evidenceMeta(`${date(period.period_start)}–${date(period.period_end)} · ${e(period.currency)}`)
+    +evidenceFacts([['Pendapatan bersih',financeRupiah(period.net_revenue)],['Laba kotor',financeRupiah(period.gross_profit)],['Laba bersih',financeRupiah(period.net_profit)],['Kas',financeRupiah(period.cash_balance)],['Piutang',financeRupiah(period.receivables_balance)],['Utang',financeRupiah(period.payables_balance)],['Posisi likuiditas',financeRupiah(period.net_liquidity)]])});
 
 async function mekariFinanceSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Keuangan Mekari','<p class="state">Memuat snapshot keuangan terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Keuangan Mekari',evidenceLoading('Memuat snapshot keuangan terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/mekari/finance-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot keuangan Mekari. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="mekari-finance-snapshots">Riwayat snapshot keuangan</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
-    if(!report.current){$('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · tidak memuat periode laporan</p><p class="state">Connector menyelesaikan snapshot kosong. Periksa sumber laporan Mekari sebelum memakai ringkasan ini.</p><div class="actions"><button data-action="mekari-finance-snapshots">Riwayat snapshot keuangan</button><button data-action="integrations">Kesehatan integrasi</button></div>`;return;}
+    const nav=evidenceNav(evidenceLink('mekari-finance-snapshots','Riwayat snapshot keuangan','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot keuangan Mekari.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
+    if(!report.current){$('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · tidak memuat periode laporan</p></div>`
+      +evidenceAttention('Snapshot tanpa periode laporan','Connector menyelesaikan snapshot kosong. Periksa sumber laporan Mekari sebelum memakai ringkasan ini.')+nav;return;}
     const current=report.current;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(current.period_start)}–${date(current.period_end)}</p><dl class="requirement-values"><div><dt>Pendapatan kotor</dt><dd>${financeRupiah(current.gross_revenue)}</dd></div><div><dt>Retur penjualan</dt><dd>${financeRupiah(current.sales_returns)}</dd></div><div><dt>Pendapatan bersih</dt><dd>${financeRupiah(current.net_revenue)}</dd></div><div><dt>Harga pokok</dt><dd>${financeRupiah(current.cost_of_goods_sold)}</dd></div><div><dt>Laba kotor</dt><dd>${financeRupiah(current.gross_profit)}</dd></div><div><dt>Beban operasional</dt><dd>${financeRupiah(current.operating_expenses)}</dd></div><div><dt>Pendapatan lain</dt><dd>${financeRupiah(current.other_income)}</dd></div><div><dt>Beban lain</dt><dd>${financeRupiah(current.other_expenses)}</dd></div><div><dt>Laba bersih</dt><dd>${financeRupiah(current.net_profit)}</dd></div><div><dt>Kas</dt><dd>${financeRupiah(current.cash_balance)}</dd></div><div><dt>Piutang</dt><dd>${financeRupiah(current.receivables_balance)}</dd></div><div><dt>Utang</dt><dd>${financeRupiah(current.payables_balance)}</dd></div><div><dt>Posisi likuiditas</dt><dd>${financeRupiah(current.net_liquidity)}</dd></div></dl><p class="hint">Pendapatan bersih, laba kotor, laba bersih, dan posisi likuiditas dihitung dari angka snapshot. Mekari tetap menjadi sumber pencatatan akuntansi; layar ini tidak membuat jurnal atau pembayaran.</p><div class="actions"><button data-action="mekari-finance-snapshots">Riwayat snapshot keuangan</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Periode dalam snapshot</h3>${report.periods.map(financePeriodCard).join('')}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-finance-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(current.period_start)}–${date(current.period_end)}</p>${evidenceChip('success','Berhasil')}</div>`
+      +evidenceMetrics('Ringkasan keuangan periode terbaru',[['Pendapatan bersih',financeRupiah(current.net_revenue),'trend',''],['Laba bersih',financeRupiah(current.net_profit),'chart',''],['Kas',financeRupiah(current.cash_balance),'wallet',''],['Posisi likuiditas',financeRupiah(current.net_liquidity),'gauge','']])
+      +evidenceSection('Rincian laporan',evidenceFacts([['Pendapatan kotor',financeRupiah(current.gross_revenue)],['Retur penjualan',financeRupiah(current.sales_returns)],['Harga pokok',financeRupiah(current.cost_of_goods_sold)],['Laba kotor',financeRupiah(current.gross_profit)],['Beban operasional',financeRupiah(current.operating_expenses)],['Pendapatan lain',financeRupiah(current.other_income)],['Beban lain',financeRupiah(current.other_expenses)],['Piutang',financeRupiah(current.receivables_balance)],['Utang',financeRupiah(current.payables_balance)]],false))
+      +evidenceNote('Pendapatan bersih, laba kotor, laba bersih, dan posisi likuiditas dihitung dari angka snapshot. Mekari tetap menjadi sumber pencatatan akuntansi; layar ini tidak membuat jurnal atau pembayaran.','shield')+nav
+      +evidenceSection('Periode dalam snapshot',evidenceList(report.periods.map(financePeriodCard),'Snapshot ini tidak memuat periode laporan.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-finance-summary');}
 }
 
 async function mekariFinanceSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot keuangan Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/mekari/finance-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label done">Berhasil</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}</p><button data-action="mekari-finance-snapshot" data-id="${e(row.id)}">Rincian snapshot keuangan</button></article>`).join('')||'<p class="state">Belum ada snapshot keuangan Mekari.</p>'}<button data-action="mekari-finance-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-finance-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot keuangan Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/mekari/finance-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:row=>`Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}`,status:()=>['success','Berhasil'],
+      detail:'mekari-finance-snapshot',label:'Rincian snapshot keuangan',empty:'Belum ada snapshot keuangan Mekari.',back:evidenceLink('mekari-finance-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-finance-snapshots');}
 }
 
 async function mekariFinanceSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot keuangan Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/mekari/finance-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · Berhasil</p><p>Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}</p><p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p>${row.periods.map(financePeriodCard).join('')||'<p class="state">Snapshot ini tidak memuat periode laporan.</p>'}<div class="actions"><button data-action="mekari-finance-snapshots">Riwayat snapshot keuangan</button><button data-action="mekari-finance-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-finance-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot keuangan Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/mekari/finance-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),true,'')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Periode',n(row.period_count)]])
+      +evidenceSection('Periode laporan',evidenceList(row.periods.map(financePeriodCard),'Snapshot ini tidak memuat periode laporan.'))
+      +evidenceNav(evidenceLink('mekari-finance-snapshots','Riwayat snapshot keuangan'),evidenceLink('mekari-finance-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-finance-snapshot',batchId);}
 }
 
 const payableStatus={open:'Terbuka',partially_paid:'Dibayar sebagian',paid:'Lunas',void:'Dibatalkan'};
 const payableDue=row=>row.due_in_days===null?payableStatus[row.status]:row.overdue?`${n(Math.abs(row.due_in_days))} hari lewat jatuh tempo`:row.due_in_days===0?'Jatuh tempo hari ini':`${n(row.due_in_days)} hari menuju jatuh tempo`;
-const payableCard=row=>`<article class="material-event"><p class="status-label ${row.overdue?'late':row.status==='paid'?'done':''}">${e(row.overdue?'Overdue':payableStatus[row.status])}</p><h3>${e(row.reference)} · ${e(row.supplier_name)}</h3><p>Belum dibayar ${financeRupiah(row.outstanding_amount)} dari ${financeRupiah(row.original_amount)}</p><p class="hint">Invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)} · ${e(payableDue(row))}</p></article>`;
+// Overdue adalah perhatian, bukan kegagalan; Lunas selesai; sisanya status invoice biasa.
+const invoiceTone=row=>row.overdue?'warning':row.status==='paid'?'success':row.status==='void'?'neutral':'info';
+const payableCard=row=>evidenceRecord(`${e(row.reference)} · ${e(row.supplier_name)}`,{chips:evidenceChip(invoiceTone(row),row.overdue?'Overdue':payableStatus[row.status]),
+  body:evidenceLine(`Belum dibayar ${financeRupiah(row.outstanding_amount)} dari ${financeRupiah(row.original_amount)}`)
+    +evidenceMeta(`Invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)} · ${e(payableDue(row))}`)});
 
 async function mekariPayablesSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Utang Mekari','<p class="state">Memuat snapshot utang terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Utang Mekari',evidenceLoading('Memuat snapshot utang terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/mekari/payables-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot utang Mekari. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="mekari-payable-snapshots">Riwayat snapshot utang</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
+    const nav=evidenceNav(evidenceLink('mekari-payable-snapshots','Riwayat snapshot utang','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot utang Mekari.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
     const s=report.summary;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · posisi ${date(report.snapshot.as_of)}</p><dl class="requirement-values"><div><dt>Invoice diterima</dt><dd>${n(s.accepted_payables)}</dd></div><div><dt>Terbuka</dt><dd>${n(s.open)}</dd></div><div><dt>Dibayar sebagian</dt><dd>${n(s.partially_paid)}</dd></div><div><dt>Lunas</dt><dd>${n(s.paid)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(s.void)}</dd></div><div><dt>Total invoice aktif</dt><dd>${financeRupiah(s.total_original)}</dd></div><div><dt>Sudah dibayar</dt><dd>${financeRupiah(s.total_paid)}</dd></div><div><dt>Belum dibayar</dt><dd>${financeRupiah(s.total_outstanding)}</dd></div><div><dt>Overdue</dt><dd>${n(s.overdue_count)} · ${financeRupiah(s.overdue_amount)}</dd></div><div><dt>Jatuh tempo 0–7 hari</dt><dd>${n(s.due_next_7_days_count)} · ${financeRupiah(s.due_next_7_days_amount)}</dd></div></dl><p class="hint">Overdue dihitung terhadap tanggal posisi snapshot. Layar ini tidak membayar invoice, mengubah status vendor, atau membuat jurnal Mekari.</p><div class="actions"><button data-action="mekari-payable-snapshots">Riwayat snapshot utang</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per supplier</h3>${report.suppliers.map(row=>`<article class="material-event"><h4>${e(row.supplier_name)}</h4><p>${n(row.outstanding_invoices)} invoice terbuka · ${financeRupiah(row.outstanding_amount)}</p><p class="hint">Overdue ${n(row.overdue_invoices)} · ${financeRupiah(row.overdue_amount)} · total ${n(row.invoices)} invoice</p></article>`).join('')||'<p class="state">Tidak ada invoice supplier.</p>'}<h3>Invoice vendor</h3>${report.payables.map(payableCard).join('')||'<p class="state">Snapshot ini tidak memuat invoice.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payables-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · posisi ${date(report.snapshot.as_of)}</p>${evidenceChip('success','Berhasil')}</div>`
+      +evidenceMetrics('Ringkasan utang Mekari',[['Belum dibayar',financeRupiah(s.total_outstanding),'wallet',''],['Overdue',`${n(s.overdue_count)} · ${financeRupiah(s.overdue_amount)}`,'alert-triangle',s.overdue_count?'warning':''],['Jatuh tempo 0–7 hari',`${n(s.due_next_7_days_count)} · ${financeRupiah(s.due_next_7_days_amount)}`,'clock','']])
+      +evidenceSection('Status invoice',evidenceFacts([['Invoice diterima',n(s.accepted_payables)],['Terbuka',n(s.open)],['Dibayar sebagian',n(s.partially_paid)],['Lunas',n(s.paid)],['Dibatalkan',n(s.void)],['Total invoice aktif',financeRupiah(s.total_original)],['Sudah dibayar',financeRupiah(s.total_paid)]]))
+      +evidenceNote('Overdue dihitung terhadap tanggal posisi snapshot. Layar ini tidak membayar invoice, mengubah status vendor, atau membuat jurnal Mekari.','shield')+nav
+      +evidenceSection('Per supplier',evidenceList(report.suppliers.map(row=>evidenceRecord(e(row.supplier_name),{body:evidenceLine(`${n(row.outstanding_invoices)} invoice terbuka · ${financeRupiah(row.outstanding_amount)}`)
+        +evidenceMeta(`Overdue ${n(row.overdue_invoices)} · ${financeRupiah(row.overdue_amount)} · total ${n(row.invoices)} invoice`)})),'Tidak ada invoice supplier.'))
+      +evidenceSection('Invoice vendor',evidenceList(report.payables.map(payableCard),'Snapshot ini tidak memuat invoice.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payables-summary');}
 }
 
 async function mekariPayableSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot utang Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/mekari/payable-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label done">Berhasil</p><h3>Posisi ${date(row.as_of)}</h3><p>Dibaca ${n(row.records_read)} · invoice ${n(row.payable_count)}</p><button data-action="mekari-payable-snapshot" data-id="${e(row.id)}">Rincian snapshot utang</button></article>`).join('')||'<p class="state">Belum ada snapshot utang Mekari.</p>'}<button data-action="mekari-payables-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payable-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot utang Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/mekari/payable-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>`Posisi ${date(row.as_of)}`,counts:row=>`Dibaca ${n(row.records_read)} · invoice ${n(row.payable_count)}`,status:()=>['success','Berhasil'],
+      detail:'mekari-payable-snapshot',label:'Rincian snapshot utang',empty:'Belum ada snapshot utang Mekari.',back:evidenceLink('mekari-payables-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payable-snapshots');}
 }
 
 async function mekariPayableSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot utang Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/mekari/payable-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · posisi ${date(row.as_of)} · Berhasil</p><p>Dibaca ${n(row.records_read)} · invoice ${n(row.payable_count)}</p><p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p>${row.payables.map(payableCard).join('')||'<p class="state">Snapshot ini tidak memuat invoice.</p>'}<div class="actions"><button data-action="mekari-payable-snapshots">Riwayat snapshot utang</button><button data-action="mekari-payables-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payable-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot utang Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/mekari/payable-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(`${purchaseStamp(row.snapshot_at)} · posisi ${date(row.as_of)}`,true,'')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Invoice',n(row.payable_count)]])
+      +evidenceSection('Invoice vendor',evidenceList(row.payables.map(payableCard),'Snapshot ini tidak memuat invoice.'))
+      +evidenceNav(evidenceLink('mekari-payable-snapshots','Riwayat snapshot utang'),evidenceLink('mekari-payables-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payable-snapshot',batchId);}
 }
 
 const receivableStatus={open:'Terbuka',partially_paid:'Diterima sebagian',paid:'Lunas',void:'Dibatalkan'};
 const receivableDue=row=>row.due_in_days===null?receivableStatus[row.status]:row.overdue?`${n(Math.abs(row.due_in_days))} hari lewat jatuh tempo`:row.due_in_days===0?'Jatuh tempo hari ini':`${n(row.due_in_days)} hari menuju jatuh tempo`;
-const receivableCard=row=>`<article class="material-event"><p class="status-label ${row.overdue?'late':row.status==='paid'?'done':''}">${e(row.overdue?'Overdue':receivableStatus[row.status])}</p><h3>${e(row.reference)} · ${e(row.customer_name)}</h3><p>Belum diterima ${financeRupiah(row.outstanding_amount)} dari ${financeRupiah(row.original_amount)}</p><p class="hint">Invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)} · ${e(receivableDue(row))}</p></article>`;
+const receivableCard=row=>evidenceRecord(`${e(row.reference)} · ${e(row.customer_name)}`,{chips:evidenceChip(invoiceTone(row),row.overdue?'Overdue':receivableStatus[row.status]),
+  body:evidenceLine(`Belum diterima ${financeRupiah(row.outstanding_amount)} dari ${financeRupiah(row.original_amount)}`)
+    +evidenceMeta(`Invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)} · ${e(receivableDue(row))}`)});
 
 async function mekariReceivablesSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Piutang Mekari','<p class="state">Memuat snapshot piutang terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Piutang Mekari',evidenceLoading('Memuat snapshot piutang terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/mekari/receivables-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot piutang Mekari. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="mekari-receivable-snapshots">Riwayat snapshot piutang</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
+    const nav=evidenceNav(evidenceLink('mekari-receivable-snapshots','Riwayat snapshot piutang','','action-secondary'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot piutang Mekari.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
     const s=report.summary;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · posisi ${date(report.snapshot.as_of)}</p><dl class="requirement-values"><div><dt>Invoice tercatat</dt><dd>${n(s.accepted_receivables)}</dd></div><div><dt>Terbuka</dt><dd>${n(s.open)}</dd></div><div><dt>Diterima sebagian</dt><dd>${n(s.partially_paid)}</dd></div><div><dt>Lunas</dt><dd>${n(s.paid)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(s.void)}</dd></div><div><dt>Total invoice aktif</dt><dd>${financeRupiah(s.total_original)}</dd></div><div><dt>Sudah diterima</dt><dd>${financeRupiah(s.total_received)}</dd></div><div><dt>Belum diterima</dt><dd>${financeRupiah(s.total_outstanding)}</dd></div><div><dt>Overdue</dt><dd>${n(s.overdue_count)} · ${financeRupiah(s.overdue_amount)}</dd></div><div><dt>Jatuh tempo 0–7 hari</dt><dd>${n(s.due_next_7_days_count)} · ${financeRupiah(s.due_next_7_days_amount)}</dd></div></dl><p class="hint">Overdue dihitung terhadap tanggal posisi snapshot. Layar ini tidak menagih pelanggan, mengubah status invoice, atau membuat jurnal Mekari.</p><div class="actions"><button data-action="mekari-receivable-snapshots">Riwayat snapshot piutang</button><button data-action="integrations">Kesehatan integrasi</button></div><h3>Per pelanggan</h3>${report.customers.map(row=>`<article class="material-event"><h4>${e(row.customer_name)}</h4><p>${n(row.outstanding_invoices)} invoice terbuka · ${financeRupiah(row.outstanding_amount)}</p><p class="hint">Overdue ${n(row.overdue_invoices)} · ${financeRupiah(row.overdue_amount)} · total ${n(row.invoices)} invoice</p></article>`).join('')||'<p class="state">Tidak ada invoice pelanggan.</p>'}<h3>Invoice pelanggan</h3>${report.receivables.map(receivableCard).join('')||'<p class="state">Snapshot ini tidak memuat invoice.</p>'}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-receivables-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · posisi ${date(report.snapshot.as_of)}</p>${evidenceChip('success','Berhasil')}</div>`
+      +evidenceMetrics('Ringkasan piutang Mekari',[['Belum diterima',financeRupiah(s.total_outstanding),'wallet',''],['Overdue',`${n(s.overdue_count)} · ${financeRupiah(s.overdue_amount)}`,'alert-triangle',s.overdue_count?'warning':''],['Jatuh tempo 0–7 hari',`${n(s.due_next_7_days_count)} · ${financeRupiah(s.due_next_7_days_amount)}`,'clock','']])
+      +evidenceSection('Status invoice',evidenceFacts([['Invoice tercatat',n(s.accepted_receivables)],['Terbuka',n(s.open)],['Diterima sebagian',n(s.partially_paid)],['Lunas',n(s.paid)],['Dibatalkan',n(s.void)],['Total invoice aktif',financeRupiah(s.total_original)],['Sudah diterima',financeRupiah(s.total_received)]]))
+      +evidenceNote('Overdue dihitung terhadap tanggal posisi snapshot. Layar ini tidak menagih pelanggan, mengubah status invoice, atau membuat jurnal Mekari.','shield')+nav
+      +evidenceSection('Per pelanggan',evidenceList(report.customers.map(row=>evidenceRecord(e(row.customer_name),{body:evidenceLine(`${n(row.outstanding_invoices)} invoice terbuka · ${financeRupiah(row.outstanding_amount)}`)
+        +evidenceMeta(`Overdue ${n(row.overdue_invoices)} · ${financeRupiah(row.overdue_amount)} · total ${n(row.invoices)} invoice`)})),'Tidak ada invoice pelanggan.'))
+      +evidenceSection('Invoice pelanggan',evidenceList(report.receivables.map(receivableCard),'Snapshot ini tidak memuat invoice.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-receivables-summary');}
 }
 
 async function mekariReceivableSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot piutang Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/mekari/receivable-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label done">Berhasil</p><h3>Posisi ${date(row.as_of)}</h3><p>Dibaca ${n(row.records_read)} · invoice ${n(row.receivable_count)}</p><button data-action="mekari-receivable-snapshot" data-id="${e(row.id)}">Rincian snapshot piutang</button></article>`).join('')||'<p class="state">Belum ada snapshot piutang Mekari.</p>'}<button data-action="mekari-receivables-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-receivable-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot piutang Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/mekari/receivable-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>`Posisi ${date(row.as_of)}`,counts:row=>`Dibaca ${n(row.records_read)} · invoice ${n(row.receivable_count)}`,status:()=>['success','Berhasil'],
+      detail:'mekari-receivable-snapshot',label:'Rincian snapshot piutang',empty:'Belum ada snapshot piutang Mekari.',back:evidenceLink('mekari-receivables-summary','Ringkasan terbaru')});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-receivable-snapshots');}
 }
 
 async function mekariReceivableSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot piutang Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/mekari/receivable-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · posisi ${date(row.as_of)} · Berhasil</p><p>Dibaca ${n(row.records_read)} · invoice ${n(row.receivable_count)}</p><p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p>${row.receivables.map(receivableCard).join('')||'<p class="state">Snapshot ini tidak memuat invoice.</p>'}<div class="actions"><button data-action="mekari-receivable-snapshots">Riwayat snapshot piutang</button><button data-action="mekari-receivables-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-receivable-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot piutang Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/mekari/receivable-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(`${purchaseStamp(row.snapshot_at)} · posisi ${date(row.as_of)}`,true,'')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Invoice',n(row.receivable_count)]])
+      +evidenceSection('Invoice pelanggan',evidenceList(row.receivables.map(receivableCard),'Snapshot ini tidak memuat invoice.'))
+      +evidenceNav(evidenceLink('mekari-receivable-snapshots','Riwayat snapshot piutang'),evidenceLink('mekari-receivables-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-receivable-snapshot',batchId);}
 }
 
 const payrollStatus={draft:'Draft',reviewing:'Ditinjau',approved:'Disetujui',paid:'Dibayar',cancelled:'Dibatalkan'};
+const payrollTone={draft:'neutral',reviewing:'info',approved:'info',paid:'success',cancelled:'neutral'};
+const approvalTone={submitted:'info',pending:'info',approved:'success',rejected:'danger',cancelled:'neutral'};
 const payrollPeriodCard=row=>{
   const approval=row.approval_request,financialChange=approval&&['period_start','period_end','currency','employee_count','gross_pay','employee_deductions','employer_contributions'].some(key=>row[key]!==approval.source[key]);
   const canSubmit=user.role!=='viewer'&&row.status==='reviewing'&&(!approval||['rejected','cancelled'].includes(approval.status)||(approval.status==='approved'&&financialChange));
-  return `<article class="material-event" data-payroll-period="${e(row.id)}"><p class="status-label ${row.status==='paid'?'done':row.status==='cancelled'?'late':''}">Mekari · ${e(payrollStatus[row.status])}</p><h3>${date(row.period_start)}–${date(row.period_end)}</h3><p>${n(row.employee_count)} karyawan · gaji neto ${financeRupiah(row.net_pay)}</p><dl class="requirement-values"><div><dt>Gaji bruto</dt><dd>${financeRupiah(row.gross_pay)}</dd></div><div><dt>Potongan karyawan</dt><dd>${financeRupiah(row.employee_deductions)}</dd></div><div><dt>Kontribusi perusahaan</dt><dd>${financeRupiah(row.employer_contributions)}</dd></div><div><dt>Total biaya perusahaan</dt><dd>${financeRupiah(row.total_employer_cost)}</dd></div></dl><p class="hint">ID sumber ${e(row.external_payroll_id)}${row.payment_date?' · dibayar '+date(row.payment_date):''}</p>${row.accounting?`<p class="hint">Jurnal ${e(row.accounting.journal_reference)} · ${e(row.accounting.status==='posted'?'Posted':row.accounting.status==='reversed'?'Reversed':'Draft')}</p>`:''}${approval?`<p class="status-label ${approval.status==='approved'?'done':approval.status==='rejected'||approval.stale?'late':''}">Approval Beeloft · ${e(approvalStatus[approval.status])}${approval.stale?' · sumber berubah':''}</p><button data-action="payroll-approval-request" data-id="${e(approval.id)}" type="button">Rincian approval</button>`:''}${canSubmit?`<button data-action="new-payroll-approval" data-id="${e(row.id)}" type="button">${approval?'Ajukan ulang approval':'Ajukan approval'}</button>`:''}</article>`;
+  // Payroll adalah agregat: tidak ada nama atau baris per karyawan di sini, dan memang tidak ada di
+  // snapshot. Status Mekari dan status approval Beeloft adalah dua chip berbeda karena memang dua hal.
+  return evidenceRecord(`${date(row.period_start)}–${date(row.period_end)}`,{attrs:` data-payroll-period="${e(row.id)}"`,
+    chips:evidenceChip(payrollTone[row.status]||'neutral',`Mekari · ${payrollStatus[row.status]}`)
+      +(approval?evidenceChip(approval.stale?'warning':approvalTone[approval.status]||'neutral',`Approval Beeloft · ${approvalStatus[approval.status]}${approval.stale?' · sumber berubah':''}`):''),
+    body:evidenceLine(`${n(row.employee_count)} karyawan · gaji neto ${financeRupiah(row.net_pay)}`)
+      +evidenceFacts([['Gaji bruto',financeRupiah(row.gross_pay)],['Potongan karyawan',financeRupiah(row.employee_deductions)],['Kontribusi perusahaan',financeRupiah(row.employer_contributions)],['Total biaya perusahaan',financeRupiah(row.total_employer_cost)],['Mata uang',e(row.currency)]])
+      +evidenceMeta(`ID sumber ${e(row.external_payroll_id)}${row.payment_date?' · dibayar '+date(row.payment_date):''}`)
+      +(row.accounting?evidenceMeta(`Jurnal ${e(row.accounting.journal_reference)} · ${e(row.accounting.status==='posted'?'Posted':row.accounting.status==='reversed'?'Reversed':'Draft')}`):''),
+    actions:(approval?`<button data-action="payroll-approval-request" data-id="${e(approval.id)}" type="button" class="action-quiet">Rincian approval</button>`:'')
+      +(canSubmit?`<button data-action="new-payroll-approval" data-id="${e(row.id)}" type="button" class="action-secondary">${approval?'Ajukan ulang approval':'Ajukan approval'}</button>`:'')});
 };
 
 async function mekariPayrollSummaryDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Payroll Mekari','<p class="state">Memuat snapshot payroll terbaru…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Payroll Mekari',evidenceLoading('Memuat snapshot payroll terbaru…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/integrations/mekari/payroll-summary');
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-    if(!report.snapshot){$('dialog-content').innerHTML='<p class="state">Belum ada snapshot payroll Mekari. Connector worker harus mengirim snapshot sebelum ringkasan tersedia.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="payroll-payment-reconciliation">Rekonsiliasi pembayaran</button><button data-action="payroll-accounting-reconciliation">Rekonsiliasi akuntansi</button><button data-action="integrations">Kesehatan integrasi</button></div>';return;}
-    if(!report.current){$('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · tidak memuat periode payroll</p><p class="state">Connector menyelesaikan snapshot kosong. Periksa sumber payroll Mekari sebelum memakai ringkasan ini.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="payroll-payment-reconciliation">Rekonsiliasi pembayaran</button><button data-action="payroll-accounting-reconciliation">Rekonsiliasi akuntansi</button><button data-action="integrations">Kesehatan integrasi</button></div>`;return;}
+    const nav=evidenceNav(evidenceLink('mekari-payroll-snapshots','Riwayat snapshot payroll','','action-secondary'),evidenceLink('payroll-payment-reconciliation','Rekonsiliasi pembayaran'),evidenceLink('payroll-accounting-reconciliation','Rekonsiliasi akuntansi'),evidenceLink('integrations','Kesehatan integrasi'));
+    if(!report.snapshot){$('dialog-content').innerHTML=evidenceEmpty('Belum ada snapshot payroll Mekari.','Connector worker harus mengirim snapshot sebelum ringkasan tersedia.')+nav;return;}
+    if(!report.current){$('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · tidak memuat periode payroll</p></div>`
+      +evidenceAttention('Snapshot tanpa periode payroll','Connector menyelesaikan snapshot kosong. Periksa sumber payroll Mekari sebelum memakai ringkasan ini.')+nav;return;}
     const counts=report.status_counts;
-    $('dialog-content').innerHTML=`<p class="form-info">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(report.current.period_start)}–${date(report.current.period_end)}</p><dl class="requirement-values"><div><dt>Draft</dt><dd>${n(counts.draft)}</dd></div><div><dt>Ditinjau</dt><dd>${n(counts.reviewing)}</dd></div><div><dt>Disetujui</dt><dd>${n(counts.approved)}</dd></div><div><dt>Dibayar</dt><dd>${n(counts.paid)}</dd></div><div><dt>Dibatalkan</dt><dd>${n(counts.cancelled)}</dd></div></dl><p class="hint">Angka merupakan ringkasan agregat dari Mekari tanpa identitas karyawan. Approval Beeloft menyimpan otorisasi manajemen tanpa mengubah status Mekari, menjalankan pembayaran, atau membuat jurnal.</p><div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="payroll-payment-reconciliation">Rekonsiliasi pembayaran</button><button data-action="payroll-accounting-reconciliation">Rekonsiliasi akuntansi</button><button data-action="integrations">Kesehatan integrasi</button><button data-action="approvals">Inbox approval</button></div><h3>Periode terbaru</h3>${payrollPeriodCard(report.current)}<h3>Periode dalam snapshot</h3>${report.periods.map(payrollPeriodCard).join('')}`;
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payroll-summary">Coba lagi</button>`;}
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">Snapshot ${purchaseStamp(report.snapshot.snapshot_at)} · periode terbaru ${date(report.current.period_start)}–${date(report.current.period_end)}</p>${evidenceChip('success','Berhasil')}</div>`
+      +evidenceSection('Status periode di Mekari',evidenceFacts([['Draft',n(counts.draft)],['Ditinjau',n(counts.reviewing)],['Disetujui',n(counts.approved)],['Dibayar',n(counts.paid)],['Dibatalkan',n(counts.cancelled)]]))
+      +evidenceNote('Angka merupakan ringkasan agregat dari Mekari tanpa identitas karyawan.','users')
+      +evidenceNote('Approval Beeloft menyimpan otorisasi manajemen tanpa mengubah status Mekari, menjalankan pembayaran, atau membuat jurnal.','shield')
+      +evidenceNav(evidenceLink('mekari-payroll-snapshots','Riwayat snapshot payroll','','action-secondary'),evidenceLink('payroll-payment-reconciliation','Rekonsiliasi pembayaran'),evidenceLink('payroll-accounting-reconciliation','Rekonsiliasi akuntansi'),evidenceLink('integrations','Kesehatan integrasi'),evidenceLink('approvals','Inbox approval'))
+      +evidenceSection('Periode terbaru',`<ul class="record-list evidence-list evidence-block">${payrollPeriodCard(report.current)}</ul>`)
+      +evidenceSection('Periode dalam snapshot',evidenceList(report.periods.map(payrollPeriodCard),'Snapshot ini tidak memuat periode payroll.'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payroll-summary');}
 }
 
 async function mekariPayrollSnapshotsDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Riwayat snapshot payroll Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const rows=await api.get('/api/integrations/mekari/payroll-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="hint">Snapshot agregat immutable dari connector worker, terbaru dahulu.</p>${rows.map(row=>`<article class="material-event"><p class="status-label done">Berhasil</p><h3>${purchaseStamp(row.snapshot_at)}</h3><p>Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}</p><button data-action="mekari-payroll-snapshot" data-id="${e(row.id)}">Rincian snapshot payroll</button></article>`).join('')||'<p class="state">Belum ada snapshot payroll Mekari.</p>'}<button data-action="mekari-payroll-summary">Ringkasan terbaru</button>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payroll-snapshots">Coba lagi</button>`;}
+  const version=epoch;openDialog('Riwayat snapshot payroll Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const rows=await api.get('/api/integrations/mekari/payroll-snapshots?limit=100');if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotHistory(rows,{title:row=>purchaseStamp(row.snapshot_at),counts:row=>`Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}`,status:()=>['success','Berhasil'],
+      detail:'mekari-payroll-snapshot',label:'Rincian snapshot payroll',empty:'Belum ada snapshot payroll Mekari.',back:evidenceLink('mekari-payroll-summary','Ringkasan terbaru'),
+      intro:'Snapshot agregat immutable dari connector worker, terbaru dahulu.'});
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payroll-snapshots');}
 }
 
 async function mekariPayrollSnapshotDialog(batchId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian snapshot payroll Mekari','<p class="state">Memuat snapshot…</p>');const modal=dialogVersion;
-  try{const row=await api.get('/api/integrations/mekari/payroll-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;$('dialog-content').innerHTML=`<p class="form-info">${purchaseStamp(row.snapshot_at)} · Berhasil</p><p>Dibaca ${n(row.records_read)} · periode ${n(row.period_count)}</p><p class="hint">Cursor ${e(row.external_cursor||'tidak dicatat')} · ${e(row.reason)} · ${e(row.actor_name)}</p>${row.periods.map(payrollPeriodCard).join('')||'<p class="state">Snapshot ini tidak memuat periode payroll.</p>'}<div class="actions"><button data-action="mekari-payroll-snapshots">Riwayat snapshot payroll</button><button data-action="mekari-payroll-summary">Ringkasan terbaru</button></div>`;}catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="mekari-payroll-snapshot" data-id="${e(batchId)}">Coba lagi</button>`;}
+  const version=epoch;openDialog('Rincian snapshot payroll Mekari',evidenceLoading('Memuat snapshot…'));const modal=dialogVersion;
+  try{const row=await api.get('/api/integrations/mekari/payroll-snapshots/'+encodeURIComponent(batchId));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
+    $('dialog-content').innerHTML=snapshotIdentity(purchaseStamp(row.snapshot_at),true,'')
+      +snapshotContext(row,[['Dibaca',n(row.records_read)],['Periode',n(row.period_count)]])
+      +evidenceSection('Periode payroll',evidenceList(row.periods.map(payrollPeriodCard),'Snapshot ini tidak memuat periode payroll.'))
+      +evidenceNav(evidenceLink('mekari-payroll-snapshots','Riwayat snapshot payroll'),evidenceLink('mekari-payroll-summary','Ringkasan terbaru'));
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'mekari-payroll-snapshot',batchId);}
 }
 
+
 const payrollPaymentStatus={awaiting_payment:'Menunggu pembayaran',paid:'Sudah dibayar',exception:'Perlu perhatian'};
+const payrollPaymentTone={awaiting_payment:'info',paid:'success',exception:'warning'};
 const payrollPaymentException={source_missing:'Periode tidak ada di snapshot payroll terbaru.',financial_mismatch:'Nilai atau konteks payroll berubah sejak approval.',source_cancelled:'Payroll dibatalkan di Mekari.',source_draft:'Payroll kembali menjadi draft di Mekari.'};
 const payrollChangedField={period_start:'awal periode',period_end:'akhir periode',currency:'mata uang',employee_count:'jumlah karyawan',gross_pay:'gaji bruto',employee_deductions:'potongan karyawan',employer_contributions:'kontribusi perusahaan'};
+// Satu filter rekonsiliasi payroll: pencarian bebas dan status pada command bar, submit eksplisit.
+// Tautan ke Payroll Mekari, rekonsiliasi pasangan, dan Inbox approval ada di baris navigasi
+// terpisah supaya form hanya berisi filter.
+function payrollReconciliationFilter(formId,searchLabel,options) {
+  return `<form id="${formId}" class="command-bar evidence-block"><label class="command-search"><span class="visually-hidden">${e(searchLabel)}</span>${svgIcon('search','icon-sm')}<input name="q" type="search" maxlength="160" aria-label="${e(searchLabel)}" placeholder="${e(searchLabel)}"></label>`
+    +`<div class="command-filters"><label class="command-filter"><span>Status</span><select name="status" aria-label="Status">${options}</select></label></div>`
+    +'<div class="command-actions"><button type="submit" class="action-secondary">Terapkan filter</button></div></form>';
+}
 
 async function payrollPaymentReconciliationDialog() {
   if(guardPending())return;
-  openDialog('Rekonsiliasi pembayaran payroll',`<p class="hint">Menghubungkan approval Beeloft terbaru dengan status pembayaran pada snapshot Mekari terbaru. Laporan ini tidak mengirim uang atau membuat jurnal.</p><form id="payroll-payment-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="awaiting_payment">Menunggu pembayaran</option><option value="paid">Sudah dibayar</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-accounting-reconciliation">Akuntansi payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-payment-message" class="state" role="status"></p><div id="payroll-payment-summary"></div><div id="payroll-payment-results"></div><button id="payroll-payment-more" type="button" hidden>Muat batch berikutnya</button>`);
+  openDialog('Rekonsiliasi pembayaran payroll',evidenceNote('Menghubungkan approval Beeloft terbaru dengan status pembayaran pada snapshot Mekari terbaru. Laporan ini tidak mengirim uang atau membuat jurnal.','shield')
+    +payrollReconciliationFilter('payroll-payment-filter','Cari approval / ID payroll','<option value="all">Semua status</option><option value="awaiting_payment">Menunggu pembayaran</option><option value="paid">Sudah dibayar</option><option value="exception">Perlu perhatian</option>')
+    +evidenceNav(evidenceLink('mekari-payroll-summary','Payroll Mekari'),evidenceLink('payroll-accounting-reconciliation','Akuntansi payroll'),evidenceLink('approvals','Inbox approval'))
+    +'<p id="payroll-payment-message" class="state" role="status"></p><div id="payroll-payment-summary"></div><ul id="payroll-payment-results" class="record-list evidence-list evidence-block" aria-label="Batch payroll"></ul><div class="evidence-more evidence-block"><button id="payroll-payment-more" type="button" class="action-secondary" hidden>Muat batch berikutnya</button></div>');
   const version=epoch,modal=dialogVersion,form=$('payroll-payment-filter'),results=$('payroll-payment-results'),more=$('payroll-payment-more');
   let offset=0,generation=0;
   const load=async reset=>{
@@ -4166,13 +4468,20 @@ async function payrollPaymentReconciliationDialog() {
       const report=await api.get('/api/payroll-payment-reconciliation?'+new URLSearchParams({...values,limit:25,offset}));
       if(request!==generation||version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
       const s=report.summary;
-      $('payroll-payment-summary').innerHTML=`<dl class="requirement-values"><div><dt>Batch approved</dt><dd>${n(s.approved_batches)}</dd></div><div><dt>Menunggu pembayaran</dt><dd>${n(s.awaiting_payment)}</dd></div><div><dt>Sudah dibayar</dt><dd>${n(s.paid)}</dd></div><div><dt>Perlu perhatian</dt><dd>${n(s.exceptions)}</dd></div><div><dt>Gaji neto approved</dt><dd>${financeRupiah(s.expected_net_pay)}</dd></div><div><dt>Gaji neto dibayar</dt><dd>${financeRupiah(s.paid_net_pay)}</dd></div></dl>`;
+      $('payroll-payment-summary').innerHTML=evidenceMetrics('Ringkasan rekonsiliasi pembayaran',[['Batch approved',n(s.approved_batches),'check-circle',''],['Menunggu pembayaran',n(s.awaiting_payment),'clock',''],['Sudah dibayar',n(s.paid),'wallet',''],['Perlu perhatian',n(s.exceptions),'alert-triangle',s.exceptions?'warning':'']])
+        +evidenceFacts([['Gaji neto approved',financeRupiah(s.expected_net_pay)],['Gaji neto dibayar',financeRupiah(s.paid_net_pay)]],false);
       results.insertAdjacentHTML('beforeend',report.items.map(row=>{
         const detail=row.exception_reason?payrollPaymentException[row.exception_reason]||'Status sumber payroll perlu diperiksa.':'';
         const changed=row.changed_fields.length?' Bidang berubah: '+row.changed_fields.map(field=>payrollChangedField[field]||field).join(', ')+'.':'';
-        return `<article class="material-event" data-payroll-payment="${e(row.id)}"><p class="status-label ${row.payment_status==='paid'?'done':row.payment_status==='exception'?'late':''}">${e(payrollPaymentStatus[row.payment_status])}</p><h3>${date(row.period_start)}–${date(row.period_end)}</h3><p>${n(row.employee_count)} karyawan · gaji neto approved ${financeRupiah(row.expected_net_pay)}</p><p>Total biaya perusahaan ${financeRupiah(row.expected_total_employer_cost)}</p><p class="hint">${e(row.approval_reference)} · ID sumber ${e(row.external_payroll_id)} · Mekari ${e(row.source_status?payrollStatus[row.source_status]:'tidak ditemukan')}${row.payment_date?' · dibayar '+date(row.payment_date):''}</p>${detail?`<p class="error">${e(detail+changed)}</p>`:''}<button data-action="payroll-approval-request" data-id="${e(row.approval_request_id)}">Rincian approval</button></article>`;
+        return evidenceRecord(`${date(row.period_start)}–${date(row.period_end)}`,{attrs:` data-payroll-payment="${e(row.id)}"`,
+          chips:evidenceChip(payrollPaymentTone[row.payment_status]||'neutral',payrollPaymentStatus[row.payment_status]),
+          body:evidenceLine(`${n(row.employee_count)} karyawan · gaji neto approved ${financeRupiah(row.expected_net_pay)}`)
+            +evidenceLine(`Total biaya perusahaan ${financeRupiah(row.expected_total_employer_cost)}`)
+            +evidenceMeta(`${e(row.approval_reference)} · ID sumber ${e(row.external_payroll_id)} · Mekari ${e(row.source_status?payrollStatus[row.source_status]:'tidak ditemukan')}${row.payment_date?' · dibayar '+date(row.payment_date):''}`)
+            +(detail?evidenceAttention('Perlu perhatian',detail+changed):''),
+          actions:evidenceLink('payroll-approval-request','Rincian approval',row.approval_request_id)});
       }).join(''));
-      if(reset&&!report.items.length)results.innerHTML='<p class="state">Tidak ada batch payroll untuk filter ini.</p>';
+      if(reset&&!report.items.length)results.innerHTML='<li class="evidence-quiet">Tidak ada batch payroll untuk filter ini.</li>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat batch berikutnya';message('payroll-payment-message','');
     }catch(error){if(version===epoch&&modal===dialogVersion){message('payroll-payment-message',error.message,true);more.hidden=false;more.textContent='Coba lagi';}}
     finally{more.disabled=false;}
@@ -4181,11 +4490,15 @@ async function payrollPaymentReconciliationDialog() {
 }
 
 const payrollAccountingStatus={waiting_payment:'Menunggu pembayaran',awaiting_posting:'Menunggu posting',posted:'Sudah diposting',exception:'Perlu perhatian'};
+const payrollAccountingTone={waiting_payment:'info',awaiting_posting:'info',posted:'success',exception:'warning'};
 const payrollAccountingException={payment_source_missing:'Periode tidak ada di snapshot payroll terbaru.',payment_financial_mismatch:'Nilai atau konteks payroll berubah sejak approval.',payment_source_cancelled:'Payroll dibatalkan di Mekari.',payment_source_draft:'Payroll kembali menjadi draft di Mekari.',posting_reversed:'Jurnal payroll sudah dibalik di Mekari.',posting_unbalanced:'Total debit dan kredit jurnal payroll tidak seimbang.',posting_amount_mismatch:'Nilai jurnal tidak sama dengan total biaya perusahaan yang disetujui.'};
 
 async function payrollAccountingReconciliationDialog() {
   if(guardPending())return;
-  openDialog('Rekonsiliasi akuntansi payroll',`<p class="hint">Mencocokkan payroll approved dan dibayar dengan metadata jurnal pada snapshot Mekari terbaru. Laporan ini hanya baca dan tidak membuat atau mem-posting jurnal.</p><form id="payroll-accounting-filter" class="filter-form"><div class="form-grid"><label>Status<select name="status"><option value="all">Semua status</option><option value="waiting_payment">Menunggu pembayaran</option><option value="awaiting_posting">Menunggu posting</option><option value="posted">Sudah diposting</option><option value="exception">Perlu perhatian</option></select></label><label>Cari approval / ID payroll / jurnal<input name="q" maxlength="160"></label></div><div class="actions"><button type="submit">Terapkan filter</button><button type="button" data-action="mekari-payroll-summary">Payroll Mekari</button><button type="button" data-action="payroll-payment-reconciliation">Pembayaran payroll</button><button type="button" data-action="approvals">Inbox approval</button></div></form><p id="payroll-accounting-message" class="state" role="status"></p><div id="payroll-accounting-summary"></div><div id="payroll-accounting-results"></div><button id="payroll-accounting-more" type="button" hidden>Muat batch berikutnya</button>`);
+  openDialog('Rekonsiliasi akuntansi payroll',evidenceNote('Mencocokkan payroll approved dan dibayar dengan metadata jurnal pada snapshot Mekari terbaru. Laporan ini hanya baca dan tidak membuat atau mem-posting jurnal.','shield')
+    +payrollReconciliationFilter('payroll-accounting-filter','Cari approval / ID payroll / jurnal','<option value="all">Semua status</option><option value="waiting_payment">Menunggu pembayaran</option><option value="awaiting_posting">Menunggu posting</option><option value="posted">Sudah diposting</option><option value="exception">Perlu perhatian</option>')
+    +evidenceNav(evidenceLink('mekari-payroll-summary','Payroll Mekari'),evidenceLink('payroll-payment-reconciliation','Pembayaran payroll'),evidenceLink('approvals','Inbox approval'))
+    +'<p id="payroll-accounting-message" class="state" role="status"></p><div id="payroll-accounting-summary"></div><ul id="payroll-accounting-results" class="record-list evidence-list evidence-block" aria-label="Batch payroll"></ul><div class="evidence-more evidence-block"><button id="payroll-accounting-more" type="button" class="action-secondary" hidden>Muat batch berikutnya</button></div>');
   const version=epoch,modal=dialogVersion,form=$('payroll-accounting-filter'),results=$('payroll-accounting-results'),more=$('payroll-accounting-more');
   let offset=0,generation=0;
   const load=async reset=>{
@@ -4196,14 +4509,20 @@ async function payrollAccountingReconciliationDialog() {
       const report=await api.get('/api/payroll-accounting-reconciliation?'+new URLSearchParams({...values,limit:25,offset}));
       if(request!==generation||version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
       const s=report.summary;
-      $('payroll-accounting-summary').innerHTML=`<dl class="requirement-values"><div><dt>Batch approved</dt><dd>${n(s.approved_batches)}</dd></div><div><dt>Menunggu pembayaran</dt><dd>${n(s.waiting_payment)}</dd></div><div><dt>Menunggu posting</dt><dd>${n(s.awaiting_posting)}</dd></div><div><dt>Sudah diposting</dt><dd>${n(s.posted)}</dd></div><div><dt>Perlu perhatian</dt><dd>${n(s.exceptions)}</dd></div><div><dt>Biaya perusahaan approved</dt><dd>${financeRupiah(s.expected_employer_cost)}</dd></div><div><dt>Biaya sudah diposting</dt><dd>${financeRupiah(s.posted_employer_cost)}</dd></div></dl>`;
+      $('payroll-accounting-summary').innerHTML=evidenceMetrics('Ringkasan rekonsiliasi akuntansi',[['Batch approved',n(s.approved_batches),'check-circle',''],['Menunggu pembayaran',n(s.waiting_payment),'clock',''],['Menunggu posting',n(s.awaiting_posting),'file',''],['Sudah diposting',n(s.posted),'clipboard',''],['Perlu perhatian',n(s.exceptions),'alert-triangle',s.exceptions?'warning':'']])
+        +evidenceFacts([['Biaya perusahaan approved',financeRupiah(s.expected_employer_cost)],['Biaya sudah diposting',financeRupiah(s.posted_employer_cost)]],false);
       results.insertAdjacentHTML('beforeend',report.items.map(row=>{
         const detail=row.exception_reason?payrollAccountingException[row.exception_reason]||'Status akuntansi payroll perlu diperiksa.':'';
         const changed=row.changed_fields.length?' Bidang berubah: '+row.changed_fields.map(field=>payrollChangedField[field]||field).join(', ')+'.':'';
-        const journal=row.journal_reference?`<p class="hint">Jurnal ${e(row.journal_reference)} · ${e(row.journal_status)}${row.posting_date?' · posting '+date(row.posting_date):''}</p><p>Debit ${financeRupiah(row.debit_total)} · kredit ${financeRupiah(row.credit_total)}</p>`:'<p class="hint">Jurnal belum tersedia pada snapshot Mekari terbaru.</p>';
-        return `<article class="material-event" data-payroll-accounting="${e(row.id)}"><p class="status-label ${row.workflow_status==='posted'?'done':row.workflow_status==='exception'?'late':''}">${e(payrollAccountingStatus[row.workflow_status])}</p><h3>${date(row.period_start)}–${date(row.period_end)}</h3><p>${n(row.employee_count)} karyawan · biaya perusahaan approved ${financeRupiah(row.expected_total_employer_cost)}</p><p class="hint">${e(row.approval_reference)} · ID sumber ${e(row.external_payroll_id)} · pembayaran ${e(row.payment_status?payrollStatus[row.payment_status]:'tidak ditemukan')}${row.payment_date?' '+date(row.payment_date):''}</p>${journal}${detail?`<p class="error">${e(detail+changed)}</p>`:''}<button data-action="payroll-approval-request" data-id="${e(row.approval_request_id)}">Rincian approval</button></article>`;
+        const journal=row.journal_reference?evidenceMeta(`Jurnal ${e(row.journal_reference)} · ${e(row.journal_status)}${row.posting_date?' · posting '+date(row.posting_date):''}`)+evidenceLine(`Debit ${financeRupiah(row.debit_total)} · kredit ${financeRupiah(row.credit_total)}`):evidenceMeta('Jurnal belum tersedia pada snapshot Mekari terbaru.');
+        return evidenceRecord(`${date(row.period_start)}–${date(row.period_end)}`,{attrs:` data-payroll-accounting="${e(row.id)}"`,
+          chips:evidenceChip(payrollAccountingTone[row.workflow_status]||'neutral',payrollAccountingStatus[row.workflow_status]),
+          body:evidenceLine(`${n(row.employee_count)} karyawan · biaya perusahaan approved ${financeRupiah(row.expected_total_employer_cost)}`)
+            +evidenceMeta(`${e(row.approval_reference)} · ID sumber ${e(row.external_payroll_id)} · pembayaran ${e(row.payment_status?payrollStatus[row.payment_status]:'tidak ditemukan')}${row.payment_date?' '+date(row.payment_date):''}`)
+            +journal+(detail?evidenceAttention('Perlu perhatian',detail+changed):''),
+          actions:evidenceLink('payroll-approval-request','Rincian approval',row.approval_request_id)});
       }).join(''));
-      if(reset&&!report.items.length)results.innerHTML='<p class="state">Tidak ada batch payroll untuk filter ini.</p>';
+      if(reset&&!report.items.length)results.innerHTML='<li class="evidence-quiet">Tidak ada batch payroll untuk filter ini.</li>';
       offset+=report.items.length;more.hidden=offset>=report.total;more.textContent='Muat batch berikutnya';message('payroll-accounting-message','');
     }catch(error){if(version===epoch&&modal===dialogVersion){message('payroll-accounting-message',error.message,true);more.hidden=false;more.textContent='Coba lagi';}}
     finally{more.disabled=false;}
@@ -4211,34 +4530,62 @@ async function payrollAccountingReconciliationDialog() {
   form.onsubmit=event=>{event.preventDefault();load(true);};more.onclick=()=>load(false);load(true);
 }
 
+
+// ===================== A6.5 · Tanya Beeloft =====================
+// Investigasi, bukan obrolan: pertanyaan → asumsi → jawaban → fakta → temuan → rekomendasi →
+// feedback → proposal opsional. Satu permukaan jawaban, bukti di bawahnya dalam tata bahasa
+// A6 yang sama dengan Integrasi, dan rekomendasi yang selalu dinyatakan BELUM dijalankan.
+// Renderer ini dipakai untuk hasil baru di halaman dan untuk investigasi lama di dialog, jadi ia
+// hanya membaca bidang yang sudah ada pada snapshot tersimpan dan tidak pernah merekonstruksi
+// bukti dari ledger hari ini. Bidang yang tidak ada pada catatan lama dibaca sebagai kosong.
+const aiSeverityTone={critical:'danger',high:'warning',medium:'neutral',info:'info'};
+const aiActionTone={submitted:'info',approved:'success',rejected:'danger',cancelled:'neutral'};
 function renderAiInvestigation(report,target,source=report.source_payload) {
   const intents={overview:'Ringkasan bisnis',production:'Kondisi produksi',stockout:'Risiko stockout',approvals:'Antrean approval',margin:'Margin kontribusi'};
   const confidence={high:'tinggi',medium:'sedang',low:'rendah'};
   const severity={critical:'Kritis',high:'Tinggi',medium:'Sedang',info:'Informasi'};
   const unit={sku:'SKU',order:'order',issue:'kendala',item:'item',material:'bahan',pcs:'pcs'};
   const factValue=row=>row.unit==='IDR'?rupiah(String(row.value)):`${n(Number(row.value))} ${unit[row.unit]||row.unit}`;
-  const focus=[...report.focus.products.map(row=>row.sku),...report.focus.orders.map(row=>row.reference)];
-  const facts=report.facts.map(row=>`<div><dt>${e(row.label)}</dt><dd>${e(factValue(row))}</dd></div>`).join('');
-  const findings=report.findings.map(row=>`<article class="material-event" data-ai-finding="${e(row.severity)}"><p class="status-label ${['critical','high'].includes(row.severity)?'late':row.severity==='info'?'done':''}">${e(severity[row.severity]||row.severity)}</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Sumber: ${e(row.source)}</p></article>`).join('');
+  const focus=[...(report.focus?.products||[]).map(row=>row.sku),...(report.focus?.orders||[]).map(row=>row.reference)];
+  const facts=(report.facts||[]).map(row=>[row.label,e(factValue(row))]);
+  const findings=(report.findings||[]).map(row=>evidenceRecord(e(row.title),{attrs:` data-ai-finding="${e(row.severity)}"`,
+    chips:evidenceChip(aiSeverityTone[row.severity]||'neutral',severity[row.severity]||row.severity),
+    body:evidenceLine(e(row.detail))+evidenceMeta(`Sumber: ${e(row.source)}`)}));
   const supported=new Set(['create_production_order','create_purchase_request']);
-  const recommendations=report.recommendations.map((row,index)=>`<article class="material-event" data-ai-recommendation="${e(row.kind)}"><p class="status-label late">Perlu approval</p><h3>${e(row.title)}</h3><p>${e(row.detail)}</p><p class="hint">Belum dijalankan · sumber ${e(row.source)}</p>${user.role!=='viewer'&&supported.has(row.kind)?`<button type="button" data-ai-proposal="${index}">Ajukan untuk approval</button>`:''}</article>`).join('');
+  const recommendations=(report.recommendations||[]).map((row,index)=>evidenceRecord(e(row.title),{attrs:` data-ai-recommendation="${e(row.kind)}"`,
+    chips:evidenceChip('warning','Perlu approval'),
+    body:evidenceLine(e(row.detail))+evidenceMeta(`Belum dijalankan · sumber ${e(row.source)}`),
+    actions:user.role!=='viewer'&&supported.has(row.kind)?`<button type="button" class="action-secondary" data-ai-proposal="${index}">Ajukan untuk approval</button>`:''}));
   const feedback=report.feedback_summary||{helpful:0,not_helpful:0,respondents:0};
   const actionStatus={submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
-  const links=(report.linked_actions||[]).map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(actionStatus[row.status]||row.status)}</h3><p>${e(row.recommendation.title)}</p><button data-action="ai-action-proposal" data-id="${e(row.id)}">Buka proposal tindakan</button></article>`).join('');
-  target.innerHTML=`${report.id?`<p class="form-info">Disimpan ${e(report.actor_name)} · ${purchaseStamp(report.created_at)}</p>`:''}<section class="ai-answer" aria-labelledby="ai-answer-heading"><p class="eyebrow">${e(intents[report.intent]||report.interpretation)} · keyakinan ${e(confidence[report.confidence]||report.confidence)}</p><h3 id="ai-answer-heading">Jawaban</h3><p class="hint">Pertanyaan: ${e(report.question)}</p><p>${e(report.answer)}</p><p class="hint">Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>
-    <div class="actions"><button type="button" data-ai-history>Riwayat investigasi</button></div>
-    <h3>Fakta pendukung</h3><dl class="requirement-values">${facts||'<div><dt>Hasil</dt><dd>Belum ada fakta pendukung.</dd></div>'}</dl>
-    <h3>Temuan</h3>${findings||'<p class="state">Tidak ada temuan yang perlu ditampilkan.</p>'}
-    <h3>Rekomendasi</h3>${recommendations||'<p class="state">Belum ada rekomendasi dari hasil ini.</p>'}
-    ${report.id?`<h3>Feedback tim</h3><p>${n(feedback.helpful)} membantu · ${n(feedback.not_helpful)} perlu diperbaiki · ${n(feedback.respondents)} responden</p><div class="actions"><button data-ai-feedback="helpful">Jawaban membantu</button><button data-ai-feedback="not_helpful">Perlu diperbaiki</button></div>`:''}
-    ${links?`<h3>Tindakan dari investigasi ini</h3>${links}`:''}
-    <details><summary>Batas analisis</summary>${report.limitations.map(item=>`<p class="hint">${e(item)}</p>`).join('')}</details>`;
+  const links=(report.linked_actions||[]).map(row=>evidenceRecord(e(row.reference),{chips:evidenceChip(aiActionTone[row.status]||'neutral',actionStatus[row.status]||row.status),
+    body:evidenceLine(e(row.recommendation.title)),actions:evidenceLink('ai-action-proposal','Buka proposal tindakan',row.id,'action-secondary')}));
+  const confidenceLabel=confidence[report.confidence]||report.confidence;
+  target.innerHTML='<article class="investigation">'
+    +`<div class="investigation-context"><p class="workspace-meta">${report.id?`Disimpan ${e(report.actor_name)} · ${purchaseStamp(report.created_at)}`:'Belum disimpan'}</p>`
+    +'<button type="button" class="action-quiet" data-ai-history>Riwayat investigasi</button></div>'
+    +'<section class="investigation-answer" aria-labelledby="ai-answer-heading">'
+    +`<div class="chip-row">${evidenceChip('info',intents[report.intent]||report.interpretation)}${evidenceChip('neutral','Keyakinan '+confidenceLabel)}</div>`
+    +'<h3 id="ai-answer-heading" class="investigation-answer-title">Jawaban</h3>'
+    +`<p class="investigation-question"><span class="field-label">Pertanyaan</span> ${e(report.question)}</p>`
+    +`<p class="investigation-answer-text">${e(report.answer)}</p>`
+    +`<p class="investigation-trust">${svgIcon('shield','icon-sm')}Analisis lokal · tidak mengirim data keluar · hanya baca${focus.length?' · fokus '+e(focus.join(', ')):''}</p></section>`
+    +evidenceSection('Fakta pendukung',facts.length?evidenceFacts(facts):evidenceQuiet('Belum ada fakta pendukung.'),'Bukti dari ledger saat investigasi disimpan')
+    +evidenceSection('Temuan',evidenceList(findings,'Tidak ada temuan yang perlu ditampilkan.'),findings.length?`${n(findings.length)} temuan`:'')
+    +evidenceSection('Rekomendasi',(recommendations.length?evidenceNote('Rekomendasi belum dijalankan. Mengajukan proposal tidak membuat order atau PR; tindakan hanya berjalan setelah admin menyetujui dan rekomendasi diperiksa ulang.','shield'):'')
+      +evidenceList(recommendations,'Belum ada rekomendasi dari hasil ini.'))
+    +(links.length?evidenceSection('Tindakan dari investigasi ini',evidenceList(links,'')):'')
+    +(report.id?evidenceSection('Feedback tim',`<p class="investigation-feedback">${n(feedback.helpful)} membantu · ${n(feedback.not_helpful)} perlu diperbaiki · ${n(feedback.respondents)} responden</p>`
+      +'<p class="field-help">Feedback tersimpan sebagai riwayat append-only. Ringkasan memakai respons terbaru setiap orang.</p>'
+      +'<div class="action-row"><button type="button" class="action-secondary" data-ai-feedback="helpful">Jawaban membantu</button><button type="button" class="action-secondary" data-ai-feedback="not_helpful">Perlu diperbaiki</button></div>'):'')
+    +`<details class="investigation-limits"><summary>Batas analisis</summary><ul>${(report.limitations||[]).map(item=>`<li>${e(item)}</li>`).join('')}</ul></details>`
+    +'</article>';
   target.querySelectorAll('[data-ai-proposal]').forEach(proposal=>proposal.onclick=()=>
     aiActionProposalForm(report.recommendations[Number(proposal.dataset.aiProposal)],
       {...source,investigation_id:report.id}));
   target.querySelectorAll('[data-ai-feedback]').forEach(button=>button.onclick=()=>{
     const rating=button.dataset.aiFeedback;
-    formDialog(rating==='helpful'?'Catat jawaban membantu':'Catat yang perlu diperbaiki',materialReason,
+    formDialog(rating==='helpful'?'Catat jawaban membantu':'Catat yang perlu diperbaiki',reasonField(),
       form=>({rating,reason:new FormData(form).get('reason').trim()}),
       '/api/ai/investigations/'+encodeURIComponent(report.id)+'/feedback',
       'Feedback tersimpan sebagai event append-only. Respons terbaru Anda dipakai dalam ringkasan.');
@@ -4255,12 +4602,12 @@ function renderAiInvestigation(report,target,source=report.source_payload) {
 
 async function aiInvestigationDetailDialog(investigationId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Investigasi tersimpan','<p class="state">Memuat investigasi…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Investigasi tersimpan',evidenceLoading('Memuat investigasi…'));const modal=dialogVersion;
   try{
     const report=await api.get('/api/ai/investigations/'+encodeURIComponent(investigationId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     renderAiInvestigation(report,$('dialog-content'));
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-investigation" data-id="${e(investigationId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'ai-investigation',investigationId);}
 }
 
 // Milestone D: Tanya Beeloft adalah halaman workspace. Prompt, asumsi, hasil, feedback, dan
@@ -4288,17 +4635,31 @@ async function loadAiHistory(reset=true) {
   const version=epoch,request=++aiHistoryRequest,form=$('ai-history-filter'),list=$('ai-history-list'),more=$('ai-history-more');
   const current=()=>version===epoch&&request===aiHistoryRequest&&view==='ai';
   if(reset){aiHistoryBefore=null;list.replaceChildren();}
-  more.disabled=true;message('ai-history-message','Memuat riwayat investigasi…');
+  more.disabled=true;pageState('ai-history-message','loading','Memuat riwayat investigasi…');
   try{
     const values=Object.fromEntries(new FormData(form));
     const query=new URLSearchParams({limit:50,intent:values.intent,q:values.q.trim()});
     if(aiHistoryBefore)query.set('before',aiHistoryBefore);
     const rows=await api.get('/api/ai/investigations?'+query);
     if(!current())return;
-    message('ai-history-message',rows.length?'':list.children.length?'Tidak ada riwayat yang lebih lama.':'Belum ada investigasi tersimpan.');
-    list.insertAdjacentHTML('beforeend',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(row.interpretation)}</p><h3>${e(row.question)}</h3><p>${e(row.answer)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)} · ${n(row.feedback_summary.respondents)} feedback · ${n(row.action_count)} tindakan</p><button data-action="ai-investigation" data-id="${e(row.id)}">Buka investigasi</button></article>`).join(''));
+    // Tiga keadaan berbeda, tiga kalimat berbeda: belum pernah ada investigasi, filter tidak
+    // cocok dengan apa pun, dan halaman sebelumnya sudah habis.
+    if(rows.length)pageState('ai-history-message','');
+    else if(list.children.length)message('ai-history-message','Tidak ada riwayat yang lebih lama.');
+    else if(values.intent!=='all'||values.q.trim())pageState('ai-history-message','empty','Tidak ada investigasi yang cocok.','Ubah kata kunci atau jenis analisis, lalu terapkan filter lagi.');
+    else pageState('ai-history-message','empty','Belum ada investigasi tersimpan.','Ajukan pertanyaan di atas. Setiap analisis tersimpan di sini dan dapat dibuka lagi.');
+    list.insertAdjacentHTML('beforeend',rows.map(row=>`<li class="record-row"><div class="record-row-copy">`
+      +`<span class="chip-row">${evidenceChip('neutral',row.interpretation)}</span><h3 class="data-primary">${e(row.question)}</h3>`
+      +`<span class="data-secondary investigation-history-answer">${e(row.answer)}</span>`
+      +`<span class="data-meta">${e(row.actor_name)} · ${purchaseStamp(row.created_at)} · ${n(row.feedback_summary.respondents)} feedback · ${n(row.action_count)} tindakan</span></div>`
+      +`<div class="record-row-aside">${evidenceLink('ai-investigation','Buka investigasi',row.id,'action-secondary')}</div></li>`).join(''));
     aiHistoryBefore=rows.at(-1)?.sequence||aiHistoryBefore;more.hidden=rows.length<50;
-  }catch(error){if(current())message('ai-history-message',error.message,true);}
+  }catch(error){
+    if(current()){
+      pageState('ai-history-message','error',error.message,'','<button id="ai-history-retry" type="button" class="action-secondary">Coba lagi</button>');
+      $('ai-history-retry').onclick=()=>loadAiHistory(reset);
+    }
+  }
   finally{if(current())more.disabled=false;}
 }
 async function submitAiInvestigation() {
@@ -4330,7 +4691,7 @@ async function submitAiInvestigation() {
       if(!unresolved){clearPending(storageKey,aiTransaction);aiTransaction=null;}
       lock(unresolved);reauth.hidden=!denied;
       message('ai-message',error.message+(unresolved&&denied?' Masuk ulang dengan akun yang sama untuk memastikan snapshot tidak digandakan.':''),true);
-      $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button">Coba lagi</button>');
+      $('ai-message').insertAdjacentHTML('beforeend','<br><button id="ai-retry" type="button" class="action-secondary">Coba lagi</button>');
       $('ai-retry').onclick=submitAiInvestigation;
     }
   }finally{
@@ -4355,27 +4716,33 @@ $('integrations-back').onclick=showBoard;
 $('integrations-refresh').onclick=()=>loadIntegrations(true);
 $('audit-back').onclick=showBoard;
 
+// Bidang form proposal memakai grammar field A6 di dalam formDialog() yang tidak berubah: label
+// sungguhan di atas kontrol, nama dan atribut validasi apa adanya.
+const aiProposalField=(name,label,type,attrs)=>`<div class="field"><label class="field-label" for="ai-proposal-${name}">${e(label)}</label><input id="ai-proposal-${name}" name="${name}" type="${type}" ${attrs}></div>`;
+const aiProposalContext=(title,detail)=>`<div class="field field-wide full"><span class="field-label">Rekomendasi</span><strong class="data-primary">${e(title)}</strong><span class="field-help">${e(detail)}</span></div>`;
 async function aiActionProposalForm(recommendation,source) {
   if(guardPending())return;
   const common=form=>({...source,action_kind:recommendation.kind,
     subject_id:recommendation.preview.product_id||recommendation.preview.material_id,
     ...Object.fromEntries(new FormData(form))});
   if(recommendation.kind==='create_production_order'){
-    const version=epoch;openDialog('Ajukan order produksi','<p class="state">Memuat daftar PIC…</p>');const modal=dialogVersion;
+    const version=epoch;openDialog('Ajukan order produksi',evidenceLoading('Memuat daftar PIC…'));const modal=dialogVersion;
     try{
       const users=(await api.get('/api/users')).filter(row=>row.active&&row.role!=='viewer');
       if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
-      formDialog('Ajukan order produksi',field('reference','Referensi order','text','required maxlength="160"')+
-        field('title','Nama order','text','required maxlength="160"')+
-        `<label>PIC produksi<select name="owner_id" required>${users.map(row=>option(row.id,row.name)).join('')}</select></label>`+
-        field('due_date','Target selesai','date','required')+materialReason,
+      formDialog('Ajukan order produksi',aiProposalContext(recommendation.title,'Proposal ini belum membuat order. Admin memutuskan di Inbox approval.')
+        +aiProposalField('reference','Referensi order','text','required maxlength="160"')+
+        aiProposalField('title','Nama order','text','required maxlength="160"')+
+        `<div class="field"><label class="field-label" for="ai-proposal-owner_id">PIC produksi</label><select id="ai-proposal-owner_id" name="owner_id" required>${users.map(row=>option(row.id,row.name)).join('')}</select></div>`+
+        aiProposalField('due_date','Target selesai','date','required')+reasonField(),
         common,'/api/ai/action-proposals',
         `${recommendation.title} · ${n(recommendation.preview.quantity)} pcs. Order baru dibuat hanya setelah admin menyetujui proposal dan rekomendasi masih sama.`);
-    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-brain">Kembali ke investigasi</button>`;}
+    }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'ai-brain','','Kembali ke investigasi');}
   }else{
-    formDialog('Ajukan purchase request',field('reference','Referensi PR','text','required maxlength="160"')+
-      field('required_date','Tanggal kebutuhan','date','required')+
-      field('estimated_value','Estimasi total (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+materialReason,
+    formDialog('Ajukan purchase request',aiProposalContext(recommendation.title,'Proposal ini belum membuat PR. Admin memutuskan di Inbox approval.')
+      +aiProposalField('reference','Referensi PR','text','required maxlength="160"')+
+      aiProposalField('required_date','Tanggal kebutuhan','date','required')+
+      aiProposalField('estimated_value','Estimasi total (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+reasonField(),
       common,'/api/ai/action-proposals',
       `${recommendation.title} · ${materialQty(recommendation.preview.quantity,recommendation.preview.unit)}. PR dibuat setelah admin menyetujui proposal; PR tersebut tetap masuk workflow approval purchasing.`);
   }
@@ -4383,26 +4750,39 @@ async function aiActionProposalForm(recommendation,source) {
 
 async function aiActionProposalDialog(proposalId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Proposal tindakan AI','<p class="state">Memuat proposal…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Proposal tindakan AI',evidenceLoading('Memuat proposal…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/ai/action-proposals/'+encodeURIComponent(proposalId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const production=row.action_kind==='create_production_order',action=production?'Buat order produksi':'Buat purchase request';
     const payload=row.action_payload,quantity=payload.lines[0].quantity;
-    const details=production?`<p>${e(payload.title)} · ${n(quantity)} pcs · target ${date(payload.due_date)}</p>`:
-      `<p>${e(materialQty(quantity,row.recommendation.preview.unit))} · dibutuhkan ${date(payload.required_date)} · ${e(rupiah(payload.estimated_value))}</p>`;
+    const details=production?[['Nama order',e(payload.title)],['Jumlah',`${n(quantity)} pcs`],['Target selesai',date(payload.due_date)]]:
+      [['Jumlah',e(materialQty(quantity,row.recommendation.preview.unit))],['Dibutuhkan',date(payload.required_date)],['Estimasi total',e(rupiah(payload.estimated_value))]];
     const decisions=[];
     if(user.role==='admin'&&row.status==='submitted')decisions.push(['approved','Setujui dan jalankan'],['rejected','Tolak proposal']);
     if(row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id))decisions.push(['cancelled','Batalkan proposal']);
-    const executed=row.executed_entity_id?`<p class="form-info">Tindakan selesai. ${production?'Order produksi':'Purchase request'} sudah dibuat.</p><button data-action="${production?'detail':'purchase-request'}" data-id="${e(row.executed_entity_id)}">Buka hasil tindakan</button>`:'';
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><p class="eyebrow">${e(action)}</p><h3>${e(row.recommendation.title)}</h3>${details}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Saat approval, sistem menghitung ulang rekomendasi dan membatalkan eksekusi bila sumber berubah.</p>${executed}<div class="actions">${decisions.map(([status,label])=>`<button data-ai-action-decision="${status}">${label}</button>`).join('')}${row.investigation_id?`<button data-action="ai-investigation" data-id="${e(row.investigation_id)}">Buka investigasi asal</button>`:''}<button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    const weight={approved:'action-primary',rejected:'action-destructive',cancelled:'action-secondary'};
+    // "Tindakan selesai" hanya muncul setelah server mencatat entitas hasil eksekusi.
+    const executed=row.executed_entity_id?`<div class="attention-note attention-note-success evidence-block">${svgIcon('check-circle','icon-sm')}<div class="attention-note-copy"><p class="attention-note-title">Tindakan selesai. ${production?'Order produksi':'Purchase request'} sudah dibuat.</p></div>`
+      +`<button type="button" class="action-secondary" data-action="${production?'detail':'purchase-request'}" data-id="${e(row.executed_entity_id)}">Buka hasil tindakan</button></div>`:'';
+    $('dialog-content').innerHTML=`<div class="evidence-identity evidence-block"><p class="workspace-meta">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><span class="chip-row">${evidenceChip(aiActionTone[row.status]||'neutral',approvalStatus[row.status])}${evidenceChip('neutral',action)}</span></div>`
+      +`<h3 class="investigation-proposal-title evidence-block">${e(row.recommendation.title)}</h3>`
+      +evidenceFacts([...details,['Diajukan oleh',e(row.actor_name)],['Waktu pengajuan',purchaseStamp(row.created_at)]],false)
+      +evidenceSection('Alasan pengajuan',`<p class="evidence-reason">${e(row.reason)}</p>`)
+      +evidenceNote(`Proposal belum menjalankan tindakan apa pun. Saat approval, sistem menghitung ulang rekomendasi dan membatalkan eksekusi bila sumber berubah; ${production?'order produksi':'purchase request'} dibuat dalam transaksi yang sama dengan keputusan.${production?'':' PR tersebut tetap masuk workflow approval purchasing.'}`,'shield')
+      +executed
+      +`<div class="action-row evidence-block">${decisions.map(([status,label])=>`<button type="button" class="${weight[status]}" data-ai-action-decision="${status}">${label}</button>`).join('')}`
+      +(row.investigation_id?evidenceLink('ai-investigation','Buka investigasi asal',row.investigation_id):'')+evidenceLink('approvals','Inbox approval')+'</div>'
+      +evidenceSection('Riwayat keputusan',row.history.length?`<ul class="timeline">${row.history.map(event=>`<li class="timeline-item timeline-item-${({approved:'success',rejected:'danger',cancelled:'warning'})[event.status]||'info'}">`
+        +`<time class="timeline-time" datetime="${e(event.created_at)}">${purchaseStamp(event.created_at)}</time><span class="timeline-event">${e(approvalStatus[event.status])}</span>`
+        +`<span class="timeline-actor">${e(event.actor_name)}</span><p class="timeline-detail evidence-reason">${e(event.reason)}</p></li>`).join('')}</ul>`:evidenceQuiet('Belum ada keputusan.'));
     $('dialog-content').querySelectorAll('[data-ai-action-decision]').forEach(button=>button.onclick=()=>{
       const decision=button.dataset.aiActionDecision;
-      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+      formDialog(button.textContent,reasonField(),form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
         '/api/ai/action-proposals/'+encodeURIComponent(row.id)+'/decisions',
         `${row.reference} · ${action}. ${decision==='approved'?'Rekomendasi diperiksa ulang lalu tindakan dijalankan dalam satu transaksi.':'Keputusan tersimpan permanen.'}`);
     });
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="ai-action-proposal" data-id="${e(proposalId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=evidenceFail(error.message,'ai-action-proposal',proposalId);}
 }
 
 // ===================== A6.4 · tata bahasa bersama laporan Analitik =====================

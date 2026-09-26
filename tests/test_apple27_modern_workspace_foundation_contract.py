@@ -99,9 +99,15 @@ LEGACY_VOCABULARY = (
 # merely LINKS to - the purchase order, final QC, finished-goods adjustment and production order
 # dialogs - is deliberately NOT on this list and still fails if it starts emitting A6 markup:
 # those belong to other workflows and to A6.5-A6.7.
+# A6.5 adds Tanya Beeloft and Integrasi: the two sections, the investigation renderers, the
+# integration health page, the run ledger, and the Jubelio / Mekari / payroll-reconciliation
+# dialogs Integrasi launches - by name - plus the small shared evidence grammar those renderers are
+# composed from. Everything they merely LINK to - Master SKU, the production order detail, the
+# Purchase Request detail, the Approval Inbox and the payroll approval-request internals - is
+# deliberately NOT on this list and still fails if it starts emitting A6 markup.
 MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view',
                      'people-view', 'bundle-scan-view', 'finished-goods-scan-view',
-                     'analytics-view')
+                     'analytics-view', 'ai-view', 'integrations-view')
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -150,6 +156,29 @@ MIGRATED_RENDERERS = frozenset({
     # ---- A6.4: Kapasitas master, embedded in the capacity report's own workflow ----
     'capacityField', 'capacitySelect', 'capacityFact',
     'capacityWorkCenterForm', 'capacityRoutingStandardForm', 'capacityCalendarForm',
+    # ---- A6.5: the shared evidence grammar ----
+    # Each writes exactly one A6.0 shape and is called only from the A6.5 renderers below.
+    'evidenceChip', 'evidenceFacts', 'evidenceMetrics', 'evidenceNote', 'evidenceLoading',
+    'evidenceFail', 'evidenceEmpty', 'evidenceNav', 'evidenceSection', 'evidenceRecord',
+    'evidenceList', 'evidenceAttention', 'snapshotIdentity', 'snapshotHistory',
+    # ---- A6.5: Tanya Beeloft ----
+    'showAi', 'submitAiInvestigation', 'loadAiHistory', 'renderAiInvestigation',
+    'aiInvestigationDetailDialog', 'aiActionProposalForm', 'aiActionProposalDialog',
+    'aiProposalField', 'aiProposalContext',
+    # ---- A6.5: Integrasi, its run ledger, and the snapshot / reconciliation dialogs ----
+    'showIntegrations', 'loadIntegrations', 'integrationSystem',
+    'integrationRunsDialog', 'integrationRunDialog',
+    'jubelioStockReconciliationDialog', 'jubelioStockSnapshotsDialog', 'jubelioStockSnapshotDialog',
+    'jubelioOrderSummaryDialog', 'jubelioOrderSnapshotsDialog', 'jubelioOrderSnapshotDialog',
+    'jubelioReturnSummaryDialog', 'jubelioReturnSnapshotsDialog', 'jubelioReturnSnapshotDialog',
+    'jubelioListingSummaryDialog', 'jubelioListingSnapshotsDialog', 'jubelioListingSnapshotDialog',
+    'mekariFinanceSummaryDialog', 'mekariFinanceSnapshotsDialog', 'mekariFinanceSnapshotDialog',
+    'mekariPayablesSummaryDialog', 'mekariPayableSnapshotsDialog', 'mekariPayableSnapshotDialog',
+    'mekariReceivablesSummaryDialog', 'mekariReceivableSnapshotsDialog', 'mekariReceivableSnapshotDialog',
+    'mekariPayrollSummaryDialog', 'mekariPayrollSnapshotsDialog', 'mekariPayrollSnapshotDialog',
+    'financePeriodCard', 'payableCard', 'receivableCard', 'payrollPeriodCard',
+    'payrollReconciliationFilter',
+    'payrollPaymentReconciliationDialog', 'payrollAccountingReconciliationDialog',
 })
 
 
@@ -711,7 +740,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.110.0')
+        self.assertEqual(version, '0.111.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
