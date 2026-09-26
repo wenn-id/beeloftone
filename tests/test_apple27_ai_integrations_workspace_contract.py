@@ -77,7 +77,11 @@ def uses(text, primitive):
 AI = section(HTML, 'ai-view')
 INTEGRATIONS = section(HTML, 'integrations-view')
 A65_MARKER = '#ai-view,#integrations-view{max-width:1360px'
-A65_BLOCK = code_css(CSS)[code_css(CSS).index(A65_MARKER):]
+# A6.6 appended the Aktivitas + Audit trail + Cadangan data block after this one, so A6.5's slice is
+# now bounded above by the A6.6 marker - the same deliberate act A6.3-A6.5 performed for their
+# predecessors. Without it every rule A6.6 writes would be read as an A6.5 rule.
+A66_MARKER = '#activity-view,#audit-view,#backup-view{max-width:1360px'
+A65_BLOCK = code_css(CSS)[code_css(CSS).index(A65_MARKER):code_css(CSS).index(A66_MARKER)]
 A65_APP = APP[APP.index("const integrationHealth="):APP.index('// ===================== A6.4 ·')]
 
 SUBMIT = renderer('submitAiInvestigation')
@@ -499,7 +503,8 @@ class ContainmentAndBudgetTest(unittest.TestCase):
         self.assertEqual(HTML.count('/static/workspace-primitives.css'), 1)
 
     def test_unrelated_sections_are_not_migrated(self):
-        for element in ('audit-view', 'activity-view', 'approvals-view', 'purchase-requests-view', 'marketing-budgets-view'):
+        # A6.6 migrated Aktivitas and Audit trail; the three A6.7 workspaces stay unmigrated.
+        for element in ('approvals-view', 'purchase-requests-view', 'marketing-budgets-view'):
             with self.subTest(section=element):
                 self.assertNotIn('workspace-page', section(HTML, element))
 
@@ -507,7 +512,7 @@ class ContainmentAndBudgetTest(unittest.TestCase):
 class VersionAndSchemaTest(unittest.TestCase):
     def test_the_version_is_aligned_everywhere(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.111.0', 'A6.5 is the visible workspace milestone')
+        self.assertEqual(version, '0.112.0', 'A6.6 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

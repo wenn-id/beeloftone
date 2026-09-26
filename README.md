@@ -142,7 +142,7 @@ Versi diumumkan di tiga tempat dan harus dinaikkan bersama: `version` di `pyproj
 `tests/test_openapi_contract.py` mengikat ketiganya ke satu nilai, karena menaikkan hanya
 versi paket pernah lolos tanpa terdeteksi dan membuat kontrak API tertinggal satu minor.
 
-Suite Python berisi 1013 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 1044 test yang memakai database sementara serta API/CLI sungguhan; mencakup
 konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
 input tidak sah, guard bisnis, pembalikan, migrasi, dan backup. Tidak ada data bisnis nyata di dalam
 test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance

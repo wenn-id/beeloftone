@@ -105,9 +105,16 @@ LEGACY_VOCABULARY = (
 # composed from. Everything they merely LINK to - Master SKU, the production order detail, the
 # Purchase Request detail, the Approval Inbox and the payroll approval-request internals - is
 # deliberately NOT on this list and still fails if it starts emitting A6 markup.
+# A6.6 adds Aktivitas, Audit trail and Cadangan data: the three sections, the Activity report
+# renderer and its one event renderer, the Audit trail page and its evidence dialog - by name.
+# Backup's utility is static markup in its section; its download handler writes only text. The
+# destinations they merely LINK to - the production order detail (A6.1) - and the three A6.7
+# workspaces (Purchasing, Budget marketing, Approval Inbox) are deliberately NOT on this list and
+# still fail if they start emitting A6 markup.
 MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view',
                      'people-view', 'bundle-scan-view', 'finished-goods-scan-view',
-                     'analytics-view', 'ai-view', 'integrations-view')
+                     'analytics-view', 'ai-view', 'integrations-view',
+                     'activity-view', 'audit-view', 'backup-view')
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -179,6 +186,10 @@ MIGRATED_RENDERERS = frozenset({
     'financePeriodCard', 'payableCard', 'receivableCard', 'payrollPeriodCard',
     'payrollReconciliationFilter',
     'payrollPaymentReconciliationDialog', 'payrollAccountingReconciliationDialog',
+    # ---- A6.6: Aktivitas ----
+    'loadActivity', 'activityEvent',
+    # ---- A6.6: Audit trail ----
+    'loadAuditEvents', 'auditEventDialog',
 })
 
 
@@ -740,7 +751,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.111.0')
+        self.assertEqual(version, '0.112.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

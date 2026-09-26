@@ -42,6 +42,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
         // The glyph sits at the end of the first line, opposite the label.
         glyphRight: glyph ? glyph.getBoundingClientRect().right : null,
         dtRight: dt.getBoundingClientRect().right,
+        dtLeft: dt.getBoundingClientRect().left,
         // ...or, on an A6 metric card, above it, inside a tinted tile.
         glyphBottom: glyph ? glyph.getBoundingClientRect().bottom : null,
         dtTop: dt.getBoundingClientRect().top,
@@ -147,7 +148,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
 
   // The activity report uses the same summary grid and must match.
   await openSidebarDestination('Laporan aktivitas');
-  await page.getByRole('heading', {name: 'Catatan produksi.'}).waitFor();
+  await page.getByRole('heading', {name: 'Aktivitas', exact: true}).waitFor();
   await page.getByRole('button', {name: 'Tampilkan aktivitas', exact: true}).click();
   await page.locator('#activity-summary dd').first().waitFor();
   const activity = await readCards('#activity-summary');
@@ -157,11 +158,16 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet, wor
   for (const card of activity) {
     assert.equal(card.hasGlyph, true, `${card.label} carries a glyph`);
     assert.equal(card.ariaHidden, 'true');
-    assert.equal(card.glyphColour, card.primary);
-    // Aktivitas is NOT migrated by A6.1, so it still ends the label row with its glyph. This is
-    // where that legacy layout stays covered now that the board has moved off it.
-    assert.ok(card.dtRight - card.glyphRight < 4,
-      `${card.label} glyph is aligned to the end of the label row`);
+    // A6.6 moved Aktivitas onto the A6 metric strip as well. Its strip is the compact variant: the
+    // semantic tile LEADS the label on the same band instead of ending the label row, and it is
+    // the one neutral accent for all four figures - a negative warehouse net is not an error.
+    assert.equal(card.glyphColour, roles.accent, `${card.label} glyph is the neutral accent`);
+    assert.ok(card.glyphRight <= card.dtLeft + 1,
+      `${card.label} glyph leads its label inside the A6 tile`);
+    assert.notEqual(card.tileBackground, 'rgba(0, 0, 0, 0)',
+      `${card.label} glyph sits in a real tinted tile`);
+    assert.ok(card.glyphBox >= 14 && card.glyphBox <= 22,
+      `${card.label} glyph renders at the shared icon scale (${card.glyphBox}px)`);
   }
 
   // No emoji and no remote icon source anywhere in the summary grids.

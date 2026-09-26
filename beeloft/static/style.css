@@ -2170,3 +2170,176 @@ label>input,label>select,label>textarea{margin-top:6px}
    tints are dropped by the mode itself. Meaning lives in chip text, headings and the A6.0
    `.status-dot`, which workspace-primitives.css already maps. The product keeps exactly four
    forced-colors contracts (A4, A5.2, A5.3, A6.0), and A6.5 does not add a fifth. */
+
+
+/* ==========================================================================
+   A6.6 - Aktivitas + Audit trail + Cadangan data inner-workspace containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1-A6.5 blocks above do, done once more for the three
+   operational/system workspaces A6.6 owns. They share one visual language but have
+   three deliberately different compositions:
+
+     Aktivitas     - a chronological report. The timeline is the page's centre; the four
+                     range-wide figures above it are a compact strip, not a dashboard.
+     Audit trail   - an immutable investigation ledger. Read-only context, one command
+                     bar, a result count, a record list, and a focused evidence dialog.
+     Cadangan data - one focused, security-sensitive utility surface. No table, no
+                     status chip, no invented history.
+
+   Everything here is reachable only from markup a migrated A6.6 renderer or section
+   emits: the three section ids, the A6.6 host ids inside them, and the `.activity-*`,
+   `.audit-*` and `.backup-*` names that only those renderers write. Nothing here is a
+   component and no A6.0 primitive is redefined; the A6.1-A6.5 blocks are not touched.
+
+   Three legacy names are still EMITTED on purpose, as stable hooks the existing suites
+   address (`#activity-list .activity-item`, `#audit-list .audit-event`, `.audit-json`).
+   Their legacy boxes - the `.history-item`-era grid gutters, the `.audit-event` card and
+   the payload viewer's sunken slab - are withdrawn below by id/class scope, never by
+   editing the legacy rules, which other surfaces still render. The legacy vocabulary
+   these pages used to render with - `.page-heading`, `.eyebrow`, `.filters`, `.summary`,
+   `.history-item`, `.hint`, `.filter-form`, `.form-grid`, `.form-actions`, `.form-info`,
+   `.status-label`, `.requirement-values`, `.pagination` - is left intact above: each is
+   still rendered by A6.7's Purchasing / Budget marketing / Approval Inbox or by a child
+   dialog. What A6.6 makes inert is left for A6.8's proven sweep, as A6.1's rule requires.
+   ========================================================================== */
+#activity-view,#audit-view,#backup-view{max-width:1360px;margin-inline:auto}
+#activity-view .workspace-subtitle,#audit-view .workspace-subtitle,#backup-view .workspace-subtitle{max-width:72ch}
+
+/* ---------- A6.6 Aktivitas: command bar ----------
+   Dates keep their words. A date control that only showed a calendar glyph would hide which end
+   of the range it is, so each filter keeps its visible label and a width that fits a full date.
+   The floor is desktop-only on purpose: `[type=date]` out-specifies the phone rule below, and at
+   320px / 200% text an 8.75rem floor is 280px - wider than the command bar, clipped by the window
+   rather than overflowing the document. On a phone the field is full-width instead. */
+@media(min-width:651px){
+  #activity-form .command-filter>input[type=date]{min-width:8.75rem}
+  #activity-form .command-filter>select{min-width:10rem}
+}
+
+/* ---------- A6.6 Aktivitas: the range-wide summary ----------
+   Four real figures, read as one compact row. The tile sits beside its label rather than above it,
+   which is what keeps the strip to a single short band so the timeline starts in the first
+   viewport at 1440. */
+#activity-summary{grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr))}
+#activity-summary:empty{display:none}
+#activity-summary .metric-card{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:.1rem .65rem;min-height:0;padding:10px 12px}
+#activity-summary .metric-icon{grid-row:1/3;margin:0}
+#activity-summary .metric-value{font-size:1.25rem}
+/* Secondary information, not a panel, exactly as A6.1-A6.2 treat their scope notes. Every word of
+   the summary / warehouse-net / CSV truth is kept; it is read once and then out of the way. */
+#activity-summary-note{max-width:100ch;padding:1px 0 0;border-radius:0;background:none;font-size:var(--type-metadata);line-height:1.45}
+#activity-summary-note>span{min-width:0;overflow-wrap:anywhere}
+#activity-export-note{color:var(--ink-2);font-weight:600}
+
+/* ---------- A6.6 Aktivitas: the timeline ---------- */
+.activity-work{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+/* The state host keeps its id, its `role="status"` and its `.state` class; its box now comes from
+   the A6 state rendered inside it. */
+#activity-message{padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit}
+/* The timeline lives on one near-opaque surface so the events stay readable over the wallpaper.
+   The rail and markers belong to the A6 timeline primitive; nothing here draws per-row material. */
+.activity-surface{min-width:0;padding:18px 20px 16px 22px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface);box-shadow:var(--workspace-shadow)}
+.activity-surface:has(>#activity-list:empty){display:none}
+/* A fixed time column, so fifty events read as one aligned chronology instead of fifty
+   differently indented rows. rem, not px: at 200% text the column grows with the timestamp. */
+#activity-list .activity-item{grid-template-columns:8.75rem minmax(0,1fr);padding-bottom:1.1rem;overflow-wrap:anywhere}
+#activity-list .activity-item:last-child{padding-bottom:0}
+#activity-list .activity-item p{margin:0}
+#activity-list .activity-item .timeline-time{grid-row:1/span 2;padding-top:.05rem}
+#activity-list .activity-item .timeline-event{font-size:var(--type-metadata);font-weight:650;color:var(--ink-2);letter-spacing:.01em}
+#activity-list .activity-item .timeline-detail{margin-top:.1rem}
+#activity-list .activity-item .timeline-actor{margin-top:.25rem;color:var(--muted)}
+#activity-list .activity-order>.order-title{display:inline;font-size:var(--type-control);font-weight:650;color:var(--ink);overflow-wrap:anywhere}
+#activity-list .activity-sku{color:var(--muted);font-size:var(--type-metadata);font-variant-numeric:tabular-nums}
+#activity-list .activity-reason{padding-left:.6rem;border-left:2px solid var(--workspace-divider);color:var(--ink-2);white-space:pre-wrap}
+.activity-more,.audit-more{display:flex;justify-content:center;min-width:0}
+.activity-more:has(>[hidden]),.audit-more:has(>[hidden]){display:none}
+
+/* ---------- A6.6 Audit trail ---------- */
+.audit-body{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+.audit-body>*{min-width:0}
+#audit-readonly-note{max-width:100ch}
+#audit-readonly-note>span{min-width:0;overflow-wrap:anywhere}
+/* Search is the widest control: it takes its own row, and the classification filters and the
+   two dates sit beneath it with Reset and the explicit submit on the right. */
+#audit-filter .command-search{flex:1 1 100%}
+#audit-filter .command-filter>select{max-width:16rem}
+#audit-summary{margin:0}
+#audit-error{margin:0;padding:10px 14px;border:1px solid var(--color-danger-edge);border-radius:var(--workspace-panel-radius);background:var(--color-danger-soft);color:var(--ink);font-weight:600}
+/* The legacy `.audit-event` card is withdrawn inside the ledger: a record is a row of one list,
+   not a card of its own. The class stays because the existing suites address it. */
+#audit-list .audit-event{align-items:flex-start;margin:0;padding:12px var(--workspace-cell-x);border:0;border-bottom:1px solid var(--workspace-divider);border-radius:0;background:none;box-shadow:none;overflow-wrap:anywhere}
+#audit-list .audit-event:last-child{border-bottom:0}
+#audit-list .audit-event p{margin:0}
+#audit-list .audit-event h3{margin:.35rem 0 0}
+#audit-list .audit-event .data-secondary{margin-top:.1rem}
+#audit-list .audit-event .data-meta{margin-top:.2rem}
+#audit-list .empty-state{border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface)}
+
+/* ---------- A6.6 audit evidence dialog ---------- */
+.audit-evidence{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+.audit-evidence>*{min-width:0;margin:0}
+.audit-facts .audit-fact-wide{grid-column:1/-1}
+.audit-evidence code{font:.8125rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;word-break:break-word}
+.audit-evidence>.info-panel>span{min-width:0;overflow-wrap:anywhere}
+.audit-evidence-section{display:flex;flex-direction:column;gap:.45rem;min-width:0}
+.audit-evidence-section>h3{margin:0;font-size:var(--type-card-title)}
+/* The stored JSON keeps its legacy hook and its wrapping, readable, scrollable box; only its
+   material moves onto the A6 tokens so it reads as evidence inside the dialog in both themes. */
+.audit-evidence .audit-json{margin:0;max-height:min(360px,48dvh);padding:12px 14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);color:var(--ink)}
+.audit-evidence .field-actions{margin-top:0}
+
+/* ---------- A6.6 Cadangan data ----------
+   One focused utility surface: what the file is, why it is sensitive, what it does and does not
+   contain about access keys, when the snapshot is taken, what to verify afterwards, then the one
+   action and its status. The measure is bounded so the whole utility reads as a single column. */
+.backup-utility{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0;max-width:52rem;padding:18px 20px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface);box-shadow:var(--workspace-shadow)}
+.backup-utility>*{min-width:0;margin:0}
+.backup-file{display:flex;align-items:flex-start;gap:.75rem;min-width:0}
+.backup-file>.metric-icon{margin:0;background:var(--color-accent-soft);color:var(--color-accent)}
+.backup-file-copy{flex:1 1 0;min-width:0}
+.backup-contents{margin:.3rem 0 0;color:var(--ink-2);font-size:var(--type-body);line-height:1.5;overflow-wrap:anywhere}
+.backup-notes{display:flex;flex-direction:column;gap:8px;min-width:0;padding:0;list-style:none}
+.backup-notes>.info-panel>span{min-width:0;overflow-wrap:anywhere}
+.backup-notes strong{color:var(--ink);font-weight:650}
+.backup-actions{margin-top:.1rem}
+/* message() writes plain text here and toggles `.error`; the status reads as a quiet panel and the
+   failure as the danger tint, inline, never only as a toast. */
+#backup-message{padding:10px 14px;border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);color:var(--ink-2);font-size:var(--type-caption);line-height:1.5}
+#backup-message.error{border-color:var(--color-danger-edge);background:var(--color-danger-soft);color:var(--ink);font-weight:600}
+
+@media(max-width:980px){
+  /* The product's narrow-width touch floor, restored for migrated controls that out-specify it,
+     exactly as A6.1-A6.5 did for theirs. */
+  #activity-view button,#audit-view button,#backup-view button,.audit-evidence button,
+  #activity-view .command-filter,#activity-view .command-filter>select,#activity-view .command-filter>input,
+  #audit-view .command-filter,#audit-view .command-filter>select,#audit-view .command-filter>input,
+  #audit-view .command-search input{min-height:var(--touch-target-min)}
+  #activity-list .activity-order>.order-title{min-height:var(--touch-target-min);display:inline-flex;align-items:center}
+}
+@media(max-width:650px){
+  /* A filter is a labelled field on a phone, for the same measured reason A6.4 and A6.5 gave
+     theirs: an inline label beside a date cannot wrap at 320px/200%. */
+  #activity-view .command-filter,#audit-view .command-filter{flex:1 1 100%;flex-direction:column;align-items:stretch;height:auto;padding:.3rem .6rem;gap:.1rem}
+  #activity-view .command-filter>span,#audit-view .command-filter>span{overflow-wrap:anywhere;white-space:normal}
+  #activity-view .command-filter>select,#activity-view .command-filter>input,
+  #audit-view .command-filter>select,#audit-view .command-filter>input{width:100%;max-width:none;min-width:0}
+  #activity-view .command-actions,#audit-view .command-actions{width:100%}
+  #activity-view .command-actions>button,#audit-view .command-actions>button{flex:1 1 auto}
+  #activity-view button,#audit-view button,#backup-view button,.audit-evidence button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  /* One column: the time sits above its event instead of beside it. */
+  .activity-surface{padding:14px 14px 12px 18px}
+  #activity-list .activity-item{grid-template-columns:minmax(0,1fr)}
+  #activity-list .activity-item>*{grid-column:1}
+  #activity-list .activity-item .timeline-time{grid-row:auto;white-space:normal}
+  #activity-summary .metric-value{font-size:1.1rem;overflow-wrap:anywhere}
+  #audit-list .audit-event{flex-direction:column;align-items:stretch;gap:.6rem}
+  #audit-list .audit-event .record-row-aside{justify-content:flex-start}
+  #audit-list .chip-row .status-chip{white-space:normal}
+  .backup-utility{padding:14px}
+  .backup-actions>button{flex:1 1 100%}
+}
+/* No A6.6 forced-colors block, on purpose, for the reason A6.5 recorded: every surface here has a
+   real 1px border that forced-colors repaints, and meaning lives in text - the spelled-out event
+   label, the category chip text with its A6.0 `.status-dot`, the error copy and the button label -
+   never in a tint or a timeline marker alone. */
