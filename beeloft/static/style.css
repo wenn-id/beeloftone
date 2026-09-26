@@ -2343,3 +2343,152 @@ label>input,label>select,label>textarea{margin-top:6px}
    real 1px border that forced-colors repaints, and meaning lives in text - the spelled-out event
    label, the category chip text with its A6.0 `.status-dot`, the error copy and the button label -
    never in a tint or a timeline marker alone. */
+
+
+
+/* ==========================================================================
+   A6.7 - Permintaan pembelian + Budget marketing + Inbox approval containment
+   --------------------------------------------------------------------------
+   The same narrow job the A6.1-A6.6 blocks above do, done once more for the three
+   business queues A6.7 owns and for the request sheets they open. The three pages
+   share ONE idiom - context, one command bar, one record list, "load more" - and
+   differ only in their records:
+
+     Permintaan pembelian - material requests; its two utilities (Master pemasok,
+                            Daftar PO) are dialogs in the same grammar.
+     Budget marketing     - campaign ceilings; approval never records spending.
+     Inbox approval       - nine approval kinds read from the ledgers that own them;
+                            opening one lands in that domain's own detail.
+
+   Everything here is reachable only from markup a migrated A6.7 section or renderer
+   emits: the three section ids, the A6.7 host ids inside them (`#approval-*`,
+   `#pr-page-*`, `#marketing-budget-*`) and inside the two utility dialogs (`#po-*`,
+   `#pr-lines`), and the `.queue-*` and `.request-*` names only those renderers write.
+   `.approval-*` and `.decision-*` are deliberately NOT used: the frozen Command Center
+   owns both. Nothing here is a component and no A6.0 primitive is redefined; the
+   A6.1-A6.6 blocks are not touched.
+
+   Two legacy hooks are still EMITTED on purpose. `.state` wraps each queue's loading
+   and empty state inside its `list-host`, because appendRows(), clearPageLoading() and
+   the shared-UI suite recognise a state by it and the M6 motion contract requires the
+   host's own class to stay exactly `list-host`; its legacy card is withdrawn here by
+   class scope. `.bom-line` stays on the PR line editor for the same reason A6.2 kept it
+   on the BOM editor: it is the collector's hook. The legacy vocabulary these pages used
+   to render with - `.page-heading`, `.eyebrow`, `.hint`, `.actions`, `.filter-form`,
+   `.form-grid`, `.form-actions`, `.form-info`, `.material-event`, `.status-label` - is
+   left intact above: the PO fulfilment dialogs, the production change and payroll
+   approval dialogs, the order-scoped "PR untuk order ini" dialog and `formDialog()`
+   itself still render it. What A6.7 makes inert is left for A6.8's proven sweep, as
+   A6.1's rule requires.
+   ========================================================================== */
+#purchase-requests-view,#marketing-budgets-view,#approvals-view{max-width:1360px;margin-inline:auto}
+#purchase-requests-view .workspace-subtitle,#marketing-budgets-view .workspace-subtitle,#approvals-view .workspace-subtitle{max-width:72ch}
+/* Scope notes are read once and are one or two sentences each: a bounded measure, not a ribbon. */
+#purchase-requests-note,#marketing-budgets-note,#approvals-source-note{max-width:100ch}
+#purchase-requests-note>span,#marketing-budgets-note>span,#approvals-source-note>span{min-width:0;overflow-wrap:anywhere}
+/* The Inbox's context: the source note, then the four domain lists it can hand the operator to.
+   They are navigation, so they are quiet and labelled as one group, not four equal CTAs. */
+.queue-context{display:flex;flex-direction:column;gap:8px;min-width:0}
+.queue-sources{display:flex;align-items:center;gap:4px 6px;flex-wrap:wrap;min-width:0}
+.queue-sources>.workspace-meta{margin-right:4px;font-weight:600}
+
+/* ---------- A6.7 the queue ---------- */
+.queue-body{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+.queue-body>*{min-width:0}
+#approval-filter .command-filter>select,#marketing-budget-filter .command-filter>select,#pr-page-filter .command-filter>select{max-width:18rem}
+/* The load-more control is an error's retry as well ("Coba lagi"), so the errors sit directly
+   above the list they describe, in the same danger panel A6.6 gave the Audit ledger. */
+#approval-error,#pr-page-error,#marketing-budget-error,#po-error{margin:0;padding:10px 14px;border:1px solid var(--color-danger-edge);border-radius:var(--workspace-panel-radius);background:var(--color-danger-soft);color:var(--ink);font-size:var(--type-caption);font-weight:600}
+/* The state host keeps the `.state` hook, so its legacy card is withdrawn and the A6 state inside
+   it provides the box. An empty queue still reads as the queue's own surface. */
+.queue-state{padding:0;border:0;border-radius:0;background:none;color:inherit;text-align:left;font-size:inherit}
+.queue-state>.empty-state{border:1px solid var(--workspace-edge);border-radius:var(--workspace-surface-radius);background:var(--workspace-surface)}
+/* A record with several lines reads from its identity down, so the amount and the action align
+   with the reference, not with the middle of the record. */
+.queue-item{align-items:flex-start}
+.queue-item :is(h3,p){margin:0}
+.queue-item>.metric-icon{background:var(--workspace-surface-secondary);color:var(--ink-2)}
+.queue-item .chip-row{margin-top:.4rem}
+.queue-item .data-meta{margin-top:.25rem;overflow-wrap:anywhere}
+.queue-item .chip-row+.data-meta{margin-top:.35rem}
+/* Who asked and when rides on the chip line, as A6.3's request rows do: one line less per record. */
+.queue-item .chip-row>.queue-stamp{margin:0 0 0 .2rem}
+/* The requester's own words, quoted quietly and kept to two lines in the queue; the whole text
+   is in the record's detail, and a screen reader still reads all of it here.
+   Both rules below are scoped to the record because A6.0's `.data-meta{display:block}` loads
+   after this sheet and would otherwise win at equal specificity. */
+.queue-item .queue-reason{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--ink-2);white-space:pre-wrap}
+/* A stale production change says so in words; the glyph carries the tone, never the tint alone. */
+.queue-item .queue-warning{display:flex;align-items:flex-start;gap:.3rem;color:var(--ink);font-weight:600}
+.queue-item .queue-warning>.icon{flex:0 0 auto;margin-top:.05rem;color:var(--color-warning)}
+.queue-amount{display:flex;flex-direction:column;align-items:flex-end;min-width:0;margin:0;text-align:right}
+.queue-amount-value{color:var(--ink);font-size:var(--type-control);font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.queue-amount-label{color:var(--muted);font-size:var(--type-metadata)}
+.queue-more{display:flex;justify-content:center;min-width:0}
+.queue-more:has(>[hidden]){display:none}
+
+/* ---------- A6.7 request sheets and the two Purchasing utilities ----------
+   A focused dialog, read top to bottom: identity, facts, the requester's words, the rule that
+   governs the decision, the decisions this viewer may take, related records, navigation, then
+   the append-only history. The dialog's own chrome (`formDialog()`) is A6.8's, not this block's. */
+.request-sheet{display:flex;flex-direction:column;gap:var(--workspace-panel-gap);min-width:0}
+.request-sheet>*{min-width:0;margin:0}
+.request-sheet :is(h3,p){margin:0}
+.request-sheet .info-panel>span{min-width:0;overflow-wrap:anywhere}
+.request-identity{display:flex;flex-direction:column;gap:.3rem;min-width:0}
+.request-identity>.data-primary{font-size:var(--type-card-title);font-weight:650}
+.request-section{display:flex;flex-direction:column;gap:.45rem;min-width:0}
+.request-section>h3{font-size:var(--type-card-title)}
+.request-text{color:var(--ink);font-size:var(--type-body);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.request-lines .record-row,.request-orders .record-row{min-height:0;padding:10px var(--workspace-cell-x)}
+.request-quantity{color:var(--ink);font-size:var(--type-control);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.request-history .timeline-detail{white-space:pre-wrap}
+.request-navigation{padding-top:10px;border-top:1px solid var(--workspace-divider)}
+.request-sheet>.workspace-subhead{align-items:center}
+/* The PR line editor keeps A6.2's `.bom-line` rows; only the section around it is A6.7's. */
+.request-lines-editor{display:flex;flex-direction:column;gap:.45rem;min-width:0}
+.request-lines-editor>h3{margin:0;font-size:var(--type-card-title)}
+.request-lines-editor>.field-help{margin:0}
+.request-lines-editor>.field-actions{margin-top:0}
+
+@media(max-width:980px){
+  /* The product's narrow-width touch floor, restored for migrated controls that out-specify it,
+     exactly as A6.1-A6.6 did for theirs. */
+  #purchase-requests-view button,#marketing-budgets-view button,#approvals-view button,.request-sheet button,
+  #purchase-requests-view .command-filter,#purchase-requests-view .command-filter>select,
+  #marketing-budgets-view .command-filter,#marketing-budgets-view .command-filter>select,
+  #approvals-view .command-filter,#approvals-view .command-filter>select,
+  .request-sheet .command-filter,.request-sheet .command-filter>select{min-height:var(--touch-target-min)}
+}
+@media(max-width:650px){
+  /* A filter is a labelled field on a phone, for the same measured reason A6.4-A6.6 gave theirs:
+     an inline label beside a select cannot wrap at 320px / 200%. */
+  #purchase-requests-view .command-filter,#marketing-budgets-view .command-filter,#approvals-view .command-filter,
+  .request-sheet .command-filter{flex:1 1 100%;flex-direction:column;align-items:stretch;height:auto;padding:.3rem .6rem;gap:.1rem}
+  #purchase-requests-view .command-filter>span,#marketing-budgets-view .command-filter>span,#approvals-view .command-filter>span,
+  .request-sheet .command-filter>span{overflow-wrap:anywhere;white-space:normal}
+  #purchase-requests-view .command-filter>select,#marketing-budgets-view .command-filter>select,#approvals-view .command-filter>select,
+  .request-sheet .command-filter>select{width:100%;max-width:none;min-width:0}
+  #purchase-requests-view .command-actions,#marketing-budgets-view .command-actions,#approvals-view .command-actions,
+  .request-sheet .command-actions{width:100%}
+  #purchase-requests-view .command-actions>button,#marketing-budgets-view .command-actions>button,#approvals-view .command-actions>button,
+  .request-sheet .command-actions>button{flex:1 1 auto}
+  #purchase-requests-view button,#marketing-budgets-view button,#approvals-view button,.request-sheet button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  /* The record wraps below its tile (A6.0's own rule); its amount then reads from the left like
+     the rest of the record, and a long figure may break rather than cross the window. */
+  /* The group label takes its own line, so the four lists wrap as one aligned run beneath it. */
+  .queue-sources>.workspace-meta{flex:1 1 100%;margin:0}
+  .queue-amount{align-items:flex-start;text-align:left}
+  .queue-amount-value{white-space:normal;overflow-wrap:anywhere}
+  .request-quantity{white-space:normal;overflow-wrap:anywhere}
+  /* A6.0 caps a chip at its column and keeps it on one line; at 320px / 200% a "Menunggu
+     keputusan" or a kind label is wider than the column, so on these surfaces it may wrap inside
+     its own pill, exactly as A6.6 lets the Audit category chip wrap. The same holds for a history
+     stamp, which A6.0 keeps on one line beside a column that no longer exists here. */
+  .queue-item .status-chip,.request-sheet .status-chip{white-space:normal;overflow-wrap:anywhere}
+  .request-history .timeline-time{white-space:normal}
+}
+/* No A6.7 forced-colors block, for the reason A6.5 and A6.6 recorded: every A6.7 surface has a
+   real 1px border that forced-colors repaints, and meaning lives in text - the status and kind
+   chip text with A6.0's `.status-dot`, the spelled-out stale sentence, the error copy and every
+   button label - never in a tint, a tile or a timeline marker alone. */

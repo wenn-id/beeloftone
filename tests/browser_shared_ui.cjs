@@ -222,11 +222,12 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
     const stale = [...host.querySelectorAll('.state')].some(n => /Memuat/.test(n.textContent));
     return !stale && host.children.length > 0;
   });
+  // A6.7: an approval is an A6 record row; loading and empty keep the `.state` hook inside the host.
   const afterLoad = await page.evaluate(() => {
     const host = document.getElementById('approval-list');
     return {
       stale: [...host.querySelectorAll('.state')].filter(n => /Memuat/.test(n.textContent)).length,
-      rows: host.querySelectorAll('.material-event').length,
+      rows: host.querySelectorAll('.record-row').length,
       emptyState: host.querySelector('.state') ? host.querySelector('.state').textContent.trim() : '',
     };
   });
@@ -243,7 +244,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, viewer, wor
   await page.getByRole('button', {name: 'Muat ulang inbox', exact: true}).click();
   await page.waitForFunction(() => {
     const host = document.getElementById('approval-list');
-    return host && !host.querySelector('.material-event')
+    return host && !host.querySelector('.record-row')
       && host.querySelector('.state') && !/Memuat/.test(host.querySelector('.state').textContent);
   });
   const empty = await page.locator('#approval-list .state').textContent();

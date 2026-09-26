@@ -111,7 +111,8 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   const boardList = await page.evaluate(() => document.getElementById('order-list').innerHTML.length);
   await page.getByRole('button', {name: 'People', exact: true}).click();
   await page.getByRole('button', {name: 'Inbox approval', exact: true}).click();
-  await heading('Satu antrean untuk setiap keputusan.');
+  // A6.7: the Inbox title is the product noun.
+  await heading('Inbox approval');
   releaseBoard(); await boardFinished;
   await page.unroute('**/api/production-board?*');
   await page.waitForTimeout(500);

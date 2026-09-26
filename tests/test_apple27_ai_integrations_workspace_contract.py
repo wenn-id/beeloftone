@@ -502,17 +502,22 @@ class ContainmentAndBudgetTest(unittest.TestCase):
         self.assertIn('const navigationLensSpring = {mass:1, stiffness:520, damping:40};', lens)
         self.assertEqual(HTML.count('/static/workspace-primitives.css'), 1)
 
-    def test_unrelated_sections_are_not_migrated(self):
-        # A6.6 migrated Aktivitas and Audit trail; the three A6.7 workspaces stay unmigrated.
+    def test_unrelated_sections_are_not_migrated_by_a65(self):
+        # A6.6 migrated Aktivitas and Audit trail and A6.7 the three business queues. What A6.5
+        # still owes is that none of those migrations lives in, or leaks through, its own block.
         for element in ('approvals-view', 'purchase-requests-view', 'marketing-budgets-view'):
             with self.subTest(section=element):
-                self.assertNotIn('workspace-page', section(HTML, element))
+                self.assertIn('workspace-page', section(HTML, element))
+                self.assertNotIn('#' + element, A65_BLOCK)
+        for name in ('#approval-', '#pr-page-', '#marketing-budget-', '.queue-', '.request-'):
+            with self.subTest(a67=name):
+                self.assertNotIn(name, A65_BLOCK)
 
 
 class VersionAndSchemaTest(unittest.TestCase):
     def test_the_version_is_aligned_everywhere(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.112.0', 'A6.6 is the visible workspace milestone')
+        self.assertEqual(version, '0.113.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

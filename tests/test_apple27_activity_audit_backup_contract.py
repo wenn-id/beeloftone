@@ -53,7 +53,10 @@ LOAD_AUDIT = between('async function loadAuditEvents(', 'async function auditEve
 AUDIT_DIALOG = between('async function auditEventDialog(', '\n// Keluar dialog')
 BACKUP_JS = APP[APP.index("$('backup').onclick"):]
 A66_MARKER = '#activity-view,#audit-view,#backup-view{max-width:1360px'
-A66_BLOCK = code_css(CSS)[code_css(CSS).index(A66_MARKER):]
+# A6.7 appended its own block after this one; the A6.6 slice ends where it begins, so the checks
+# below keep meaning exactly what they meant when A6.6 was approved.
+A67_MARKER = '#purchase-requests-view,#marketing-budgets-view,#approvals-view{max-width:1360px'
+A66_BLOCK = code_css(CSS)[code_css(CSS).index(A66_MARKER):code_css(CSS).index(A67_MARKER)]
 
 
 class ActivityTest(unittest.TestCase):
@@ -318,9 +321,16 @@ class GlobalTest(unittest.TestCase):
             self.assertNotIn(foreign, A66_BLOCK)
         self.assertNotRegex(A66_BLOCK, r'backdrop-filter|@keyframes|animation\s*:|transition\s*:')
 
-    def test_a67_workspaces_stay_unmigrated(self):
+    def test_a67_workspaces_are_migrated_by_a67_not_by_a66(self):
+        # A6.6 promised to leave the three business queues alone. A6.7 has since migrated them; what
+        # A6.6 still owes is that none of that migration lives in, or leaks through, its own block.
         for element in ('approvals-view', 'purchase-requests-view', 'marketing-budgets-view'):
-            self.assertNotIn('workspace-page', section(HTML, element))
+            with self.subTest(section=element):
+                self.assertIn('workspace-page', section(HTML, element))
+                self.assertNotIn('#' + element, A66_BLOCK)
+        for name in ('#approval-', '#pr-page-', '#marketing-budget-', '#po-', '.queue-', '.request-'):
+            with self.subTest(a67=name):
+                self.assertNotIn(name, A66_BLOCK)
 
     def test_frame_timer_budget_and_no_polling(self):
         self.assertEqual(len(re.findall(r'requestAnimationFrame\(', APP)), 6)
@@ -340,7 +350,7 @@ class GlobalTest(unittest.TestCase):
 
     def test_version_schema_and_routes(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.112.0', 'A6.6 is the visible workspace milestone')
+        self.assertEqual(version, '0.113.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

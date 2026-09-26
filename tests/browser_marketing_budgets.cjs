@@ -10,7 +10,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
 
   await role(operator);
   await page.getByRole('button',{name:'Budget marketing',exact:true}).click();
-  await page.getByRole('heading',{name:'Pengajuan budget kampanye.',exact:true}).waitFor();
+  // A6.7: the page title is the product noun, as every migrated workspace's is.
+  await page.getByRole('heading',{name:'Budget marketing',level:1,exact:true}).waitFor();
   await page.getByRole('button',{name:'Ajukan budget',exact:true}).click();
   await page.getByLabel('Referensi pengajuan',{exact:true}).fill('MKT-UI-001');
   await page.getByLabel('Nama kampanye',{exact:true}).fill('Koleksi <Biru>&');

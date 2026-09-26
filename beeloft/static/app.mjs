@@ -6594,19 +6594,84 @@ const purchaseStatus = {submitted:'Menunggu keputusan',approved:'Disetujui',reje
 const approvalStatus = {pending:'Menunggu keputusan',submitted:'Menunggu keputusan',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 const approvalKind = {purchase_request:'Purchasing · PR',purchase_order:'Purchasing · PO',supplier_payment:'Finance · pembayaran supplier',marketing_budget:'Marketing · budget kampanye',production_change:'Production · perubahan order',workforce_leave:'People · cuti',workforce_overtime:'People · lembur',payroll_batch:'People · batch payroll',ai_action:'AI Brain · tindakan'};
 const approvalAction = {purchase_request:'purchase-request',purchase_order:'purchase-order',supplier_payment:'supplier-payment-request',marketing_budget:'marketing-budget-request',production_change:'production-change-request',workforce_leave:'workforce-request',workforce_overtime:'workforce-request',payroll_batch:'payroll-approval-request',ai_action:'ai-action-proposal'};
+// A6.7: the context each approval kind already returned, as record metadata. Every phrase is the
+// one the queue printed before; only its element changed. A stale production change keeps its
+// sentence and gains the warning glyph, so the warning is never carried by a tint alone.
 function approvalContextHTML(row) {
-  if(row.kind==='purchase_request')return `<p>Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan</p>`;
-  if(row.kind==='purchase_order')return `<p>Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan</p>`;
-  if(row.kind==='supplier_payment')return `<p>Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}</p>`;
-  if(row.kind==='marketing_budget')return `<p>${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}</p>`;
-  if(row.kind==='workforce_leave')return `<p>${date(row.context.start_date)}${row.context.end_date!==row.context.start_date?'–'+date(row.context.end_date):''} · ${n(row.context.days)} hari</p>`;
-  if(row.kind==='workforce_overtime')return `<p>${date(row.context.start_date)} · ${e(minuteQty(row.context.overtime_minutes))}</p>`;
-  if(row.kind==='payroll_batch')return `<p>${date(row.context.period_start)}–${date(row.context.period_end)} · ${n(row.context.employee_count)} karyawan${row.context.stale?' · sumber berubah':''}</p>`;
-  if(row.kind==='ai_action')return `<p>${e(row.context.recommendation_title)}</p>`;
-  return `<p>Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}</p><p>PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}</p>${row.context.stale?'<p class="status-label late">Permintaan sudah stale.</p>':''}`;
+  const line = text => `<p class="data-meta">${text}</p>`;
+  if(row.kind==='purchase_request')return line(`Dibutuhkan ${date(row.context.required_date)} · ${n(row.context.line_count)} bahan`);
+  if(row.kind==='purchase_order')return line(`Perkiraan datang ${date(row.context.expected_date)} · ${n(row.context.line_count)} bahan`);
+  if(row.kind==='supplier_payment')return line(`Invoice ${e(row.context.invoice_reference)} · jatuh tempo ${date(row.context.due_date)}`);
+  if(row.kind==='marketing_budget')return line(`${e(row.context.channel)} · ${date(row.context.start_date)}–${date(row.context.end_date)}`);
+  if(row.kind==='workforce_leave')return line(`${date(row.context.start_date)}${row.context.end_date!==row.context.start_date?'–'+date(row.context.end_date):''} · ${n(row.context.days)} hari`);
+  if(row.kind==='workforce_overtime')return line(`${date(row.context.start_date)} · ${e(minuteQty(row.context.overtime_minutes))}`);
+  if(row.kind==='payroll_batch')return line(`${date(row.context.period_start)}–${date(row.context.period_end)} · ${n(row.context.employee_count)} karyawan${row.context.stale?' · sumber berubah':''}`);
+  if(row.kind==='ai_action')return line(e(row.context.recommendation_title));
+  return line(`Target ${date(row.context.old_due_date)} → ${date(row.context.new_due_date)}`)+line(`PIC ${e(row.context.old_owner_name)} → ${e(row.context.new_owner_name)}`)
+    +(row.context.stale?`<p class="data-meta queue-warning">${svgIcon('alert-triangle','icon-sm')}<span>Permintaan sudah stale.</span></p>`:'');
 }
 const rupiah = value => 'Rp' + BigInt(value.split('.')[0]).toLocaleString('id-ID') + ',' + value.split('.')[1];
 const purchaseStamp = value => new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(value));
+
+// ===================== A6.7 · antrean keputusan dan lembar permintaan =====================
+// Permintaan pembelian, Budget marketing and the Approval Inbox share one idiom: context, one
+// command bar, ONE record list, "load more". Opening a record stays a focused dialog - a request
+// sheet: identity, facts, the words the requester wrote, the decisions, then the history. Every
+// helper below writes exactly one A6.0 shape, is called only from the A6.7 renderers, and is not a
+// component; none of them decides anything, filters anything or requests anything.
+// The kind glyph repeats the kind label that is always printed beside it, so it is never the only
+// channel. The domain glyphs are the sidebar's own.
+const queueGlyph = {purchase_request:'cart',purchase_order:'file',supplier_payment:'wallet',marketing_budget:'megaphone',
+  production_change:'layers',workforce_leave:'external',workforce_overtime:'activity',payroll_batch:'users',ai_action:'sparkles'};
+const queueChip = (tone,label) => `<span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${e(label)}</span>`;
+// A queue's state lives INSIDE its list host. The host keeps `list-host` as its only class, because
+// the M6 motion contract reads that class back after every replacement fade, so the state is a
+// child of it, wrapped in the `.state` hook appendRows() and clearPageLoading() already recognise.
+const queueState = (kind,title,copy='') => `<div class="state queue-state">${kind==='loading'
+  ?`<p class="loading-state">${svgIcon('refresh')}${e(title)}</p>`
+  :`<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">${e(title)}</p>${copy?`<p class="empty-state-copy">${e(copy)}</p>`:''}</div>`}</div>`;
+const queueAmount = (value,label='') => `<p class="queue-amount"><span class="queue-amount-value">${e(rupiah(value))}</span>${label?`<span class="queue-amount-label">${e(label)}</span>`:''}</p>`;
+// One record: identity first (the reference), what it is about, its status chips with who asked
+// when beside them, then the context the domain returned. The amount and the one open action sit
+// on the right. Callers pass markup they have already escaped, as the A6.5 evidence records do.
+const queueRow = ({glyph,primary,secondary='',chips='',stamp='',details='',aside='',hook=''}) => `<li class="record-row queue-item"${hook}>`
+  + `<span class="metric-icon">${svgIcon(glyph,'icon-sm')}</span>`
+  + `<div class="record-row-copy"><h3 class="data-primary">${primary}</h3>${secondary?`<p class="data-secondary">${secondary}</p>`:''}`
+  + (chips||stamp?`<div class="chip-row">${chips}${stamp?`<span class="data-meta queue-stamp">${stamp}</span>`:''}</div>`:'') + details + '</div>'
+  + (aside?`<div class="record-row-aside">${aside}</div>`:'') + '</li>';
+// Rows of every page join the SAME record list, so a queue stays one surface however many pages
+// were loaded. The first page drops the placeholder state exactly as appendRows() drops it.
+function queueAppend(hostId,label,rows) {
+  const host = $(hostId);
+  let list = host.querySelector(':scope>.record-list');
+  if (!list) { host.replaceChildren(); host.insertAdjacentHTML('beforeend',`<ul class="record-list" aria-label="${e(label)}"></ul>`); list = host.firstElementChild; }
+  list.insertAdjacentHTML('beforeend',rows);
+}
+// How many records are on screen. The lists return pages, not totals, so this never claims more.
+function queueCount(id,count,noun) { $(id).textContent = count ? `${n(count)} ${noun} ditampilkan` : ''; }
+const requestLoading = text => `<p class="loading-state">${svgIcon('refresh')}${e(text)}</p>`;
+const requestFail = (title,message,retry) => `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">${e(title)}</p><p class="error-state-copy">${e(message)}</p><p class="error-state-action">${retry}</p></div>`;
+// `reference · status` stays ONE line of text: it is the sentence an operator (and the suites)
+// look for when they come back to the same request, and the chip under it repeats it as a tone.
+const requestIdentity = (line,title,chips) => `<div class="request-identity"><p class="workspace-meta">${line}</p><h3 class="data-primary">${title}</h3><div class="chip-row">${chips}</div></div>`;
+const requestFacts = pairs => `<dl class="detail-grid request-facts">${pairs.map(([label,value]) => `<div class="detail-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+const requestSection = (title,body) => `<section class="request-section"><h3 class="workspace-section-title">${e(title)}</h3>${body}</section>`;
+const requestNote = (text,glyph='info') => `<p class="info-panel">${svgIcon(glyph,'icon-sm')}<span>${e(text)}</span></p>`;
+// Newest first, as the domain returns it. A decision is a timeline event, never a card of its own.
+const requestTone = {submitted:'info',pending:'info',approved:'success',rejected:'danger',cancelled:''};
+const requestHistory = (events,labels) => events.length
+  ? `<ol class="timeline request-history">${events.map(event => `<li class="timeline-item${requestTone[event.status]?' timeline-item-'+requestTone[event.status]:''}">`
+    + `<time class="timeline-time" datetime="${e(event.created_at)}">${purchaseStamp(event.created_at)}</time>`
+    + `<span class="timeline-event">${e(labels[event.status])}</span><span class="timeline-actor">${e(event.actor_name)}</span>`
+    + `<p class="timeline-detail reason">${e(event.reason)}</p></li>`).join('')}</ol>`
+  : `<div class="empty-state">${svgIcon('history')}<p class="empty-state-title">Belum ada keputusan.</p></div>`;
+// One primary per sheet: approving is the one genuinely forward decision; rejecting is the one
+// that ends a request negatively; withdrawing a submission is neutral. Navigation stays quiet.
+const requestDecisionWeight = {approved:'action-primary',rejected:'action-destructive',cancelled:'action-secondary'};
+// The A6 field grammar the earlier phases wrote. Names, types and limits are exactly the legacy
+// `field()` ones, so every payload is byte-for-byte the payload it was.
+const requestField = (name,label,type='text',attrs='') => `<div class="field"><label class="field-label" for="request-${name}">${e(label)}</label><input id="request-${name}" name="${name}" type="${type}" ${attrs}></div>`;
+const requestTextarea = (name,label,attrs='') => `<div class="field field-wide full"><label class="field-label" for="request-${name}">${e(label)}</label><textarea id="request-${name}" name="${name}" ${attrs}></textarea></div>`;
 $('purchase-requests').onclick = showPurchaseRequests;
 $('marketing-budgets').onclick = showMarketingBudgets;
 $('approvals').onclick = showApprovals;
@@ -6637,14 +6702,24 @@ async function loadApprovals() {
   // Section dibangun ulang dari nol, jadi daftarnya baru: tidak ada isi sebelumnya yang bisa
   // digantikan dan tidak ada yang boleh memudar.
   approvalsRendered=null;
-  body.innerHTML='<p class="state">Memuat antrean keputusan...</p>';
-  body.innerHTML=`<p class="hint">Satu antrean untuk keputusan purchasing, finance, marketing, produksi, People, dan tindakan hasil investigasi. Nilai serta konteks asal tetap dibaca dari ledger domainnya.</p><div class="actions"><button data-action="purchase-requests">Semua PR</button><button data-action="marketing-budgets">Semua budget marketing</button><button data-action="workforce-requests">Permintaan People</button><button data-action="mekari-payroll-summary">Payroll Mekari</button></div><form id="approval-filter" class="filter-form"><div class="form-grid"><label>Status<select id="approval-status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label><label>Jenis approval<select id="approval-kind"><option value="all">Semua jenis</option>${Object.entries(approvalKind).map(([value,label])=>option(value,label)).join('')}</select></label></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="approval-error" class="error" role="alert" hidden></p><div id="approval-list" class="list-host"><p class="state">Memuat approval...</p></div><button id="approval-more" type="button">Muat approval berikutnya</button>`;
+  // A6.7: context (heading, source note, the four domain lists) is static markup; the body is one
+  // command bar, the queue's count, and ONE record list. The filter values, the default `pending`,
+  // the 25-row offset paging, the retry on the load-more control and the replacement-only fade are
+  // unchanged, and so is the one request per load.
+  body.innerHTML=`<form id="approval-filter" class="command-bar"><div class="command-filters">`
+    + `<label class="command-filter"><span>Status</span><select id="approval-status" aria-label="Status"><option value="pending">Menunggu keputusan</option><option value="all">Semua status</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label>`
+    + `<label class="command-filter"><span>Jenis approval</span><select id="approval-kind" aria-label="Jenis approval"><option value="all">Semua jenis</option>${Object.entries(approvalKind).map(([value,label])=>option(value,label)).join('')}</select></label>`
+    + `</div><div class="command-actions"><button class="action-secondary" type="submit">Terapkan filter</button></div></form>`
+    + `<div class="workspace-subhead"><h2 id="approval-queue-heading" class="workspace-section-title">Antrean keputusan</h2><span id="approval-count" class="workspace-meta"></span></div>`
+    + `<p id="approval-error" class="error" role="alert" hidden></p>`
+    + `<div id="approval-list" class="list-host">${queueState('loading','Memuat approval…')}</div>`
+    + `<div class="queue-more"><button id="approval-more" type="button" class="action-secondary">Muat approval berikutnya</button></div>`;
   $('approval-status').value='pending';
   $('approval-kind').value='all';
   let offset=0,generation=0;
   const load=async(reset=false)=>{
     if(!current())return;
-    if(reset){generation++;offset=0;$('approval-list').replaceChildren();}
+    if(reset){generation++;offset=0;$('approval-list').replaceChildren();queueCount('approval-count',0,'approval');}
     const rendered=JSON.stringify([$('approval-status').value,$('approval-kind').value]);
     const gen=generation,button=$('approval-more');button.disabled=true;message('approval-error','');
     try{
@@ -6652,9 +6727,19 @@ async function loadApprovals() {
       if(!current()||gen!==generation)return;
       const replacing=approvalsRendered!==null&&approvalsRendered!==rendered;
       approvalsRendered=rendered;
-      appendRows('approval-list',rows.map(row=>`<article class="material-event"><p class="eyebrow">${e(approvalKind[row.kind])}</p><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.title)}</p>${row.amount?`<p><strong>${e(rupiah(row.amount))}</strong></p>`:''}${approvalContextHTML(row)}<p class="reason">${e(row.reason)}</p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button></article>`).join(''));
-      if(!offset&&!rows.length)$('approval-list').innerHTML='<p class="state">Tidak ada approval yang sesuai filter.</p>';
+      // A6.7: an approval is a record of the domain that owns it. Its kind is a neutral
+      // classification chip (the kind glyph repeats it), its status carries the approval tone, and
+      // "Buka approval" opens the domain's own detail, where the decision is taken.
+      if(rows.length)queueAppend('approval-list','Antrean approval',rows.map(row=>queueRow({glyph:queueGlyph[row.kind]||'inbox',
+        primary:e(row.reference),secondary:e(row.title),
+        chips:queueChip('neutral',approvalKind[row.kind])+queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]),
+        stamp:`${e(row.actor_name)} · ${purchaseStamp(row.created_at)}`,
+        details:approvalContextHTML(row)+`<p class="data-meta reason queue-reason">${e(row.reason)}</p>`,
+        aside:(row.amount?queueAmount(row.amount):'')+`<button type="button" class="action-secondary" data-action="${approvalAction[row.kind]}" data-id="${e(row.id)}" aria-label="Rincian approval ${e(row.reference)}">Buka approval</button>`,
+        hook:` data-approval-kind="${e(row.kind)}"`})).join(''));
+      if(!offset&&!rows.length)$('approval-list').innerHTML=queueState('empty','Tidak ada approval yang sesuai filter.','Ubah status atau jenis approval untuk melihat keputusan lain.');
       offset+=rows.length;button.hidden=rows.length<25;button.textContent='Muat approval berikutnya';
+      queueCount('approval-count',offset,'approval');
       // Hanya penggantian filter yang memudar; memuat halaman berikutnya menambahkan baris ke
       // daftar yang sama, jadi daftar itu tidak boleh berkedip.
       if(replacing)playEntryMotion($('approval-list'),'--motion-base');
@@ -6681,13 +6766,20 @@ async function loadMarketingBudgets() {
   const current=()=>version===epoch&&request===marketingBudgetsRequest&&view==='marketing-budgets';
   // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
   marketingBudgetsRendered=null;
-  body.innerHTML='<p class="state">Memuat pengajuan budget…</p>';
-  body.innerHTML=`<p class="hint">Daftar plafon kampanye yang diajukan ke manajemen. Persetujuan belum mencatat realisasi belanja.</p><div class="actions"><button data-action="approvals">Inbox approval</button></div><form id="marketing-budget-filter" class="filter-form"><div class="form-grid"><div><label for="marketing-budget-status">Status</label><select id="marketing-budget-status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="marketing-budget-error" class="error" role="alert" hidden></p><div id="marketing-budget-list" class="list-host"><p class="state">Memuat pengajuan budget…</p></div><button id="marketing-budget-more">Muat pengajuan berikutnya</button>`;
+  // A6.7: the budget queue in the same idiom as the Approval Inbox. The status values, the
+  // `before=sequence` cursor, the 25-row page, the retry and the replacement-only fade are unchanged.
+  body.innerHTML=`<form id="marketing-budget-filter" class="command-bar"><div class="command-filters">`
+    + `<label class="command-filter"><span>Status</span><select id="marketing-budget-status" aria-label="Status"><option value="all">Semua status</option><option value="submitted">Menunggu keputusan</option><option value="approved">Disetujui</option><option value="rejected">Ditolak</option><option value="cancelled">Dibatalkan</option></select></label>`
+    + `</div><div class="command-actions"><button class="action-secondary" type="submit">Terapkan filter</button></div></form>`
+    + `<div class="workspace-subhead"><h2 id="marketing-budget-heading" class="workspace-section-title">Pengajuan budget</h2><span id="marketing-budget-count" class="workspace-meta"></span></div>`
+    + `<p id="marketing-budget-error" class="error" role="alert" hidden></p>`
+    + `<div id="marketing-budget-list" class="list-host">${queueState('loading','Memuat pengajuan budget…')}</div>`
+    + `<div class="queue-more"><button id="marketing-budget-more" type="button" class="action-secondary">Muat pengajuan berikutnya</button></div>`;
   $('marketing-budget-status').value='all';
-  let before=null,generation=0;
+  let before=null,generation=0,shown=0;
   const load=async(reset=false)=>{
     if(!current())return;
-    if(reset){generation++;before=null;$('marketing-budget-list').replaceChildren();}
+    if(reset){generation++;before=null;shown=0;$('marketing-budget-list').replaceChildren();queueCount('marketing-budget-count',0,'pengajuan');}
     const rendered=JSON.stringify($('marketing-budget-status').value);
     const gen=generation,button=$('marketing-budget-more');button.disabled=true;message('marketing-budget-error','');
     try{
@@ -6695,8 +6787,18 @@ async function loadMarketingBudgets() {
       if(!current()||gen!==generation)return;
       const replacing=marketingBudgetsRendered!==null&&marketingBudgetsRendered!==rendered;
       marketingBudgetsRendered=rendered;
-      appendRows('marketing-budget-list',rows.map(row=>`<article class="material-event"><h3>${e(row.reference)} · ${e(approvalStatus[row.status])}</h3><p>${e(row.campaign_name)} · ${e(row.channel)}</p><p>${date(row.start_date)}–${date(row.end_date)} · <strong>${e(rupiah(row.amount))}</strong></p><p class="hint">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><button data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button></article>`).join(''));
-      if(!before&&!rows.length)$('marketing-budget-list').innerHTML='<p class="state">Belum ada pengajuan budget yang sesuai filter.</p>';
+      // A6.7: reference first, then the campaign and its channel, the status chip, the campaign
+      // period and who asked when; the requested ceiling sits beside the one open action.
+      if(rows.length)queueAppend('marketing-budget-list','Pengajuan budget marketing',rows.map(row=>queueRow({glyph:'megaphone',
+        primary:e(row.reference),secondary:`${e(row.campaign_name)} · ${e(row.channel)}`,
+        chips:queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]),
+        stamp:`${e(row.actor_name)} · ${purchaseStamp(row.created_at)}`,
+        details:`<p class="data-meta">${date(row.start_date)}–${date(row.end_date)}</p>`,
+        aside:queueAmount(row.amount,'plafon')+`<button type="button" class="action-secondary" data-action="marketing-budget-request" data-id="${e(row.id)}" aria-label="Rincian budget ${e(row.reference)}">Rincian budget</button>`,
+        hook:` data-marketing-budget="${e(row.id)}"`})).join(''));
+      if(!before&&!rows.length)$('marketing-budget-list').innerHTML=queueState('empty','Belum ada pengajuan budget yang sesuai filter.',
+        user.role==='viewer'?'Ubah status untuk melihat pengajuan lain.':'Ubah status untuk melihat pengajuan lain, atau ajukan budget kampanye baru.');
+      shown+=rows.length;queueCount('marketing-budget-count',shown,'pengajuan');
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat pengajuan berikutnya';
       // Pergantian filter memudar sebagai satu unit; menambah halaman berikutnya tidak.
       if(replacing)playEntryMotion($('marketing-budget-list'),'--motion-base');
@@ -6710,36 +6812,51 @@ async function loadMarketingBudgets() {
 
 function marketingBudgetForm() {
   if(guardPending())return;
+  // A6.7: the A6 field grammar. Every name, type and limit is the legacy one, so the payload is
+  // unchanged; the objective is a wide field and the reason is the shared A6 reason field.
   formDialog('Ajukan budget marketing',
-    field('reference','Referensi pengajuan','text','required maxlength="160"')+
-    field('campaign_name','Nama kampanye','text','required maxlength="160"')+
-    field('channel','Channel marketing','text','required maxlength="160"')+
-    field('start_date','Tanggal mulai','date','required')+
-    field('end_date','Tanggal selesai','date','required')+
-    field('amount','Nominal budget (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+
-    '<label class="full">Objective kampanye<textarea name="objective" required maxlength="1000"></textarea></label>'+materialReason,
+    requestField('reference','Referensi pengajuan','text','required maxlength="160"')+
+    requestField('campaign_name','Nama kampanye','text','required maxlength="160"')+
+    requestField('channel','Channel marketing','text','required maxlength="160"')+
+    requestField('start_date','Tanggal mulai','date','required')+
+    requestField('end_date','Tanggal selesai','date','required')+
+    requestField('amount','Nominal budget (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+
+    requestTextarea('objective','Objective kampanye','required maxlength="1000"')+reasonField(),
     form=>Object.fromEntries(new FormData(form)), '/api/marketing-budget-requests',
     'Approval mengesahkan plafon kampanye. Realisasi belanja, invoice platform, dan jurnal keuangan dicatat di sistem lain sampai integrasinya tersedia.');
 }
 
 async function marketingBudgetRequestDialog(requestId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Approval budget marketing','<p class="state">Memuat pengajuan…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Approval budget marketing',requestLoading('Memuat pengajuan…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/marketing-budget-requests/'+encodeURIComponent(requestId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const buttons=[];
     if(user.role==='admin'&&row.status==='submitted')buttons.push(['approved','Setujui budget'],['rejected','Tolak budget']);
     if(row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id))buttons.push(['cancelled','Batalkan pengajuan']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><h3>${e(row.campaign_name)}</h3><p>${e(row.channel)} · ${date(row.start_date)}–${date(row.end_date)}</p><p><strong>${e(rupiah(row.amount))}</strong></p><h4>Objective</h4><p class="reason">${e(row.objective)}</p><h4>Alasan pengajuan</h4><p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Persetujuan hanya mengesahkan plafon dan belum mencatat belanja.</p><div class="actions">${buttons.map(([status,label])=>`<button data-marketing-budget-decision="${status}">${label}</button>`).join('')}<button data-action="marketing-budgets">Daftar budget</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    // A6.7: one request sheet. Identity, the facts the request carries, the requester's own words,
+    // the ceiling-only truth, the decisions this viewer may take, then the append-only history.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(row.reference)} · ${e(approvalStatus[row.status])}`,e(row.campaign_name),queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]))
+      + requestFacts([['Channel',e(row.channel)],['Periode kampanye',`${date(row.start_date)}–${date(row.end_date)}`],['Nominal budget',e(rupiah(row.amount))],
+        ['Diajukan oleh',e(row.actor_name)],['Waktu pengajuan',purchaseStamp(row.created_at)]])
+      + requestSection('Objective',`<p class="request-text">${e(row.objective)}</p>`)
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(row.reason)}</p>`)
+      + requestNote('Persetujuan hanya mengesahkan plafon dan belum mencatat belanja.','shield')
+      + (buttons.length?`<div class="action-row request-decisions">${buttons.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-marketing-budget-decision="${status}">${label}</button>`).join('')}</div>`:'')
+      + '<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="marketing-budgets">Daftar budget</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>'
+      + requestSection('Riwayat keputusan',requestHistory(row.history,approvalStatus))
+      + '</div>';
     $('dialog-content').querySelectorAll('[data-marketing-budget-decision]').forEach(button=>button.onclick=()=>{
       if(guardPending())return;
       const decision=button.dataset.marketingBudgetDecision;
-      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+      formDialog(button.textContent,reasonField(),form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
         '/api/marketing-budget-requests/'+encodeURIComponent(row.id)+'/decisions',
         `${row.reference} · ${rupiah(row.amount)}\n${button.textContent}. Keputusan dan alasan tersimpan permanen.`);
     });
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="marketing-budget-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Pengajuan budget gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="marketing-budget-request" data-id="${e(requestId)}">Coba lagi</button>`);}
 }
 
 // Milestone E: Permintaan pembelian adalah halaman workspace. Browse, filter status, daftar,
@@ -6758,13 +6875,21 @@ async function loadPurchaseRequests() {
   const current=()=>version===epoch&&request===purchaseRequestsRequest&&view==='purchase-requests';
   // Section dibangun ulang dari nol: daftarnya baru, jadi tidak ada yang digantikan.
   purchaseRequestsRendered=null;
-  body.innerHTML='<p class="state">Memuat permintaan pembelian...</p>';
-  body.innerHTML=`<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions"><button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button></div><form id="pr-page-filter" class="filter-form"><div class="form-grid"><div><label for="pr-page-status">Status PR</label><select id="pr-page-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div><div class="form-actions"><button class="primary" type="submit">Terapkan filter</button></div></form><p id="pr-page-error" role="alert" class="error" hidden></p><div id="pr-page-list" class="list-host"><p class="state">Memuat PR...</p></div><button id="pr-page-more">Muat PR berikutnya</button>`;
+  // A6.7: the Purchasing queue in the same idiom as the Approval Inbox. Its two utilities (Master
+  // pemasok, Daftar PO) moved to the page heading; the status values, the `before=sequence`
+  // cursor, the 25-row page, the retry and the replacement-only fade are unchanged.
+  body.innerHTML=`<form id="pr-page-filter" class="command-bar"><div class="command-filters">`
+    + `<label class="command-filter"><span>Status PR</span><select id="pr-page-status" aria-label="Status PR"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></label>`
+    + `</div><div class="command-actions"><button class="action-secondary" type="submit">Terapkan filter</button></div></form>`
+    + `<div class="workspace-subhead"><h2 id="pr-page-heading" class="workspace-section-title">Daftar PR</h2><span id="pr-page-count" class="workspace-meta"></span></div>`
+    + `<p id="pr-page-error" role="alert" class="error" hidden></p>`
+    + `<div id="pr-page-list" class="list-host">${queueState('loading','Memuat PR…')}</div>`
+    + `<div class="queue-more"><button id="pr-page-more" type="button" class="action-secondary">Muat PR berikutnya</button></div>`;
   $('pr-page-status').value='all';
-  let before=null, generation=0;
+  let before=null, generation=0, shown=0;
   async function load(reset=false) {
     if(!current())return;
-    if(reset){generation++;before=null;$('pr-page-list').replaceChildren();}
+    if(reset){generation++;before=null;shown=0;$('pr-page-list').replaceChildren();queueCount('pr-page-count',0,'PR');}
     const rendered=JSON.stringify($('pr-page-status').value);
     const gen=generation, button=$('pr-page-more'); button.disabled=true; message('pr-page-error','');
     try {
@@ -6772,8 +6897,17 @@ async function loadPurchaseRequests() {
       if(!current() || gen!==generation)return;
       const replacing=purchaseRequestsRendered!==null&&purchaseRequestsRendered!==rendered;
       purchaseRequestsRendered=rendered;
-      appendRows('pr-page-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
-      if(!before && !rows.length)$('pr-page-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
+      // A6.7: reference first, then the order it serves (or a general request) and when the
+      // material is needed, the status chip, who asked when; the estimate sits beside the action.
+      if(rows.length)queueAppend('pr-page-list','Permintaan pembelian',rows.map(p=>queueRow({glyph:'cart',
+        primary:e(p.reference),secondary:`${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}`,
+        chips:queueChip(approvalTone[p.status]||'neutral',purchaseStatus[p.status]),
+        stamp:`${e(p.actor_name)} · ${purchaseStamp(p.created_at)}`,
+        aside:queueAmount(p.estimated_value,'estimasi total')+`<button type="button" class="action-secondary" data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button>`,
+        hook:` data-purchase-request="${e(p.id)}"`})).join(''));
+      if(!before && !rows.length)$('pr-page-list').innerHTML=queueState('empty','Belum ada PR yang sesuai filter.',
+        user.role==='viewer'?'Ubah status PR untuk melihat pengajuan lain.':'Ubah status PR untuk melihat pengajuan lain, atau buat PR untuk kebutuhan bahan baru.');
+      shown+=rows.length;queueCount('pr-page-count',shown,'PR');
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat PR berikutnya';
       // Pergantian filter memudar sebagai satu unit; menambah halaman berikutnya tidak.
       if(replacing)playEntryMotion($('pr-page-list'),'--motion-base');
@@ -6813,16 +6947,18 @@ async function orderPurchaseRequestsDialog(orderId) {
 async function purchaseRequestForm(orderId=null) {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Buat PR','<p class="state">Memuat bahan dan order…</p>');const modal=dialogVersion;
+  openDialog('Buat PR',requestLoading('Memuat bahan dan order…'));const modal=dialogVersion;
   try{
     const [materials,orders]=await Promise.all([allRows('/api/materials'),allRows('/api/orders')]);
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    if(!materials.length){$('dialog-content').innerHTML='<p>Tambahkan master bahan sebelum mengajukan pembelian.</p>';return;}
-    formDialog('Buat PR',field('reference','Referensi PR','text','required maxlength="160"')+
-      field('required_date','Tanggal dibutuhkan','date','required')+
-      `<label>Order produksi<select name="order_id" id="pr-order"><option value="">Permintaan umum</option>${orders.map(o=>option(o.id,o.reference)).join('')}</select></label>`+
-      field('estimated_value','Estimasi total (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+
-      '<div class="full"><h3>Bahan yang diminta</h3><div id="pr-lines"></div><button type="button" id="pr-add">Tambah bahan PR</button></div>'+materialReason,
+    if(!materials.length){$('dialog-content').innerHTML=`<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Master bahan belum ada.</p><p class="empty-state-copy">Tambahkan master bahan sebelum mengajukan pembelian.</p></div>`;return;}
+    // A6.7: the A6 field grammar, exactly as A6.2's BOM editor. Names, limits, the `#pr-order`
+    // select, the `.bom-line` rows the collector reads and every rule below are unchanged.
+    formDialog('Buat PR',requestField('reference','Referensi PR','text','required maxlength="160"')+
+      requestField('required_date','Tanggal dibutuhkan','date','required')+
+      `<div class="field"><label class="field-label" for="pr-order">Order produksi</label><select name="order_id" id="pr-order"><option value="">Permintaan umum</option>${orders.map(o=>option(o.id,o.reference)).join('')}</select></div>`+
+      requestField('estimated_value','Estimasi total (Rp)','number','required min="0.01" max="1000000000000" step="0.01"')+
+      '<div class="field-wide full request-lines-editor"><h3 class="workspace-section-title">Bahan yang diminta</h3><p class="field-help">Satu baris per bahan; bahan yang sama tidak boleh muncul di dua baris. Maksimal 100 baris dan minimal satu bahan.</p><div id="pr-lines"></div><div class="field-actions"><button type="button" id="pr-add" class="action-secondary">Tambah bahan PR</button></div></div>'+reasonField(),
       form=>{
         const data=Object.fromEntries(new FormData(form));
         const lines=[...form.querySelectorAll('#pr-lines .bom-line')].map(row=>({material_id:row.querySelector('select').value,quantity:row.querySelector('input').value}));
@@ -6834,7 +6970,9 @@ async function purchaseRequestForm(orderId=null) {
       if($('pr-lines').children.length>=100)return;
       const row=document.createElement('div');row.className='bom-line';
       const token=crypto.randomUUID();
-      row.innerHTML=`<div><label for="pr-material-${token}">Bahan PR</label><select id="pr-material-${token}" required>${materials.map(m=>option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('')}</select></div><label>Jumlah bahan PR<input type="number" required max="1000000"></label><button type="button" aria-label="Hapus bahan PR">Hapus</button>`;
+      row.innerHTML=`<div class="field"><label class="field-label" for="pr-material-${token}">Bahan PR</label><select id="pr-material-${token}" required>${materials.map(m=>option(m.id,`${m.code} · ${m.name} (${m.unit})`)).join('')}</select></div>`
+        +`<div class="field"><label class="field-label" for="pr-quantity-${token}">Jumlah bahan PR</label><input id="pr-quantity-${token}" type="number" required max="1000000"></div>`
+        +'<button type="button" class="action-quiet" aria-label="Hapus bahan PR">Hapus</button>';
       const select=row.querySelector('select'),input=row.querySelector('input');
       select.onchange=()=>{input.step=input.min=materials.find(m=>m.id===select.value).unit==='pcs'?'1':'0.001';};
       select.onchange();
@@ -6842,13 +6980,14 @@ async function purchaseRequestForm(orderId=null) {
       $('pr-lines').append(row);
     }
     $('pr-add').onclick=addLine;addLine();
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-purchase-request" data-id="${e(orderId || '')}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Form PR gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="new-purchase-request" data-id="${e(orderId || '')}">Coba lagi</button>`);}
 }
 
 async function purchaseRequestDialog(id) {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Rincian PR','<p class="state">Memuat permintaan pembelian…</p>');const modal=dialogVersion;
+  openDialog('Rincian PR',requestLoading('Memuat permintaan pembelian…'));const modal=dialogVersion;
   try{
     const p=await api.get('/api/purchase-requests/'+encodeURIComponent(id));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
@@ -6856,33 +6995,66 @@ async function purchaseRequestDialog(id) {
     if(user.role==='admin' && p.status==='submitted')decisions.push(['approved','Setujui PR'],['rejected','Tolak PR']);
     if((user.role==='admin' && ['submitted','approved'].includes(p.status) && !p.purchase_orders.some(po=>!['cancelled','rejected'].includes(po.status))) ||
        (user.role==='operator' && p.actor_id===user.id && p.status==='submitted'))decisions.push(['cancelled','Batalkan PR']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${purchaseStatus[p.status]}</p><p>${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}</p><p>Estimasi total ${e(rupiah(p.estimated_value))}</p><p class="reason">${e(p.reason)}</p><div>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))}</p></article>`).join('')}</div><p class="hint">Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO ditutup sudah final; PO aktif harus dibatalkan sebelum PR.</p><div class="actions">${decisions.map(([status,label])=>`<button data-pr-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button data-action="purchase-requests">Semua PR</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${p.history.map(event=>`<article class="material-event"><strong>${purchaseStatus[event.status]}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
-    $('dialog-content').querySelector('.actions').insertAdjacentHTML('beforeend',
-      `${user.role!=='viewer' && p.status==='approved' && !p.purchase_orders.some(po=>!['cancelled','rejected'].includes(po.status)) ? `<button data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>` : ''}${p.purchase_orders.map(po=>`<button data-action="purchase-order" data-id="${e(po.id)}">PO ${e(po.reference)} · ${poStatus[po.status]}</button>`).join('')}`);
+    const ordering=user.role!=='viewer' && p.status==='approved' && !p.purchase_orders.some(po=>!['cancelled','rejected'].includes(po.status));
+    // A6.7: one request sheet. Identity, the three facts the request carries, the requested
+    // materials, the requester's words, the approval rule, the decisions this viewer may take (and
+    // "Buat PO dari PR", the one forward step an approved PR has), its POs, then the history. Every
+    // gate above is the legacy one; only the presentation moved.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(p.reference)} · ${e(purchaseStatus[p.status])}`,e(p.order_reference || 'Permintaan umum'),queueChip(approvalTone[p.status]||'neutral',purchaseStatus[p.status]))
+      + requestFacts([['Dibutuhkan',date(p.required_date)],['Estimasi total',e(rupiah(p.estimated_value))],['Bahan diminta',`${n(p.lines.length)} bahan`]])
+      + requestSection('Bahan yang diminta',`<ul class="record-list request-lines" aria-label="Bahan yang diminta">${p.lines.map(l=>'<li class="record-row">'
+        + `<div class="record-row-copy"><p class="data-primary">${e(l.code)} · ${e(l.name)}</p></div>`
+        + `<div class="record-row-aside"><span class="request-quantity">${e(materialQty(l.quantity,l.unit))}</span></div></li>`).join('')}</ul>`)
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(p.reason)}</p>`)
+      + requestNote('Persetujuan dicatat oleh admin, termasuk pengajuan sendiri. Belum ada aturan batas nilai. Lihat PO terkait di bawah; PR dengan PO ditutup sudah final; PO aktif harus dibatalkan sebelum PR.','shield')
+      + (decisions.length||ordering?`<div class="action-row request-decisions">${decisions.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-pr-decision="${status}">${label}</button>`).join('')}`
+        + (ordering?`<button type="button" class="action-primary" data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>`:'')+'</div>':'')
+      + (p.purchase_orders.length?requestSection('PO terkait',`<ul class="record-list request-orders" aria-label="PO terkait">${p.purchase_orders.map(po=>'<li class="record-row">'
+        + `<div class="record-row-copy"><p class="data-primary">${e(po.reference)}</p></div>`
+        + `<div class="record-row-aside">${queueChip(poTone[po.status]||'neutral',poStatus[po.status])}<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(po.id)}" aria-label="Buka PO ${e(po.reference)}">Buka PO</button></div></li>`).join('')}</ul>`):'')
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button type="button" class="action-quiet" data-action="purchase-requests">Semua PR</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
+      + requestSection('Riwayat keputusan',requestHistory(p.history,purchaseStatus))
+      + '</div>';
     $('dialog-content').querySelectorAll('[data-pr-decision]').forEach(button=>{
       button.onclick=()=>{if(guardPending())return;
-        formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:button.dataset.prDecision,expected_revision:p.revision}),
+        formDialog(button.textContent,reasonField(),form=>({...Object.fromEntries(new FormData(form)),status:button.dataset.prDecision,expected_revision:p.revision}),
           '/api/purchase-requests/'+encodeURIComponent(id)+'/decisions',
           `${p.reference} · ${rupiah(p.estimated_value)}\n${button.textContent}. Keputusan beserta alasan akan tersimpan. Pengajuan yang ditolak atau dibatalkan tidak dapat dibuka kembali.`);
       };
     });
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="purchase-request" data-id="${e(id)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Rincian PR gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="purchase-request" data-id="${e(id)}">Coba lagi</button>`);}
 }
 
 async function suppliersDialog() {
   if(guardPending())return;
-  const version=epoch;openDialog('Master pemasok','<p class="state">Memuat pemasok…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Master pemasok',requestLoading('Memuat pemasok…'));const modal=dialogVersion;
   try{
     const suppliers=await allRows('/api/suppliers');
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
-    $('dialog-content').innerHTML=`<p class="hint">Identitas pemasok yang dipakai saat membuat PO.</p>${suppliers.map(s=>`<article class="material-event"><h3>${e(s.code)} · ${e(s.name)}</h3><p>${e(s.contact || 'Kontak belum diisi')}</p><p>${e(s.address || 'Alamat belum diisi')}</p><p class="reason">${e(s.reason)}</p><p class="hint">${e(s.actor_name)} · ${purchaseStamp(s.created_at)}</p></article>`).join('') || '<p class="state">Belum ada pemasok.</p>'}${user.role==='admin'?'<button data-action="new-supplier">Tambah pemasok</button>':''}<button data-action="purchase-requests">Semua PR</button>`;
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="suppliers">Coba lagi</button>`;}
+    // A6.7: supplier identity is master data, not a status: one record list, no chip, and the two
+    // "not filled" words stay exactly what they were. Adding stays admin-only.
+    // The actions come first, so a long master never pushes "Tambah pemasok" below the fold.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + `<div class="workspace-subhead"><span class="workspace-meta">${suppliers.length?`${n(suppliers.length)} pemasok`:'Master pemasok'}</span>`
+      + `<span class="action-row"><button type="button" class="action-quiet" data-action="purchase-requests">Semua PR</button>${user.role==='admin'?'<button type="button" class="action-primary" data-action="new-supplier">Tambah pemasok</button>':''}</span></div>`
+      + requestNote('Identitas pemasok yang dipakai saat membuat PO.')
+      + (suppliers.length
+        ? `<ul class="record-list" aria-label="Master pemasok">${suppliers.map(s=>queueRow({glyph:'truck',
+          primary:`${e(s.code)} · ${e(s.name)}`,secondary:e(s.contact || 'Kontak belum diisi'),
+          details:`<p class="data-meta">${e(s.address || 'Alamat belum diisi')}</p><p class="data-meta reason">${e(s.reason)}</p><p class="data-meta">${e(s.actor_name)} · ${purchaseStamp(s.created_at)}</p>`})).join('')}</ul>`
+        : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada pemasok.</p><p class="empty-state-copy">${user.role==='admin'?'Tambahkan pemasok pertama sebelum membuat PO.':'Admin dapat menambahkan pemasok pertama.'}</p></div>`)
+      + '</div>';
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Master pemasok gagal dimuat.',error.message,
+    '<button type="button" class="action-secondary" data-action="suppliers">Coba lagi</button>');}
 }
 function supplierForm() {
   if(guardPending())return;
-  formDialog('Tambah pemasok',field('code','Kode pemasok','text','required maxlength="160"')+
-    field('name','Nama pemasok','text','required maxlength="160"')+field('contact','Kontak pemasok','text','maxlength="500"')+
-    '<label class="full">Alamat pemasok<textarea name="address" maxlength="1000"></textarea></label>'+materialReason,
+  // A6.7: the same four fields, names and limits, in the A6 field grammar.
+  formDialog('Tambah pemasok',requestField('code','Kode pemasok','text','required maxlength="160"')+
+    requestField('name','Nama pemasok','text','required maxlength="160"')+requestField('contact','Kontak pemasok','text','maxlength="500"')+
+    requestTextarea('address','Alamat pemasok','maxlength="1000"')+reasonField(),
     form=>Object.fromEntries(new FormData(form)),'/api/suppliers',
     'Kode dan identitas pemasok disimpan permanen. Jika keliru, buat kode pemasok baru untuk PO berikutnya.');
 }
@@ -6890,7 +7062,15 @@ function supplierForm() {
 async function purchaseOrdersDialog() {
   if(guardPending())return;
   const version=epoch;
-  openDialog('Daftar PO','<p class="hint">PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.</p><div class="filter-form"><div class="form-grid"><div><label for="po-status">Status PO</label><select id="po-status"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select></div></div></div><button id="po-refresh">Muat ulang PO</button><div id="po-list"></div><p id="po-error" class="error" role="alert" hidden></p><button id="po-more">Muat PO berikutnya</button>');
+  // A6.7: the PO list the Purchasing page opens. The status values, the auto-load on change, the
+  // `before=sequence` cursor and the 25-row page are unchanged; each row opens the PO detail, which
+  // is the PO fulfilment workflow and is not redesigned here.
+  openDialog('Daftar PO','<div class="request-sheet">'
+    + requestNote('PO menunggu keputusan sebelum aktif. Buka rincian untuk melihat approval, penerimaan bahan, dan sisa pesanan.')
+    + '<div class="command-bar"><div class="command-filters"><label class="command-filter"><span>Status PO</span><select id="po-status" aria-label="Status PO"><option value="all">Semua status</option><option value="pending">Menunggu keputusan</option><option value="issued">Aktif</option><option value="rejected">Ditolak</option><option value="closed">Ditutup</option><option value="cancelled">Dibatalkan</option></select></label></div>'
+    + '<div class="command-actions"><button id="po-refresh" type="button" class="action-secondary">Muat ulang PO</button></div></div>'
+    + `<p id="po-error" class="error" role="alert" hidden></p><div id="po-list">${queueState('loading','Memuat PO…')}</div>`
+    + '<div class="queue-more"><button id="po-more" type="button" class="action-secondary">Muat PO berikutnya</button></div></div>');
   const modal=dialogVersion,current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null,generation=0;
   async function load(reset=false){
@@ -6899,10 +7079,17 @@ async function purchaseOrdersDialog() {
     try{
       const rows=await api.get('/api/purchase-orders?'+new URLSearchParams({limit:25,status:$('po-status').value,...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
-      appendRows('po-list',rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${e(p.supplier.name)} · ${poStatus[p.status]}</p><p>${e(rupiah(p.total))} · perkiraan datang ${date(p.expected_date)}</p><p>${fulfillmentLabel[p.fulfillment]}${p.lines.some(l=>l.held!=='0.000')?' · Menunggu QC':''}</p><button data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button></article>`).join(''));
-      if(!before && !rows.length)$('po-list').innerHTML='<p class="state">Belum ada PO yang sesuai filter.</p>';
+      // A6.7: approval status, fulfilment and a QC hold are three different facts, so they are
+      // three chips, each with its own words; the total sits beside the one open action.
+      if(rows.length)queueAppend('po-list','Purchase order',rows.map(p=>queueRow({glyph:'file',
+        primary:e(p.reference),secondary:e(p.supplier.name),
+        chips:queueChip(poTone[p.status]||'neutral',poStatus[p.status])+queueChip(fulfillmentTone[p.fulfillment]||'neutral',fulfillmentLabel[p.fulfillment])
+          +(p.lines.some(l=>l.held!=='0.000')?queueChip('warning','Menunggu QC'):''),
+        details:`<p class="data-meta">Perkiraan datang ${date(p.expected_date)}</p>`,
+        aside:queueAmount(p.total,'total PO')+`<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(p.id)}" aria-label="Rincian PO ${e(p.reference)}">Rincian PO</button>`})).join(''));
+      if(!before && !rows.length)$('po-list').innerHTML=queueState('empty','Belum ada PO yang sesuai filter.','Ubah status PO untuk melihat PO lain. PO dibuat dari rincian PR yang sudah disetujui.');
       before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
-    }catch(error){if(current() && gen===generation){message('po-error',error.message,true);clearDialogLoading();button.hidden=false;}}
+    }catch(error){if(current() && gen===generation){message('po-error',error.message,true);clearPageLoading('po-list');button.hidden=false;}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
   $('po-status').onchange=$('po-refresh').onclick=()=>load(true);$('po-more').onclick=()=>load();await load();
@@ -6940,6 +7127,10 @@ async function purchaseOrderForm(requestId) {
 
 const poStatus={pending:'Menunggu keputusan',issued:'Aktif',rejected:'Ditolak',cancelled:'Dibatalkan',closed:'Ditutup'};
 const fulfillmentLabel={pending:'Belum diterima',partial:'Diterima sebagian',received:'Diterima lengkap'};
+// A6.7 chip tones for the two PO vocabularies above. An issued PO is an approved one; a closed PO
+// has simply finished its lifecycle. Receiving everything is the one completion fulfilment has.
+const poTone={pending:'info',issued:'success',rejected:'danger',cancelled:'neutral',closed:'neutral'};
+const fulfillmentTone={pending:'neutral',partial:'info',received:'success'};
 
 function qualityIntakesHTML(p) {
   return `<h3>QC bahan masuk</h3><p class="hint">Hold belum dapat dipakai atau direservasi. Reject membuka kebutuhan pengganti. Catat retur setelah bahan reject dikirim kembali ke pemasok.</p>${user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<button data-action="qc-intake-form" data-id="${e(p.id)}">Catat kedatangan untuk QC</button>`:''}${p.qc_intakes.map(q=>`<article class="material-event"><h4>${e(q.reference)} · ${e(q.code)}</h4><p>${q.cancellation?'Kedatangan dibatalkan':`Hold ${e(materialQty(q.held,q.unit))} · layak ${e(materialQty(q.accepted,q.unit))} · reject ${e(materialQty(q.rejected,q.unit))}`}</p><button data-action="qc-intake" data-id="${e(q.id)}">Rincian QC ${e(q.reference)}</button></article>`).join('') || '<p>Belum ada kedatangan untuk QC.</p>'}`;
