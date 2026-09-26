@@ -201,9 +201,9 @@ class SharedDialogTest(unittest.TestCase):
         self.assertNotRegex(A68_BLOCK, r'@keyframes|animation\s*:|transition\s*:')
 
     def test_the_a68_block_reaches_only_its_own_surfaces(self):
-        # ...plus the one Command Center regression the product sweep found (see RegressionTest).
+        # ...plus the Command Center regressions the product sweep found (see RegressionTest).
         allowed = ('#dialog', '#action-form', '#form-fields', '#form-error', '#pr-error', '#pr-status', '.request-',
-                   '#command-center-hero .hero-ring')
+                   '#command-center-hero .hero-ring', '#command-center-channels .card-head')
         for match in re.finditer(r'([^{}]+)\{', A68_BLOCK):
             prelude = match.group(1).strip()
             if not prelude or prelude.startswith('@'):
@@ -412,6 +412,15 @@ class RegressionTest(unittest.TestCase):
         self.assertIsNotNone(ring)
         for declaration in ('width:clamp(120px,7.5rem,100%)', 'height:auto', 'aspect-ratio:1'):
             self.assertIn(declaration, ring.group(1))
+
+
+    def test_the_marketplace_card_head_keeps_its_date_hint_whole(self):
+        # Found by CI, not locally: on a stock ubuntu runner (DejaVu metrics, no Noto Sans) the
+        # legacy `.card-head>*{min-width:0}` let the "26 Sep" hint shrink below its own words at
+        # 320px / 200% text and spill 2px out of its box. The head may now wrap, and the hint keeps
+        # its intrinsic width, so it drops under the title instead of overflowing.
+        self.assertIn('#command-center-channels .card-head{flex-wrap:wrap;row-gap:.15rem}', A68_BLOCK)
+        self.assertIn('#command-center-channels .card-head>.hint{min-width:auto}', A68_BLOCK)
 
 
 class BudgetTest(unittest.TestCase):

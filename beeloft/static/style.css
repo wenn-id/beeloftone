@@ -2555,6 +2555,13 @@ label>input,label>select,label>textarea{margin-top:6px}
   #command-center-hero .hero-ring{width:clamp(120px,7.5rem,100%);height:auto;aspect-ratio:1}
   #command-center-hero .hero-ring small{max-width:6rem}
 }
+/* The marketplace card head holds a title AND a date hint. The legacy `.card-head>*{min-width:0}`
+   let the hint shrink below its own words, so at 320px / 200% text (with the wider DejaVu metrics
+   of a stock Linux runner) "26 Sep" spilled 2px out of its box. The head now wraps only when the
+   two do not fit side by side: the hint drops under the title and keeps its words whole. Nothing
+   moves at any width where both already fit. */
+#command-center-channels .card-head{flex-wrap:wrap;row-gap:.15rem}
+#command-center-channels .card-head>.hint{min-width:auto}
 /* No A6.8 forced-colors block: every surface here has a real 1px border that forced colors
    repaints, the sticky heading paints the system Canvas, and meaning lives in text - chip words
    with A6.0's `.status-dot`, the spelled-out stale / hold sentences, the error copy and each

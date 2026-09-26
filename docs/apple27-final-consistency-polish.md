@@ -23,6 +23,7 @@ dark, plus 19 dialogs).
 | 2 | PR sheet "PO terkait" chip rendered a bare dot with no word for an issued PO (payload reports `approved`, `poStatus` has no such key) | P0 | fixed: `linkedPoStatus()` |
 | 3 | Command Center "Rincian order, unit & refund" table overhung its card by 20 px on both sides (`margin:0 -20px` assumed a 20 px inset the A5 card no longer has) | P0 | fixed (before/after below) |
 | 4 | Command Center first-pass-yield figure (~160 px) collided with its fixed 120 px ring at 320 px / 200 % | P0 | fixed (before/after below) |
+| 4b | Command Center "Marketplace & penjualan" date hint spilled 2 px out of its box at 320 px / 200 % on a stock ubuntu runner (DejaVu metrics; found by PR CI, not reproducible with Noto Sans) | P0 | fixed (before/after below) |
 | 5 | PO detail + receipts + incoming QC + supplier returns + closure still rendered `.form-info` / `.material-event` / `.actions` walls | P1 | migrated |
 | 6 | Production change approval and payroll approval (both opened from the A6.7 Inbox) still legacy | P1 | migrated |
 | 7 | Supplier payment approval still legacy | P1 | migrated |
@@ -127,7 +128,7 @@ zero emitters each — and pinned by `DeadCssTest`. Rules shared with a live sel
 
 One A6.8 block at the end of `style.css` (marker `#dialog{--dialog-inset:12px;--dialog-pad:24px;`),
 reaching only `#dialog`, `#action-form`, `#form-fields`, `#form-error`, `#pr-error`, `#pr-status`,
-`.request-*` and the one Command Center ring rule. No primitive redefined, `workspace-primitives.css`
+`.request-*` and the two Command Center rules (the ring and the marketplace card head). No primitive redefined, `workspace-primitives.css`
 and `workspace.css` untouched, no blur / transition / keyframe. The only edit above the block is the
 `.table-scroll` bleed fix. Duplicate phase declarations were audited; none were promoted, because
 the repeated rules (touch floor, labelled filters on phones) are scoped by page id on purpose and
@@ -135,13 +136,18 @@ their semantics are not universal.
 
 ## Shell corrections (with evidence)
 
-The shell itself (A5.2 / A5.3) was not touched. Two Command Center regressions the product sweep
+The shell itself (A5.2 / A5.3) was not touched. Three Command Center regressions the product sweep
 found were fixed in `style.css`, each with before/after evidence and a targeted pin in
 `RegressionTest`:
 
 - marketplace table overhang — `review/a68-visual-gate/before-after/command-center-marketplace-*`;
 - first-pass-yield ring at 320 / 200 % — `…/command-center-fpy-ring-320-200-{BEFORE,AFTER}.png`
-  (at 1440 and 390 the ring is unchanged, 140 / 120 px).
+  (at 1440 and 390 the ring is unchanged, 140 / 120 px);
+- marketplace card head at 320 / 200 % — `…/command-center-marketplace-head-320-200-{BEFORE,AFTER}.png`.
+  The legacy `.card-head>*{min-width:0}` let the date hint shrink below its own words; the head now
+  wraps only when title and hint cannot share a line (the hint stays inline at 1440, 1024, 768, 390
+  and 320 px at 100 % text). Font metrics differ between runners, so the browser module is run
+  locally with the runner's DejaVu fonts as well as with Noto Sans.
 
 ## Responsive, accessibility and modes
 
@@ -185,7 +191,7 @@ the others 1); the Inbox still makes one list request per load and never calls
 
 ## Tests
 
-- `tests/test_apple27_final_polish_contract.py` — new, 34 static tests: shell, workspace
+- `tests/test_apple27_final_polish_contract.py` — new, 35 static tests: shell, workspace
   coverage, shared dialog, form write safety, the migrated sheets by name, tone map, dead CSS,
   regressions, timer budget, version / docs.
 - `tests/browser_final_polish.cjs` — new, registered after A6.7 in `browser_smoke.cjs`; writes its
