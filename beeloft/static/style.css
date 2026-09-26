@@ -1,14 +1,8 @@
 /* Foundation tokens live in the A1 block below. Existing layout rules consume
    compatibility aliases; there is no separate legacy palette. */
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-size:1rem;line-height:1.5}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}a{color:var(--accent)}textarea{min-height:88px;resize:vertical}input::placeholder{color:var(--muted);opacity:1}label{display:block;font-size:.9375rem;font-weight:600}label>input,label>select,label>textarea{margin-top:.4rem}h1,h2,h3,p{margin-top:0}.account,.actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.workspace-nav{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 0 1.6rem;color:var(--muted);font-size:.875rem}.workspace-nav strong{color:var(--ink);font-weight:500}.search-field{flex:1}.filters label:not(.search-field){min-width:190px}.filters button{margin-bottom:0}.order-grid{display:grid;grid-template-columns:minmax(240px,2.1fr) minmax(115px,1fr) minmax(140px,1fr) minmax(180px,1.5fr) minmax(130px,.9fr);gap:1.2rem;align-items:center}.reference{font-size:.8125rem;color:var(--muted);font-weight:500;display:block;margin-bottom:.3rem}.cell{min-width:0;overflow-wrap:anywhere}.cell-label{display:none}.progress-note{display:flex;justify-content:space-between;font-size:.875rem;gap:.5rem;margin-bottom:.5rem}progress{display:block;width:100%;height:5px;border:0;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line)}progress::-webkit-progress-value{background:var(--accent)}.state button{margin-top:1rem}.error{overflow-wrap:anywhere}.notice{position:fixed;bottom:1.5rem;right:3.5%;max-width:min(440px,93vw);background:var(--ink);color:var(--surface);padding:1rem 1.3rem;border-radius:6px;z-index:4}.detail-top{display:flex;justify-content:space-between;gap:1rem;align-items:start}.detail-meta{display:flex;gap:2rem;flex-wrap:wrap;color:var(--muted);margin:1rem 0 1.8rem}.detail-meta strong{display:block;color:var(--ink);font-weight:600}.detail-meta span{font-size:.875rem}.stages{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--line);background:var(--surface);margin:1.5rem 0 .75rem}.stage{padding:1.2rem;border-right:1px solid var(--line)}.stage:last-child{border-right:0}.stage small{display:block;color:var(--muted);font-size:.875rem}.stage strong{font-size:1.75rem;font-weight:600;font-variant-numeric:tabular-nums}.stage-number{font-size:.75rem;color:var(--accent);margin-right:.4rem}.exceptions{display:flex;gap:2rem;flex-wrap:wrap;font-size:.9375rem;margin-bottom:2.2rem}.exceptions strong{font-variant-numeric:tabular-nums}.sku-block{padding:1.2rem;margin:1rem 0}.sku-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.sku-heading h3{margin:0}.sku-balances{display:flex;gap:.75rem 1.5rem;flex-wrap:wrap;margin-top:1rem;font-size:.875rem;color:var(--muted)}.sku-balances strong{color:var(--ink);margin-left:.4rem}.history-section{margin-top:2.5rem}.history-item{display:grid;grid-template-columns:140px 1fr auto;gap:1.2rem;padding:1rem 0;border-bottom:1px solid var(--line)}.history-item p{margin:.25rem 0}.history-item time{font-size:.875rem;color:var(--muted)}.history-item .reason{color:var(--muted);font-size:.9375rem;white-space:pre-wrap;overflow-wrap:anywhere}.history-action{align-self:start}.history-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.login-view{display:grid;grid-template-columns:1.2fr 1fr;gap:7%;align-items:center;min-height:70vh;max-width:1050px;margin:auto;padding:3rem 0}.login-intro h1{font-size:clamp(2.7rem,5vw,4.1rem);font-weight:500;line-height:1.15;margin:1.1rem 0 1.4rem}.login-intro h1 em{font:italic 1.08em var(--font-ui);color:var(--accent)}.login-intro>p:not(.eyebrow){max-width:370px;color:var(--muted)}.process-label{font-size:.875rem;padding-top:1.1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.6rem;color:var(--muted)}.process-label span{color:var(--accent)}.login-form{background:var(--surface);padding:2.1rem}.login-form>p{color:var(--muted)}.login-form .primary{width:100%;margin-top:.6rem}.login-form input{margin-top:.5rem}dialog{background:var(--surface);color:var(--ink);padding:1.5rem;width:min(650px,calc(100% - 2rem));max-height:90dvh}dialog::backdrop{background:#1119}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}.dialog-heading h2{margin:0}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.form-grid>*{min-width:0;overflow-wrap:anywhere}.form-grid .full{grid-column:1/-1}fieldset{padding:0;border:0;margin:0;min-width:0}.form-actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem}.form-info{background:var(--bg);padding:1rem;font-size:.9375rem;margin-bottom:1rem;white-space:pre-wrap}.line-input{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;gap:.5rem;align-items:end;margin:.75rem 0}.line-input>button{padding:.6rem}.product-list{max-height:260px;overflow:auto;margin-bottom:1.2rem}.product-item{display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--line);padding:.6rem 0;overflow-wrap:anywhere}.product-item strong{display:block}.skip-link{position:absolute;top:-80px;background:var(--surface);padding:1rem;z-index:10}.skip-link:focus{top:0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-size:1rem;line-height:1.5}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}a{color:var(--accent)}textarea{min-height:88px;resize:vertical}input::placeholder{color:var(--muted);opacity:1}label{display:block;font-size:.9375rem;font-weight:600}label>input,label>select,label>textarea{margin-top:.4rem}h1,h2,h3,p{margin-top:0}.account,.actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.workspace-nav{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 0 1.6rem;color:var(--muted);font-size:.875rem}.workspace-nav strong{color:var(--ink);font-weight:500}.search-field{flex:1}.filters label:not(.search-field){min-width:190px}.filters button{margin-bottom:0}.reference{font-size:.8125rem;color:var(--muted);font-weight:500;display:block;margin-bottom:.3rem}progress{display:block;width:100%;height:5px;border:0;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line)}progress::-webkit-progress-value{background:var(--accent)}.state button{margin-top:1rem}.error{overflow-wrap:anywhere}.notice{position:fixed;bottom:1.5rem;right:3.5%;max-width:min(440px,93vw);background:var(--ink);color:var(--surface);padding:1rem 1.3rem;border-radius:6px;z-index:4}.history-section{margin-top:2.5rem}.history-item{display:grid;grid-template-columns:140px 1fr auto;gap:1.2rem;padding:1rem 0;border-bottom:1px solid var(--line)}.history-item p{margin:.25rem 0}.history-item time{font-size:.875rem;color:var(--muted)}.history-item .reason{color:var(--muted);font-size:.9375rem;white-space:pre-wrap;overflow-wrap:anywhere}.history-action{align-self:start}.history-heading{display:flex;justify-content:space-between;gap:1rem;align-items:center}.login-view{display:grid;grid-template-columns:1.2fr 1fr;gap:7%;align-items:center;min-height:70vh;max-width:1050px;margin:auto;padding:3rem 0}.login-intro h1{font-size:clamp(2.7rem,5vw,4.1rem);font-weight:500;line-height:1.15;margin:1.1rem 0 1.4rem}.login-intro h1 em{font:italic 1.08em var(--font-ui);color:var(--accent)}.login-intro>p:not(.eyebrow){max-width:370px;color:var(--muted)}.process-label{font-size:.875rem;padding-top:1.1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.6rem;color:var(--muted)}.process-label span{color:var(--accent)}.login-form{background:var(--surface);padding:2.1rem}.login-form>p{color:var(--muted)}.login-form .primary{width:100%;margin-top:.6rem}.login-form input{margin-top:.5rem}dialog{background:var(--surface);color:var(--ink);padding:1.5rem;width:min(650px,calc(100% - 2rem));max-height:90dvh}dialog::backdrop{background:#1119}.dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}.dialog-heading h2{margin:0}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.form-grid>*{min-width:0;overflow-wrap:anywhere}.form-grid .full{grid-column:1/-1}fieldset{padding:0;border:0;margin:0;min-width:0}.form-actions{display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem}.form-info{background:var(--bg);padding:1rem;font-size:.9375rem;margin-bottom:1rem;white-space:pre-wrap}.line-input{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;gap:.5rem;align-items:end;margin:.75rem 0}.line-input>button{padding:.6rem}.product-list{max-height:260px;overflow:auto;margin-bottom:1.2rem}.product-item{display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--line);padding:.6rem 0;overflow-wrap:anywhere}.product-item strong{display:block}.skip-link{position:absolute;top:-80px;background:var(--surface);padding:1rem;z-index:10}.skip-link:focus{top:0}
 .check-field{display:flex;align-items:center;gap:.75rem;min-height:var(--touch-target-min);padding:.55rem .7rem;border:1px solid var(--line);border-radius:4px}.check-field input{width:22px;min-height:22px;height:22px;margin:0;flex:0 0 22px;accent-color:var(--accent)}
-@media(max-width:1000px){.order-grid{grid-template-columns:minmax(210px,2fr) 1fr 1fr 1.2fr}.order-grid>.status-cell{grid-column:1/-1}.table-head .status-cell{display:none}.order-row .status-cell{padding-top:.3rem}.stages{grid-template-columns:repeat(3,minmax(0,1fr))}.stage:nth-child(3){border-right:0}.stage:nth-child(-n+3){border-bottom:1px solid var(--line)}}
-@media(max-width:650px){.workspace-nav{padding:1rem 0;font-size:.8125rem}.page-heading>.actions{width:100%}.page-heading .primary{flex:1}.filters{display:grid;grid-template-columns:1fr auto}.search-field{grid-column:1/-1}.filters label:not(.search-field){min-width:0}.table-head{display:none}.order-grid{grid-template-columns:1fr 1fr;gap:.85rem 1rem}.order-row>.cell:first-child{grid-column:1/-1}.order-row>.status-cell{grid-column:auto}.order-row .progress-cell{grid-column:1/-1}.cell-label{display:block;color:var(--muted);font-size:.8125rem;margin-bottom:.15rem}.pagination{align-items:start;flex-direction:column}.pagination .actions{width:100%;justify-content:space-between}.detail-top{flex-direction:column}.detail-meta{gap:.8rem 1.5rem}.stage{padding:.75rem}.stage strong{font-size:1.5rem}.stage small{font-size:.8125rem}.stage-number{display:none}.sku-heading{align-items:start;flex-direction:column}.history-item{grid-template-columns:1fr;gap:.25rem}.history-action{justify-self:start}.history-heading{align-items:start;flex-direction:column}.login-view{grid-template-columns:1fr;gap:1.8rem;padding:2rem 0}.login-intro h1{font-size:2.4rem}.login-intro h1 br{display:none}.login-intro h1 br::after{content:' '}.login-intro h1 em{display:block}.login-form{padding:1.4rem}.login-intro>p:not(.eyebrow),.process-label{display:none}.form-grid{grid-template-columns:minmax(0,1fr)}.line-input{grid-template-columns:minmax(0,1fr) 80px auto}.line-input label{font-size:.8125rem}.line-input>button{font-size:.8125rem}dialog{padding:1rem}.form-actions button{flex:1}.form-actions{flex-wrap:wrap}.notice{bottom:1rem}.history-heading button{align-self:start}}
-
-
-.issues-summary{margin-bottom:20px;text-align:left;color:var(--danger);border-color:var(--danger);white-space:normal}.issue-item{padding:20px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.issue-heading{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.issue-item p{margin:10px 0}.issue-resolution{border-left:3px solid var(--success);padding-left:16px;margin-top:16px}.sku-heading .actions{flex-wrap:wrap}.status-cell .status-label{white-space:normal}.status-cell{gap:8px}
-
-.order-settings{flex-wrap:wrap;margin:16px 0 28px}
+@media(max-width:650px){.workspace-nav{padding:1rem 0;font-size:.8125rem}.page-heading>.actions{width:100%}.page-heading .primary{flex:1}.filters{display:grid;grid-template-columns:1fr auto}.search-field{grid-column:1/-1}.filters label:not(.search-field){min-width:0}.pagination{align-items:start;flex-direction:column}.pagination .actions{width:100%;justify-content:space-between}.history-item{grid-template-columns:1fr;gap:.25rem}.history-action{justify-self:start}.history-heading{align-items:start;flex-direction:column}.login-view{grid-template-columns:1fr;gap:1.8rem;padding:2rem 0}.login-intro h1{font-size:2.4rem}.login-intro h1 br{display:none}.login-intro h1 br::after{content:' '}.login-intro h1 em{display:block}.login-form{padding:1.4rem}.login-intro>p:not(.eyebrow),.process-label{display:none}.form-grid{grid-template-columns:minmax(0,1fr)}.line-input{grid-template-columns:minmax(0,1fr) 80px auto}.line-input label{font-size:.8125rem}.line-input>button{font-size:.8125rem}dialog{padding:1rem}.form-actions button{flex:1}.form-actions{flex-wrap:wrap}.notice{bottom:1rem}.history-heading button{align-self:start}}.issue-item{padding:20px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.issue-heading{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.issue-item p{margin:10px 0}
 
 .workspace-nav .actions{flex-wrap:wrap;justify-content:flex-end}.activity-item{grid-template-columns:90px minmax(0,1fr)}.activity-item p{margin:8px 0}.activity-item .order-title{font-size:inherit}.activity-item{overflow-wrap:anywhere}@media(max-width:600px){.workspace-nav{align-items:flex-start;gap:12px;flex-wrap:wrap}.activity-item{grid-template-columns:1fr}}
 @media(max-width:650px){#activity-form{grid-template-columns:minmax(0,1fr)}#activity-form button{width:100%}}
@@ -16,7 +10,7 @@
 #activity-form{flex-wrap:wrap}.activity-item{grid-template-columns:135px minmax(0,1fr)}@media(max-width:600px){.activity-item{grid-template-columns:1fr}}
 
 /* A6.1: the Produksi filter form was a three-column stacked grid here. It is removed rather than overridden because `#search-form` is an id and would have out-specified the A6 `.command-bar` it is now composed from, keeping the old grid alive underneath the command bar. Every selector in the deleted block was scoped to `#search-form`, which only the Produksi board has ever used. */
-.material-balance{display:block;font-size:1.75rem;font-variant-numeric:tabular-nums}.material-event{padding:1rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.material-event p{margin:.4rem 0}.material-event .reason{white-space:pre-wrap}#batch-list .sku-block{overflow-wrap:anywhere}
+.material-event{padding:1rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.material-event p{margin:.4rem 0}.material-event .reason{white-space:pre-wrap}
 .ai-prompts{margin:1rem 0}.ai-prompts button{font-size:.875rem}.ai-assumptions{margin:1rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:.75rem 0}.ai-assumptions summary{cursor:pointer;font-weight:600}.ai-assumptions .form-grid{margin-top:1rem}.ai-answer{margin:1.5rem 0;padding:1.2rem;background:var(--accent-bg);border-top:3px solid var(--accent);overflow-wrap:anywhere}.ai-answer h3{margin-bottom:.35rem}.ai-answer p:last-child{margin-bottom:0}
 .command-attention{border-left:3px solid var(--edge);padding:1rem 0 1rem 1.2rem;overflow-wrap:anywhere}.command-attention.critical{border-left-color:var(--danger)}.command-attention.warning{border-left-color:var(--accent)}.command-attention p{margin:.35rem 0}.command-snapshot{min-width:0}.command-snapshot h3{margin-bottom:.35rem}.command-values dt{color:var(--muted);min-width:0}.command-values dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}@media(max-width:650px){#command-center-summary{grid-template-columns:minmax(0,1fr)}#command-center-summary dd{overflow-wrap:anywhere}.command-values{grid-template-columns:minmax(0,1fr)}.command-values dd{text-align:left}}
 .audit-json{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);padding:1rem;max-height:300px;overflow:auto;font:0.8125rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.audit-event{padding:1rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.audit-event p{margin:.35rem 0}
@@ -293,7 +287,7 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .back:hover{background:transparent;color:var(--primary)}
 
 /* ---------- cards ---------- */
-.card,.sku-block{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
+.card{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
 .card{padding:22px}
 .card-raised{background:var(--material-raised);box-shadow:var(--shadow-raised)}
 .state{padding:2rem 1rem;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);color:var(--muted);text-align:center;font-size:.875rem}
@@ -450,7 +444,6 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .status-label.late,.badge-danger{background:var(--danger-bg);color:var(--danger)}
 .status-label.done,.badge-success{background:var(--success-bg);color:var(--success)}
 .badge-warning{background:var(--warning-bg);color:var(--warning)}
-.status-cell .status-label{white-space:normal}
 
 /* ---------- filters, tables, lists ---------- */
 .filters,.filter-bar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:0 0 var(--gap);padding:16px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm)}
@@ -460,15 +453,12 @@ label{font-size:.8125rem;font-weight:600;color:var(--ink-2)}
 .data-table th,.data-table td{padding:.75rem 1rem;border-bottom:1px solid var(--line);vertical-align:top}
 .data-table th{background:var(--surface-subtle);color:var(--muted);font-size:.6875rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
 .data-table tr:last-child td{border-bottom:0}
-.table-head{margin-top:12px;padding:.7rem 1.1rem;border:1px solid var(--line);border-bottom:0;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--surface-subtle);color:var(--muted);font-size:.6875rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
 .order-row{padding:1.1rem;border:1px solid var(--line);border-top:0;background:var(--surface)}
 .order-row:last-child{border-radius:0 0 var(--r-card) var(--r-card)}
 /* display:block is load-bearing: the reference span is nested inside this button, so an
    inline-flex button would lay the reference and the title out side by side. */
 .order-title{display:block;min-height:auto;padding:0;border:0;background:transparent;box-shadow:none;color:var(--ink);font-size:.9375rem;font-weight:650;text-align:left;justify-content:flex-start}
 .order-title:hover{background:transparent;color:var(--primary);text-decoration:underline}
-.ledger-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:2px}
-.issues-summary{width:100%;justify-content:flex-start;margin-bottom:var(--gap);border-color:var(--danger-edge);background:var(--danger-bg);color:var(--danger);text-align:left;white-space:normal}
 .pagination{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:16px}
 progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
 .notice{border:1px solid var(--chrome-border);border-radius:var(--radius-control);background:var(--material-floating-solid);color:var(--ink);box-shadow:var(--shadow-floating)}
@@ -481,7 +471,6 @@ progress{height:6px;border-radius:var(--r-pill);overflow:hidden}
    in the `no-preference` query below. */
 .scan-result.is-scan-ok{background:var(--success-bg)}
 dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominent);background:var(--material-floating-solid);box-shadow:var(--shadow-floating)}
-.stages{border-radius:var(--r-card);overflow:hidden}
 .login-form{border:1px solid var(--line);border-top:3px solid var(--primary);border-radius:var(--r-card);box-shadow:var(--shadow-md)}
 .login-view{padding:clamp(2rem,6vw,4rem) 4%}
 .skip-link{border-radius:0 0 12px 0}
@@ -542,7 +531,6 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
   .decision-action{grid-column:2;justify-self:stretch}
   .decision-action button{width:100%;min-height:var(--touch-target-min)}
   .pagination{align-items:flex-start}
-  .ledger-heading{flex-direction:column;align-items:flex-start;gap:0}
   .filters,.filter-bar{padding:12px}
   .order-row{border-top:1px solid var(--line);border-radius:var(--r-card);margin-bottom:10px}
   .command-values{grid-template-columns:minmax(0,1fr)}
@@ -968,7 +956,7 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
 
 /* marketplace comparison occupies the reference's table slot */
 .channel-panel{min-width:0}
-.table-scroll{margin:0 -20px;padding:0 20px;overflow-x:auto}
+.table-scroll{margin:0;padding:0 20px;overflow-x:auto}
 .channel-table{font-size:.8125rem}
 .channel-table th{padding:0 10px 9px 0;border-bottom:1px solid var(--line);background:none;white-space:nowrap}
 .channel-table th:first-child{padding-left:0}
@@ -1085,12 +1073,6 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
 .inline-alert.is-success{border-color:var(--success-edge);border-left-color:var(--success-edge);background:var(--success-bg);color:var(--success)}
 .inline-alert.is-info{border-color:var(--primary-edge);border-left-color:var(--primary-edge);background:var(--primary-soft);color:var(--primary)}
 
-/* The issue shortcut keeps its native button semantics within an inline status surface. */
-.issues-summary{
-  min-height:0;padding:12px 16px;border-radius:14px;
-  border-left:3px solid var(--danger-edge);font-size:.8125rem;font-weight:650;
-}
-
 /* ---------- list rows: one card language for every record list ---------- */
 .material-event,.audit-event,.issue-item,.product-item,.workforce-row{
   min-width:0;padding:16px 18px;margin:0 0 10px;
@@ -1178,59 +1160,9 @@ dialog{border:1px solid var(--chrome-border);border-radius:var(--radius-prominen
 .history-item>button{min-height:34px;padding:.3rem .8rem;font-size:.78125rem}
 .activity-item .order-title{font-size:.875rem;font-weight:650}
 
-/* ---------- order detail ---------- */
-.detail-top{gap:1rem 1.5rem;align-items:flex-end}
-.detail-meta{
-  gap:0;margin:0 0 var(--gap);padding:0;
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  border:1px solid var(--line);border-radius:var(--r-card);
-  background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden;
-}
-.detail-meta>div{padding:14px 18px;border-right:1px solid var(--line);min-width:0}
-.detail-meta>div:last-child{border-right:0}
-/* Scoped to the label span only: the value slot can itself contain a span — the order
-   status is a status-label chip — which must keep its own inline-flex chip shape. */
-.detail-meta>div>span:first-child{display:block;color:var(--muted);font-size:.75rem}
-.detail-meta strong{
-  display:block;margin-top:3px;color:var(--ink);font-size:.9375rem;font-weight:650;
-  overflow-wrap:anywhere;
-}
-.order-settings{gap:8px;margin:0 0 var(--gap)}
-.stages{
-  gap:0;margin:0 0 12px;border:1px solid var(--line);background:var(--surface);
-  box-shadow:var(--shadow-sm);
-}
-.stage{padding:14px 16px;border-right:1px solid var(--line);min-width:0}
-.stage small{color:var(--muted);font-size:.75rem}
-.stage strong{
-  display:block;margin-top:2px;color:var(--ink);font-size:1.375rem;font-weight:750;
-  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
-}
-.stage-number{
-  margin-right:.4rem;color:var(--muted);font-size:.6875rem;font-weight:700;
-  font-variant-numeric:tabular-nums;
-}
-.exceptions{
-  gap:8px 18px;margin:0 0 var(--gap);color:var(--muted);font-size:.8125rem;
-  align-items:center;
-}
-.exceptions strong{color:var(--ink);font-weight:650}
-.sku-block{padding:18px 20px;margin:0 0 12px}
-.sku-block:last-of-type{margin-bottom:0}
-.sku-heading h3{margin:0;font-size:.9375rem;font-weight:650}
-.sku-heading .reference{margin-bottom:2px}
-.sku-balances{
-  gap:8px 18px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);
-  font-size:.8125rem;
-}
-.sku-balances strong{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+/* ---------- order detail: issue list ---------- */
 .issue-heading{gap:8px 12px;margin-bottom:6px}
 .issue-heading h3{margin:0}
-.issue-resolution{
-  margin-top:12px;padding:10px 14px;border:0;border-left:3px solid var(--success-edge);
-  border-radius:12px;background:var(--success-bg);
-}
-.issue-resolution p{color:var(--success)}
 
 /* ---------- compact stat strips (People roster, request summaries) ---------- */
 .workforce-summary{
@@ -1321,12 +1253,6 @@ label>input,label>select,label>textarea{margin-top:6px}
   max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
 }
 
-/* ---------- materials page ---------- */
-.material-balance{
-  display:block;margin-top:2px;color:var(--ink);font-size:1.375rem;font-weight:750;
-  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
-}
-
 /* ---------- login ---------- */
 .login-form{padding:26px 28px}
 .login-form h2{font-size:1.25rem;font-weight:700}
@@ -1334,18 +1260,12 @@ label>input,label>select,label>textarea{margin-top:6px}
 
 /* ---------- responsive ---------- */
 @media(max-width:980px){
-  .detail-meta{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
 }
 @media(max-width:650px){
   .dialog-heading{margin-bottom:14px;padding-bottom:12px}
   .dialog-heading h2{font-size:var(--type-section-title)}
   .material-event,.audit-event,.issue-item,.product-item,.workforce-row{padding:14px 15px}
   .material-event .material-event,.material-event .product-item{padding:12px 13px}
-  .detail-meta{grid-template-columns:minmax(0,1fr)}
-  .detail-meta>div{border-right:0;border-bottom:1px solid var(--line)}
-  .detail-meta>div:last-child{border-bottom:0}
-  .stage{padding:12px 14px}
-  .stage strong{font-size:1.1875rem}
   .workforce-summary{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}
   .workforce-row{grid-template-columns:minmax(0,1fr)}
   .workforce-row-actions{justify-content:flex-start}
@@ -1353,7 +1273,6 @@ label>input,label>select,label>textarea{margin-top:6px}
   .history-item{grid-template-columns:minmax(0,1fr);gap:4px;padding:13px 15px}
   .history-item>button{justify-self:start;margin-top:8px}
   .filter-form{padding:13px}
-  .sku-block{padding:15px 16px}
   .login-form{padding:18px 20px}
 }
 
@@ -1363,10 +1282,10 @@ label>input,label>select,label>textarea{margin-top:6px}
    and the dialog close. Inside a toolbar it read as stray text between
    buttons, so a low-emphasis control keeps an edge while staying clearly lighter
    than a default button and lighter still than .primary. */
-.actions>.quiet,.order-settings>.quiet{
+.actions>.quiet{
   border-color:var(--line);background:var(--surface-subtle);color:var(--ink-2);
 }
-.actions>.quiet:hover,.order-settings>.quiet:hover{
+.actions>.quiet:hover{
   border-color:var(--line-strong);background:var(--surface-sunken);color:var(--ink);
 }
 /* Corrections reverse a posted record, so they are marked as such rather than sitting
@@ -2492,3 +2411,151 @@ label>input,label>select,label>textarea{margin-top:6px}
    real 1px border that forced-colors repaints, and meaning lives in text - the status and kind
    chip text with A6.0's `.status-dot`, the spelled-out stale sentence, the error copy and every
    button label - never in a tint, a tile or a timeline marker alone. */
+
+
+
+
+/* ==========================================================================
+   A6.8 - Final consistency: the shared dialog chrome, formDialog(), and the
+   fulfilment / approval sheets A6.7 left on legacy markup
+   --------------------------------------------------------------------------
+   Every primary workspace was migrated by A6.1-A6.7. What still read as a second
+   product was the ONE dialog every workflow opens: a fixed 650px box whose margins
+   and padding were in rem (so 200% text spent ~130px of a 320px phone on chrome),
+   whose close control floated below the title's baseline, and whose shared form
+   still wore the pre-A6 label, note and footer styling.
+
+   This block owns exactly:
+     #dialog and its heading          - viewport-safe width / height, three semantic
+                                        widths (data-size: compact | standard | wide,
+                                        set by openDialog(); standard is the historical
+                                        650px), px insets, a sticky heading, internal
+                                        vertical scrolling.
+     #action-form                     - formDialog()'s chrome. The hooks it styles
+                                        (.form-info, .form-grid, .form-actions,
+                                        #form-fields, #form-error, #reauth, #save-form)
+                                        are load-bearing and keep their names; only
+                                        their presentation, scoped to the one form,
+                                        moves onto the A6 tokens.
+     .request-record(s), .request-quantities, .request-amounts, .request-attention,
+     .request-identifier, .request-amount, .request-empty, .request-closure,
+     .request-payment-summary, #pr-error
+                                      - the few names the A6.8 sheets add to A6.7's
+                                        request grammar.
+   It adds no blur, no transition, no keyframe and no animation; the dialog's M3 exit
+   and every reduced-motion rule above are untouched. No A6.0 primitive and no
+   earlier phase block is edited.
+   ========================================================================== */
+#dialog{--dialog-inset:12px;--dialog-pad:24px;
+  width:min(650px,calc(100vw - var(--dialog-inset)*2));max-width:calc(100vw - var(--dialog-inset)*2);
+  max-height:min(90dvh,calc(100dvh - var(--dialog-inset)*2));
+  padding:0 var(--dialog-pad) var(--dialog-pad);overflow-x:auto;overflow-y:auto;overscroll-behavior:contain}
+#dialog[data-size=compact]{width:min(520px,calc(100vw - var(--dialog-inset)*2))}
+#dialog[data-size=wide]{width:min(880px,calc(100vw - var(--dialog-inset)*2))}
+/* A6.3's People screens keep the 960px their roster layouts were approved at (the legacy
+   `dialog:has(.workforce-screen)` rule above is out-specified by `#dialog`, so it is restated). */
+#dialog:has(.workforce-screen){width:min(960px,calc(100vw - var(--dialog-inset)*2))}
+/* The heading stays with the reader while a long sheet scrolls under it, so the title and
+   "Tutup dialog" are never scrolled away. It is painted with the dialog's own opaque material,
+   and the close control is centred on the title instead of hanging below its baseline. */
+#dialog>.dialog-heading{position:sticky;top:0;z-index:2;align-items:center;
+  margin:0 calc(var(--dialog-pad)*-1) 18px;padding:20px var(--dialog-pad) 14px;
+  border-bottom:1px solid var(--workspace-divider);background:var(--material-floating-solid)}
+#dialog>.dialog-heading>h2{min-width:0;line-height:1.3}
+
+/* ---------- formDialog() ---------- */
+#form-fields{min-width:0;margin:0;padding:0;border:0}
+/* The context note: the subject, then what saving means - A6.0's info-panel measure and tone, with
+   a real border so it survives forced colors. */
+#action-form>.form-info{margin:0 0 var(--workspace-section-gap);padding:10px 12px;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--workspace-surface-secondary);color:var(--ink-2);font-size:var(--type-caption);line-height:1.5}
+#action-form .form-grid{gap:14px 16px}
+/* Legacy fields are `<label>Text<control></label>` (or a label beside its control). They read as
+   the A6 `.field` does - a small label above a quiet control - without a single name changing,
+   because every collector reads these forms by `name` and every suite finds them by label. A6
+   fields inside the same grid already carry `.field` and are left to A6.0. */
+#action-form .form-grid label:not([class*=field]):not(.check-field){display:flex;flex-direction:column;gap:.3rem;
+  min-width:0;color:var(--ink-2);font-size:var(--type-metadata);font-weight:600}
+#action-form .form-grid :is(input:not([type=checkbox]):not([type=radio]),select,textarea):not(.field>*){
+  width:100%;min-width:0;min-height:var(--workspace-control-height);margin:0;padding:.35rem .6rem;
+  border:1px solid var(--workspace-edge);border-radius:var(--workspace-control-radius);
+  background:var(--workspace-surface-secondary);color:var(--ink);font-size:var(--type-control);font-weight:400}
+#action-form .form-grid textarea:not(.field>*){min-height:5.5rem;padding:.5rem .6rem;line-height:1.5;resize:vertical}
+#action-form .form-grid :is(input,select,textarea):not(.field>*):focus{border-color:var(--focus);background:var(--workspace-surface)}
+#action-form .form-grid :is(input,select,textarea):disabled{opacity:.72;cursor:not-allowed}
+#action-form .form-grid>.hint{margin:0;font-size:var(--type-metadata)}
+/* A nested card inside a form (a PO price per material) is a quiet group, not a second card. */
+#action-form .form-grid .material-event{margin:0 0 10px;padding:12px 14px;border:1px solid var(--workspace-edge);
+  border-radius:var(--workspace-panel-radius);background:var(--workspace-surface-secondary);box-shadow:none}
+#action-form .form-grid .material-event>h3{font-size:var(--type-control)}
+/* The error is inline and actionable, in the same danger panel the A6.6 / A6.7 queues use. */
+#form-error{margin:14px 0 0;padding:10px 14px;border:1px solid var(--color-danger-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--color-danger-soft);color:var(--ink);font-size:var(--type-caption);font-weight:600;overflow-wrap:anywhere}
+/* Footer: cancel, re-authenticate when needed, then the one primary (save, or "Coba ulang
+   penyimpanan" while unresolved), right-aligned and ruled off from the fields. */
+#action-form>.form-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;
+  margin-top:20px;padding-top:16px;border-top:1px solid var(--workspace-divider)}
+#action-form>.form-actions>button{min-height:var(--workspace-control-height);max-width:100%;white-space:normal;overflow-wrap:anywhere}
+#action-form>.form-actions>:is([data-action=cancel-form],#reauth){border:1px solid var(--workspace-edge);
+  background:var(--workspace-surface);color:var(--ink)}
+
+/* ---------- the A6.8 sheets ---------- */
+#pr-error{margin:0;padding:10px 14px;border:1px solid var(--color-danger-edge);border-radius:var(--workspace-panel-radius);
+  background:var(--color-danger-soft);color:var(--ink);font-size:var(--type-caption);font-weight:600}
+#pr-status{max-width:18rem}
+.request-sheet .request-section>.field-help{margin:0}
+.request-records .request-record{min-height:0;padding:10px var(--workspace-cell-x);align-items:flex-start}
+.request-record :is(h4,p){margin:0}
+.request-record>.record-row-copy>h4{color:var(--ink);font-size:var(--type-control);font-weight:650;overflow-wrap:anywhere}
+.request-record .chip-row{margin-top:.35rem}
+.request-record .data-meta{margin-top:.2rem;overflow-wrap:anywhere}
+.request-record .reason{white-space:pre-wrap}
+.request-quantities{margin-top:.55rem;gap:8px 12px}
+.request-quantities .detail-field>dd{font-size:var(--type-caption)}
+.request-amounts{display:flex;flex-direction:column;min-width:0;margin:0;border:1px solid var(--workspace-edge);
+  border-radius:var(--workspace-panel-radius);background:var(--workspace-surface)}
+.request-amounts>div{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:.2rem 1rem;min-width:0;
+  padding:8px 12px;border-bottom:1px solid var(--workspace-divider)}
+.request-amounts>div:last-child{border-bottom:0}
+.request-amounts dt{min-width:0;color:var(--ink-2);font-size:var(--type-caption);overflow-wrap:anywhere}
+.request-amounts dd{margin:0 0 0 auto;color:var(--ink);font-size:var(--type-control);font-weight:600;
+  font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+/* The last total is the one the decision is about. */
+.request-amounts>div:last-child>:is(dt,dd){color:var(--ink);font-weight:700}
+/* Old beside proposed: two columns, so each semula value sits next to its diajukan value. */
+.request-change>.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.request-identifier{overflow-wrap:anywhere}
+.request-amount,.request-payment-summary{font-variant-numeric:tabular-nums}
+.request-amount{font-weight:650}
+.request-empty{margin:0}
+
+@media(max-width:980px){
+  #action-form .form-grid :is(input:not([type=checkbox]):not([type=radio]),select):not(.field>*),
+  #action-form>.form-actions>button{min-height:var(--touch-target-min)}
+}
+@media(max-width:650px){
+  /* px, not rem: at 320px with 200% text a rem inset and padding cost the sheet a third of its
+     width. The dialog keeps an 8px window edge and a 16px inner edge at every text size. */
+  #dialog{--dialog-inset:8px;--dialog-pad:16px}
+  #dialog>.dialog-heading{margin-bottom:14px;padding:14px var(--dialog-pad) 12px}
+  #action-form>.form-actions>button{flex:1 1 auto}
+  #pr-status{max-width:none}
+  .request-record>.record-row-aside{flex:1 1 100%;justify-content:flex-start}
+  .request-record .queue-amount{align-items:flex-start;text-align:left}
+  .request-record .queue-amount-value{white-space:normal;overflow-wrap:anywhere}
+}
+/* ---------- two regressions the A6.8 product sweep found ----------
+   Command Center's first-pass-yield ring is a fixed 120px on a phone, but its figure is text: at
+   320px with 200% text "66.67%" is ~160px wide and collides with the ring's stroke. On a phone the
+   ring now scales with the text size - `7.5rem` IS 120px at the default size, so nothing moves
+   until the text grows - and stays inside its card. (The marketplace table's negative bleed is the
+   other one; it is fixed at `.table-scroll` itself above.) */
+@media(max-width:650px){
+  #command-center-hero .hero-ring{width:clamp(120px,7.5rem,100%);height:auto;aspect-ratio:1}
+  #command-center-hero .hero-ring small{max-width:6rem}
+}
+/* No A6.8 forced-colors block: every surface here has a real 1px border that forced colors
+   repaints, the sticky heading paints the system Canvas, and meaning lives in text - chip words
+   with A6.0's `.status-dot`, the spelled-out stale / hold sentences, the error copy and each
+   button label - never in a tint alone. */

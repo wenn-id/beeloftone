@@ -85,7 +85,10 @@ PO_LIST = body('purchaseOrdersDialog')
 MIGRATED = (GRAMMAR, CONTEXT, LOAD_APPROVALS, LOAD_BUDGETS, BUDGET_FORM, BUDGET_SHEET, LOAD_PRS, PR_FORM,
             PR_SHEET, SUPPLIERS, SUPPLIER_FORM, PO_LIST)
 A67_MARKER = '#purchase-requests-view,#marketing-budgets-view,#approvals-view{max-width:1360px'
-A67_BLOCK = code_css(CSS)[code_css(CSS).index(A67_MARKER):]
+# A6.8 appends its own block after this one, so the slice is bounded by A6.8's first selector,
+# exactly as A6.7 bounded A6.6's. The assertions below keep meaning "the A6.7 block is contained".
+A68_MARKER = '#dialog{--dialog-inset:12px;--dialog-pad:24px;'
+A67_BLOCK = code_css(CSS)[code_css(CSS).index(A67_MARKER):code_css(CSS).index(A68_MARKER)]
 LEGACY_CLASSES = r'class="(?:[^"]* )?(?:page-heading|eyebrow|hint|actions|primary|filter-form|form-grid|form-actions|form-info|material-event|status-label|requirement-values)(?: [^"]*)?"'
 
 
@@ -402,16 +405,19 @@ class GrammarTest(unittest.TestCase):
 
 class BoundaryTest(unittest.TestCase):
     def test_the_fulfilment_and_foreign_dialogs_stay_legacy(self):
-        # The workflows A6.7 LINKS to are not redesigned here; they still render the legacy
-        # vocabulary, and an A6 name appearing in any of them fails this and the foundation test.
-        for name in ('orderPurchaseRequestsDialog', 'purchaseOrderForm', 'purchaseOrderDialog', 'qualityIntakeDialog',
-                     'renderSupplierReturns', 'renderPOClosure', 'purchaseReceiptsHTML', 'supplierPaymentForm',
-                     'supplierPaymentRequestDialog', 'productionChangeRequestDialog', 'payrollApprovalRequestDialog'):
+        # A6.7 did not redesign the workflows it LINKS to. A6.8 then migrated the high-visibility
+        # SHEETS among them, by name (they are on the foundation allow-list and are pinned by
+        # tests/test_apple27_final_polish_contract.py). The legacy FORMS of the fulfilment workflow
+        # are still not migrated: an A6 name appearing in any of them fails this and the foundation
+        # test, because formDialog()'s A6.8 chrome is CSS, not new markup.
+        for name in ('purchaseOrderForm', 'purchaseReceiptForm', 'qualityDecisionForm', 'supplierPaymentForm'):
             with self.subTest(renderer=name):
                 text = body(name)
                 self.assertNotRegex(text, r'class="[^"]*(?<![\w-])(?:record-row|record-list|status-chip|detail-grid|queue-[\w-]+|request-[\w-]+)(?![\w-])')
         self.assertIn('const materialReason = \'<label class="full">Alasan / catatan<textarea name="reason" required maxlength="1000"></textarea></label>\';', APP)
-        self.assertIn('<p class="form-info">${e(p.reference)} · ${poStatus[p.status]}</p>', body('purchaseOrderDialog'))
+        # The PO sheet (A6.8) still prints `reference · status` as ONE line, the sentence the suites
+        # and an operator look for, now in the shared request identity.
+        self.assertIn('requestIdentity(`${e(p.reference)} · ${poStatus[p.status]}`', body('purchaseOrderDialog'))
 
     def test_form_dialog_chrome_is_untouched(self):
         dialog = body('formDialog')
@@ -448,8 +454,10 @@ class CssContainmentTest(unittest.TestCase):
         self.assertNotRegex(A67_BLOCK, r'@keyframes|animation\s*:|transition\s*:')
 
     def test_it_is_the_last_block(self):
-        # Later phases bound this slice exactly as A6.7 bounded A6.6's.
+        # Later phases bound this slice exactly as A6.7 bounded A6.6's. A6.8 is the one block after it.
         self.assertEqual(code_css(CSS).count(A67_MARKER), 1)
+        self.assertEqual(code_css(CSS).count(A68_MARKER), 1)
+        self.assertLess(code_css(CSS).index(A67_MARKER), code_css(CSS).index(A68_MARKER))
 
 
 class GlobalTest(unittest.TestCase):
@@ -471,7 +479,7 @@ class GlobalTest(unittest.TestCase):
 
     def test_version_schema_and_routes(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.113.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.114.0', 'A6.8 is the final Apple-27 milestone')
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

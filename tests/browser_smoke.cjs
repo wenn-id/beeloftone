@@ -500,6 +500,11 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   // own queue walk, reviews the three migrated queues and their request sheets, and writes the A6.7
   // visual-review set.
   await runModule('./browser_purchasing_budget_approvals_modern_workspaces.cjs');
+  // A6.8 runs after every A6 module and every business module above: it reviews the product as ONE
+  // thing - all sixteen destinations, the shared dialog and formDialog() chrome, the sheets A6.8
+  // migrated (against the records those modules left) and the four display modes - and writes the
+  // A6.8 visual-review set.
+  await runModule('./browser_final_polish.cjs');
   await runModule('./browser_workspace_utilities.cjs');
   assert.deepEqual(errors,[]);
   await browser.close();

@@ -374,6 +374,19 @@ Rules for every A6.x migration:
 5. Re-run the A6.0 contract and browser tests; the zero-impact test will legitimately need its
    allowance updated as pages migrate, and that update is the record of what was migrated.
 
+## Status after A6.8 (program complete)
+
+A6.1–A6.8 are complete; the Apple-27 modernization program ends here and there is no A6.9. Every
+primary sidebar destination and the Produksi order detail is an A6 workspace page (Command Center
+stays the frozen A5 golden composition). A6.8 added no primitive and did not edit this file's
+stylesheet: it modernised the one shared `#dialog` and `formDialog()` chrome in a contained block
+at the end of `style.css`, moved the remaining high-visibility sheets (PO fulfilment, incoming QC,
+supplier payment, production change, payroll approval, "PR untuk order ini") onto A6.7's request
+grammar by name, merged the approval-status tones into one map, and removed 21 legacy selectors
+proven dead. Details, the legacy-hook inventory and the deferred non-visual debt are in
+`docs/apple27-final-consistency-polish.md`. Later work is a bug, feature, workflow, performance,
+security or release-stabilisation change, not an A6 phase.
+
 ## Changed files
 
 - `beeloft/static/workspace-primitives.css` — new, the whole primitive system.

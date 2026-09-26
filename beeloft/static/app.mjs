@@ -1442,12 +1442,19 @@ async function moreHistory(button) {
 const jakartaToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date());
 const option = (value,label) => `<option value="${e(value)}">${e(label)}</option>`;
 const field = (name,label,type='text',attrs='') => `<label>${label}<input name="${name}" type="${type}" ${attrs}></label>`;
-function openDialog(title, content) {
+// A6.8: three semantic widths for the ONE dialog, assigned deterministically and never per dialog:
+// `compact` for a decision / confirmation form that is only a reason, `wide` for the one sheet that
+// carries a multi-column fulfilment ledger (the PO detail), `standard` - the historical 650px - for
+// everything else. Presentation only: it is a data attribute the stylesheet reads, reset on every
+// open, and it changes nothing about the lifecycle below.
+const DIALOG_SIZES = ['compact','standard','wide'];
+function openDialog(title, content, size = 'standard') {
   // Hanya tugas sekunder. Recovery pending dapat memotong navigasi dari drawer.
   if(document.body.classList.contains('nav-open')){
     sidebar(false);dialogReturnFocus=$('menu-toggle');
   }
   dialogVersion++;
+  $('dialog').dataset.size = DIALOG_SIZES.includes(size) ? size : 'standard';
   $('dialog-title').textContent = title; $('dialog-content').innerHTML = content;
   modalBusy = false; unresolved = false;
   if (!$('dialog').open) { resetDialogMotionState(); $('dialog').showModal(); }
@@ -1651,7 +1658,10 @@ async function sameActorGuard(actorId) {
   }
 }
 function formDialog(title, fields, collect, path, info = '', initial = null) {
-  openDialog(title, `<form id="action-form">${info ? `<p class="form-info">${e(info)}</p>` : ''}<fieldset id="form-fields"><div class="form-grid">${fields}</div></fieldset><p class="error" id="form-error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" id="reauth" hidden>Masuk ulang</button><button class="primary" id="save-form" type="submit">Simpan pencatatan</button></div></form>`);
+  // A6.8: a form whose only field is the reason (every decision, correction and cancellation) and the
+  // recovery form (no field at all) are compact; every other form keeps the standard width.
+  const size = !fields || fields === materialReason || fields === reasonField() ? 'compact' : 'standard';
+  openDialog(title, `<form id="action-form">${info ? `<p class="form-info">${e(info)}</p>` : ''}<fieldset id="form-fields"><div class="form-grid">${fields}</div></fieldset><p class="error" id="form-error" role="alert" hidden></p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" id="reauth" hidden>Masuk ulang</button><button class="primary" id="save-form" type="submit">Simpan pencatatan</button></div></form>`, size);
   let transaction = initial;
   const modalVersion = dialogVersion;
   $('reauth').onclick = () => reauthenticate('form-error');
@@ -2222,21 +2232,40 @@ async function productionChangeRequestsDialog(orderId) {
 
 async function productionChangeRequestDialog(requestId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian approval produksi','<p class="state">Memuat permintaan...</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Rincian approval produksi',requestLoading('Memuat permintaan…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/production-change-requests/'+encodeURIComponent(requestId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const canCancel=row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><h3>${e(row.order_reference)} · ${e(row.order_title)}</h3><article class="material-event"><h3>Perubahan yang diajukan</h3><p>Target ${date(row.old_due_date)} → ${date(row.new_due_date)}</p><p>PIC ${e(row.old_owner_name)} → ${e(row.new_owner_name)}</p></article>${row.stale?'<p class="error">Order sudah berubah setelah permintaan dibuat. Tolak permintaan ini, muat ulang order, lalu ajukan nilai terbaru.</p>':''}<p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p><div class="actions">${user.role==='admin'&&row.status==='submitted'&&!row.stale?'<button class="primary" data-production-decision="approved">Setujui perubahan</button>':''}${user.role==='admin'&&row.status==='submitted'?'<button data-production-decision="rejected">Tolak perubahan</button>':''}${canCancel?'<button data-production-decision="cancelled">Batalkan permintaan</button>':''}<button id="production-request-order">Buka order</button><button data-action="production-change-requests" data-id="${e(row.order_id)}">Riwayat order</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p>${event.order_change_id?'<p class="hint">Perubahan order diterapkan dalam transaksi approval ini.</p>':''}</article>`).join('')}`;
+    // A6.8: the A6.7 request sheet. Identity, the old and the proposed value side by side, the stale
+    // warning in words, the requester's reason, the decisions this viewer may take (one primary),
+    // navigation, then the append-only history. Every gate, label and payload is the legacy one.
+    const decisions=[];
+    if(user.role==='admin'&&row.status==='submitted'&&!row.stale)decisions.push(['approved','Setujui perubahan']);
+    if(user.role==='admin'&&row.status==='submitted')decisions.push(['rejected','Tolak perubahan']);
+    if(canCancel)decisions.push(['cancelled','Batalkan permintaan']);
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(row.reference)} · ${e(approvalStatus[row.status])}`,`${e(row.order_reference)} · ${e(row.order_title)}`,
+        queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status])+(row.stale?queueChip('warning','Permintaan sudah stale'):''))
+      + requestSection('Perubahan yang diajukan',`<div class="request-change">${requestFacts([['Target semula',date(row.old_due_date)],['Target diajukan',date(row.new_due_date)],
+        ['PIC semula',e(row.old_owner_name)],['PIC diajukan',e(row.new_owner_name)]])}</div>`)
+      + (row.stale?requestAttention('Order sudah berubah setelah permintaan dibuat. Tolak permintaan ini, muat ulang order, lalu ajukan nilai terbaru.'):'')
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(row.reason)}</p><p class="data-meta">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`)
+      + (decisions.length?`<div class="action-row request-decisions">${decisions.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-production-decision="${status}">${label}</button>`).join('')}</div>`:'')
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" id="production-request-order">Buka order</button><button type="button" class="action-quiet" data-action="production-change-requests" data-id="${e(row.order_id)}">Riwayat order</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
+      + requestSection('Riwayat keputusan',requestHistory(row.history,approvalStatus,
+        event=>event.order_change_id?'<p class="timeline-detail">Perubahan order diterapkan dalam transaksi approval ini.</p>':''))
+      + '</div>';
     $('production-request-order').onclick=()=>{if(guardPending())return;$('dialog').close();openDetail(row.order_id);};
     $('dialog-content').querySelectorAll('[data-production-decision]').forEach(button=>button.onclick=()=>{
       if(guardPending())return;
       const decision=button.dataset.productionDecision;
-      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+      formDialog(button.textContent,reasonField(),form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
         '/api/production-change-requests/'+encodeURIComponent(row.id)+'/decisions',
         `${row.reference} · ${row.order_reference}\n${button.textContent}. Keputusan dan alasan tersimpan permanen.${decision==='approved'?' Tenggat/PIC order berubah saat persetujuan tersimpan.':''}`);
     });
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="production-change-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Rincian approval produksi gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="production-change-request" data-id="${e(requestId)}">Coba lagi</button>`);}
 }
 
 const activityLabels = {movement:'Perpindahan barang',reversal:'Koreksi perpindahan',issue_opened:'Kendala dicatat',issue_resolved:'Kendala selesai',order_created:'Order dibuat',order_changed:'Tenggat / PIC diubah'};
@@ -4418,6 +4447,13 @@ async function mekariReceivableSnapshotDialog(batchId) {
 
 const payrollStatus={draft:'Draft',reviewing:'Ditinjau',approved:'Disetujui',paid:'Dibayar',cancelled:'Dibatalkan'};
 const payrollTone={draft:'neutral',reviewing:'info',approved:'info',paid:'success',cancelled:'neutral'};
+// A6.8: the ONE approval-status tone map. Every Beeloft approval - PR, PO issuance, supplier
+// payment, marketing budget, production change, leave / overtime, payroll batch, AI action - uses
+// the same five words for the same five states, so it paints them the same way: waiting is a
+// restrained info, approved reads positively, rejected is the one danger, and a withdrawn request is
+// quiet. A stale / source-changed request is NOT a sixth status; it keeps its own sentence and a
+// warning chip beside this one. Domain health (integration health, AI severity, QC, overdue
+// production, Mekari's own payroll status) keeps its own map on purpose.
 const approvalTone={submitted:'info',pending:'info',approved:'success',rejected:'danger',cancelled:'neutral'};
 const payrollPeriodCard=row=>{
   const approval=row.approval_request,financialChange=approval&&['period_start','period_end','currency','employee_count','gross_pay','employee_deductions','employer_contributions'].some(key=>row[key]!==approval.source[key]);
@@ -4578,7 +4614,8 @@ async function payrollAccountingReconciliationDialog() {
 // hanya membaca bidang yang sudah ada pada snapshot tersimpan dan tidak pernah merekonstruksi
 // bukti dari ledger hari ini. Bidang yang tidak ada pada catatan lama dibaca sebagai kosong.
 const aiSeverityTone={critical:'danger',high:'warning',medium:'neutral',info:'info'};
-const aiActionTone={submitted:'info',approved:'success',rejected:'danger',cancelled:'neutral'};
+// A6.8: an AI action proposal is an approval like every other one.
+const aiActionTone=approvalTone;
 function renderAiInvestigation(report,target,source=report.source_payload) {
   const intents={overview:'Ringkasan bisnis',production:'Kondisi produksi',stockout:'Risiko stockout',approvals:'Antrean approval',margin:'Margin kontribusi'};
   const confidence={high:'tinggi',medium:'sedang',low:'rendah'};
@@ -5082,7 +5119,7 @@ async function payrollApprovalForm(periodId) {
 
 async function payrollApprovalRequestDialog(requestId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Approval batch payroll','<p class="state">Memuat permintaan payroll…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Approval batch payroll',requestLoading('Memuat permintaan payroll…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/payroll-approval-requests/'+encodeURIComponent(requestId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
@@ -5090,15 +5127,34 @@ async function payrollApprovalRequestDialog(requestId) {
     if(pending&&user.role==='admin'&&!row.stale)buttons.push(['approved','Setujui payroll']);
     if(pending&&user.role==='admin')buttons.push(['rejected','Tolak payroll']);
     if(pending&&user.role==='operator'&&row.actor_id===user.id)buttons.push(['cancelled','Batalkan pengajuan']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p>${row.stale?(pending?'<p class="error">Snapshot payroll sumber sudah berubah atau tidak lagi tersedia. Permintaan ini tidak dapat disetujui.</p>':'<p class="hint">Snapshot payroll sumber berubah setelah keputusan ini dicatat.</p>'):''}<h3>${date(source.period_start)}–${date(source.period_end)}</h3><p>${n(source.employee_count)} karyawan · status Mekari ${e(payrollStatus[source.status])}</p><dl class="requirement-values"><div><dt>Gaji bruto</dt><dd>${financeRupiah(source.gross_pay)}</dd></div><div><dt>Potongan karyawan</dt><dd>${financeRupiah(source.employee_deductions)}</dd></div><div><dt>Gaji neto</dt><dd>${financeRupiah(source.net_pay)}</dd></div><div><dt>Kontribusi perusahaan</dt><dd>${financeRupiah(source.employer_contributions)}</dd></div><div><dt>Total biaya perusahaan</dt><dd>${financeRupiah(source.total_employer_cost)}</dd></div></dl><p class="reason">${e(row.reason)}</p><p class="hint">ID sumber ${e(source.external_payroll_id)} · snapshot ${purchaseStamp(source.snapshot_at)} · diajukan ${e(row.actor_name)} ${purchaseStamp(row.created_at)}. Keputusan tidak mengubah Mekari atau menjalankan pembayaran.</p><div class="actions">${buttons.map(([status,label])=>`<button data-payroll-decision="${status}" type="button">${label}</button>`).join('')}<button data-action="mekari-payroll-summary" type="button">Ringkasan payroll</button><button data-action="approvals" type="button">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="history-item"><time>${e(auditStamp(event.created_at))}</time><div><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)}</p></div></article>`).join('')}`;
+    // A6.8: the A6.7 request sheet, for an AGGREGATE: the period, the headcount and five totals -
+    // never an employee identity, because the snapshot carries none. The Beeloft approval and
+    // Mekari's own payroll status stay two separate facts, and the stale source stays a sentence.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(row.reference)} · ${e(approvalStatus[row.status])}`,`${date(source.period_start)}–${date(source.period_end)}`,
+        queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status])+(row.stale?queueChip('warning','Sumber berubah'):''))
+      + (row.stale?(pending?requestAttention('Snapshot payroll sumber sudah berubah atau tidak lagi tersedia. Permintaan ini tidak dapat disetujui.')
+        :requestNote('Snapshot payroll sumber berubah setelah keputusan ini dicatat.')):'')
+      + requestFacts([['Karyawan',`${n(source.employee_count)} karyawan`],['Status Mekari',e(payrollStatus[source.status])],
+        ['ID sumber',`<span class="request-identifier">${e(source.external_payroll_id)}</span>`],['Snapshot',purchaseStamp(source.snapshot_at)]])
+      + requestSection('Nilai payroll',`<dl class="request-amounts">${[['Gaji bruto',source.gross_pay],['Potongan karyawan',source.employee_deductions],
+        ['Gaji neto',source.net_pay],['Kontribusi perusahaan',source.employer_contributions],['Total biaya perusahaan',source.total_employer_cost]]
+        .map(([label,value])=>`<div><dt>${label}</dt><dd>${financeRupiah(value)}</dd></div>`).join('')}</dl>`)
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(row.reason)}</p><p class="data-meta">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`)
+      + requestNote('Keputusan tidak mengubah Mekari atau menjalankan pembayaran.','shield')
+      + (buttons.length?`<div class="action-row request-decisions">${buttons.map(([status,label])=>`<button data-payroll-decision="${status}" type="button" class="${requestDecisionWeight[status]}">${label}</button>`).join('')}</div>`:'')
+      + '<div class="action-row request-navigation"><button data-action="mekari-payroll-summary" type="button" class="action-quiet">Ringkasan payroll</button><button data-action="approvals" type="button" class="action-quiet">Inbox approval</button></div>'
+      + requestSection('Riwayat keputusan',requestHistory(row.history,approvalStatus))
+      + '</div>';
     $('dialog-content').querySelectorAll('[data-payroll-decision]').forEach(button=>button.onclick=()=>{
       const decision=button.dataset.payrollDecision;
-      formDialog(button.textContent,materialReason,
+      formDialog(button.textContent,reasonField(),
         form=>({status:decision,expected_revision:row.revision,reason:new FormData(form).get('reason').trim()}),
         '/api/payroll-approval-requests/'+encodeURIComponent(row.id)+'/decisions',
         `${row.reference} · ${financeRupiah(source.total_employer_cost)}\nKeputusan dan alasan tersimpan permanen; status sumber Mekari tidak berubah.`);
     });
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="payroll-approval-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Approval payroll gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="payroll-approval-request" data-id="${e(requestId)}">Coba lagi</button>`);}
 }
 $('return-insights').onclick=showReturnInsights;
 
@@ -6047,7 +6103,10 @@ async function workforceAttendanceHistoryDialog(attendanceId) {
 const workforceRequestLabels={leave:'Cuti',overtime:'Lembur'};
 // Nada keputusan approval. Menunggu adalah pekerjaan yang belum selesai, jadi menuntut perhatian;
 // ditolak adalah keputusan negatif yang final; dibatalkan bukan kegagalan, hanya tidak berlaku lagi.
-const workforceRequestTone={submitted:'warning',pending:'warning',approved:'success',rejected:'danger',cancelled:'neutral'};
+// A6.8: leave / overtime approvals join the shared approval tone. A6.3 painted "waiting" as a
+// warning while A6.5 and A6.7 painted it as info; waiting for a decision is not a problem, so the
+// one convention is info. The chip text is unchanged and still carries the meaning.
+const workforceRequestTone=approvalTone;
 
 async function workforceRequestsDialog() {
   if(guardPending())return;
@@ -6656,14 +6715,32 @@ const requestFail = (title,message,retry) => `<div class="error-state">${svgIcon
 const requestIdentity = (line,title,chips) => `<div class="request-identity"><p class="workspace-meta">${line}</p><h3 class="data-primary">${title}</h3><div class="chip-row">${chips}</div></div>`;
 const requestFacts = pairs => `<dl class="detail-grid request-facts">${pairs.map(([label,value]) => `<div class="detail-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
 const requestSection = (title,body) => `<section class="request-section"><h3 class="workspace-section-title">${e(title)}</h3>${body}</section>`;
+// A6.8: the PO fulfilment sheets carry records INSIDE their sections (lines, receipts, QC arrivals,
+// decisions, returns), so a record's heading sits one level below its section's h3. Quantities are
+// many short numeric facts, so they use A6.0's compact grid. An empty section says what is missing
+// in one quiet sentence rather than drawing a second empty-state box inside the sheet.
+const requestRecord = ({primary,secondary='',chips='',details='',aside='',hook=''}) => `<li class="record-row request-record"${hook}>`
+  + `<div class="record-row-copy"><h4 class="data-primary">${primary}</h4>${secondary?`<p class="data-secondary">${secondary}</p>`:''}`
+  + (chips?`<div class="chip-row">${chips}</div>`:'') + details + '</div>'
+  + (aside?`<div class="record-row-aside">${aside}</div>`:'') + '</li>';
+const requestRecords = (label,rows,empty) => rows.length
+  ? `<ul class="record-list request-records" aria-label="${e(label)}">${rows.join('')}</ul>`
+  : `<p class="data-meta request-empty">${e(empty)}</p>`;
+const requestQuantities = pairs => `<dl class="detail-grid detail-grid-compact request-quantities">${pairs.map(([label,value]) => `<div class="detail-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
 const requestNote = (text,glyph='info') => `<p class="info-panel">${svgIcon(glyph,'icon-sm')}<span>${e(text)}</span></p>`;
+// A6.8: a sentence that asks for attention before a decision - a stale source, an unresolved QC
+// hold. A6.0's warning note; the sentence itself always carries the meaning.
+const requestAttention = text => `<p class="attention-note request-attention">${svgIcon('alert-triangle','icon-sm')}<span class="attention-note-copy">${e(text)}</span></p>`;
 // Newest first, as the domain returns it. A decision is a timeline event, never a card of its own.
-const requestTone = {submitted:'info',pending:'info',approved:'success',rejected:'danger',cancelled:''};
-const requestHistory = (events,labels) => events.length
+// A6.8: derived from the one approval map. A neutral decision draws the timeline's plain marker.
+const requestTone = Object.fromEntries(Object.entries(approvalTone).map(([status,tone]) => [status,tone==='neutral'?'':tone]));
+// `extra` (A6.8) appends a domain's own already-escaped note to an event - the production change
+// saying its order change was applied in the same transaction - without a second history grammar.
+const requestHistory = (events,labels,extra=()=>'') => events.length
   ? `<ol class="timeline request-history">${events.map(event => `<li class="timeline-item${requestTone[event.status]?' timeline-item-'+requestTone[event.status]:''}">`
     + `<time class="timeline-time" datetime="${e(event.created_at)}">${purchaseStamp(event.created_at)}</time>`
     + `<span class="timeline-event">${e(labels[event.status])}</span><span class="timeline-actor">${e(event.actor_name)}</span>`
-    + `<p class="timeline-detail reason">${e(event.reason)}</p></li>`).join('')}</ol>`
+    + `<p class="timeline-detail reason">${e(event.reason)}</p>${extra(event)}</li>`).join('')}</ol>`
   : `<div class="empty-state">${svgIcon('history')}<p class="empty-state-title">Belum ada keputusan.</p></div>`;
 // One primary per sheet: approving is the one genuinely forward decision; rejecting is the one
 // that ends a request negatively; withdrawing a submission is neutral. Navigation stays quiet.
@@ -6924,8 +7001,17 @@ async function loadPurchaseRequests() {
 async function orderPurchaseRequestsDialog(orderId) {
   if (guardPending()) return;
   const version=epoch;
-  openDialog('PR untuk order ini',
-    `<p class="hint">Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.</p><div class="actions">${user.role!=='viewer' ? `<button data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button data-action="suppliers">Master pemasok</button><button data-action="purchase-orders">Daftar PO</button><button id="pr-refresh">Muat ulang PR</button></div><div class="filter-form"><div class="form-grid"><div><label for="pr-status">Status PR</label><select id="pr-status"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></div></div></div><div id="pr-list"><p class="state">Memuat PR...</p></div><p id="pr-error" role="alert" class="error" hidden></p><button id="pr-more">Muat PR berikutnya</button>`);
+  // A6.8: the Purchasing queue idiom (A6.7), scoped to one order. The scope note, the one forward
+  // action (Buat PR, still hidden for viewers), the two utilities as quiet links, one status filter,
+  // ONE record list the next page joins, and the load-more that is also the retry. The order scope,
+  // the 25-row `before=sequence` cursor, the ids and every label are unchanged.
+  openDialog('PR untuk order ini','<div class="request-sheet">'
+    + requestNote('Pengajuan bahan untuk ditinjau. PR yang disetujui belum menjadi pesanan ke pemasok.')
+    + `<div class="action-row request-decisions">${user.role!=='viewer' ? `<button type="button" class="action-primary" data-action="new-purchase-request" data-id="${e(orderId || '')}">Buat PR</button>` : ''}<button type="button" class="action-quiet" data-action="suppliers">Master pemasok</button><button type="button" class="action-quiet" data-action="purchase-orders">Daftar PO</button></div>`
+    + `<div class="command-bar"><div class="command-filters"><label class="command-filter"><span>Status PR</span><select id="pr-status" aria-label="Status PR"><option value="all">Semua status</option>${Object.entries(purchaseStatus).map(([value,label])=>option(value,label)).join('')}</select></label></div>`
+    + '<div class="command-actions"><button id="pr-refresh" type="button" class="action-secondary">Muat ulang PR</button></div></div>'
+    + `<p id="pr-error" role="alert" class="error" hidden></p><div id="pr-list">${queueState('loading','Memuat PR…')}</div>`
+    + '<div class="queue-more"><button id="pr-more" type="button" class="action-secondary">Muat PR berikutnya</button></div></div>');
   const modal=dialogVersion, current=()=>version===epoch && modal===dialogVersion && $('dialog').open;
   let before=null, generation=0;
   async function load(reset=false) {
@@ -6934,10 +7020,16 @@ async function orderPurchaseRequestsDialog(orderId) {
     try {
       const rows=await api.get('/api/purchase-requests?'+new URLSearchParams({limit:25,status:$('pr-status').value,...(orderId?{order_id:orderId}:{}),...(before?{before}:{})}));
       if(!current() || gen!==generation)return;
-      appendRows('pr-list', rows.map(p=>`<article class="material-event"><h3>${e(p.reference)}</h3><p>${purchaseStatus[p.status]} · dibutuhkan ${date(p.required_date)}</p><p>${e(p.order_reference || 'Permintaan umum')} · ${e(rupiah(p.estimated_value))} estimasi total</p><p class="hint">${e(p.actor_name)} · ${purchaseStamp(p.created_at)}</p><button data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button></article>`).join(''));
-      if(!before && !rows.length)$('pr-list').innerHTML='<p class="state">Belum ada PR yang sesuai filter.</p>';
-      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;
-    }catch(error){if(current() && gen===generation){message('pr-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba muat PR lagi';}}
+      // The same record the Purchasing page draws; the order column is implied by the scope.
+      if(rows.length)queueAppend('pr-list','PR untuk order ini',rows.map(p=>queueRow({glyph:'cart',
+        primary:e(p.reference),secondary:`${e(p.order_reference || 'Permintaan umum')} · dibutuhkan ${date(p.required_date)}`,
+        chips:queueChip(approvalTone[p.status]||'neutral',purchaseStatus[p.status]),
+        stamp:`${e(p.actor_name)} · ${purchaseStamp(p.created_at)}`,
+        aside:queueAmount(p.estimated_value,'estimasi total')+`<button type="button" class="action-secondary" data-action="purchase-request" data-id="${e(p.id)}" aria-label="Rincian ${e(p.reference)}">Rincian PR</button>`})).join(''));
+      if(!before && !rows.length)$('pr-list').innerHTML=queueState('empty','Belum ada PR yang sesuai filter.',
+        user.role==='viewer'?'Ubah status PR untuk melihat pengajuan lain untuk order ini.':'Ubah status PR, atau buat PR untuk kebutuhan bahan order ini.');
+      before=rows.at(-1)?.sequence;button.hidden=rows.length<25;button.textContent='Muat PR berikutnya';
+    }catch(error){if(current() && gen===generation){message('pr-error',error.message,true);clearPageLoading('pr-list');button.hidden=false;button.textContent='Coba muat PR lagi';}}
     finally{if(current() && gen===generation)button.disabled=false;}
   }
   $('pr-status').onchange=$('pr-refresh').onclick=()=>load(true);
@@ -7012,7 +7104,7 @@ async function purchaseRequestDialog(id) {
         + (ordering?`<button type="button" class="action-primary" data-action="new-purchase-order" data-id="${e(id)}">Buat PO dari PR</button>`:'')+'</div>':'')
       + (p.purchase_orders.length?requestSection('PO terkait',`<ul class="record-list request-orders" aria-label="PO terkait">${p.purchase_orders.map(po=>'<li class="record-row">'
         + `<div class="record-row-copy"><p class="data-primary">${e(po.reference)}</p></div>`
-        + `<div class="record-row-aside">${queueChip(poTone[po.status]||'neutral',poStatus[po.status])}<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(po.id)}" aria-label="Buka PO ${e(po.reference)}">Buka PO</button></div></li>`).join('')}</ul>`):'')
+        + `<div class="record-row-aside">${queueChip(poTone[linkedPoStatus(po.status)]||'neutral',poStatus[linkedPoStatus(po.status)])}<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(po.id)}" aria-label="Buka PO ${e(po.reference)}">Buka PO</button></div></li>`).join('')}</ul>`):'')
       + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-request" data-id="${e(id)}">Muat ulang rincian PR</button><button type="button" class="action-quiet" data-action="purchase-requests">Semua PR</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
       + requestSection('Riwayat keputusan',requestHistory(p.history,purchaseStatus))
       + '</div>';
@@ -7131,19 +7223,51 @@ const fulfillmentLabel={pending:'Belum diterima',partial:'Diterima sebagian',rec
 // has simply finished its lifecycle. Receiving everything is the one completion fulfilment has.
 const poTone={pending:'info',issued:'success',rejected:'danger',cancelled:'neutral',closed:'neutral'};
 const fulfillmentTone={pending:'neutral',partial:'info',received:'success'};
+// A6.8: the PR detail lists its POs with the status the PO approval ledger last recorded, so an
+// issued PO arrives there as `approved`, a word `poStatus` never had: the chip rendered as a bare
+// dot with no text. An approved issuance IS an issued ("Aktif") PO; every other value is already
+// one of the PO words. Presentation only - the payload is unchanged.
+const linkedPoStatus = status => status === 'approved' ? 'issued' : status;
 
+// A6.8: the PO's QC arrivals, as one section of the PO sheet. Hold, layak and reject stay three
+// separate quantities in their own words; a cancelled arrival says so instead of printing them.
 function qualityIntakesHTML(p) {
-  return `<h3>QC bahan masuk</h3><p class="hint">Hold belum dapat dipakai atau direservasi. Reject membuka kebutuhan pengganti. Catat retur setelah bahan reject dikirim kembali ke pemasok.</p>${user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<button data-action="qc-intake-form" data-id="${e(p.id)}">Catat kedatangan untuk QC</button>`:''}${p.qc_intakes.map(q=>`<article class="material-event"><h4>${e(q.reference)} · ${e(q.code)}</h4><p>${q.cancellation?'Kedatangan dibatalkan':`Hold ${e(materialQty(q.held,q.unit))} · layak ${e(materialQty(q.accepted,q.unit))} · reject ${e(materialQty(q.rejected,q.unit))}`}</p><button data-action="qc-intake" data-id="${e(q.id)}">Rincian QC ${e(q.reference)}</button></article>`).join('') || '<p>Belum ada kedatangan untuk QC.</p>'}`;
+  return requestSection('QC bahan masuk',`<p class="field-help">Hold belum dapat dipakai atau direservasi. Reject membuka kebutuhan pengganti. Catat retur setelah bahan reject dikirim kembali ke pemasok.</p>`
+    + (user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<div class="action-row"><button type="button" class="action-secondary" data-action="qc-intake-form" data-id="${e(p.id)}">Catat kedatangan untuk QC</button></div>`:'')
+    + requestRecords('Kedatangan untuk QC',p.qc_intakes.map(q=>requestRecord({primary:`${e(q.reference)} · ${e(q.code)}`,
+      secondary:q.cancellation?'Kedatangan dibatalkan':`Hold ${e(materialQty(q.held,q.unit))} · layak ${e(materialQty(q.accepted,q.unit))} · reject ${e(materialQty(q.rejected,q.unit))}`,
+      chips:!q.cancellation&&q.held!=='0.000'?queueChip('warning','Menunggu QC'):'',
+      aside:`<button type="button" class="action-secondary" data-action="qc-intake" data-id="${e(q.id)}">Rincian QC ${e(q.reference)}</button>`})),'Belum ada kedatangan untuk QC.'));
 }
 
 async function qualityIntakeDialog(id) {
   if(guardPending())return;
-  const version=epoch;openDialog('QC bahan masuk','<p class="state">Memuat pemeriksaan…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('QC bahan masuk',requestLoading('Memuat pemeriksaan…'));const modal=dialogVersion;
   try {
     const q=await api.get('/api/qc-intakes/'+encodeURIComponent(id));
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const active=!q.cancellation && !q.po_cancelled && !q.po_closed, admin=user.role==='admin';
-    $('dialog-content').innerHTML=`<p class="form-info">${e(q.reference)} · ${e(q.code)} · ${e(q.name)}</p><p>Datang ${e(materialQty(q.quantity,q.unit))} · ${date(q.received_date)} · ${e(q.location)}</p><p class="reason">${e(q.reason)}</p><p class="hint">${e(q.actor_name)} · ${purchaseStamp(q.created_at)}</p><dl class="requirement-values">${[['Hold','held'],['Layak pakai','accepted'],['Reject','rejected'],['Sudah diretur','returned'],['Belum diretur','return_pending']].map(([label,key])=>`<div><dt>${label}</dt><dd>${e(materialQty(q[key],q.unit))}</dd></div>`).join('')}</dl>${q.cancellation?`<p>Kedatangan dibatalkan</p><p class="reason">${e(q.cancellation.reason)}</p><p class="hint">${e(q.cancellation.actor_name)} · ${purchaseStamp(q.cancellation.created_at)}</p>`:''}<div class="actions"><button data-action="purchase-order" data-id="${e(q.purchase_order_id)}">PO ${e(q.purchase_order_reference)}</button>${active && admin && q.held!=='0.000'?'<button id="qc-accept">Terima layak pakai</button><button id="qc-reject">Tolak bahan</button>':''}${active && admin && q.accepted==='0.000' && q.rejected==='0.000'?'<button id="qc-cancel">Batalkan kedatangan</button>':''}</div><h3>Riwayat pemeriksaan</h3>${q.history.map(d=>`<article class="material-event"><h4>${d.reversal_of?'Koreksi ':''}${d.kind==='accept'?'Layak pakai':'Reject'} · ${e(materialQty(d.quantity,q.unit))}</h4><p class="reason">${e(d.reason)}</p><p class="hint">${e(d.actor_name)} · ${purchaseStamp(d.created_at)}</p>${d.reversed_by?'<p>Keputusan sudah dikoreksi</p>':''}${d.batch_id?`<button data-action="material-batch" data-id="${e(d.batch_id)}">Batch ${e(d.batch_reference)}</button>`:''}${active && admin && !d.reversal_of && !d.reversed_by && (d.kind==='accept' || Number(d.quantity)<=Number(q.return_pending))?`<button data-qc-reverse="${e(d.id)}">Koreksi keputusan</button>`:''}</article>`).join('') || '<p>Belum ada keputusan QC.</p>'}`;
+    // A6.8: the A6.7 request sheet. The arrival, its five quantities (hold, layak pakai, reject,
+    // sudah / belum diretur - never merged into one progress figure), the admin-only decisions, then
+    // the append-only decision history and the supplier returns. Gates and ids are the legacy ones.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(q.reference)} · ${e(q.code)} · ${e(q.name)}`,`Datang ${e(materialQty(q.quantity,q.unit))} · ${date(q.received_date)} · ${e(q.location)}`,
+        !q.cancellation&&q.held!=='0.000'?queueChip('warning','Menunggu QC'):'')
+      + requestQuantities([['Hold','held'],['Layak pakai','accepted'],['Reject','rejected'],['Sudah diretur','returned'],['Belum diretur','return_pending']]
+        .map(([label,key])=>[label,e(materialQty(q[key],q.unit))]))
+      + requestSection('Catatan kedatangan',`<p class="request-text">${e(q.reason)}</p><p class="data-meta">${e(q.actor_name)} · ${purchaseStamp(q.created_at)}</p>`)
+      + (q.cancellation?requestSection('Kedatangan dibatalkan',`<p class="request-text">${e(q.cancellation.reason)}</p><p class="data-meta">${e(q.cancellation.actor_name)} · ${purchaseStamp(q.cancellation.created_at)}</p>`):'')
+      + (active && admin && (q.held!=='0.000' || (q.accepted==='0.000' && q.rejected==='0.000'))?'<div class="action-row request-decisions">'
+        + (q.held!=='0.000'?'<button type="button" class="action-primary" id="qc-accept">Terima layak pakai</button><button type="button" class="action-destructive" id="qc-reject">Tolak bahan</button>':'')
+        + (q.accepted==='0.000' && q.rejected==='0.000'?'<button type="button" class="action-secondary" id="qc-cancel">Batalkan kedatangan</button>':'')+'</div>':'')
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-order" data-id="${e(q.purchase_order_id)}">PO ${e(q.purchase_order_reference)}</button></div>`
+      + requestSection('Riwayat pemeriksaan',requestRecords('Riwayat pemeriksaan',q.history.map(d=>requestRecord({hook:' data-qc-decision',
+        primary:`${d.reversal_of?'Koreksi ':''}${d.kind==='accept'?'Layak pakai':'Reject'} · ${e(materialQty(d.quantity,q.unit))}`,
+        chips:d.reversed_by?queueChip('neutral','Keputusan sudah dikoreksi'):'',
+        details:`<p class="data-meta reason">${e(d.reason)}</p><p class="data-meta">${e(d.actor_name)} · ${purchaseStamp(d.created_at)}</p>`,
+        aside:(d.batch_id?`<button type="button" class="action-quiet" data-action="material-batch" data-id="${e(d.batch_id)}">Batch ${e(d.batch_reference)}</button>`:'')
+          +(active && admin && !d.reversal_of && !d.reversed_by && (d.kind==='accept' || Number(d.quantity)<=Number(q.return_pending))?`<button type="button" class="action-secondary" data-qc-reverse="${e(d.id)}">Koreksi keputusan</button>`:'')})),'Belum ada keputusan QC.'))
+      + '</div>';
     renderSupplierReturns(q);
     for(const kind of ['accept','reject'])if($('qc-'+kind))$('qc-'+kind).onclick=()=>qualityDecisionForm(q,kind);
     if($('qc-cancel'))$('qc-cancel').onclick=()=>{if(guardPending())return;formDialog('Batalkan kedatangan QC',materialReason,form=>Object.fromEntries(new FormData(form)),
@@ -7154,19 +7278,26 @@ async function qualityIntakeDialog(id) {
         '/api/qc-decisions/'+encodeURIComponent(button.dataset.qcReverse)+'/reverse',
         `${q.reference}\nSeluruh jumlah keputusan kembali ke hold. Koreksi layak pakai menarik stok batch; stok harus masih utuh dan tidak direservasi. Koreksi reject memerlukan jatah PO yang belum diisi pengganti. Pastikan barang fisiknya sesuai.`);
     });
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="qc-intake" data-id="${e(id)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Pemeriksaan QC gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="qc-intake" data-id="${e(id)}">Coba lagi</button>`);}
 }
 
 function renderSupplierReturns(q) {
   const writable=user.role==='admin' && !q.cancellation && !q.po_closed;
-  $('dialog-content').insertAdjacentHTML('beforeend', `<h3>Retur ke pemasok</h3>
-    <p class="hint">Catat barang reject yang sudah dikirim kembali. Jumlah retur tidak mengubah stok layak pakai atau jatah pengganti PO.</p>
-    ${q.po_closed?'<p>PO sudah ditutup. Riwayat retur sudah final.</p>':''}
-    ${writable && q.return_pending!=='0.000'?'<button id="supplier-return">Catat retur supplier</button>':''}
-    ${q.returns.map(r=>`<article class="material-event"><h4>${r.reversal_of?'Koreksi retur':'Retur'} ${e(r.reference || r.original_reference)} · ${e(materialQty(r.quantity,q.unit))}</h4>
-      ${r.returned_date?`<p>Dikirim ${date(r.returned_date)}</p>`:''}<p class="reason">${e(r.reason)}</p>
-      <p class="hint">${e(r.actor_name)} · ${purchaseStamp(r.created_at)}</p>${r.reversed_by?'<p>Retur sudah dikoreksi</p>':''}
-      ${writable && !q.po_cancelled && !r.reversed_by && !r.reversal_of?`<button data-return-reverse="${e(r.id)}">Koreksi retur</button>`:''}</article>`).join('') || '<p>Belum ada pengiriman retur.</p>'}`);
+  // A6.8: physical returns as records in the QC sheet. The truth is unchanged: a return does not
+  // touch usable stock or the PO's replacement allowance, a correction is its own record, and a
+  // closed PO makes the history final.
+  const sheet=$('dialog-content').querySelector('.request-sheet')||$('dialog-content');
+  sheet.insertAdjacentHTML('beforeend', requestSection('Retur ke pemasok',
+    '<p class="field-help">Catat barang reject yang sudah dikirim kembali. Jumlah retur tidak mengubah stok layak pakai atau jatah pengganti PO.</p>'
+    + (q.po_closed?requestNote('PO sudah ditutup. Riwayat retur sudah final.','shield'):'')
+    + (writable && q.return_pending!=='0.000'?'<div class="action-row"><button type="button" class="action-secondary" id="supplier-return">Catat retur supplier</button></div>':'')
+    + requestRecords('Retur ke pemasok',q.returns.map(r=>requestRecord({
+      primary:`${r.reversal_of?'Koreksi retur':'Retur'} ${e(r.reference || r.original_reference)} · ${e(materialQty(r.quantity,q.unit))}`,
+      secondary:r.returned_date?`Dikirim ${date(r.returned_date)}`:'',
+      chips:r.reversed_by?queueChip('neutral','Retur sudah dikoreksi'):'',
+      details:`<p class="data-meta reason">${e(r.reason)}</p><p class="data-meta">${e(r.actor_name)} · ${purchaseStamp(r.created_at)}</p>`,
+      aside:writable && !q.po_cancelled && !r.reversed_by && !r.reversal_of?`<button type="button" class="action-secondary" data-return-reverse="${e(r.id)}">Koreksi retur</button>`:''})),'Belum ada pengiriman retur.')));
   if($('supplier-return'))$('supplier-return').onclick=()=>{
     if(guardPending())return;
     formDialog('Catat retur supplier',
@@ -7185,14 +7316,17 @@ function renderSupplierReturns(q) {
   });
 }
 
+// A6.8: closure joins the PO sheet as its own section. Eligibility and the permanent-close copy are
+// unchanged; an unmet blocker is an attention sentence, not an error.
 function renderPOClosure(p) {
+  const sheet=$('dialog-content').querySelector('.request-sheet')||$('dialog-content');
   if(p.closure) {
-    $('dialog-content').insertAdjacentHTML('beforeend', `<article class="material-event"><h3>Penutupan PO</h3>
-      <p class="reason">${e(p.closure.reason)}</p><p class="hint">${e(p.closure.actor_name)} · ${purchaseStamp(p.closure.created_at)}</p>
-      <p>Sisa tidak akan diterima. Penerimaan, QC, dan retur sudah final; stok layak pakai tetap dapat digunakan untuk produksi.</p></article>`);
+    sheet.insertAdjacentHTML('beforeend', requestSection('Penutupan PO',`<p class="request-text">${e(p.closure.reason)}</p><p class="data-meta">${e(p.closure.actor_name)} · ${purchaseStamp(p.closure.created_at)}</p>`
+      + requestNote('Sisa tidak akan diterima. Penerimaan, QC, dan retur sudah final; stok layak pakai tetap dapat digunakan untuk produksi.')));
   } else if(user.role==='admin' && p.status==='issued' && p.fulfillment!=='pending') {
     const ready=p.lines.every(l=>l.held==='0.000' && l.return_pending==='0.000');
-    $('dialog-content').insertAdjacentHTML('beforeend', ready?'<button id="po-close">Tutup PO</button>':'<p>Selesaikan hold QC dan retur bahan reject sebelum menutup PO.</p>');
+    sheet.insertAdjacentHTML('beforeend', ready?'<div class="action-row request-closure"><button type="button" class="action-secondary" id="po-close">Tutup PO</button></div>'
+      :requestAttention('Selesaikan hold QC dan retur bahan reject sebelum menutup PO.'));
     if(ready)$('po-close').onclick=()=>{
       if(guardPending())return;
       formDialog('Tutup PO',materialReason,form=>Object.fromEntries(new FormData(form)),
@@ -7211,11 +7345,19 @@ function qualityDecisionForm(q,kind) {
     `${q.reference} · hold ${materialQty(q.held,q.unit)}\n${kind==='accept'?'Jumlah ini masuk stok siap pakai dalam batch baru.':'Jumlah ini tetap di luar stok siap pakai. Kebutuhan pengganti pada PO dibuka kembali; retur fisik dicatat terpisah.'} Sisa yang belum diputuskan tetap hold.`);
 }
 
+// A6.8: direct usable receipts, one record each. Active and corrected stay words on a chip; the
+// batch history stays the one way into the stock that receipt created.
 function purchaseReceiptsHTML(p) {
-  return `<h3>Penerimaan bahan</h3><p class="hint">Jumlah diterima adalah bahan layak pakai, dikurangi penerimaan yang dikoreksi. Pengeluaran ke produksi tidak mengurangi jumlah diterima pada PO.</p>${user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<button data-action="receive-po" data-id="${e(p.id)}">Terima bahan dari PO</button>`:''}${p.receipts.map(r=>{
-    const line=p.lines.find(l=>l.material_id===r.material_id);
-    return `<article class="material-event"><h4>${e(r.reference)} · ${e(line.code)}</h4><p>${e(materialQty(r.quantity,line.unit))} · ${e(r.location)} · diterima ${date(r.received_date)}</p><p>${r.reversed_by?'Penerimaan dikoreksi':'Penerimaan aktif'}</p><p class="reason">${e(r.reason)}</p><p class="hint">${e(r.actor_name)} · ${purchaseStamp(r.created_at)}</p><button data-action="material-batch" data-id="${e(r.batch_id)}">Riwayat batch ${e(r.reference)}</button></article>`;
-  }).join('') || '<p>Belum ada penerimaan.</p>'}`;
+  return requestSection('Penerimaan bahan',`<p class="field-help">Jumlah diterima adalah bahan layak pakai, dikurangi penerimaan yang dikoreksi. Pengeluaran ke produksi tidak mengurangi jumlah diterima pada PO.</p>`
+    + (user.role!=='viewer' && p.status==='issued' && p.lines.some(l=>l.receivable!=='0.000')?`<div class="action-row"><button type="button" class="action-secondary" data-action="receive-po" data-id="${e(p.id)}">Terima bahan dari PO</button></div>`:'')
+    + requestRecords('Penerimaan bahan',p.receipts.map(r=>{
+      const line=p.lines.find(l=>l.material_id===r.material_id);
+      return requestRecord({primary:`${e(r.reference)} · ${e(line.code)}`,
+        secondary:`${e(materialQty(r.quantity,line.unit))} · ${e(r.location)} · diterima ${date(r.received_date)}`,
+        chips:r.reversed_by?queueChip('neutral','Penerimaan dikoreksi'):queueChip('success','Penerimaan aktif'),
+        details:`<p class="data-meta reason">${e(r.reason)}</p><p class="data-meta">${e(r.actor_name)} · ${purchaseStamp(r.created_at)}</p>`,
+        aside:`<button type="button" class="action-quiet" data-action="material-batch" data-id="${e(r.batch_id)}">Riwayat batch ${e(r.reference)}</button>`});
+    }),'Belum ada penerimaan.'));
 }
 
 async function purchaseReceiptForm(id, forQC=false) {
@@ -7247,7 +7389,7 @@ async function purchaseReceiptForm(id, forQC=false) {
 
 async function purchaseOrderDialog(id) {
   if(guardPending())return;
-  const version=epoch;openDialog('Rincian PO','<p class="state">Memuat PO…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Rincian PO',requestLoading('Memuat PO…'),'wide');const modal=dialogVersion;
   try{
     const [p,payments]=await Promise.all([
       api.get('/api/purchase-orders/'+encodeURIComponent(id)),
@@ -7257,9 +7399,42 @@ async function purchaseOrderDialog(id) {
     const approvalButtons=[];
     if(user.role==='admin'&&p.approval_status==='submitted')approvalButtons.push(['approved','Setujui penerbitan PO'],['rejected','Tolak PO']);
     if(p.approval_status==='submitted'&&(user.role==='admin'||p.actor_id===user.id))approvalButtons.push(['cancelled','Batalkan pengajuan PO']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(p.reference)} · ${poStatus[p.status]}</p><h3>${e(p.supplier.code)} · ${e(p.supplier.name)}</h3><p>${e(p.supplier.contact)} · ${e(p.supplier.address)}</p><p>Perkiraan datang ${date(p.expected_date)}</p><p class="reason">Syarat: ${e(p.terms)}</p>${p.lines.map(l=>`<article class="material-event"><strong>${e(l.code)} · ${e(l.name)}</strong><p>${e(materialQty(l.quantity,l.unit))} × ${e(rupiah(l.unit_price))}/${e(l.unit)}</p><p>Nilai baris ${e(rupiah(l.line_total))}</p><p>Diterima ${e(materialQty(l.received,l.unit))} · sisa layak pakai ${e(materialQty(l.remaining,l.unit))}</p><p>Hold ${e(materialQty(l.held,l.unit))} · reject ${e(materialQty(l.rejected,l.unit))} · bisa datang ${e(materialQty(l.receivable,l.unit))}</p><p>Diretur ${e(materialQty(l.returned,l.unit))} · belum diretur ${e(materialQty(l.return_pending,l.unit))}</p></article>`).join('')}<p><strong>Total PO ${e(rupiah(p.total))}</strong></p><p class="reason">${e(p.reason)}</p><p class="hint">Diajukan ${e(p.actor_name)} · ${purchaseStamp(p.created_at)}.</p>${p.status==='pending'?'<p class="hint">Penerimaan dan QC baru tersedia setelah admin menyetujui penerbitan PO.</p>':''}<p>${fulfillmentLabel[p.fulfillment]}</p>${p.cancellation?`<article class="material-event"><h3>Pembatalan PO</h3><p class="reason">${e(p.cancellation.reason)}</p><p>${e(p.cancellation.actor_name)} · ${purchaseStamp(p.cancellation.created_at)}</p></article>`:''}<div class="actions">${approvalButtons.map(([status,label])=>`<button data-po-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button data-action="purchase-orders">Daftar PO</button><button data-action="approvals">Inbox approval</button>${user.role==='admin' && p.status==='issued' && p.fulfillment==='pending' && p.lines.every(l=>l.held==='0.000' && l.return_pending==='0.000')?'<button id="po-cancel">Batalkan PO</button>':''}</div><h3>Pembayaran supplier</h3><p>Menunggu approval ${e(rupiah(p.payment_pending))} · disetujui ${e(rupiah(p.payment_approved))} · sisa ${e(rupiah(p.payment_remaining))}</p><p class="hint">Approved berarti siap dibayar. Transfer bank dan jurnal akuntansi belum dijalankan aplikasi.</p>${user.role!=='viewer'&&['issued','closed'].includes(p.status)&&p.fulfillment!=='pending'&&p.payment_remaining!=='0.00'?`<button data-action="new-supplier-payment" data-id="${e(p.id)}">Ajukan pembayaran supplier</button>`:''}${payments.map(row=>`<article class="material-event"><h4>${e(row.reference)} · ${e(approvalStatus[row.status])}</h4><p>Invoice ${e(row.invoice_reference)} · ${e(rupiah(row.amount))} · jatuh tempo ${date(row.due_date)}</p><button data-action="supplier-payment-request" data-id="${e(row.id)}" aria-label="Rincian pembayaran ${e(row.reference)}">Rincian pembayaran</button></article>`).join('')||'<p>Belum ada pengajuan pembayaran.</p>'}<h3>Riwayat approval PO</h3>${p.approval_history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    // A6.8: the A6.7 request sheet for the PO fulfilment workflow, read top to bottom - identity and
+    // status, supplier, commercial facts, the material lines, fulfilment, payments, the decisions,
+    // approval history, closure / cancellation, receipts, then QC. Every quantity keeps its own word
+    // (received, remaining, held, rejected, receivable, returned, return_pending); there is no merged
+    // progress figure. An approved payment is ready to pay, never "paid". Gates are the legacy ones.
+    const poCancellable=user.role==='admin' && p.status==='issued' && p.fulfillment==='pending' && p.lines.every(l=>l.held==='0.000' && l.return_pending==='0.000');
+    const qty=(value,line)=>e(materialQty(value,line.unit));
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(p.reference)} · ${poStatus[p.status]}`,`${e(p.supplier.code)} · ${e(p.supplier.name)}`,
+        queueChip(poTone[p.status]||'neutral',poStatus[p.status])+queueChip(fulfillmentTone[p.fulfillment]||'neutral',fulfillmentLabel[p.fulfillment])
+        +(p.lines.some(l=>l.held!=='0.000')?queueChip('warning','Menunggu QC'):''))
+      + `<p class="data-meta">${e(p.supplier.contact)} · ${e(p.supplier.address)}</p>`
+      + requestFacts([['Total PO',`<span class="request-amount">${e(rupiah(p.total))}</span>`],['Perkiraan datang',date(p.expected_date)],['Bahan dipesan',`${n(p.lines.length)} bahan`]])
+      + requestSection('Syarat pembelian',`<p class="request-text">Syarat: ${e(p.terms)}</p>`)
+      + requestSection('Bahan yang dipesan',requestRecords('Bahan yang dipesan',p.lines.map(l=>requestRecord({primary:`${e(l.code)} · ${e(l.name)}`,
+        secondary:`${qty(l.quantity,l)} × ${e(rupiah(l.unit_price))}/${e(l.unit)}`,
+        details:requestQuantities([['Diterima',qty(l.received,l)],['Sisa layak pakai',qty(l.remaining,l)],['Hold',qty(l.held,l)],['Reject',qty(l.rejected,l)],
+          ['Bisa datang',qty(l.receivable,l)],['Diretur',qty(l.returned,l)],['Belum diretur',qty(l.return_pending,l)]]),
+        aside:queueAmount(l.line_total,'nilai baris')})),'Belum ada bahan.'))
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(p.reason)}</p><p class="data-meta">Diajukan ${e(p.actor_name)} · ${purchaseStamp(p.created_at)}.</p>`)
+      + (p.status==='pending'?requestNote('Penerimaan dan QC baru tersedia setelah admin menyetujui penerbitan PO.'):'')
+      + requestSection('Pembayaran supplier',`<p class="request-text request-payment-summary">Menunggu approval ${e(rupiah(p.payment_pending))} · disetujui ${e(rupiah(p.payment_approved))} · sisa ${e(rupiah(p.payment_remaining))}</p>`
+        + requestNote('Approved berarti siap dibayar. Transfer bank dan jurnal akuntansi belum dijalankan aplikasi.','shield')
+        + (user.role!=='viewer'&&['issued','closed'].includes(p.status)&&p.fulfillment!=='pending'&&p.payment_remaining!=='0.00'?`<div class="action-row"><button type="button" class="action-secondary" data-action="new-supplier-payment" data-id="${e(p.id)}">Ajukan pembayaran supplier</button></div>`:'')
+        + requestRecords('Pengajuan pembayaran',payments.map(row=>requestRecord({primary:e(row.reference),
+          secondary:`Invoice ${e(row.invoice_reference)} · jatuh tempo ${date(row.due_date)}`,
+          chips:queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]),
+          aside:queueAmount(row.amount)+`<button type="button" class="action-secondary" data-action="supplier-payment-request" data-id="${e(row.id)}" aria-label="Rincian pembayaran ${e(row.reference)}">Rincian pembayaran</button>`})),'Belum ada pengajuan pembayaran.'))
+      + (approvalButtons.length||poCancellable?`<div class="action-row request-decisions">${approvalButtons.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-po-decision="${status}">${label}</button>`).join('')}`
+        + (poCancellable?'<button type="button" class="action-destructive" id="po-cancel">Batalkan PO</button>':'')+'</div>':'')
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button type="button" class="action-quiet" data-action="purchase-orders">Daftar PO</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
+      + requestSection('Riwayat approval PO',requestHistory(p.approval_history,approvalStatus))
+      + (p.cancellation?requestSection('Pembatalan PO',`<p class="request-text">${e(p.cancellation.reason)}</p><p class="data-meta">${e(p.cancellation.actor_name)} · ${purchaseStamp(p.cancellation.created_at)}</p>`):'')
+      + '</div>';
     renderPOClosure(p);
-    $('dialog-content').insertAdjacentHTML('beforeend', qualityIntakesHTML(p)+purchaseReceiptsHTML(p));
+    $('dialog-content').querySelector('.request-sheet').insertAdjacentHTML('beforeend', purchaseReceiptsHTML(p)+qualityIntakesHTML(p));
     if($('po-cancel'))$('po-cancel').onclick=()=>{if(guardPending())return;formDialog('Batalkan PO',materialReason,form=>Object.fromEntries(new FormData(form)),
       '/api/purchase-orders/'+encodeURIComponent(id)+'/cancel',`${p.reference} · ${rupiah(p.total)}\nPembatalan seluruh PO disimpan permanen. Pastikan pembelian memang dibatalkan; aplikasi tidak mengirim pemberitahuan ke pemasok.`);};
     $('dialog-content').querySelectorAll('[data-po-decision]').forEach(button=>button.onclick=()=>{
@@ -7269,7 +7444,8 @@ async function purchaseOrderDialog(id) {
         '/api/purchase-orders/'+encodeURIComponent(id)+'/decisions',
         `${p.reference} · ${rupiah(p.total)}\n${button.textContent}. Keputusan dan alasan tersimpan permanen.${decision==='approved'?' PO menjadi aktif dan dapat menerima bahan setelah persetujuan tersimpan.':''}`);
     });
-  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="purchase-order" data-id="${e(id)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Rincian PO gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(id)}">Coba lagi</button>`);}
 }
 
 async function supplierPaymentForm(orderId) {
@@ -7295,22 +7471,35 @@ async function supplierPaymentForm(orderId) {
 
 async function supplierPaymentRequestDialog(requestId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Approval pembayaran supplier','<p class="state">Memuat pengajuan…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Approval pembayaran supplier',requestLoading('Memuat pengajuan…'));const modal=dialogVersion;
   try{
     const row=await api.get('/api/supplier-payment-requests/'+encodeURIComponent(requestId));
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     const buttons=[];
     if(user.role==='admin'&&row.status==='submitted')buttons.push(['approved','Setujui pembayaran'],['rejected','Tolak pembayaran']);
     if(row.status==='submitted'&&(user.role==='admin'||row.actor_id===user.id))buttons.push(['cancelled','Batalkan pengajuan']);
-    $('dialog-content').innerHTML=`<p class="form-info">${e(row.reference)} · ${e(approvalStatus[row.status])}</p><h3>${e(row.supplier.code)} · ${e(row.supplier.name)}</h3><p>PO ${e(row.purchase_order_reference)} · invoice ${e(row.invoice_reference)}</p><p>Tanggal invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)}</p><p><strong>${e(rupiah(row.amount))}</strong></p><p class="reason">${e(row.reason)}</p><p class="hint">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}. Persetujuan tidak menjalankan transfer bank.</p><div class="actions">${buttons.map(([status,label])=>`<button data-payment-decision="${status}">${label}</button>`).join('')}<button data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button><button data-action="approvals">Inbox approval</button></div><h3>Riwayat keputusan</h3>${row.history.map(event=>`<article class="material-event"><strong>${e(approvalStatus[event.status])}</strong><p class="reason">${e(event.reason)}</p><p class="hint">${e(event.actor_name)} · ${purchaseStamp(event.created_at)}</p></article>`).join('')}`;
+    // A6.8: the A6.7 request sheet. "Disetujui" means ready to pay: the sheet says so in words and
+    // nothing here moves money. Gates, labels and the decision body are the legacy ones.
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(row.reference)} · ${e(approvalStatus[row.status])}`,`${e(row.supplier.code)} · ${e(row.supplier.name)}`,
+        queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]))
+      + requestFacts([['Nominal',`<span class="request-amount">${e(rupiah(row.amount))}</span>`],['PO',e(row.purchase_order_reference)],
+        ['Invoice supplier',`<span class="request-identifier">${e(row.invoice_reference)}</span>`],['Tanggal invoice',date(row.invoice_date)],['Jatuh tempo',date(row.due_date)]])
+      + requestSection('Alasan pengajuan',`<p class="request-text">${e(row.reason)}</p><p class="data-meta">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`)
+      + requestNote('Persetujuan tidak menjalankan transfer bank.','shield')
+      + (buttons.length?`<div class="action-row request-decisions">${buttons.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-payment-decision="${status}">${label}</button>`).join('')}</div>`:'')
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
+      + requestSection('Riwayat keputusan',requestHistory(row.history,approvalStatus))
+      + '</div>';
     $('dialog-content').querySelectorAll('[data-payment-decision]').forEach(button=>button.onclick=()=>{
       if(guardPending())return;
       const decision=button.dataset.paymentDecision;
-      formDialog(button.textContent,materialReason,form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
+      formDialog(button.textContent,reasonField(),form=>({...Object.fromEntries(new FormData(form)),status:decision,expected_revision:row.revision}),
         '/api/supplier-payment-requests/'+encodeURIComponent(row.id)+'/decisions',
         `${row.reference} · ${rupiah(row.amount)}\n${button.textContent}. Keputusan dan alasan tersimpan permanen. Persetujuan menandai request siap dibayar tanpa menjalankan transfer.`);
     });
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="supplier-payment-request" data-id="${e(requestId)}">Coba lagi</button>`;}
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Pengajuan pembayaran gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="supplier-payment-request" data-id="${e(requestId)}">Coba lagi</button>`);}
 }
 
 // `materialReason` tetap legacy dan tetap utuh: dialog anak Produksi (pengeluaran bahan ke order)

@@ -80,7 +80,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('dialog').screenshot({path:path.join(process.env.BEELOFT_QA_SCREENSHOTS || work,'beeloft-incoming-qc.png')});
   for(const heading of ['Layak pakai · 1,125 m','Reject · 2 m']){
-    await page.locator('.material-event').filter({has:page.getByRole('heading',{name:heading,exact:true})}).getByRole('button',{name:'Koreksi keputusan',exact:true}).click();
+    // A6.8: a QC decision is a record in the QC sheet's history; the row is found by its heading as before.
+    await page.locator('[data-qc-decision]').filter({has:page.getByRole('heading',{name:heading,exact:true})}).getByRole('button',{name:'Koreksi keputusan',exact:true}).click();
     await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH pemeriksaan ulang');
     await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
     await page.getByText('ARRIVAL <QC> · KAIN-QC · Kain pemeriksaan',{exact:true}).waitFor();
