@@ -517,7 +517,7 @@ class ContainmentAndBudgetTest(unittest.TestCase):
 class VersionAndSchemaTest(unittest.TestCase):
     def test_the_version_is_aligned_everywhere(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.113.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.114.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

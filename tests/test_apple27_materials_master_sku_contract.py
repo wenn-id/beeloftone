@@ -183,11 +183,16 @@ class MigrationHappenedTest(unittest.TestCase):
                                     r'class="[^"]*(?<![\w-])' + legacy + r'(?![\w-])')
         self.assertNotRegex(renderer('paintProducts'), r'class="[^"]*(?<![\w-])product-item(?![\w-])')
         # ...and the rules themselves stay, because other pages and dialogs still render them.
-        for kept in ('.filters,', '.page-heading', '.search-field{', '.sku-block{', '.sku-heading ',
-                     '.material-balance{', '.product-item{', '.bom-line{', '.bundle-label',
-                     '.product-list{', '.form-info{', '.list-host', '.state{'):
+        for kept in ('.filters,', '.page-heading', '.search-field{', '.product-item{', '.bom-line{',
+                     '.bundle-label', '.product-list{', '.form-info{', '.list-host', '.state{'):
             with self.subTest(kept=kept):
                 self.assertIn(kept, CSS, f'{kept} is still used by an unmigrated surface')
+        # A6.8 proved `.sku-block`, `.sku-heading` and `.material-balance` had no emitter left in
+        # any shipped surface and removed their rules (tests/test_apple27_final_polish_contract.py
+        # carries the proof). The guarantee above is unchanged: nothing still rendered lost a rule.
+        for removed in ('sku-block', 'sku-heading', 'material-balance'):
+            with self.subTest(removed=removed):
+                self.assertNotRegex(APP, r'class="[^"]*(?<![\w-])' + removed + r'(?![\w-])')
 
     def test_a_dialog_outside_the_named_set_did_not_migrate(self):
         # The point of naming the dialogs rather than allowing "any dialog": Produksi's own child
@@ -893,7 +898,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.113.0',
+        self.assertEqual(version, '0.114.0',
                          'A6.2 is a visible master-data workspace migration milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))

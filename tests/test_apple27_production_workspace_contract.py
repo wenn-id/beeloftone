@@ -775,7 +775,9 @@ class FrozenSurfaceTest(unittest.TestCase):
                 self.assertTrue(any(name in selector for name in allowed),
                                 f'{selector} is not scoped to the Produksi workspace')
         # The legacy vocabulary other pages still render is deliberately left in place.
-        for legacy in ('.summary{', '.status-label,', '.sku-block{', '.issue-item{',
+        # (`.sku-block` left this list in A6.8, which proved no shipped surface emits it any more and
+        # removed the rule; the proof lives in tests/test_apple27_final_polish_contract.py.)
+        for legacy in ('.summary{', '.status-label,', '.issue-item{',
                        '.history-item{', '.list-host', '.state{', '.filters,'):
             with self.subTest(legacy=legacy):
                 self.assertIn(legacy, CSS, f'{legacy} is still used by an unmigrated surface')
@@ -785,7 +787,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.113.0', 'A6.1 stays aligned with the shipped version')
+        self.assertEqual(version, '0.114.0', 'A6.1 stays aligned with the shipped version')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)

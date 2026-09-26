@@ -213,6 +213,20 @@ MIGRATED_RENDERERS = frozenset({
     # ---- A6.7: Permintaan pembelian and its two utilities ----
     'loadPurchaseRequests', 'purchaseRequestForm', 'purchaseRequestDialog',
     'suppliersDialog', 'supplierForm', 'purchaseOrdersDialog',
+    # ---- A6.8: the remaining high-visibility sheets A6.7 left legacy, by name ----
+    # The four small additions to A6.7's request grammar the sheets below are composed from.
+    'requestAttention', 'requestRecord', 'requestRecords', 'requestQuantities',
+    # The PO fulfilment sheet and every renderer nested in it (receipts, QC arrivals, closure),
+    # the incoming-QC sheet and its supplier returns, and the supplier-payment approval sheet.
+    'purchaseOrderDialog', 'purchaseReceiptsHTML', 'qualityIntakesHTML', 'renderPOClosure',
+    'qualityIntakeDialog', 'renderSupplierReturns', 'supplierPaymentRequestDialog',
+    # The two approval details the Inbox opens, and the order-scoped "PR untuk order ini".
+    'productionChangeRequestDialog', 'payrollApprovalRequestDialog', 'orderPurchaseRequestsDialog',
+    # Deliberately NOT here, and still failing this contract if they emit A6 markup: the legacy
+    # FORMS of the fulfilment workflow (purchaseOrderForm, purchaseReceiptForm, qualityDecisionForm,
+    # supplierPaymentForm, payrollApprovalForm) and every Produksi / warehouse / marketplace child
+    # dialog A6.1 left on legacy markup. They render through formDialog(), whose A6.8 chrome is CSS
+    # scoped to `#action-form`, so they gained the modern shell without their markup changing.
 })
 
 
@@ -774,7 +788,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.113.0')
+        self.assertEqual(version, '0.114.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
