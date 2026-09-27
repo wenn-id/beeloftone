@@ -384,54 +384,61 @@ def dedupe_contributions(
     ``measure`` (ukuran laporan, mis. "qty_pcs" / "amount_minor"),
     ``amount`` (int/Decimal), ``source_kind``.
 
-    Aturan untuk satu (canonical_transaction_id, measure):
-    - replay identik (nominal sama) -> dideduplikasi diam-diam ke ``excluded``;
-      bila peringkat otoritas berbeda, yang tertinggi menang atribusi.
-    - nominal berbeda dan peringkat otoritas sama -> KONFLIK: raise
-      ValueError. Tidak boleh diam-diam mengambil salah satunya.
-    - nominal berbeda dan peringkat berbeda -> yang berotoritas lebih tinggi
-      menang (aturan kontrak), yang kalah dicatat eksplisit di
-      ``superseded`` untuk rekonsiliasi — bukan hilang diam-diam.
-
-    Hasil tidak bergantung urutan input: pemenang selalu ditentukan oleh
-    (peringkat otoritas, nominal), bukan posisi record.
+    Seluruh record dikelompokkan berdasarkan (canonical_transaction_id,
+    measure) TERLEBIH DAHULU — hasil tidak bergantung urutan input. Di dalam
+    tiap kelompok:
+    - periksa konflik nominal pada SETIAP peringkat otoritas sebelum memilih
+      pemenang: dua record berotoritas setara dengan nominal berbeda adalah
+      KONFLIK dan raise ValueError, meskipun ada record berotoritas lebih
+      tinggi di kelompok yang sama.
+    - pemenang = peringkat otoritas tertinggi (aturan kontrak:
+      native/imported authoritative mengalahkan snapshot, yang kemudian hanya
+      untuk rekonsiliasi).
+    - replay identik (nominal sama dengan pemenang) -> dideduplikasi ke
+      ``excluded``.
+    - peringkat lebih rendah dengan nominal berbeda -> dicatat eksplisit di
+      ``superseded`` untuk rekonsiliasi, bukan hilang diam-diam.
     """
-    winners: dict[tuple[str, str], Mapping] = {}
-    excluded: list[dict] = []
-    superseded: list[dict] = []
+    groups: dict[tuple[str, str], list[Mapping]] = {}
     for rec in records:
-        key = (rec["canonical_transaction_id"], rec["measure"])
         kind = rec["source_kind"]
         if kind not in SOURCE_KINDS:
             raise ValueError(f"source_kind tidak dikenal: {kind!r}")
-        current = winners.get(key)
-        if current is None:
-            winners[key] = rec
-            continue
-        rank, current_rank = _AUTHORITY_RANK[kind], _AUTHORITY_RANK[current["source_kind"]]
-        if rec["amount"] == current["amount"]:
-            if rank > current_rank:
-                excluded.append({"record": current, "reason": "identical_replay_attribution"})
-                winners[key] = rec
-            else:
-                excluded.append({"record": rec, "reason": "identical_replay"})
-            continue
-        if rank == current_rank:
-            raise ValueError(
-                "konflik dedup: dua record otoritas setara "
-                f"({current['source_kind']}) untuk {key} dengan nominal berbeda "
-                f"({current['amount']} vs {rec['amount']}); butuh rekonsiliasi, "
-                "tidak boleh dideduplikasi diam-diam"
-            )
-        if rank > current_rank:
-            superseded.append({"record": current, "reason": "superseded_by_authoritative",
-                               "winner": rec})
-            winners[key] = rec
-        else:
-            superseded.append({"record": rec, "reason": "superseded_by_authoritative",
-                               "winner": current})
+        key = (rec["canonical_transaction_id"], rec["measure"])
+        groups.setdefault(key, []).append(rec)
+    winners: list[Mapping] = []
+    excluded: list[dict] = []
+    superseded: list[dict] = []
+    for key, grouped in groups.items():
+        by_rank: dict[int, list[Mapping]] = {}
+        for rec in grouped:
+            by_rank.setdefault(_AUTHORITY_RANK[rec["source_kind"]], []).append(rec)
+        for rank, ranked in sorted(by_rank.items()):
+            amounts = {rec["amount"] for rec in ranked}
+            if len(amounts) > 1:
+                raise ValueError(
+                    "konflik dedup: dua record otoritas setara "
+                    f"(peringkat {rank}) untuk {key} dengan nominal berbeda "
+                    f"({sorted(amounts)}); butuh rekonsiliasi, tidak boleh "
+                    "dideduplikasi diam-diam"
+                )
+        top_rank = max(by_rank)
+        winner = by_rank[top_rank][0]  # nominal seragam di peringkat ini
+        winners.append(winner)
+        for rec in by_rank[top_rank][1:]:
+            excluded.append({"record": rec, "reason": "identical_replay"})
+        for rank in sorted(by_rank):
+            if rank == top_rank:
+                continue
+            for rec in by_rank[rank]:
+                if rec["amount"] == winner["amount"]:
+                    excluded.append({"record": rec, "reason": "identical_replay"})
+                else:
+                    superseded.append({"record": rec,
+                                       "reason": "superseded_by_authoritative",
+                                       "winner": winner})
     total: dict[str, object] = {}
-    for (tx, measure), rec in winners.items():
-        total[measure] = total.get(measure, 0) + rec["amount"]
-    return {"total": total, "winners": list(winners.values()),
+    for rec in winners:
+        total[rec["measure"]] = total.get(rec["measure"], 0) + rec["amount"]
+    return {"total": total, "winners": winners,
             "excluded": excluded, "superseded": superseded}

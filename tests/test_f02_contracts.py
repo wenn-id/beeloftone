@@ -239,6 +239,40 @@ class F02Issue41ContractTest(unittest.TestCase):
 
     # --- Regression test temuan review PR #111 ---
 
+    def test_dedup_conflict_checked_per_rank_before_winner(self):
+        """Celah review: konflik pada peringkat rendah harus error konsisten
+        meskipun ada record berotoritas lebih tinggi di kelompok yang sama.
+        Ketiga record berbagi canonical id + measure:
+        snapshot100, snapshot200, native300 -> 6/6 permutasi ValueError."""
+        def record(kind, amount):
+            return {'canonical_transaction_id': 'REG-2', 'measure': 'amount_minor',
+                    'amount': amount, 'source_kind': kind}
+
+        s100 = record('external_snapshot', 100)
+        s200 = record('external_snapshot', 200)
+        n300 = record('native', 300)
+        from itertools import permutations
+        count = 0
+        for perm in permutations([s100, s200, n300]):
+            with self.subTest(order=tuple(r['amount'] for r in perm)):
+                with self.assertRaises(ValueError):
+                    contracts.dedupe_contributions(list(perm))
+                count += 1
+        self.assertEqual(count, 6)
+
+        # Tanpa konflik setara: replay identik didedup, beda otoritas ke
+        # superseded — tak bergantung urutan.
+        n300b = record('native', 300)
+        for perm in permutations([s100, n300, n300b]):
+            with self.subTest(order=tuple(r['amount'] for r in perm)):
+                result = contracts.dedupe_contributions(list(perm))
+                self.assertEqual(result['total'], {'amount_minor': 300})
+                self.assertEqual(result['winners'][0]['source_kind'], 'native')
+                self.assertEqual(len(result['excluded']), 1)
+                self.assertEqual(len(result['superseded']), 1)
+                self.assertEqual(result['superseded'][0]['record']['source_kind'],
+                                 'external_snapshot')
+
     def test_wage_rounding_multiple_is_separate_from_storage_unit(self):
         """Temuan 1: unit simpan uang (minor) != kelipatan pembulatan upah.
         1 pcs @ Rp100/lusin = Rp8.333... -> kebijakan rupiah penuh = 800 minor,
