@@ -2,14 +2,17 @@
 
 Persiapan [#41](https://github.com/wenn-id/beeloftone/issues/41), induk
 [#39](https://github.com/wenn-id/beeloftone/issues/39). **DRAFT; belum business
-accepted dan belum mengizinkan implementasi yang bergantung pada F01.**
-Diperiksa 21 September 2026 pada `efe1156c4557e0f4b69f0000d674ce74fdc4ae0c`
-(v0.97.0/schema 55). Baseline issue `f8921e7` sudah digantikan HEAD ini.
+accepted.** Diperiksa 27 September 2026 pada
+`8c8b797cff11c1ff153dc997b2fea3fba8c2de1f` (F01 merged via PR #109, schema 55).
 
-F01 sudah merged melalui PR #76, tetapi [D01–D20](f01-decisions-evidence.md#register-keputusan)
-masih OPEN, EX01–EX15 belum disetujui, dan sign-off belum tersedia. Dokumen ini
-menyediakan inventaris teruji serta kontrak usulan untuk dibahas; tidak menetapkan
-rumus upah, metode valuasi, COA, atau keputusan bisnis yang belum diketahui.
+F01 sudah merged sebagai dokumen bukti (PR #109); D01–D20 tetap OPEN dan
+business sign-off belum tersedia. Per instruksi pemilik 27 September 2026,
+kekurangan sign-off produksi F01 **bukan penghambat** pengerjaan kontrak
+teknis tahap ini — tetapi dokumen ini tetap tidak mengarang persetujuan
+reviewer/business acceptance. Aturan bisnis yang belum final dipisahkan
+dari invariant teknis; asumsi sementara untuk demo dilabeli eksplisit
+`DEMO_ASSUMPTION` dan tidak dinyatakan sebagai fakta legacy atau kebijakan
+produksi yang disetujui.
 
 ## Status dan artefak
 
@@ -18,13 +21,19 @@ rumus upah, metode valuasi, COA, atau keputusan bisnis yang belum diketahui.
   adalah kosakata lintas domain, bukan janji bahwa payload tersebut diterima HEAD.
 - **BLOCKED_F01**: expected result bisnis sengaja `null`; pemilik harus mengisinya
   bersama referensi Dxx/EXxx sebelum implementasi dan acceptance paket penerima.
-- [Fixture sintetis](../tests/fixtures/f02-contracts.json): vektor BASELINE yang
-  dijalankan tes dan skenario PROPOSED/BLOCKED_F01 yang harus direview A1/A2/A3.
+  Status ini tidak menghentikan kontrak teknis #41 (instruksi pemilik 2026-09-27).
+- [Fixture sintetis](../tests/fixtures/f02-contracts.json): revisi `F02-draft-2`;
+  vektor BASELINE yang dijalankan tes, `contract_vectors` yang dieksekusi
+  terhadap [beeloft/contracts.py](../beeloft/contracts.py), skenario
+  PROPOSED/BLOCKED_F01 untuk review A1/A2/A3, dan blok `demo_assumptions`.
 - [Inventaris pemilik](f02-ownership.csv): tiap tabel persisten dan tiap endpoint
   eksplisit HEAD, satu owner teknis usulan dan reviewer. Bukan matriks izin user.
 - [Tes kontrak](../tests/test_f02_contracts.py) memeriksa vektor terhadap model,
-  konversi qty, serta kelengkapan inventaris terhadap database/API sungguhan.
-  Tes ini **tidak** membuktikan implementasi kontrak native yang belum ada.
+  konversi qty, kelengkapan inventaris terhadap database/API sungguhan, serta
+  invariant #41 (konsistensi qty/uang, replay tanpa duplikasi, reversal menautkan
+  asal, approved/paid/posted terpisah, native vs snapshot tidak dihitung ganda).
+  Tes ini **tidak** membuktikan implementasi kontrak native yang belum ada dan
+  **tidak** menggantikan business acceptance.
 
 ## Identitas, unit, dan Decimal
 
@@ -200,6 +209,29 @@ Tidak otomatis membuka periode atau menggeser tanggal. Approval keputusan bisnis
 tidak boleh meniadakan jejak koreksi. Fixture `PERIOD-01` belum bisa diberi expected
 tanggal/jurnal final sebelum kebijakan ini disahkan.
 
+## Asumsi demo sementara (DEMO_ASSUMPTION)
+
+Untuk demo presentasi Senin 2026-09-28 WIB, kontrak teknis di atas dieksekusi
+dengan asumsi sementara yang sederhana dan konsisten. Semuanya dilabeli
+`DEMO_ASSUMPTION`, dibungkus dalam `ContractPolicy` berversi
+(`policy_ref="DEMO-20260928-1"`, lihat
+[beeloft/contracts.py](../beeloft/contracts.py) dan blok `demo_assumptions`
+pada fixture), dan mudah diganti dengan mengganti objek policy — tanpa
+mengubah kontrak. Hasil kalkulasi demo selalu membawa `calculation_policy_ref`
+agar konsumen tahu asumsi mana yang dipakai.
+
+| ID | Asumsi sementara | Keputusan tertunda |
+|---|---|---|
+| DA-01 | Upah = (pcs / 12) × tarif_per_lusin; pcs/12 dihitung eksak (Decimal), tanpa pembulatan kuantitas | D04 |
+| DA-02 | Nominal upah dibulatkan HALF_UP ke rupiah, tahap per pekerja per jenis pekerjaan | D04/D06 |
+| DA-03 | Kasbon boleh dipotong penuh dari upah bruto (rasio maksimum 1.0) | D08 |
+| DA-04 | Penjualan demo memakai pembayaran simulasi; dampak stok sebagai adjustment keluar demo | D10/D11 |
+| DA-05 | Seluruh data demo sintetis dan terpisah dari data produksi | – |
+
+Asumsi ini **bukan** fakta legacy dan **bukan** kebijakan produksi yang
+disetujui. Nilai pada fixture/skenario demo tidak boleh dijadikan fallback
+runtime produksi.
+
 ## Pemilik dan urutan migrasi
 
 [Inventaris CSV](f02-ownership.csv) mencatat objek **existing**, termasuk route
@@ -252,12 +284,12 @@ Semua identitas/angka sintetis; belum ada contoh bisnis EXxx berstatus approved.
 Skenario target menyebut expected invariant dan Dxx yang harus diisi; nilainya
 tidak boleh dijadikan fallback runtime.
 
-| Penerimaan #41 | Status / bukti yang masih diperlukan |
+| Penerimaan #41 | Status / bukti |
 |---|---|
-| Fixture disepakati A1/A2/A3 | PENDING; masing-masing mereview input, expected result dan batas baseline/target pada revisi file yang sama |
-| Namespace eksternal dan tanpa double count | Kontrak PROPOSED + fixture SRC; implementasi dan bukti cutover belum ada, menunggu D18/D19 |
-| Pemilik tiap tabel/endpoint dan urutan migrasi tercatat | Inventaris HEAD dan urutan di atas tersedia; penugasan/reviewer masih usulan |
-| F01 diterima dan aturan bisnis tersedia | BLOCKED_F01; D01–D20 OPEN, EX01–EX15 belum approved |
+| Fixture disepakati A1/A2/A3 | PENDING; revisi `F02-draft-2` + `contract_vectors` tereksekusi siap direview pada file yang sama; sign-off belum ada |
+| Sumber eksternal memiliki namespace; transaksi native dan snapshot tidak dihitung ganda | Kontrak teknis + `canonical_source_key` + `dedupe_contributions` + vektor CV-SRC/CV-DEDUP; implementasi cutover dan bukti D18/D19 belum ada |
+| Pemilik tiap tabel/endpoint dan urutan migrasi tercatat | Inventaris HEAD (schema 55) terverifikasi tes; urutan migrasi W0–W7 di atas; penugasan/reviewer masih usulan |
+| Kontrak teknis #41 selesai | SELESAI tahap ini: `beeloft/contracts.py`, fixture, tes invariant; D01–D20 tetap OPEN, bukan blocker tahap ini per instruksi pemilik 2026-09-27 |
 | Koordinator dan bisnis menerima F02 | PENDING; #41 tetap terbuka dan W0 belum lolos |
 
 | Sign-off | Lingkup | Status / waktu / bukti |
@@ -272,18 +304,22 @@ waktu dan referensi bukti yang aman dipublikasikan. Perubahan policy membuka ula
 review fixture/paket yang terdampak. Jangan mengubah status menjadi agreed dari
 hasil tes atau merge saja.
 
-Handoff teknis: branch `docs/f02-shared-transaction-contracts`; commit dasar
-`efe1156c4557e0f4b69f0000d674ce74fdc4ae0c`. Commit akhir dan hasil perintah uji
-dicatat pada body PR setelah commit. File berubah: README, dokumen ini, CSV
-ownership, fixture JSON dan tes kontrak. Tidak ada perubahan runtime/API/schema,
-nomor migrasi, dependency atau versi aplikasi. Jalankan:
+Handoff teknis: branch `f02/kontrak-transaksi-41`; commit dasar
+`8c8b797cff11c1ff153dc997b2fea3fba8c2de1f`. Commit akhir dan hasil perintah uji
+dicatat pada body PR setelah commit. File berubah: `beeloft/contracts.py`
+(baru, fungsi murni tanpa DB/API/schema), dokumen ini, fixture JSON dan tes
+kontrak. Tidak ada perubahan runtime/API/schema, nomor migrasi, dependency
+atau versi aplikasi. Jalankan:
 
 ```sh
-python -m unittest discover -s tests -p test_f02_contracts.py -v
+python -m pytest tests/test_f02_contracts.py -q
 ```
 
 Tes integrasi existing yang dirujuk di atas tetap bukti perilaku baseline, bukan
-sign-off rumus payroll/accounting baru. Risiko utama: F01 belum frozen, tidak ada
-source-authority/cutoff produksi yang disahkan, dan belum ada pemisahan akses gaji
-per fungsi. Langkah berikut: A0 meminta keputusan/bukti F01, reviewer melengkapi
-expected result dan sign-off, baru membuka implementasi domain yang bergantung.
+sign-off rumus payroll/accounting baru. Risiko utama: D01–D20 tetap OPEN
+(sign-off produksi belum ada; bukan blocker kontrak teknis tahap ini per
+instruksi pemilik 2026-09-27), tidak ada source-authority/cutoff produksi yang
+disahkan, dan belum ada pemisahan akses gaji per fungsi. Langkah berikut:
+reviewer A1/A2/A3 melengkapi expected result skenario PROPOSED/BLOCKED_F01 dan
+sign-off pada revisi fixture yang sama, baru membuka implementasi domain yang
+bergantung (P03/I01/H01 charge & payroll, A01/A02 posting & close).
