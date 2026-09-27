@@ -2,12 +2,10 @@ import argparse
 import json
 import os
 import sqlite3
-from datetime import date, timedelta
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from beeloft.models import MovementCreate, OrderCreate, ProductCreate
 from beeloft.store import DomainError, Store
 
 
@@ -31,7 +29,9 @@ def main():
     oidc_unlink.add_argument("--subject", required=True)
     backup = commands.add_parser("backup", help="Backup konsisten tanpa menimpa file")
     backup.add_argument("destination")
-    commands.add_parser("demo", help="Buat database contoh BARU; tidak menimpa database")
+    demo = commands.add_parser("demo", help="Buat database demo presentasi (data sintetis)")
+    demo.add_argument("--fresh", action="store_true",
+                      help="Hapus database demo yang ada lalu buat ulang dari nol (reset demo)")
     args = parser.parse_args()
     path = Path(args.db).resolve()
 
@@ -40,6 +40,8 @@ def main():
             parser.error("Database sumber belum ada.")
         if args.command == "demo":
             path.parent.mkdir(parents=True, exist_ok=True)
+            if args.fresh and path.is_file():
+                path.unlink()
             with path.open("xb"):
                 pass
         if args.command == "serve":
@@ -62,20 +64,14 @@ def main():
             store.backup(args.destination)
             result = {"backup": str(Path(args.destination).resolve())}
         else:
+            # Perintah demo: bangun skenario presentasi sintetis lengkap via beeloft.demo.
+            from beeloft.demo import seed_demo_story
             users = [store.provision_user(name, role) for name, role in [
                 ("Admin Demo", "admin"), ("Produksi Demo", "operator"), ("Viewer Demo", "viewer")]]
             actor = store.authenticate(users[0]["api_key"])
-            product = store.create_product(ProductCreate(sku="DEMO-LUNA-BLUE-M", name="Contoh Luna Blue", color="Blue", size="M").model_dump(), actor, "demo-product")
-            order = store.create_order(OrderCreate(reference="DEMO-PROD-001", title="CONTOH - Produksi internal 500 pcs",
-                owner_id=users[1]["id"], due_date=date.today() + timedelta(days=7),
-                lines=[{"product_id": product["id"], "quantity": 500}]).model_dump(mode="json"), actor, "demo-order")
-            for index, (source, target, quantity) in enumerate([
-                ("planned", "cutting", 400), ("cutting", "sewing", 300), ("sewing", "finishing", 150),
-                ("finishing", "qc", 100), ("qc", "warehouse", 80)]):
-                store.move(MovementCreate(line_id=order["lines"][0]["id"], from_stage=source, to_stage=target,
-                    quantity=quantity, reason="Contoh jahitan perlu diperbaiki" if target == "rework" else "Data contoh").model_dump(), actor, f"demo-move-{index}")
-            result = {"notice": "DATA CONTOH. Simpan API key; hanya ditampilkan saat dibuat.",
-                      "database": str(path), "users": users, "order_id": order["id"]}
+            story = seed_demo_story(store, actor)
+            result = {"notice": "DATA DEMO SINTETIS untuk presentasi. Simpan API key; hanya ditampilkan saat dibuat.",
+                      "database": str(path), "users": users, **story}
         print(json.dumps(result, indent=2, ensure_ascii=True))
     except (DomainError, OSError, sqlite3.Error, ValidationError) as exc:
         parser.exit(1, f"Gagal: {exc}\n")

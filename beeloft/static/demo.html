@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Demo · Beeloft One</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2330;--muted:#677183;--line:#e3e7ee;--acc:#1f6feb;--ok:#1a7f37;--warn:#9a6700;--bad:#cf222e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header.top{position:sticky;top:0;background:#101828;color:#fff;padding:12px 20px;display:flex;gap:12px;align-items:center;z-index:5}
+.badge{background:#ffbf3f;color:#3d2e00;font-weight:700;font-size:12px;padding:3px 10px;border-radius:999px;letter-spacing:.4px}
+header.top h1{font-size:17px;margin:0;font-weight:650}
+header.top .sub{font-size:12.5px;color:#c3ccd9}
+.wrap{max-width:1060px;margin:0 auto;padding:20px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:16px 0}
+.card h2{margin:0 0 4px;font-size:19px}
+.card .desc{color:var(--muted);font-size:13.5px;margin:0 0 12px}
+.flow{display:flex;gap:0;align-items:stretch;flex-wrap:wrap;margin:12px 0}
+.step{flex:1 1 120px;background:#f0f4ff;border:1px solid #d4e0fb;border-radius:10px;padding:10px 12px;margin:4px;text-align:center}
+.step .n{font-size:22px;font-weight:750}
+.step .l{font-size:12.5px;color:var(--muted)}
+.step.lose{background:#fff4f4;border-color:#f3c2c2}
+.step.gain{background:#effaf1;border-color:#bfe6c8}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.3px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.total td{font-weight:700;border-top:2px solid var(--ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+input,select,button{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+button{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer;font-weight:600}
+button:disabled{opacity:.55;cursor:default}
+button.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.msg{font-size:13.5px;margin-top:8px;min-height:20px}
+.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
+.slip{border:1px dashed #b9c2d0;border-radius:10px;padding:14px 16px;background:#fbfcfe;margin-top:10px}
+.slip h3{margin:0 0 8px;font-size:16px}
+.kv{display:flex;justify-content:space-between;padding:3px 0;font-size:14px}
+.kv b{font-variant-numeric:tabular-nums}
+.note{background:#fffbe8;border:1px solid #f0df9a;border-radius:10px;padding:12px 14px;font-size:13.5px;margin:10px 0}
+.note.rencana{background:#f2f6ff;border-color:#c9d9f7}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.pill{font-size:12.5px;background:#eef1f6;border-radius:999px;padding:4px 12px}
+.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.login input{min-width:280px}
+.script ol{margin:8px 0;padding-left:22px}
+.script li{margin:6px 0}
+footer{color:var(--muted);font-size:12.5px;text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="badge">DATA SINTETIS · DEMO</span>
+  <div><h1>Beeloft One — Demo Presentasi</h1><div class="sub">Alur produksi → payroll → penjualan · bukan data produksi</div></div>
+</header>
+<div class="wrap">
+
+<div class="card">
+  <h2>Masuk</h2>
+  <p class="desc">Tempel API key demo (dari perintah <code>python -m beeloft --db data/demo.sqlite3 demo</code>), lalu muat data.</p>
+  <div class="login">
+    <input id="apikey" type="password" placeholder="API key demo…" autocomplete="off">
+    <button id="btn-load">Muat data demo</button>
+    <button id="btn-refresh" class="ghost" disabled>Muat ulang</button>
+  </div>
+  <div id="login-msg" class="msg"></div>
+</div>
+
+<div class="card" id="c-prod">
+  <h2>Alur 1 — Produksi: rencana → cutting → pengerjaan → barang jadi</h2>
+  <p class="desc" id="order-line">Order demo. Klik “Muat data demo” dulu.</p>
+  <div class="flow" id="funnel"></div>
+  <div class="note">Rantai asli aplikasi: order → cutting run → bundle → sewing job (per pekerja) → finishing → QC → penerimaan barang jadi. Setiap tahap tercatat sebagai pergerakan tahap; saldo antar-tahap selalu seimbang.</div>
+</div>
+
+<div class="card" id="c-pay">
+  <h2>Alur 2 — Payroll: hasil pekerjaan → upah → slip − kasbon</h2>
+  <p class="desc">Aturan demo sementara: <b>upah = (pcs ÷ 12) × tarif per lusin</b>. Dihitung langsung dari sewing job yang selesai.</p>
+  <h3 style="font-size:14px;margin:12px 0 4px">Tarif borongan (demo)</h3>
+  <table><thead><tr><th>Jenis pekerjaan</th><th class="num">Tarif / lusin</th></tr></thead><tbody id="tariffs"></tbody></table>
+  <h3 style="font-size:14px;margin:12px 0 4px">Rekap upah</h3>
+  <table><thead><tr><th>Pekerja</th><th class="num">Hasil (pcs)</th><th class="num">Lusin</th><th class="num">Bruto</th><th class="num">Kasbon</th><th class="num">Netto</th><th></th></tr></thead><tbody id="payroll"></tbody></table>
+  <div id="slip"></div>
+  <h3 style="font-size:14px;margin:14px 0 4px">Ilustrasi: pembayaran kasbon (live)</h3>
+  <div class="login">
+    <select id="kasbon-who"></select>
+    <input id="kasbon-amt" type="number" min="1" step="1000" value="10000" style="width:140px">
+    <button id="btn-kasbon">Catat pembayaran kasbon</button>
+  </div>
+  <div id="kasbon-msg" class="msg"></div>
+</div>
+
+<div class="card" id="c-sale">
+  <h2>Alur 3 — Penjualan: transaksi → pembayaran simulasi → stok &amp; ringkasan</h2>
+  <p class="desc">Stok gudang sebelum penjualan: <b id="stock-before">–</b> pcs. Penjualan demo mengurangi stok asli lewat adjustment tercatat.</p>
+  <div class="grid2">
+    <div>
+      <h3 style="font-size:14px;margin:0 0 6px">Catat penjualan (live)</h3>
+      <div class="login">
+        <input id="sale-qty" type="number" min="1" value="50" style="width:100px" aria-label="Jumlah pcs">
+        <input id="sale-price" type="number" min="0" step="1000" value="85000" style="width:140px" aria-label="Harga per pcs">
+        <select id="sale-pay"><option>Transfer (simulasi)</option><option>Tunai (simulasi)</option><option>QRIS (simulasi)</option></select>
+        <button id="btn-sale">Jual &amp; bayar</button>
+      </div>
+      <div id="sale-msg" class="msg"></div>
+    </div>
+    <div>
+      <h3 style="font-size:14px;margin:0 0 6px">Ringkasan penjualan demo</h3>
+      <div class="kv"><span>Transaksi</span><b id="sum-tx">–</b></div>
+      <div class="kv"><span>Unit terjual</span><b id="sum-pcs">–</b></div>
+      <div class="kv"><span>Omzet</span><b id="sum-rev">–</b></div>
+      <div class="kv"><span>Stok gudang kini</span><b id="stock-now">–</b></div>
+    </div>
+  </div>
+  <table><thead><tr><th>Referensi</th><th class="num">Qty</th><th class="num">Total</th><th>Pembayaran</th></tr></thead><tbody id="sales"></tbody></table>
+</div>
+
+<div class="card">
+  <h2>Asumsi demo (aturan sementara)</h2>
+  <div class="note">
+    <ul style="margin:6px 0;padding-left:20px">
+      <li>Upah borongan = (pcs ÷ 12) × tarif per lusin; tarif Obras Rp1.800, Jahit Rp2.500.</li>
+      <li>Kasbon Budi Rp30.000 dipotong dari bruto; pembayaran kasbon live mengurangi sisa.</li>
+      <li>Penjualan demo = transaksi + adjustment stok keluar tercatat (jalan pintas presentasi; alur marketplace penuh tetap ada di aplikasi).</li>
+      <li>Semua nama, SKU, dan nominal adalah sintetis dan terpisah dari backoffice produksi.</li>
+    </ul>
+  </div>
+  <div class="note rencana"><b>Rencana (belum dibangun):</b> General Ledger akuntansi native, posting jurnal otomatis payroll &amp; penjualan, COA, dan tutup periode — arah produk tetap, bukan syarat demo ini.</div>
+</div>
+
+<div class="card script">
+  <h2>Urutan presentasi ±7 menit</h2>
+  <ol>
+    <li><b>Produksi (2 mnt):</b> tunjukkan funnel 1.200 pcs rencana → 1.180 pcs barang jadi; 20 pcs reject QC tercatat.</li>
+    <li><b>Payroll (2,5 mnt):</b> hasil jahitan per pekerja → bruto Rp222.000; buka slip Budi: kasbon Rp30.000 → netto Rp45.000; <i>live:</i> catat pembayaran kasbon Rp10.000 → netto berubah.</li>
+    <li><b>Penjualan (2 mnt):</b> stok 1.180 → <i>live:</i> jual 50 pcs @ Rp85.000 (Transfer simulasi) → stok &amp; omzet ter-update.</li>
+    <li><b>Penutup (0,5 mnt):</b> asumsi sementara + rencana GL native; reset demo: <code>python -m beeloft --db data/demo.sqlite3 demo --fresh</code>.</li>
+  </ol>
+</div>
+
+</div>
+<footer>Beeloft One · halaman demo — seluruh angka sintetis.</footer>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>"Rp"+Number(n).toLocaleString("id-ID");
+let KEY="",PID="";
+const H=()=>({"X-API-Key":KEY,"Content-Type":"application/json"});
+async function api(path,opts={}){
+  const r=await fetch(path,{...opts,headers:{...H(),...(opts.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.detail||("HTTP "+r.status));
+  return j;
+}
+function setMsg(id,txt,ok){const e=$(id);e.textContent=txt;e.className="msg "+(ok?"ok":"err");}
+async function load(){
+  KEY=$("apikey").value.trim();
+  if(!KEY){setMsg("login-msg","Isi API key demo dulu.");return;}
+  try{
+    const ov=await api("/api/demo/overview");
+    setMsg("login-msg","Data demo dimuat.",true);
+    $("btn-refresh").disabled=false;
+    const order=ov.order;
+    $("order-line").textContent=order?`${order.reference} · ${order.title}`:"Order demo tidak ditemukan.";
+    const want=[["planned","Rencana"],["cutting","Cutting"],["sewing","Jahit"],["finishing","Finishing"],["qc","QC"],["warehouse","Gudang"]];
+    const m=Object.fromEntries(ov.funnel.map(f=>[f.stage,f.qty]));
+    $("funnel").innerHTML=want.map(([s,l])=>{
+      const q=m[s]??0;
+      const cls=s==="warehouse"?"gain":"";
+      return `<div class="step ${cls}"><div class="n">${q.toLocaleString("id-ID")}</div><div class="l">${l}</div></div>`;
+    }).join("")+`<div class="step lose"><div class="n">${(m.reject??0).toLocaleString("id-ID")}</div><div class="l">Reject</div></div>`;
+    $("tariffs").innerHTML=ov.payroll.tariffs.map(t=>`<tr><td>${t.label}</td><td class="num">${fmt(t.rate_per_lusin)}</td></tr>`).join("");
+    const ws=ov.payroll.workers;
+    $("payroll").innerHTML=ws.map((w,i)=>`<tr><td>${w.name}</td><td class="num">${w.pcs.toLocaleString("id-ID")}</td><td class="num">${w.lines.map(x=>x.lusin).join(" + ")}</td><td class="num">${fmt(w.gross)}</td><td class="num">${fmt(w.kasbon_outstanding)}</td><td class="num"><b>${fmt(w.net)}</b></td><td><button class="ghost" data-slip="${i}">Slip</button></td></tr>`).join("")
+      +`<tr class="total"><td>Total</td><td class="num">${ov.payroll.total.pcs.toLocaleString("id-ID")}</td><td class="num"></td><td class="num">${fmt(ov.payroll.total.gross)}</td><td class="num">${fmt(ov.payroll.total.kasbon)}</td><td class="num">${fmt(ov.payroll.total.net)}</td><td></td></tr>`;
+    document.querySelectorAll("[data-slip]").forEach(b=>b.onclick=()=>showSlip(ws[+b.dataset.slip]));
+    $("kasbon-who").innerHTML=ws.filter(w=>w.kasbon>0).map(w=>`<option>${w.name}</option>`).join("");
+    const inv=ov.inventory[0];
+    PID=inv?inv.product_id:"";
+    const stk=inv?inv.sellable_quantity:0;
+    $("stock-before").textContent=stk.toLocaleString("id-ID");
+    $("stock-now").textContent=stk.toLocaleString("id-ID");
+    await loadSales();
+  }catch(e){setMsg("login-msg",e.message);}
+}
+function showSlip(w){
+  const lines=w.lines.map(x=>`<div class="kv"><span>${x.label}: ${x.pcs} pcs (${x.lusin} lusin × ${fmt(x.rate_per_lusin)})</span><b>${fmt(x.wage)}</b></div>`).join("");
+  $("slip").innerHTML=`<div class="slip"><h3>Slip gaji demo — ${w.name}</h3>${lines}
+    <div class="kv"><span>Bruto</span><b>${fmt(w.gross)}</b></div>
+    <div class="kv"><span>Kasbon (sisa)</span><b>− ${fmt(w.kasbon_outstanding)}</b></div>
+    <div class="kv"><span>Dibayar kasbon</span><b>${fmt(w.kasbon_paid)}</b></div>
+    <div class="kv" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><span>Netto</span><b>${fmt(w.net)}</b></div></div>`;
+  $("slip").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+async function loadSales(){
+  try{
+    const s=await api("/api/demo/sales");
+    $("sum-tx").textContent=s.total.transactions;
+    $("sum-pcs").textContent=s.total.pcs.toLocaleString("id-ID")+" pcs";
+    $("sum-rev").textContent=fmt(s.total.revenue);
+    $("sales").innerHTML=s.sales.map(x=>`<tr><td>${x.reference}</td><td class="num">${x.quantity}</td><td class="num">${fmt(x.total)}</td><td>${x.payment_method}</td></tr>`).join("")||`<tr><td colspan="4" style="color:var(--muted)">Belum ada penjualan demo.</td></tr>`;
+    const ov=await api("/api/demo/overview");
+    const stk=ov.inventory[0]?ov.inventory[0].sellable_quantity:0;
+    $("stock-now").textContent=stk.toLocaleString("id-ID");
+  }catch(e){/* abaikan saat data belum dimuat */}
+}
+$("btn-load").onclick=load;
+$("btn-refresh").onclick=load;
+$("btn-kasbon").onclick=async()=>{
+  try{
+    await api("/api/demo/kasbon-payments",{method:"POST",headers:{"Idempotency-Key":"demo-kb-"+Date.now()},
+      body:JSON.stringify({employee_name:$("kasbon-who").value,amount:+$("kasbon-amt").value,paid_at:new Date().toISOString().slice(0,10)})});
+    setMsg("kasbon-msg","Pembayaran kasbon tercatat.",true);await load();
+  }catch(e){setMsg("kasbon-msg",e.message);}
+};
+$("btn-sale").onclick=async()=>{
+  if(!PID){setMsg("sale-msg","Muat data demo dulu.");return;}
+  try{
+    const r=await api("/api/demo/sales",{method:"POST",headers:{"Idempotency-Key":"demo-sale-"+Date.now()},
+      body:JSON.stringify({product_id:PID,quantity:+$("sale-qty").value,price_each:+$("sale-price").value,
+        payment_method:$("sale-pay").value,sold_at:new Date().toISOString().slice(0,10)})});
+    setMsg("sale-msg",`Terjual ${r.quantity} pcs = ${fmt(r.total)} (${r.payment_method}).`,true);
+    await loadSales();
+  }catch(e){setMsg("sale-msg",e.message);}
+};
+</script>
+</body>
+</html>

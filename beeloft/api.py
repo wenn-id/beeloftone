@@ -1497,4 +1497,38 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
             "Content-Disposition": f'attachment; filename="beeloft-backup-{stamp}.sqlite3"',
             "Cache-Control": "no-store"})
 
+    # ------------------------------------------------------------------
+    # DEMO presentasi (data sintetis; bukan bagian skema/fitur produksi).
+    # Hanya aktif bila env BEELOFT_DEMO=1 agar database produksi tidak
+    # tersentuh endpoint demo. Lihat docs/demo-presentasi.md.
+    # ------------------------------------------------------------------
+    import os as _os
+    if _os.environ.get("BEELOFT_DEMO") == "1":
+        from beeloft.demo import (create_demo_sale, demo_overview, payroll_summary,
+                                  record_kasbon_payment, sales_summary)
+
+        @app.get("/demo", include_in_schema=False)
+        def demo_page():
+            return FileResponse(static / "demo.html", headers={"Cache-Control": "no-store"})
+
+        @app.get("/api/demo/overview", tags=["Demo"])
+        def demo_overview_api(user: Actor):
+            return demo_overview(store)
+
+        @app.get("/api/demo/payroll", tags=["Demo"])
+        def demo_payroll_api(user: Actor):
+            return payroll_summary(store)
+
+        @app.post("/api/demo/kasbon-payments", status_code=201, tags=["Demo"])
+        def demo_kasbon_payment_api(body: dict, user: Actor, key: RequestKey):
+            return record_kasbon_payment(store, body, user, key)
+
+        @app.get("/api/demo/sales", tags=["Demo"])
+        def demo_sales_api(user: Actor):
+            return sales_summary(store)
+
+        @app.post("/api/demo/sales", status_code=201, tags=["Demo"])
+        def demo_sale_api(body: dict, user: Actor, key: RequestKey):
+            return create_demo_sale(store, body, user, key)
+
     return app

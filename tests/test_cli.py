@@ -38,7 +38,7 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
             with closing(sqlite3.connect(backup)) as db:
                 self.assertEqual(db.execute("SELECT active FROM users WHERE id=?", (operator_id,)).fetchone()[0], 1)
-                self.assertEqual(db.execute("SELECT SUM(quantity) FROM balances").fetchone()[0], 500)
+                self.assertEqual(db.execute("SELECT SUM(quantity) FROM balances").fetchone()[0], 1200)
 
     def test_backup_does_not_create_missing_source(self):
         with tempfile.TemporaryDirectory() as folder:
