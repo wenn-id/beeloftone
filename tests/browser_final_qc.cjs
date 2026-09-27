@@ -18,8 +18,10 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const batch=await post('/api/material-batches',{material_id:material.id,reference:'FQC-BATCH',supplier:'CONTOH pemasok',
     location:'Rak Q',received_date:'2026-09-11',quantity:'5',reason:'CONTOH bahan'},'fqc-batch');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'3',reason:'CONTOH bahan final QC'},'fqc-issue');
-  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'FQC-CUT',issue_id:issue.id,used:'2',waste:'0.25',
-    reason:'CONTOH cutting final QC',outputs:[{line_id:line.id,quantity:20}]},'fqc-cut');
+    const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana'},'fqc-plan-approve');
+const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'FQC-CUT',issue_id:issue.id,used:'2',waste:'0.25',
+    reason:'CONTOH cutting final QC',cut_date:'2026-09-27',outputs:[{line_id:line.id,quantity:20}]},'fqc-cut');
   const bundle=await post('/api/cutting-runs/'+run.id+'/bundles',{reference:'FQC-BDL',output_movement_id:run.outputs[0].id,
     quantity:20,reason:'CONTOH bundle final QC'},'fqc-bundle');
   const job=await post('/api/bundles/'+bundle.id+'/sewing-jobs',{reference:'FQC-SEW',assignment_type:'internal',assignee:'Line QC <A>',

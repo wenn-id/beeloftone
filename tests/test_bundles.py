@@ -20,6 +20,7 @@ class BundleTest(TestCase):
     setup_stock = cutting_tests.CuttingTest.setup_stock
     prepare = cutting_tests.CuttingTest.prepare
     cut = cutting_tests.CuttingTest.cut
+    approve_cutting_plan = cutting_tests.CuttingTest.approve_cutting_plan
 
     def setup_run(self):
         _, order, _, body = self.prepare()
@@ -182,7 +183,7 @@ class BundleTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
         after = self.client.get('/api/cutting-runs/'+run['id']).json()
         self.assertEqual({k: after[k] for k in before if k != 'outputs'},
                          {k: before[k] for k in before if k != 'outputs'})

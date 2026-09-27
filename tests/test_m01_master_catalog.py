@@ -31,14 +31,14 @@ class Migration56Test(unittest.TestCase):
         with store.transaction() as db:
             return db.execute("PRAGMA user_version").fetchone()[0]
 
-    def test_fresh_db_reaches_schema_56_with_uom_seeds(self):
+    def test_fresh_db_reaches_latest_schema_with_uom_seeds(self):
         store = self.fresh_store()
-        self.assertEqual(self.db_version(store), 56)
+        self.assertEqual(self.db_version(store), 57)
         with store.transaction() as db:
             codes = [r[0] for r in db.execute("SELECT code FROM uoms ORDER BY code")]
         self.assertEqual(codes, ["KG", "LSN", "M", "PCS"])
 
-    def test_upgrade_55_to_56_preserves_identity_and_history(self):
+    def test_upgrade_55_to_latest_preserves_identity_and_history(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         path = str(Path(folder.name) / "legacy.sqlite3")
@@ -51,6 +51,8 @@ class Migration56Test(unittest.TestCase):
                 created_by TEXT, created_at TEXT NOT NULL);
             CREATE TABLE materials(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 name TEXT NOT NULL, unit TEXT NOT NULL CHECK(unit IN ('m','kg','pcs')),
+                created_by TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE orders(id TEXT PRIMARY KEY, reference TEXT NOT NULL,
                 created_by TEXT, created_at TEXT NOT NULL);
         """)
         raw.execute("PRAGMA user_version = 55")
@@ -65,7 +67,7 @@ class Migration56Test(unittest.TestCase):
 
         upgraded = Store(path)
         upgraded.connect()
-        self.assertEqual(self.db_version(upgraded), 56)
+        self.assertEqual(self.db_version(upgraded), 57)
         with upgraded.transaction() as db:
             prod = db.execute("SELECT sku,name,color,size,uom_code,active FROM products WHERE id='p-legacy'").fetchone()
             mat = db.execute(

@@ -20,6 +20,7 @@ class FinishingTest(TestCase):
     setup_stock = sewing_tests.SewingJobTest.setup_stock
     prepare = sewing_tests.SewingJobTest.prepare
     cut = sewing_tests.SewingJobTest.cut
+    approve_cutting_plan=sewing_tests.SewingJobTest.approve_cutting_plan
     create_bundle = sewing_tests.SewingJobTest.create_bundle
     setup_bundle = sewing_tests.SewingJobTest.setup_bundle
     create_job = sewing_tests.SewingJobTest.create_job
@@ -180,5 +181,5 @@ class FinishingTest(TestCase):
             db.execute('PRAGMA user_version=15');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finishing_records').fetchone()[0],0)

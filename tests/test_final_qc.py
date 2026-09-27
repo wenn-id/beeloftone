@@ -20,6 +20,7 @@ class FinalQcTest(TestCase):
     setup_stock = finishing_tests.FinishingTest.setup_stock
     prepare = finishing_tests.FinishingTest.prepare
     cut = finishing_tests.FinishingTest.cut
+    approve_cutting_plan=finishing_tests.FinishingTest.approve_cutting_plan
     create_bundle = finishing_tests.FinishingTest.create_bundle
     setup_bundle = finishing_tests.FinishingTest.setup_bundle
     create_job = finishing_tests.FinishingTest.create_job
@@ -180,5 +181,5 @@ class FinalQcTest(TestCase):
             db.execute('PRAGMA user_version=16');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM final_qc_records').fetchone()[0],0)

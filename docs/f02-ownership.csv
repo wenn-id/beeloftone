@@ -17,6 +17,10 @@ table,bundles,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
 table,colors,A1,M01,A2,beeloft/master_catalog.sql
 table,cutting_run_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
 table,cutting_runs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
+table,cutting_run_details,A1,P02,A2,beeloft/planning_cutting.sql
+table,cutting_run_output_params,A1,P02,A2,beeloft/planning_cutting.sql
+table,cutting_run_rolls,A1,P02,A2,beeloft/planning_cutting.sql
+table,production_plans,A1,P02,A2,beeloft/planning_cutting.sql
 table,final_qc_record_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
 table,final_qc_records,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
 table,finished_goods_adjustment_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
@@ -258,6 +262,10 @@ endpoint,GET /api/material-batches/{batch_id}/label.svg,A2,I01,A1,beeloft/api.py
 endpoint,POST /api/material-reservations,A1,P02/P03,A2,beeloft/api.py#reserve_material
 endpoint,POST /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#create_cutting_run
 endpoint,GET /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#cutting_runs
+endpoint,GET /api/orders/{order_id}/plan,A1,P02,A2,beeloft/api.py#production_plan
+endpoint,POST /api/orders/{order_id}/plan/approve,A1,P02,A2,beeloft/api.py#approve_production_plan
+endpoint,POST /api/orders/{order_id}/plan/close,A1,P02,A2,beeloft/api.py#close_production_plan
+endpoint,GET /api/orders/{order_id}/cutting-runs/export.csv,A1,P02,A2,beeloft/api.py#export_cutting_runs
 endpoint,GET /api/cutting-runs/{run_id},A1,P02,A2,beeloft/api.py#cutting_run
 endpoint,POST /api/cutting-runs/{run_id}/reverse,A1,P02,A2,beeloft/api.py#reverse_cutting_run
 endpoint,POST /api/cutting-runs/{run_id}/bundles,A1,P02/P03,A2,beeloft/api.py#create_bundle

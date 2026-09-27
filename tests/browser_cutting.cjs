@@ -13,6 +13,8 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const material=await post('/api/materials',{code:'CUT-CLOTH',name:'CONTOH kain cutting',unit:'m'},'cut-material');
   const batch=await post('/api/material-batches',{material_id:material.id,reference:'CUT-BATCH',supplier:'CONTOH pemasok',location:'Rak C',received_date:'2026-09-11',quantity:'10',reason:'CONTOH bahan'},'cut-batch');
   await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'6',reason:'CONTOH pengeluaran cutting'},'cut-issue');
+  const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana cutting'},'cut-plan-approve');
   async function role(key){await page.keyboard.press('Escape');await page.getByRole('button',{name:'Keluar',exact:true}).click();await login(key);}
   async function openOrder(){await page.getByRole('button',{name:/DEMO-CUTTING/}).click();await page.getByRole('heading',{name:'CONTOH hasil cutting',exact:true}).waitFor();}
   async function openRuns(){await page.locator('#detail-content .panel-grid').getByRole('button',{name:'Hasil cutting',exact:true}).click();}

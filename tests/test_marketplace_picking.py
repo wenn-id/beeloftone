@@ -20,6 +20,7 @@ class MarketplacePickingTest(TestCase):
     setup_stock = reservation_tests.MarketplaceReservationsTest.setup_stock
     prepare = reservation_tests.MarketplaceReservationsTest.prepare
     cut = reservation_tests.MarketplaceReservationsTest.cut
+    approve_cutting_plan=reservation_tests.MarketplaceReservationsTest.approve_cutting_plan
     create_bundle = reservation_tests.MarketplaceReservationsTest.create_bundle
     setup_bundle = reservation_tests.MarketplaceReservationsTest.setup_bundle
     create_job = reservation_tests.MarketplaceReservationsTest.create_job
@@ -179,6 +180,6 @@ class MarketplacePickingTest(TestCase):
             db.execute('PRAGMA user_version=20');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_picks').fetchone()[0],0)
             self.assertIn('scanned_code',{row[1] for row in db.execute('PRAGMA table_info(marketplace_picks)')})

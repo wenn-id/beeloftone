@@ -46,9 +46,11 @@ module.exports=async({page,login,admin,viewer,apiGet,work,openSidebarDestination
     quantity:10,reason:'CONTOH mulai cutting costing'},'cost-start-cutting');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'2',
     reason:'CONTOH keluar untuk produksi'},'cost-issue');
-  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'COST-CUT-UI',
+    const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana'},'cost-plan-approve');
+const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'COST-CUT-UI',
     issue_id:issue.id,used:'1.5',waste:'0.5',reason:'CONTOH pemakaian dan waste',
-    outputs:[{line_id:order.lines[0].id,quantity:10}]},'cost-cutting');
+    cut_date:'2026-09-27',outputs:[{line_id:order.lines[0].id,quantity:10}]},'cost-cutting');
   const empty=await post('/api/orders',{reference:'DEMO-COST-GAP-UI',title:'CONTOH biaya belum lengkap',
     owner_id:owner.id,due_date:'2026-12-31',lines:[{product_id:product.id,quantity:5}]},'cost-empty-order');
 

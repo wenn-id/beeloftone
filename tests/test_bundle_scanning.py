@@ -14,6 +14,7 @@ class BundleScanningTest(TestCase):
     setup_stock=bundle_tests.BundleTest.setup_stock
     prepare=bundle_tests.BundleTest.prepare
     cut=bundle_tests.BundleTest.cut
+    approve_cutting_plan=bundle_tests.BundleTest.approve_cutting_plan
     setup_run=bundle_tests.BundleTest.setup_run
     create_bundle=bundle_tests.BundleTest.create_bundle
 

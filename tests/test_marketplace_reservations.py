@@ -20,6 +20,7 @@ class MarketplaceReservationsTest(TestCase):
     setup_stock = warehouse_tests.WarehouseMovementsTest.setup_stock
     prepare = warehouse_tests.WarehouseMovementsTest.prepare
     cut = warehouse_tests.WarehouseMovementsTest.cut
+    approve_cutting_plan=warehouse_tests.WarehouseMovementsTest.approve_cutting_plan
     create_bundle = warehouse_tests.WarehouseMovementsTest.create_bundle
     setup_bundle = warehouse_tests.WarehouseMovementsTest.setup_bundle
     create_job = warehouse_tests.WarehouseMovementsTest.create_job
@@ -166,5 +167,5 @@ class MarketplaceReservationsTest(TestCase):
             db.execute('PRAGMA user_version=19');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_reservations').fetchone()[0],0)

@@ -16,6 +16,7 @@ class ProductionQualityInsightsTest(TestCase):
     setup_stock=test_final_qc.FinalQcTest.setup_stock
     prepare=test_final_qc.FinalQcTest.prepare
     cut=test_final_qc.FinalQcTest.cut
+    approve_cutting_plan=test_final_qc.FinalQcTest.approve_cutting_plan
     create_bundle=test_final_qc.FinalQcTest.create_bundle
     setup_bundle=test_final_qc.FinalQcTest.setup_bundle
 
@@ -134,6 +135,6 @@ class ProductionQualityInsightsTest(TestCase):
         self.app.state.store.backup(backup);restored=Store(backup)
         self.assertEqual(restored.production_quality_insights('2026-09-23',7,status='all')['total'],1)
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])

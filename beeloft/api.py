@@ -18,14 +18,14 @@ from beeloft.models import MaterialUpdate, ProductUpdate
 from beeloft.models import MasterCreate, MasterUpdate, UomCreate, UomUpdate, ProductCategoryCreate, ProductCategoryUpdate, ProductSubcategoryCreate, ProductSubcategoryUpdate, ProductTypeCreate, ProductTypeUpdate, ProductSeriesCreate, ProductSeriesUpdate, ColorCreate, ColorUpdate, SizeCreate, SizeUpdate, MaterialClassCreate, MaterialClassUpdate
 from beeloft.models import BomTemplateCreate, BomTemplateUpdate, BomTemplateApply
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
 from beeloft.labels import bundle_label_svg, finished_goods_label_svg, material_batch_label_svg
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
-from beeloft.reports import activity_csv
+from beeloft.reports import activity_csv, cutting_runs_csv
 
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
 MAX_EXPORT_ROWS = 10_000
@@ -72,7 +72,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.115.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.116.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -940,6 +940,27 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.post('/api/cutting-runs/{run_id}/reverse', status_code=201, tags=['Cutting'])
     def reverse_cutting_run(run_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_cutting_run(run_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/plan', tags=['Planning'])
+    def production_plan(order_id: str, user: Actor):
+        return store.plan(order_id)
+
+    @app.post('/api/orders/{order_id}/plan/approve', status_code=201, tags=['Planning'])
+    def approve_production_plan(order_id: str, body: PlanDecision, user: Actor, key: RequestKey):
+        return store.approve_plan(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/orders/{order_id}/plan/close', status_code=201, tags=['Planning'])
+    def close_production_plan(order_id: str, body: PlanDecision, user: Actor, key: RequestKey):
+        return store.close_plan(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/cutting-runs/export.csv', tags=['Cutting'], response_class=Response,
+             responses={200: {"content": {"text/csv": {}},
+                              "description": "CSV UTF-8 detail hasil cutting: parameter, satuan, referensi, estimasi."}})
+    def export_cutting_runs(order_id: str, user: Actor):
+        plan_code, runs = store.cutting_runs_export(order_id)
+        filename = f'beeloft-cutting-{plan_code}.csv'
+        return Response(cutting_runs_csv(plan_code, runs), media_type="text/csv", headers={
+            "Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
 
     @app.post('/api/cutting-runs/{run_id}/bundles', status_code=201, tags=['Bundling'])
     def create_bundle(run_id: str, body: BundleCreate, user: Actor, key: RequestKey):
