@@ -103,8 +103,13 @@ identitas supplier, relasi employee + legacy ID + jabatan nonaktif, jabatan
 bukan departemen, penolakan master nonaktif pada transaksi baru, pemetaan
 ambigu/pending/confirmed/eksplisit, dan izin per role.
 
-Eksekusi lengkap `python -m pytest tests/` → hasil tercatat di PR. Tidak ada
-data pribadi nyata; seluruh fixture sintetis.
+Eksekusi lengkap `PYTHONPATH=tests python -m unittest discover -s tests` →
+hasil tercatat di PR. Tidak ada data pribadi nyata; seluruh fixture sintetis.
+
+Upgrade lintas-migrasi dibuktikan secara terpisah: DB skema-54 dibangun lalu
+migrasi ke 57 menjalankan **kedua** migrasi (56 milik #43, 57 milik M02);
+`integrity_check` ok, `foreign_key_check` kosong, dan ke-13 tabel master kedua
+milestone ada. Supplier trigger pengganti terpasang.
 
 ## Relasi handoff untuk modul yang belum dibangun
 
