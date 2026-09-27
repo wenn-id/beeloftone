@@ -1428,7 +1428,7 @@ function planSection(plan, admin) {
   if (admin && plan.status === 'draft') actions.push('<button class="action-secondary" data-action="approve-plan">Setujui rencana</button>');
   if (admin && plan.status !== 'closed') actions.push('<button class="action-secondary" data-action="close-plan">Tutup rencana</button>');
   actions.push('<button class="action-secondary" data-action="export-cutting">Unduh CSV cutting</button>');
-  return `<section aria-labelledby="plan-heading"><div class="workspace-subhead"><h2 id="plan-heading" class="workspace-section-title">Rencana cutting</h2><span class="workspace-meta">Kode rencana ${e(plan.plan_code)} · ${e(statusLabel)}</span></div>
+  return `<section aria-labelledby="plan-heading"><div class="workspace-subhead"><h2 id="plan-heading" class="workspace-section-title">Rencana cutting</h2><span class="workspace-meta" style="overflow-wrap:anywhere">Kode rencana ${e(plan.plan_code)} · ${e(statusLabel)}</span></div>
     <div class="utility-panel"><dl class="detail-grid detail-grid-compact">
       <div class="detail-field"><dt>Status</dt><dd>${e(statusLabel)}</dd></div>
       ${plan.start_date ? `<div class="detail-field"><dt>Tanggal mulai</dt><dd>${date(plan.start_date)}</dd></div>` : ''}

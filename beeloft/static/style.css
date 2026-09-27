@@ -159,7 +159,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 /* Focus is immediate and follows each control's shape without changing its radius. */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 input,select,textarea{
-  width:100%;min-height:var(--control-height);padding:.5rem var(--control-padding-x);
+  width:100%;min-width:0;min-height:var(--control-height);padding:.5rem var(--control-padding-x);
   border:1px solid var(--control-line);border-radius:var(--control-radius);
   background:var(--surface);color:var(--ink);font-size:var(--type-control);
 }
