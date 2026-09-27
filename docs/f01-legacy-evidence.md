@@ -63,7 +63,7 @@ Form yang dilaporkan: Create Job, AP Settlement, Cutting, Plan, POS, Cash Receip
 | Payroll payment → kasbon | Cashbon opening/disbursement/installment; deduction pada slip; pembayaran slip; saldo sebelum/sesudah; reversal | Link atomik, saldo kasbon, installment terakhir, batas potongan, paid proof belum terbukti. |
 | POS | Invoice normal, discount percent/fixed, one/multiple tenders, cash/change, partial, refund/void, stock effect, shift reconciliation | Basis diskon, split payment, refund/void, cash/stock transition belum terbukti. |
 | AP | With-PO dan non-PO; PO/receipt/invoice/supplier document; partial/mismatch; settlement/payment proof; outstanding/reversal | Three-way match, non-PO rules, allocation, actual payment, outstanding/reversal belum terbukti. |
-| Accounting/period | COA/journal/closing route, report/download and external books | `/settings/periods` unverified; no inference from payroll period. Accounting source-of-truth unknown. |
+| Accounting/period | Issue #40 prior audit reports that GL/COA/closing were not observed on audited account/menu; `/settings/periods` is unverified | Say ‘tidak terlihat pada akun/menu yang diaudit’; external books/source of truth, period workflow and transaction behavior unknown. No current-session transaction trace. |
 | Master/roles/reports | Required fields, inactive masters, account roles, report file contents | Required flags, permission matrix, download schema, and retirement mapping not established. |
 
 ### Sampling methodology and coverage
@@ -130,3 +130,12 @@ Ke-17 ID berikut memang tercantum di issue #40, tetapi subtask issue masih belum
 ## Hitung sintetis yang boleh dipakai sebagai ilustrasi
 
 Perhitungan berikut adalah matematika pada input buatan, bukan hasil observasi legacy dan bukan policy: 11/12 = 0.916666…; dengan tarif sintetis Rp25.000/lusin hasil perkalian eksak Rp22.916,666…; display/rounding legacy tidak diketahui. Moving-average example, reject treatment, dan opening-balance migration bukan aturan berlaku.
+
+
+## Status D14: direction selected, evidence and detail still open
+
+The user selected target-scope Option B by direct instruction: native COA, journals, GL, trial balance, balance sheet, P&L, reconciliation, and close, delivered by roadmap dependencies; operational events must be traceable, with exports retained for review/transition. This is **direction scope only**, not an approver identity/title/signature, not detailed posting/COA/period approval, and not F01 acceptance.
+
+The legacy audit source only says GL/COA/closing were not observed on the audited account/menu. No current accounting application, legacy transaction, payment, journal, or period close was sampled. Do not phrase this as proof that the business has no accounting system.
+
+One capability evidence is source-code inventory at baseline `96bb48fa8889b3a483411768e2543838e69233b0`, schema 55, documented in the “Akuntansi One” table in `f01-decisions-evidence.md` and `docs/a01-ledger-readiness.md`. It establishes existing operational ledgers/reversals, read-only external snapshots and external payroll journal reconciliation metadata; it does not establish a native GL. Detailed policy, source workflow, and D01–D20 acceptance remain open.

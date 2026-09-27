@@ -499,40 +499,37 @@ What method does legacy currently use? After verifying that, which valuation met
 **Kesiapan:** `NEEDS_COST_AND_ANOMALY_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 
 
-## D14 — Accounting scope, accounts, journal/ledger
+## D14 — Accounting scope and complete native General Ledger
 
-**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+**Status:** `DIRECTION_SELECTED_BY_USER` for target scope only; `DETAIL_POLICY_OPEN`; not `BUSINESS_ACCEPTED`.
 
-The recorded audit menu inventory does not list GL/COA/journal pages; this only describes the audited account/menu inventory, not the whole company accounting process.
+**Aturan legacy yang terbukti (batas sumber):** Issue #40's prior audit report says accounting GL/COA/closing was not observed on the audited account/menu. This means **tidak terlihat pada akun/menu yang diaudit**; it does not establish that accounting does not exist elsewhere or that no external accounting software is used. No legacy transaction or accounting report was sampled in this session.
 
-**Sumber dan keterbatasan:** `EV-F01-0001`, `EV-F01-0017`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+**Perilaku legacy terverifikasi lewat transaksi:** None. No production accounting transaction, payment, journal, or period-close chain was inspected.
 
-**Belum diketahui:**
+**Kemampuan Beeloft One yang terbukti dari kode (baseline `96bb48fa8889b3a483411768e2543838e69233b0`, schema 55):** See the capability table “Akuntansi One” in `f01-decisions-evidence.md` and `docs/a01-ledger-readiness.md`. Existing operational ledgers/reversals, production-cost calculations, read-only Mekari finance snapshots, and external payroll journal metadata/reconciliation exist. These are **not** native GL/journal lines or a complete accounting system. No native COA, journal header/lines, accounting period lock, trial balance, balance sheet/P&L, cash/bank ledger, or period close/reopen was found in the schema-55 inventory. References include `beeloft/payroll_accounting.sql`, `beeloft/mekari_finance_snapshots.sql`, `docs/f02-ownership.csv`, and `docs/f02-shared-contracts.md`.
 
-External accounting tool/process, actual COA, source-of-truth per ledger, data exchange, posting timing, payroll/AP/POS journals.
+**Arah One dipilih pengguna:** Opsi B — native complete accounting in One: COA, journals, GL, trial balance, balance sheet, profit-and-loss, reconciliation, and period close. Build in roadmap stages: prepare transaction/accounting foundations early; have operational modules emit traceable events; complete accounting and reports in dependency order; retain exports to other accounting software for review/transition. This records only the user-selected direction, not a named approver, authority title, detailed accounting policy, acceptance of D14 details, other D01–D20 decisions, audit results, or final F01 acceptance.
 
-**Usulan perubahan untuk One — belum berlaku:**
+**Kekurangan bukti / detail belum diputuskan:** External current accounting system/source of truth; approved COA and control accounts; journal mapping and recognition timing for inventory/COGS, sales/AR, AP, payroll/cashbon and cash/bank; tax; currency/precision/rounding; period calendar/lock/late adjustments/reopen; authorized roles; required/statutory reports; opening balances vs replay; and source-event ownership. #46 and #59 dependencies remain open.
 
-Decide One accounting scope only after mapping the actual company workflow; operational subledger/export vs native GL are alternatives, not settled.
+**Rekomendasi implementasi (proposal teknis, not current policy):** Do not create a second operational ledger. Preserve existing immutable operational event ledgers as source state. Add a native financial projection/journal subsystem with unique source event + revision identity, one journal effect per eligible event, explicit reversal linkage, and reports derived from posted journal lines. Export reports/journals for transition and review. Do not post external snapshots as new economic events. Do not add future charge costs atop existing sewing cost for the same work.
 
-**Alternatif:**
+**Roadmap / owner:** #41 F02 defines shared event/posting/idempotency/reversal contracts; #46 A01 builds COA, accounting periods, journal header/lines/source registry and atomic posting after #41/#44; domain issues #53–#58 build producers/subledgers; #59 A02 builds reconciliation, close/reopen and financial statements after upstream dependencies. Roadmap roles A2/A3 are proposed responsibility allocations, not evidence of a named person's approval. No implementation/schema change in this F01 revision.
 
-A) One operational subledgers with controlled export to existing accounting process. B) One includes native GL/COA/journals.
+**Contoh alur (sintetis, proposal only):** Suppose One records an accepted inventory receipt of 10 units at a documented unit cost of Rp 25,000. Operational receipt ledger remains source of quantity and receipt lineage. Once D13/D14-approved posting mapping exists, a future A01 journal might debit Inventory Rp 250,000 and credit a payable/clearing account Rp 250,000. The receipt itself must not also be counted as an independent second stock ledger. Posting mapping/account/timing are not yet approved; this example does not describe current legacy behavior.
 
-**Contoh sintetis (bukan bukti legacy):**
+**Dampak:** Full accounting enables a trace from operational events to approved journal lines/statements, but adds controls and migration risk. Incorrect mapping or duplicate posting can overstate inventory, expenses, payables, or sales. Staff workflows need COA ownership, review/close controls, reconciliation, and transition exports. Operational balances and financial balances must remain separately traceable.
 
-Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown.
+**Pertanyaan yang masih perlu persetujuan manusia (not re-asking direction):**
+1. Which current system/process owns accounting today, and which historical period/data must remain queryable?
+2. Who is the authorized accounting policy owner, if formally designated? No individual/title is recorded here.
+3. What COA/control-account structure, currency and rounding rules, tax treatment, recognition events, and posting examples should A01 implement?
+4. What fiscal calendar, close/reopen roles, late-adjustment and cross-period reversal policy should #59 enforce?
+5. Which financial statements/reconciliation exports are required, and what existing system must One export to during transition?
+6. For each domain, is history replay required, or may approved opening balances plus immutable archive be used after profiling and reconciliation?
 
-**Dampak jika dipilih:**
-
-Replacement completeness, reconciliation, audit, and finance workload.
-
-**Pertanyaan persetujuan spesifik:**
-
-For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified.
-
-**Kesiapan:** `OWNER_SCOPE_DECISION_POSSIBLE_WITH_EVIDENCE_CAVEAT`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
-
+**Approval request:** D14 target direction already selected by the direct user instruction quoted in this issue context; do not request A/B again. Detailed policy questions above remain open for the authorized accounting owner. No approver identity, role/title, signature or `BUSINESS_ACCEPTED` claim has been invented.
 
 ## D15 — Accounting period close/reopen
 
@@ -743,17 +740,79 @@ What readiness evidence and go/no-go authority are required before legacy shutdo
 
 **Kesiapan:** `NEEDS_OPERATIONS_AND_UAT_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 
-## Pertanyaan yang dapat diputuskan sekarang
+## Status Keputusan Arah D14
 
-1. **D14 — arah scope akuntansi target One saja:** apakah One harus menyediakan GL/COA native, atau boleh memakai sub-ledger dan ekspor ke proses akuntansi lain? Catatan: proses/sistem accounting yang sekarang belum terverifikasi; jawaban ini tidak boleh dipakai untuk menyatakan legacy tidak punya proses accounting.
+Arah cakupan D14 telah ditetapkan oleh pengguna melalui instruksi langsung. **Opsi A/B tidak ditanyakan lagi.**
+- **Pilihan:** **Opsi B — Beeloft One memiliki modul akuntansi lengkap sendiri** (COA, jurnal, buku besar, neraca saldo, neraca, laba rugi, rekonsiliasi, dan tutup buku).
+- **Status terstruktur:** `DIRECTION_SELECTED_BY_USER`; target direction only, bukan persetujuan detail D14 atau persetujuan bisnis atas keputusan D01–D20 lainnya.
+- **Ruang lingkup terpilih:** fondasi transaksi dan akuntansi disiapkan sejak awal; modul operasional menghasilkan transaksi bertaut yang dapat ditelusuri ke posting akuntansi; kelengkapan GL/laporan dibangun bertahap sesuai dependensi; ekspor ke software akuntansi lain boleh disediakan untuk review dan transisi.
+- **Detail tetap OPEN:** COA/akun kontrol, event dan waktu pengakuan, pajak, currency/presisi/pembulatan, kalender/lock/reopen, otorisasi, laporan wajib, sumber akuntansi saat ini, migrasi/replay/saldo awal dan penerimaan accounting owner.
+- **Alternatif arsitektur yang dipertimbangkan:** Opsi A bergantung pada software accounting eksternal tanpa GL native lengkap—ditolak untuk arah target ini; ekspor tetap tersedia sebagai alat transisi/review, bukan pengganti arah native.
+- **Dampak:** staf One perlu alur akun, posting, rekonsiliasi, laporan dan close bertahap; migrasi/pemetaan yang keliru atau posting ganda mengubah saldo/laporan. Tidak ada implementasi atau perubahan DB dalam revisi ini.
+- **Pihak berwenang:** belum diketahui; jangan mengarang nama/jabatan. Pemilihan arah oleh pengguna tidak membuktikan ia bertindak sebagai accounting-policy approver.
+- **Pertanyaan tersisa:** D14 arah tidak lagi perlu dijawab. Detail kebijakan hanya diminta dari accounting owner yang berwenang setelah legacy sample dan kebutuhan laporan/integrasi dihimpun.
+- **Contoh sintetis (bukan bukti legacy):** receipt 10 × Rp25.000 = Rp250.000 dapat menjadi satu sumber operasional dan kelak satu efek jurnal sesuai mapping yang disahkan; contoh ilustratif, bukan jurnal/policy expected result.
+- **Bukti legacy:** belum ada rantai transaksi GL yang diperiksa. Catatan lama hanya menyatakan fitur akuntansi “tidak terlihat pada akun/menu yang diaudit”; bukan bukti sistem tidak memilikinya.
+- **Paket implementasi:** #41 F02 untuk identity/idempotency/posting/reversal contracts; #46 A01 untuk COA/period/journal/source registry/atomic posting setelah #41 dan #44; #53–#58 untuk operational producers/subledgers; #59 A02 untuk reconciliation, statements dan close setelah dependensi. Handoff di `f01-f02-handoff.md`.
 
-Keputusan D01–D13 dan D15–D20 **belum siap diminta sebagai approval final** karena pertanyaan legacy masih dapat dijawab lewat bukti transaksi, laporan, role, atau data operasional yang belum berhasil diakses. Jangan menyetujui formula reject/rework, moving average, penghapusan field, atau saldo awal migrasi berdasarkan paket ini.
+Arah ini bukan persetujuan seluruh detail D14, keputusan D01–D20 lain, hasil audit, atau penerimaan akhir #40. Tidak ada approver identity, role/title, signature atau `BUSINESS_ACCEPTED` yang dicatat.
 
-## Keputusan yang memerlukan pengambilan sampel legacy sebelum diajukan
+## Keputusan Arah Sistem yang Siap Direview Sekarang (Tidak Bergantung pada Sampling Legacy)
 
-- D02–D08: planning/cutting, tarif, job, slip payroll, payment, kasbon, koreksi.
-- D09–D12: kanal sales, POS invoice/tender, refund/void, AP settlement, PO/receipt/payment.
-- D01, D13, D15–D20: field master, stock/cost, accounting close, report, roles, integration, exports/migration, operations.
+Berikut adalah keputusan arah arsitektur dan tata kelola yang tidak bergantung pada pembuktian transaksi backoffice legacy, siap dijawab manusia lengkap dengan contoh dan dampaknya:
+
+1. **D16 — Katalog Laporan Wajib, Format, dan Hak Ekspor:**
+   - *Aturan sekarang & bukti:* Laporan audit terdahulu mencatat Title Reports, tombol download payroll, dan area metrik dashboard (`EV-F01-0014`, `EV-F01-0015`). Isi file unduhan tidak tersimpan di repo.
+   - *Kekurangan bukti:* Format layout persis, kolom, filter timezone, dan pengguna laporan belum terdokumentasi.
+   - *Rekomendasi One:* Standardisasi dokumen operasional PDF (Slip Gaji per karyawan, SPK Cutting/Jahit, Surat Jalan Pengiriman, Struk POS, Bukti Kas Keluar AP) dan ekspor tabular CSV untuk analisis internal.
+   - *Alternatif:* A) Duplikasi persis seluruh file/tampilan lama. B) Konsolidasi template standar industri setelah dikonfirmasi pengguna.
+   - *Contoh alur:* Slip gaji dicetak PDF 1 halaman per karyawan dengan rincian pekerjaan lusin, potongan kasbon, dan take-home pay; ekspor rekap penggajian bulanan berbentuk CSV untuk arsip keuangan.
+   - *Dampak:* Kelancaran administrasi pabrik, kepatuhan audit internal, dan kejelasan bagi pekerja borongan.
+   - *Pertanyaan persetujuan spesifik:* Dokumen cetak apa saja selain Slip Gaji, SPK, dan Bukti Kas yang wajib berformat PDF siap cetak di One fase 1?
+
+2. **D17 — Matriks Hak Akses, Pemisahan Tugas (SoD), dan Privasi Gaji:**
+   - *Aturan sekarang & bukti:* Legacy menampilkan menu Employee dan Position (`EV-F01-0012`). Tidak ada bukti granular per-action permissions dari server.
+   - *Kekurangan bukti:* Matriks izin per role, pemisahan tugas persetujuan (maker-checker), dan pembatasan data upah.
+   - *Rekomendasi One:* Terapkan prinsip hak akses minimal (*least privilege*): data gaji/slip upah hanya dapat dilihat oleh HR/Payroll dan Owner (tertutup dari staf gudang/operator); persetujuan pembayaran supplier tidak boleh disetujui oleh staf pembuat PO (*no self-approval*).
+   - *Alternatif:* A) Samakan hak akses seperti akun admin legacy yang serba bisa. B) Terapkan pemisahan tugas ketat (Owner, Finance, HR, Gudang, Operator Produksi) sejak hari pertama.
+   - *Contoh kasus:* Staf purchasing mengajukan pembayaran AP Rp 5.000.000; sistem mengunci tombol approval agar hanya bisa disahkan oleh Finance Manager atau Owner, bukan staf purchasing itu sendiri.
+   - *Dampak:* Mencegah kecurangan (*fraud*), melindungi kerahasiaan nominal upah borongan, dan memenuhi standar audit.
+   - *Pertanyaan persetujuan spesifik:* Apakah pembuat dokumen (PO/AP/payroll) dilarang menyetujui dokumennya sendiri (wajib maker-checker), dan apakah data gaji wajib diisolasi hanya untuk HR/Owner?
+
+3. **D18 — Strategi Integrasi Kanal Penjualan dan Vendor Fase 1:**
+   - *Aturan sekarang & bukti:* Menu POS tercatat di legacy (`EV-F01-0005`), sedangkan marketplace/Mekari di One saat ini berstatus snapshot read-only (`docs/f02-shared-contracts.md`).
+   - *Kekurangan bukti:* Ketersediaan API vendor live, kestabilan konektor, dan volume transaksi harian per kanal.
+   - *Rekomendasi One:* Pada masa transisi fase 1 cutover, sediakan ekspor-impor data terstruktur (CSV/Excel) untuk software akuntansi dan kanal penjualan; sinkronisasi API live dua arah diaktifkan bertahap setelah stabilitas subledger One terbukti.
+   - *Alternatif:* A) Wajibkan API live terintegrasi sebelum backoffice lama dimatikan. B) Gunakan ekspor/impor berkala untuk masa transisi 1–3 bulan pertama, lalu sambungkan API.
+   - *Contoh alur:* Setiap sore jam 18:00, One mengekspor ringkasan penjualan POS dan ringkasan kas masuk ke format Excel/CSV yang siap diimpor ke software pembukuan masa transisi.
+   - *Dampak:* Mengurangi risiko ketergantungan API eksternal saat peluncuran, menjamin operasional toko/gudang tetap jalan tanpa jeda teknis.
+   - *Pertanyaan persetujuan spesifik:* Apakah integrasi fase 1 cukup menyediakan ekspor data berkala (Opsi B) untuk transisi, atau integrasi API langsung wajib aktif sebelum sistem lama dimatikan?
+
+4. **D20 — Target Pemulihan Operasional (RPO/RTO) dan Kriteria Go/No-Go:**
+   - *Aturan sekarang & bukti:* Baseline One memiliki script backup snapshot lokal (`operations.md`, `tests/test_backup_download.py`). Tidak ada data runbook pemulihan dari backoffice lama (`EV-F01-0018`).
+   - *Kekurangan bukti:* RPO/RTO operasional garmen, jadwal maintenance window, dan toleransi downtime kasir toko.
+   - *Rekomendasi One:* Target RPO <= 1 jam (kehilangan data maksimal 1 jam bila server rusak), RTO <= 4 jam (sistem kembali online dalam 4 jam); jalankan *parallel run* selama 1–2 minggu sebelum sistem legacy resmi dimatikan total.
+   - *Alternatif:* A) *Cutover langsung (big bang)* di awal bulan tanpa parallel run. B) *Parallel run* 1–2 minggu di mana staf menginput data ke kedua sistem sampai saldo akhir terbukti selaras.
+   - *Contoh skenario:* Pada minggu ke-1 bulan cutover, transaksi POS diinput di kedua sistem; setiap malam total omzet dan saldo kas dicocokkan. Bila selisih Rp 0 selama 7 hari berturut-turut, sistem lama dinonaktifkan.
+   - *Dampak:* Mencegah kegagalan fatal pada hari peluncuran, memberikan rasa aman bagi staf operasional garmen dan kasir.
+   - *Pertanyaan persetujuan spesifik:* Apakah manajemen mewajibkan masa uji coba paralel (parallel run) selama 1–2 minggu sebelum penghentian total backoffice lama?
+
+## Keputusan yang Menunggu Penelusuran Transaksi Legacy (Jangan Diputuskan Sebelum Bukti Ada)
+
+Keputusan berikut **tidak diajukan sebagai pertanyaan kebijakan saat ini**, karena jawaban dasarnya harus digali dari transaksi nyata backoffice untuk menjaga kesetaraan fungsi:
+- **D02–D08 (Produksi, Upah, Payroll, Kasbon):**
+  - Keterkaitan pengerjaan job → tarif → slip gaji → status bayar → potongan saldo kasbon.
+  - Perlakuan reject/rework di slip fisik (apakah dipotong dari payable pcs atau ada insentif perbaikan).
+  - Pembulatan pecahan lusin pada rupiah cetak (per baris vs total slip).
+  - *Status:* Menunggu akses sesi baca transaksi nyata backoffice.
+- **D09–D12 (Sales POS & Pembelian AP):**
+  - Transaksi kasir POS: deduksi stok real-time, void/retur barang, dan diskon item vs diskon struk.
+  - Transaksi AP Settlement: kelayakan bayar with-PO vs non-PO, serta pencocokan bukti penerimaan barang gudang (*three-way matching*).
+  - *Status:* Menunggu akses sesi baca transaksi nyata backoffice.
+- **D01, D13, D15, D19 (Master Data, Valuasi Stok, Tutup Buku, Migrasi Saldo):**
+  - Pembentukan harga modal (*Capital*) produk dan investigasi akar penyebab anomali kuantitas negatif dengan SKU kosong (#108).
+  - Profiling data riil (apakah histori transaksi lama bersih untuk di-replay, atau migrasi wajib menggunakan saldo awal cutover).
+  - *Status:* Menunggu sampling dan audit data fisik/database.
 
 ## Persetujuan
 

@@ -134,3 +134,8 @@ Detail keputusan, katalog dokumen, dan syarat freeze ada di
 ## Addendum sumber audit terdahulu
 
 Issue #40 melaporkan audit permukaan UI read-only pada 27 September 2026: dashboard, 30 menu, 8 form, satu detail payroll. Detail saat tersedia di `docs/f01-legacy-evidence.md`; seluruhnya `PRIOR_AUDIT_REPORTED`, bukan transaksi/formula terverifikasi. Payroll→payment→cashbon, POS payment/refund, AP→PO/receipt/payment, permission, report contents, dan seluruh status backend belum ditelusuri. `/settings/periods` tetap `UNVERIFIED`. Tidak ada status Pxx yang ditandai selesai hanya berdasarkan audit permukaan.
+
+
+### D14 capability evidence and roadmap distinction
+
+The current One baseline has domain-specific operational ledgers and reversals and read-only external accounting snapshots/reconciliation. These do not form a native General Ledger. See the capability inventory in `f01-decisions-evidence.md`; references identify current code/tests and limits. Native COA/journal header-lines/source posting are absent from schema 55 inventory; #46 A01 implements foundations after #41/#44, while #59 A02 builds close/reopen, reconciliation and reports after operational producers. Do not create a competing operational ledger or double count a source event. The D14 target direction (Option B) is selected by user instruction; detailed rules remain open.

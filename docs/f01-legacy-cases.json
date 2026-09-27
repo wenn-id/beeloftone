@@ -572,7 +572,7 @@
         "EV-F01-0001",
         "EV-F01-0017"
       ],
-      "description": "Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown. Synthetic example only; it does not establish legacy behavior.",
+      "description": "Synthetic only: illustrative future native-GL receipt posting; D14 direction is selected, but account mapping, recognition, tax, period, and expected accounting result remain unapproved. This does not evidence legacy behavior.",
       "inputs": {
         "example": "Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown.",
         "all_values_synthetic": true
@@ -580,17 +580,15 @@
       "candidate_rule": null,
       "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "status": "DRAFT_SYNTHETIC_DIRECTION_SELECTED_DETAILS_OPEN",
       "unresolved_questions": [
         "External accounting tool/process, actual COA, source-of-truth per ledger, data exchange, posting timing, payroll/AP/POS journals.",
-        "For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified."
+        "For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified.",
+        "Selected target scope: native full accounting Option B; still need authorized accounting owner to decide COA/accounts, posting events/timing, taxes, precision/rounding, period lock/late adjustments, reports, roles, and migration.",
+        "No legacy transaction or external accounting source was sampled; current accounting workflow remains unknown."
       ],
-      "approvals": {
-        "status": "PENDING",
-        "approved_by": null,
-        "approved_at": null,
-        "reference": null
-      }
+      "approvals": [],
+      "synthetic": true
     },
     {
       "id": "SYN-D15",

@@ -1,5 +1,7 @@
 # Handoff F01 ke F02 (#41)
 
+D14 target scope: **Opsi B dipilih pengguna** (native full accounting); detail kebijakan dan penerimaan D14 tetap OPEN. Pernyataan ini tidak mengubah kontrak F02 atau fixture `tests/fixtures/f02-contracts.json`.
+
 Status: **DRAFT / BLOCKED ON LEGACY EVIDENCE**. Ini bukan final business contract dan tidak menyatakan F02 accepted.
 
 | Dxx | rule_version | Pxx | EXxx/case_ids | evidence_ids | F02 scenario | decision_status | impact | remaining_blocker |
@@ -31,3 +33,18 @@ Status: **DRAFT / BLOCKED ON LEGACY EVIDENCE**. Ini bukan final business contrac
 - Rules ready for technical contract after owner acceptance: preserve explicit separation of observed fields vs derived behavior; each rule still needs versioned expected results.
 - Blockers: no linked transaction traces for payroll/cashbon, POS, or AP; no source documents, role matrix, accounting workflow, migration profile, or operations sign-off.
 - #41 may continue source inventory, but must mark decision-derived assertions as provisional until D01–D20 are approved.
+
+
+## D14 direction-to-roadmap handoff (not final contract)
+
+| Capability | Proven existing in One at schema 55 | Gap / next package |
+|---|---|---|
+| Operational event ledgers and reversals | Domain-specific immutable records, movements, reversals; source inventory in `f02-ownership.csv`; examples in inventory table `f01-decisions-evidence.md` | Preserve as operational source ledgers. #41 must establish stable event identity/revision and one-time posting link; producers land in domain issues. |
+| Costing and stock operations | Production-cost calculation and inventory operational movements; see `docs/a01-ledger-readiness.md`, `tests/test_production_cost.py` | No complete policy/financial inventory valuation or journalized WIP/COGS; #53 I01 + #46 A01 and #59 A02 after D13. |
+| External accounting evidence | Read-only Mekari finance snapshot aggregate and payroll posting metadata/reconciliation; `beeloft/mekari_finance_snapshots.sql`, `beeloft/payroll_accounting.sql`, relevant tests | External snapshots are not native One balances/journals and must not be double-counted. #51 X01 remains connector/snapshot scope. |
+| Native COA, period, journal header/lines, source registry, atomic posting | Not found in schema-55 ownership inventory; `docs/a01-ledger-readiness.md` explicitly records absence | #46 A01 after #41 F02 and #44 M02, with D14/D15 detailed policy. No implementation in this F01 docs revision. |
+| Native bank/payment/AR/AP ledgers and event posting | Existing operational approvals/settlements do not prove cash movement, allocation or GL posting | #54 B02, #55/#56, #57/#58 producer subledgers; #46 posting contract then #59 reconciliation. |
+| Trial balance, statements, reconcile, close/reopen and period lock | Not found in schema 55 inventory; period locking explicitly “belum diimplementasikan” in F02 | #59 A02 after #46 and domain dependencies; trial balance/BS/P&L and reconciliation derive from posted journal lines. |
+| No duplicate operational/financial ledger | Current operational ledgers already track physical/domain state | #41 source identity/revision + idempotency and #46 unique source-to-journal effect; financial journal is a projection, not a second quantity/state ledger. Existing sewing cost and future charge must not double count. |
+
+**Selected architecture direction:** prepare transaction/accounting foundations early (#41/#46), make operational producers emit traceable events, build full statements and close controls in dependency order (#59), and retain exports for transition/review. A/B direction is settled by user instruction only. COA/timing/tax/currency/rounding/period/roles/migration/report detail remains open. Roadmap A2/A3 are responsibility-role labels, not recorded business approvers.

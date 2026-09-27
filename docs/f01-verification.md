@@ -1,6 +1,6 @@
 # Verifikasi F01 — status aktual
 
-Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**. Issue #40 tetap OPEN. Status ini memisahkan pemeriksaan dokumen dari penerimaan bisnis.
+Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**. D14 target direction Option B selected by user instruction; detailed policy remains open. Issue #40 tetap OPEN. Status ini memisahkan pemeriksaan dokumen dari penerimaan bisnis.
 
 - Execution baseline tercatat: `96bb48fa8889b3a483411768e2543838e69233b0`, versi aplikasi 0.114.0, schema 55.
 - Prior audit di Issue #40 bertanggal 27 September 2026 hanya mencatat tanggal; jam observasi dan transaction sampling tidak tersedia.
@@ -8,6 +8,14 @@ Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**
 - `/settings/periods` tidak didukung bukti sumber audit yang tersedia dan kini `UNVERIFIED`. Lihat `EV-F01-0019`.
 - T03/T04 transaction traces belum dilakukan: jobs/payroll/payment/cashbon, POS/tenders/returns, AP/PO/receipt/payment. T01–T08 tidak dinyatakan selesai.
 - Contoh JSON adalah ilustrasi sintetis; tidak menetapkan expected business results atau perilaku legacy.
+
+## D14 decision and code-scope verification
+
+- Direction selected: native complete accounting in One (COA, journals, GL, trial balance, balance sheet, P&L, reconciliation, period close), with staged foundation/producers/reports and export for transition. This records only user-selected scope; no named approver/title/signature or detailed policy sign-off.
+- Repository baseline inventory examined: `docs/a01-ledger-readiness.md`, `docs/f02-shared-contracts.md`, `docs/f02-ownership.csv`, `beeloft/payroll_accounting.sql`, `beeloft/mekari_finance_snapshots.sql`, payroll reconciliation plan/verification and referenced tests, at `96bb48fa8889b3a483411768e2543838e69233b0`.
+- Existing: operational domain ledgers/reversals; production-cost calculation; immutable read-only external Mekari finance snapshots; external payroll posting metadata and reconciliation; approval workflows separate from payment/posting.
+- Missing per schema-55 inventory: native COA, accounting period master/lock, native journal header/lines/source registry, native trial balance, balance sheet/P&L, cash/bank/AR/AP accounting, close/reopen. Do not duplicate operational ledgers; post each eligible source event once. #41 contracts, #46 A01 foundation, domain producers #53–#58, #59 A02 reconciliation/statements/period controls.
+- User's direction does not approve accounting policies, detailed D14, other D decisions, legacy behavior or final F01 acceptance.
 
 ## Checkpoint
 
