@@ -1,5 +1,5 @@
 {
-  "revision": "F01-CASES-20260927-4",
+  "revision": "F01-CASES-20260927-6",
   "execution_baseline": "96bb48fa8889b3a483411768e2543838e69233b0",
   "synthetic": true,
   "generated_at_wib": "2026-09-27 ~13:40 WIB",
@@ -31,7 +31,9 @@
     "EV-F01-0025",
     "EV-F01-0026",
     "EV-F01-0027",
-    "EV-F01-0028"
+    "EV-F01-0028",
+    "EV-F01-0029",
+    "EV-F01-0030"
   ],
   "decisions": [
     {
