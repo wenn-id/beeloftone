@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
+from beeloft.contracts import money_to_minor, parse_money
 from beeloft.labels import bundle_scan_code, finished_goods_scan_code, material_batch_scan_code
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
@@ -175,6 +176,8 @@ def audit_category(operation):
         return 'materials'
     if root == 'supplier' or root.startswith('product') or root == 'workforce-employee':
         return 'master_data'
+    if root in ('uom', 'color', 'size'):
+        return 'master_data'
     return 'production'
 
 
@@ -215,7 +218,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -360,6 +363,39 @@ class Store:
                     if name not in columns:
                         db.execute(f'ALTER TABLE final_qc_records ADD COLUMN {name} {definition}')
                 db.executescript(Path(__file__).with_name('rework_completions.sql').read_text(encoding='utf-8'))
+            if version < 56:
+                # Kolom master katalog ditambahkan kondisional (mengikuti pola
+                # migrasi 55): pola upgrade-rollback pada test memutar balik
+                # user_version padahal kolomnya sudah ada di tabel.
+                catalog_columns = {
+                    'products': {row['name'] for row in db.execute('PRAGMA table_info(products)')},
+                    'materials': {row['name'] for row in db.execute('PRAGMA table_info(materials)')},
+                }
+                catalog_additions = {
+                    'products': {
+                        'category_id': 'TEXT',
+                        'subcategory_id': 'TEXT',
+                        'type_id': 'TEXT',
+                        'series_id': 'TEXT',
+                        'color_id': 'TEXT',
+                        'size_id': 'TEXT',
+                        'uom_code': "TEXT NOT NULL DEFAULT 'PCS'",
+                        'active': 'INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1))',
+                    },
+                    'materials': {
+                        'class_id': 'TEXT',
+                        'description': 'TEXT',
+                        'reference_price_minor': 'INTEGER CHECK(reference_price_minor IS NULL OR reference_price_minor > 0)',
+                        'reference_price_currency': "TEXT NOT NULL DEFAULT 'IDR'",
+                        'active': 'INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1))',
+                    },
+                }
+                for table, additions in catalog_additions.items():
+                    existing = catalog_columns[table]
+                    for name, definition in additions.items():
+                        if name not in existing:
+                            db.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
+                db.executescript(Path(__file__).with_name('master_catalog.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -676,17 +712,6 @@ class Store:
             more=len(rows)>limit;rows=rows[:limit]
             return {'total':total,'items':rows,
                     'next_before':rows[-1]['sequence'] if more else None}
-
-    def create_product(self, payload, actor, key):
-        def perform(db):
-            record = {"id": str(uuid4()), **payload, "created_by": actor["id"], "created_at": now()}
-            db.execute("INSERT INTO products VALUES(:id,:sku,:name,:color,:size,:created_by,:created_at)", record)
-            return record
-        return self._write(actor, ("admin",), key, "product", payload, perform)
-
-    def products(self, limit=100, offset=0):
-        with self.transaction() as db:
-            return [dict(row) for row in db.execute("SELECT * FROM products ORDER BY sku LIMIT ? OFFSET ?", (limit, offset))]
 
     def product_identities(self, limit=100, offset=0):
         """Identitas produk saja. Dipakai jalur yang hanya perlu memilih entity, bukan detailnya."""
@@ -2015,17 +2040,6 @@ class Store:
             return {'status':status,'query':query.strip(),'total':len(scoped),'limit':limit,
                     'offset':offset,'summary':summary,'items':scoped[offset:offset+limit]}
 
-    def create_material(self, payload, actor, key):
-        def perform(db):
-            record = {'id':str(uuid4()), **payload, 'created_by':actor['id'], 'created_at':now()}
-            db.execute('INSERT INTO materials VALUES(:id,:code,:name,:unit,:created_by,:created_at)', record)
-            return record
-        return self._write(actor, ('admin',), key, 'material', payload, perform)
-
-    def materials(self, limit=100, offset=0):
-        with self.transaction() as db:
-            return [dict(row) for row in db.execute('SELECT * FROM materials ORDER BY code,id LIMIT ? OFFSET ?', (limit, offset))]
-
     @staticmethod
     def _material_amount(quantity, unit):
         amount = Decimal(quantity)
@@ -2038,6 +2052,528 @@ class Store:
     @staticmethod
     def _material_decimal(milli):
         return format(Decimal(milli) / 1000, '.3f')
+
+    # ------------------------------------------------------------------
+    # M01 master katalog (issue #43)
+    # ------------------------------------------------------------------
+
+    MASTER_CATALOG = {
+        'uom': {'table': 'uoms', 'label': 'Satuan', 'operation': 'uom',
+                'extras': ('range_text', 'note')},
+        'product_category': {'table': 'product_categories', 'label': 'Kategori produk',
+                             'operation': 'product-category'},
+        'product_subcategory': {'table': 'product_subcategories', 'label': 'Subkategori produk',
+                                'operation': 'product-subcategory',
+                                'parent': ('category_id', 'product_categories', 'Kategori produk')},
+        'product_type': {'table': 'product_types', 'label': 'Tipe produk',
+                         'operation': 'product-type',
+                         'parent': ('subcategory_id', 'product_subcategories', 'Subkategori produk')},
+        'product_series': {'table': 'product_series', 'label': 'Seri produk',
+                           'operation': 'product-series'},
+        'color': {'table': 'colors', 'label': 'Warna', 'operation': 'color'},
+        'size': {'table': 'sizes', 'label': 'Ukuran', 'operation': 'size',
+                 'extras': ('sort_order',)},
+        'material_class': {'table': 'material_classes', 'label': 'Klasifikasi bahan',
+                           'operation': 'material-class',
+                           'parent': ('parent_id', 'material_classes', 'Klasifikasi induk'),
+                           'leveled': True},
+    }
+
+    @classmethod
+    def _master_spec(cls, kind):
+        try:
+            return cls.MASTER_CATALOG[kind]
+        except KeyError:
+            raise DomainError(404, 'Jenis master katalog tidak dikenal.') from None
+
+    def _catalog_row(self, db, table, label, row_id):
+        row = db.execute(f'SELECT * FROM {table} WHERE id=?', (row_id,)).fetchone()
+        if not row:
+            raise DomainError(404, f'{label} tidak ditemukan.')
+        return dict(row)
+
+    def _catalog_require_active(self, db, table, label, row_id):
+        row = self._catalog_row(db, table, label, row_id)
+        if not row['active']:
+            raise DomainError(422, f'{label} "{row["code"]}" nonaktif; tidak dapat dipakai untuk data baru.')
+        return row
+
+    def master_list(self, kind, q='', status='all', limit=100, offset=0):
+        spec = self._master_spec(kind)
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        table = spec['table']
+        parent = spec.get('parent')
+        join, parent_cols = '', ''
+        if parent:
+            join = f' LEFT JOIN {parent[1]} p ON p.id=t.{parent[0]}'
+            parent_cols = ',p.code AS parent_code,p.name AS parent_name'
+        order = 't.sort_order,t.code' if kind == 'size' else 't.code'
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute(f'''SELECT t.*{parent_cols} FROM {table} t{join}
+                WHERE (:status='all' OR (:status='active' AND t.active=1) OR (:status='inactive' AND t.active=0))
+                  AND (:q='' OR instr(lower(t.code||' '||t.name),:q)>0)
+                ORDER BY {order} LIMIT :limit OFFSET :offset''', params)
+            return [dict(r) for r in rows]
+
+    def create_master(self, kind, payload, actor, key):
+        spec = self._master_spec(kind)
+        def perform(db):
+            record = {'id': str(uuid4()), 'code': payload['code'], 'name': payload['name'].strip(),
+                      'active': 1, 'created_by': actor['id'], 'created_at': now()}
+            parent = spec.get('parent')
+            if parent:
+                fk, ptable, plabel = parent
+                pid = (payload.get(fk) or '').strip()
+                if kind == 'material_class':
+                    level = payload['level']
+                    record['level'] = level
+                    if level == 1:
+                        if pid:
+                            raise DomainError(422, 'Klasifikasi level 1 tidak memiliki induk.')
+                        record['parent_id'] = None
+                    else:
+                        if not pid:
+                            raise DomainError(422, 'Klasifikasi level 2/3 wajib memiliki induk.')
+                        prow = self._catalog_require_active(db, ptable, plabel, pid)
+                        if prow['level'] != level - 1:
+                            raise DomainError(422, f'Induk klasifikasi harus level {level - 1}.')
+                        record['parent_id'] = pid
+                else:
+                    if not pid:
+                        raise DomainError(422, f'{plabel} wajib diisi.')
+                    self._catalog_require_active(db, ptable, plabel, pid)
+                    record[fk] = pid
+            for extra in spec.get('extras', ()):
+                if extra == 'sort_order':
+                    record[extra] = payload.get('sort_order', 0)
+                else:
+                    record[extra] = (payload.get(extra) or '').strip() or None
+            try:
+                db.execute(f'INSERT INTO {spec["table"]}({",".join(record)}) VALUES({",".join(":"+k for k in record)})', record)
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode {spec["label"]} "{record["code"]}" sudah dipakai.') from exc
+                raise
+            return self._catalog_row(db, spec['table'], spec['label'], record['id'])
+        return self._write(actor, ('admin',), key, spec['operation'], payload, perform)
+
+    def update_master(self, kind, row_id, payload, actor, key):
+        spec = self._master_spec(kind)
+        def perform(db):
+            current = self._catalog_row(db, spec['table'], spec['label'], row_id)
+            updates = {}
+            if payload.get('name') is not None:
+                updates['name'] = payload['name'].strip()
+            if payload.get('active') is not None:
+                updates['active'] = 1 if payload['active'] else 0
+            for extra in spec.get('extras', ()):
+                if extra in ('range_text', 'note'):
+                    if payload.get(extra) is not None:
+                        updates[extra] = (payload[extra] or '').strip() or None
+                elif extra == 'sort_order' and payload.get('sort_order') is not None:
+                    updates['sort_order'] = payload['sort_order']
+            parent = spec.get('parent')
+            if parent:
+                fk, ptable, plabel = parent
+                if payload.get(fk) is not None:
+                    pid = (payload[fk] or '').strip()
+                    if kind == 'material_class':
+                        if pid == row_id:
+                            raise DomainError(422, 'Klasifikasi tidak dapat menjadi induk bagi dirinya sendiri.')
+                        if current['level'] == 1:
+                            if pid:
+                                raise DomainError(422, 'Klasifikasi level 1 tidak memiliki induk.')
+                            updates['parent_id'] = None
+                        else:
+                            if not pid:
+                                raise DomainError(422, 'Klasifikasi level 2/3 wajib memiliki induk.')
+                            prow = self._catalog_require_active(db, ptable, plabel, pid)
+                            if prow['level'] != current['level'] - 1:
+                                raise DomainError(422, f'Induk klasifikasi harus level {current["level"] - 1}.')
+                            updates['parent_id'] = pid
+                    else:
+                        if not pid:
+                            raise DomainError(422, f'{plabel} wajib diisi.')
+                        self._catalog_require_active(db, ptable, plabel, pid)
+                        updates[fk] = pid
+            if not updates:
+                raise DomainError(422, 'Tidak ada perubahan yang disimpan.')
+            updates = {k: v for k, v in updates.items() if current.get(k) != v}
+            if not updates:
+                raise DomainError(409, f'{spec["label"]} tidak berubah.')
+            sets = ', '.join(f'{k}=:{k}' for k in updates)
+            db.execute(f'UPDATE {spec["table"]} SET {sets} WHERE id=:id', {'id': row_id, **updates})
+            return self._catalog_row(db, spec['table'], spec['label'], row_id)
+        return self._write(actor, ('admin',), key, f'{spec["operation"]}:{row_id}', payload, perform)
+
+    # -- klasifikasi produk -------------------------------------------------
+
+    def _product_classification(self, db, values, changed=None):
+        """Validasi relasi klasifikasi produk; values None = kosong.
+
+        changed=None (create): seluruh referensi wajib aktif.
+        changed=set (update): hanya field yang diubah wajib aktif; referensi
+        lama yang tidak disentuh cukup harus ada (boleh nonaktif) supaya
+        riwayat tetap terbaca dan perubahan lain tidak terhalang.
+        """
+        out = {}
+        def require(table, label, row_id, field):
+            if changed is None or field in changed:
+                return self._catalog_require_active(db, table, label, row_id)
+            return self._catalog_row(db, table, label, row_id)
+        category_id = values.get('category_id') or None
+        subcategory_id = values.get('subcategory_id') or None
+        type_id = values.get('type_id') or None
+        if changed is not None:
+            # Menempelkan child baru berarti menegaskan ulang rantai induknya,
+            # sehingga induk yang ikut terimplikasi wajib aktif juga.
+            if 'type_id' in changed:
+                changed = set(changed) | {'subcategory_id', 'category_id'}
+            if 'subcategory_id' in changed:
+                changed = set(changed) | {'category_id'}
+        if category_id:
+            require('product_categories', 'Kategori produk', category_id, 'category_id')
+        if subcategory_id:
+            sub = require('product_subcategories', 'Subkategori produk', subcategory_id, 'subcategory_id')
+            if not category_id or sub['category_id'] != category_id:
+                raise DomainError(422, 'Subkategori tidak berada di bawah kategori yang dipilih.')
+        elif type_id:
+            raise DomainError(422, 'Tipe produk wajib berada di bawah subkategori.')
+        if type_id:
+            typ = require('product_types', 'Tipe produk', type_id, 'type_id')
+            if typ['subcategory_id'] != subcategory_id:
+                raise DomainError(422, 'Tipe produk tidak berada di bawah subkategori yang dipilih.')
+        for field, table, label in (('series_id', 'product_series', 'Seri produk'),
+                                    ('color_id', 'colors', 'Warna'),
+                                    ('size_id', 'sizes', 'Ukuran')):
+            value = values.get(field) or None
+            if value:
+                require(table, label, value, field)
+            out[field] = value
+        out.update(category_id=category_id, subcategory_id=subcategory_id, type_id=type_id)
+        uom_code = (values.get('uom_code') or 'PCS').strip().upper()
+        uom = db.execute('SELECT code,active FROM uoms WHERE code=?', (uom_code,)).fetchone()
+        if not uom:
+            raise DomainError(404, f'Satuan "{uom_code}" tidak ditemukan.')
+        if (changed is None or 'uom_code' in changed) and not uom['active']:
+            raise DomainError(422, f'Satuan "{uom_code}" nonaktif.')
+        if uom['code'] != 'PCS':
+            raise DomainError(422, 'Satuan produk harus PCS; lusin hanya tampilan turunan eksak (12 pcs = 1 lusin).')
+        out['uom_code'] = 'PCS'
+        return out
+
+    def _product_detail(self, db, product_id):
+        row = db.execute('''SELECT p.*,c.name AS category_name,sc.name AS subcategory_name,
+            t.name AS type_name,s.name AS series_name,col.name AS color_name,sz.name AS size_name,
+            u.name AS uom_name
+            FROM products p
+            LEFT JOIN product_categories c ON c.id=p.category_id
+            LEFT JOIN product_subcategories sc ON sc.id=p.subcategory_id
+            LEFT JOIN product_types t ON t.id=p.type_id
+            LEFT JOIN product_series s ON s.id=p.series_id
+            LEFT JOIN colors col ON col.id=p.color_id
+            LEFT JOIN sizes sz ON sz.id=p.size_id
+            LEFT JOIN uoms u ON u.code=p.uom_code
+            WHERE p.id=?''', (product_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'SKU tidak ditemukan.')
+        return dict(row)
+
+    def products(self, limit=100, offset=0, q='', status='all', category_id=''):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit,
+                  'offset': offset, 'category_id': category_id or None}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT p.*,c.name AS category_name,t.name AS type_name,s.name AS series_name
+                FROM products p
+                LEFT JOIN product_categories c ON c.id=p.category_id
+                LEFT JOIN product_types t ON t.id=p.type_id
+                LEFT JOIN product_series s ON s.id=p.series_id
+                WHERE (:status='all' OR (:status='active' AND p.active=1) OR (:status='inactive' AND p.active=0))
+                  AND (:category_id IS NULL OR p.category_id=:category_id)
+                  AND (:q='' OR instr(lower(p.sku||' '||p.name||' '||p.color||' '||p.size),:q)>0)
+                ORDER BY p.sku LIMIT :limit OFFSET :offset''', params)
+            return [dict(r) for r in rows]
+
+    def create_product(self, payload, actor, key):
+        def perform(db):
+            classification = self._product_classification(db, payload)
+            record = {'id': str(uuid4()), 'sku': payload['sku'], 'name': payload['name'],
+                      'color': payload['color'], 'size': payload['size'], **classification,
+                      'active': 1, 'created_by': actor['id'], 'created_at': now()}
+            try:
+                db.execute('''INSERT INTO products(id,sku,name,color,size,category_id,subcategory_id,
+                    type_id,series_id,color_id,size_id,uom_code,active,created_by,created_at)
+                    VALUES(:id,:sku,:name,:color,:size,:category_id,:subcategory_id,:type_id,
+                    :series_id,:color_id,:size_id,:uom_code,:active,:created_by,:created_at)''', record)
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'SKU "{payload["sku"]}" sudah dipakai produk lain.') from exc
+                raise
+            return record
+        return self._write(actor, ("admin",), key, "product", payload, perform)
+
+    def update_product(self, product_id, payload, actor, key):
+        def perform(db):
+            row = db.execute('SELECT * FROM products WHERE id=?', (product_id,)).fetchone()
+            if not row:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            current = dict(row)
+            updates = {}
+            for field in ('name', 'color', 'size'):
+                if payload.get(field) is not None:
+                    updates[field] = payload[field]
+            merged = {}
+            changed = set()
+            for field in ('category_id', 'subcategory_id', 'type_id', 'series_id', 'color_id', 'size_id'):
+                value = payload.get(field)
+                if value is None:
+                    merged[field] = current[field]
+                elif value == '':
+                    merged[field] = None
+                    changed.add(field)
+                else:
+                    merged[field] = value
+                    changed.add(field)
+            merged['uom_code'] = payload.get('uom_code') or current['uom_code']
+            if payload.get('uom_code'):
+                changed.add('uom_code')
+            updates.update(self._product_classification(db, merged, changed))
+            if payload.get('active') is not None:
+                updates['active'] = 1 if payload['active'] else 0
+            updates = {k: v for k, v in updates.items() if current.get(k) != v}
+            if not updates:
+                raise DomainError(409, 'Produk tidak berubah. Ubah nama, klasifikasi, atau status sebelum menyimpan.')
+            sets = ', '.join(f'{k}=:{k}' for k in updates)
+            db.execute(f'UPDATE products SET {sets} WHERE id=:id', {'id': product_id, **updates})
+            return self._product_detail(db, product_id)
+        return self._write(actor, ('admin',), key, 'product:' + product_id, payload, perform)
+
+    # -- bahan --------------------------------------------------------------
+
+    def _material_detail(self, db, material_id):
+        row = db.execute('''SELECT m.*,mc.code AS class_code,mc.name AS class_name,mc.level AS class_level
+            FROM materials m LEFT JOIN material_classes mc ON mc.id=m.class_id WHERE m.id=?''',
+            (material_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Bahan tidak ditemukan.')
+        record = dict(row)
+        record['reference_price'] = (format(Decimal(record['reference_price_minor']) / 100, '.2f')
+                                     if record['reference_price_minor'] is not None else None)
+        return record
+
+    def materials(self, limit=100, offset=0, q='', status='all', class_id=''):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit,
+                  'offset': offset, 'class_id': class_id or None}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT m.*,mc.code AS class_code,mc.name AS class_name,mc.level AS class_level
+                FROM materials m LEFT JOIN material_classes mc ON mc.id=m.class_id
+                WHERE (:status='all' OR (:status='active' AND m.active=1) OR (:status='inactive' AND m.active=0))
+                  AND (:class_id IS NULL OR m.class_id=:class_id)
+                  AND (:q='' OR instr(lower(m.code||' '||m.name),:q)>0)
+                ORDER BY m.code LIMIT :limit OFFSET :offset''', params)
+            records = []
+            for row in rows:
+                record = dict(row)
+                record['reference_price'] = (format(Decimal(record['reference_price_minor']) / 100, '.2f')
+                                             if record['reference_price_minor'] is not None else None)
+                records.append(record)
+            return records
+
+    def create_material(self, payload, actor, key):
+        def perform(db):
+            class_id = (payload.get('class_id') or '').strip() or None
+            if class_id:
+                self._catalog_require_active(db, 'material_classes', 'Klasifikasi bahan', class_id)
+            reference_price_minor = None
+            if payload.get('reference_price'):
+                try:
+                    reference_price_minor = money_to_minor(parse_money(payload['reference_price']))
+                except ValueError as exc:
+                    raise DomainError(422, f'Harga referensi tidak valid: {exc}') from exc
+            record = {'id': str(uuid4()), 'code': payload['code'], 'name': payload['name'],
+                      'unit': payload['unit'], 'class_id': class_id,
+                      'description': (payload.get('description') or '').strip() or None,
+                      'reference_price_minor': reference_price_minor,
+                      'reference_price_currency': 'IDR', 'active': 1,
+                      'created_by': actor['id'], 'created_at': now()}
+            try:
+                db.execute('''INSERT INTO materials(id,code,name,unit,class_id,description,
+                    reference_price_minor,reference_price_currency,active,created_by,created_at)
+                    VALUES(:id,:code,:name,:unit,:class_id,:description,:reference_price_minor,
+                    :reference_price_currency,:active,:created_by,:created_at)''', record)
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode bahan "{payload["code"]}" sudah dipakai.') from exc
+                raise
+            return self._material_detail(db, record['id'])
+        return self._write(actor, ("admin",), key, "material", payload, perform)
+
+    def update_material(self, material_id, payload, actor, key):
+        def perform(db):
+            row = db.execute('SELECT * FROM materials WHERE id=?', (material_id,)).fetchone()
+            if not row:
+                raise DomainError(404, 'Bahan tidak ditemukan.')
+            current = dict(row)
+            updates = {}
+            if payload.get('class_id') is not None:
+                class_id = (payload['class_id'] or '').strip() or None
+                if class_id:
+                    self._catalog_require_active(db, 'material_classes', 'Klasifikasi bahan', class_id)
+                updates['class_id'] = class_id
+            if payload.get('description') is not None:
+                updates['description'] = (payload['description'] or '').strip() or None
+            if payload.get('reference_price') is not None:
+                price = (payload['reference_price'] or '').strip()
+                if price:
+                    try:
+                        updates['reference_price_minor'] = money_to_minor(parse_money(price))
+                    except ValueError as exc:
+                        raise DomainError(422, f'Harga referensi tidak valid: {exc}') from exc
+                else:
+                    updates['reference_price_minor'] = None
+            if payload.get('active') is not None:
+                updates['active'] = 1 if payload['active'] else 0
+            if not updates:
+                raise DomainError(422, 'Tidak ada perubahan yang disimpan.')
+            updates = {k: v for k, v in updates.items() if current.get(k) != v}
+            if not updates:
+                raise DomainError(409, 'Bahan tidak berubah.')
+            sets = ', '.join(f'{k}=:{k}' for k in updates)
+            db.execute(f'UPDATE materials SET {sets} WHERE id=:id', {'id': material_id, **updates})
+            return self._material_detail(db, material_id)
+        return self._write(actor, ('admin',), key, 'material:' + material_id, payload, perform)
+
+    # -- template BOM -------------------------------------------------------
+
+    def _bom_template(self, db, template_id):
+        row = db.execute('''SELECT t.*,pt.name AS product_type_name
+            FROM bom_templates t LEFT JOIN product_types pt ON pt.id=t.product_type_id
+            WHERE t.id=?''', (template_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Template BOM tidak ditemukan.')
+        record = dict(row)
+        record['components'] = json.loads(record['components'])
+        return record
+
+    def bom_templates(self, q='', status='all', limit=100, offset=0):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT t.*,pt.name AS product_type_name
+                FROM bom_templates t LEFT JOIN product_types pt ON pt.id=t.product_type_id
+                WHERE (:status='all' OR (:status='active' AND t.active=1) OR (:status='inactive' AND t.active=0))
+                  AND (:q='' OR instr(lower(t.code||' '||t.name),:q)>0)
+                ORDER BY t.code LIMIT :limit OFFSET :offset''', params)
+            records = [dict(r) for r in rows]
+            for record in records:
+                record['components'] = json.loads(record['components'])
+            return records
+
+    def _validate_template_components(self, db, components):
+        validated, seen = [], set()
+        for component in components:
+            material_id = component['material_id']
+            if material_id in seen:
+                raise DomainError(422, 'Gabungkan bahan yang sama menjadi satu baris template.')
+            seen.add(material_id)
+            material = db.execute('SELECT unit,active,code FROM materials WHERE id=?', (material_id,)).fetchone()
+            if not material:
+                raise DomainError(404, 'Bahan template tidak ditemukan.')
+            if not material['active']:
+                raise DomainError(422, f'Bahan {material["code"]} nonaktif; tidak dapat dipakai pada template baru.')
+            self._material_amount(component['quantity'], material['unit'])
+            validated.append({'material_id': material_id, 'quantity': component['quantity']})
+        return sorted(validated, key=lambda c: c['material_id'])
+
+    def create_bom_template(self, payload, actor, key):
+        def perform(db):
+            product_type_id = (payload.get('product_type_id') or '').strip() or None
+            if product_type_id:
+                self._catalog_require_active(db, 'product_types', 'Tipe produk', product_type_id)
+            components = self._validate_template_components(db, payload['components'])
+            record = {'id': str(uuid4()), 'code': payload['code'], 'name': payload['name'].strip(),
+                      'product_type_id': product_type_id, 'components': json.dumps(components),
+                      'active': 1, 'created_by': actor['id'], 'created_at': now()}
+            try:
+                db.execute('''INSERT INTO bom_templates(id,code,name,product_type_id,components,active,created_by,created_at)
+                    VALUES(:id,:code,:name,:product_type_id,:components,:active,:created_by,:created_at)''', record)
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode template "{payload["code"]}" sudah dipakai.') from exc
+                raise
+            return self._bom_template(db, record['id'])
+        return self._write(actor, ('admin',), key, 'bom-template', payload, perform)
+
+    def update_bom_template(self, template_id, payload, actor, key):
+        def perform(db):
+            current = self._bom_template(db, template_id)
+            updates = {}
+            if payload.get('name') is not None:
+                updates['name'] = payload['name'].strip()
+            if payload.get('active') is not None:
+                updates['active'] = 1 if payload['active'] else 0
+            if payload.get('product_type_id') is not None:
+                product_type_id = (payload['product_type_id'] or '').strip() or None
+                if product_type_id:
+                    self._catalog_require_active(db, 'product_types', 'Tipe produk', product_type_id)
+                updates['product_type_id'] = product_type_id
+            if payload.get('components') is not None:
+                updates['components'] = json.dumps(self._validate_template_components(db, payload['components']))
+            updates = {k: v for k, v in updates.items() if current.get(k) != v}
+            if not updates:
+                raise DomainError(409, 'Template tidak berubah.')
+            sets = ', '.join(f'{k}=:{k}' for k in updates)
+            db.execute(f'UPDATE bom_templates SET {sets} WHERE id=:id', {'id': template_id, **updates})
+            return self._bom_template(db, template_id)
+        return self._write(actor, ('admin',), key, 'bom-template:' + template_id, payload, perform)
+
+    def _save_bom_revision(self, db, product_id, payload, actor):
+        current = self._bom(db, product_id)
+        if current['revision'] != payload['expected_revision']:
+            raise DomainError(409, 'BOM sudah berubah. Tutup form, muat ulang BOM, lalu periksa versi terbaru.')
+        components = sorted(payload['components'], key=lambda c: c['material_id'])
+        for component in components:
+            material = db.execute('SELECT unit,active,code FROM materials WHERE id=?', (component['material_id'],)).fetchone()
+            if not material:
+                raise DomainError(404, 'Bahan BOM tidak ditemukan.')
+            if not material['active']:
+                raise DomainError(422, f'Bahan {material["code"]} nonaktif; tidak dapat dipakai pada BOM baru.')
+            self._material_amount(component['quantity'], material['unit'])
+        old = [dict(material_id=c['material_id'], quantity=c['quantity']) for c in current['components']]
+        if components == old:
+            raise DomainError(409, 'BOM tidak berubah. Ubah bahan atau jumlah sebelum menyimpan.')
+        db.execute('INSERT INTO bom_revisions(product_id,components,reason,actor_id,created_at) VALUES(?,?,?,?,?)',
+                   (product_id,json.dumps(components),payload['reason'],actor['id'],now()))
+        return self._bom(db, product_id)
+
+    def apply_bom_template(self, template_id, payload, actor, key):
+        def perform(db):
+            template = db.execute('SELECT * FROM bom_templates WHERE id=?', (template_id,)).fetchone()
+            if not template:
+                raise DomainError(404, 'Template BOM tidak ditemukan.')
+            template = dict(template)
+            if not template['active']:
+                raise DomainError(422, f'Template "{template["code"]}" nonaktif.')
+            product = db.execute('SELECT sku,active,type_id FROM products WHERE id=?', (payload['product_id'],)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            if not product['active']:
+                raise DomainError(422, f'SKU {product["sku"]} nonaktif; BOM tidak dapat diubah.')
+            if template['product_type_id'] and template['product_type_id'] != product['type_id']:
+                raise DomainError(422, f'Template "{template["code"]}" terikat ke tipe produk lain; tidak dapat diterapkan ke SKU {product["sku"]}.')
+            components = json.loads(template['components'])
+            reason = f'[Template {template["code"]}] {payload["reason"]}'
+            return self._save_bom_revision(db, payload['product_id'],
+                                           {'expected_revision': payload['expected_revision'],
+                                            'reason': reason, 'components': components}, actor)
+        return self._write(actor, ('admin',), key, 'bom-template-apply:' + template_id, payload, perform)
 
     def _material_batch(self, db, batch_id, order_id=None):
         row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
@@ -2265,9 +2801,11 @@ class Store:
                            lambda db: self._receive_material(db, payload, actor))
 
     def _receive_material(self, db, payload, actor):
-        material = db.execute('SELECT unit FROM materials WHERE id=?', (payload['material_id'],)).fetchone()
+        material = db.execute('SELECT unit,active,code FROM materials WHERE id=?', (payload['material_id'],)).fetchone()
         if not material:
             raise DomainError(404, 'Bahan tidak ditemukan.')
+        if not material['active']:
+            raise DomainError(422, f'Bahan {material["code"]} nonaktif; penerimaan batch baru ditolak.')
         quantity = self._material_amount(payload['quantity'], material['unit'])
         record = {k:v for k,v in payload.items() if k not in ('quantity','reason')}
         record.update(id=str(uuid4()), created_by=actor['id'], created_at=now())
@@ -5885,9 +6423,11 @@ class Store:
             raise DomainError(404, 'Order produksi tidak ditemukan.')
         lines = []
         for line in payload['lines']:
-            material = db.execute('SELECT code,name,unit FROM materials WHERE id=?', (line['material_id'],)).fetchone()
+            material = db.execute('SELECT code,name,unit,active FROM materials WHERE id=?', (line['material_id'],)).fetchone()
             if not material:
                 raise DomainError(404, 'Bahan permintaan tidak ditemukan.')
+            if not material['active']:
+                raise DomainError(422, f'Bahan {material["code"]} nonaktif; tidak dapat diminta pada PR baru.')
             self._material_amount(line['quantity'], material['unit'])
             lines.append(line | dict(material))
         request_id, timestamp = str(uuid4()), now()
@@ -6409,21 +6949,12 @@ class Store:
 
     def save_bom(self, product_id, payload, actor, key):
         def perform(db):
-            current = self._bom(db, product_id)
-            if current['revision'] != payload['expected_revision']:
-                raise DomainError(409, 'BOM sudah berubah. Tutup form, muat ulang BOM, lalu periksa versi terbaru.')
-            components = sorted(payload['components'], key=lambda c: c['material_id'])
-            for component in components:
-                material = db.execute('SELECT unit FROM materials WHERE id=?', (component['material_id'],)).fetchone()
-                if not material:
-                    raise DomainError(404, 'Bahan BOM tidak ditemukan.')
-                self._material_amount(component['quantity'], material['unit'])
-            old = [dict(material_id=c['material_id'], quantity=c['quantity']) for c in current['components']]
-            if components == old:
-                raise DomainError(409, 'BOM tidak berubah. Ubah bahan atau jumlah sebelum menyimpan.')
-            db.execute('INSERT INTO bom_revisions(product_id,components,reason,actor_id,created_at) VALUES(?,?,?,?,?)',
-                       (product_id,json.dumps(components),payload['reason'],actor['id'],now()))
-            return self._bom(db, product_id)
+            product = db.execute('SELECT sku,active FROM products WHERE id=?', (product_id,)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            if not product['active']:
+                raise DomainError(422, f'SKU {product["sku"]} nonaktif; BOM tidak dapat diubah.')
+            return self._save_bom_revision(db, product_id, payload, actor)
         return self._write(actor, ('admin',), key, 'bom:'+product_id, payload, perform)
 
     def bom_history(self, product_id, limit=100, before=None):
@@ -6486,8 +7017,11 @@ class Store:
                   "created_by": actor["id"], "created_at": now()}
         db.execute("INSERT INTO orders VALUES(:id,:reference,:title,:owner_id,:due_date,:created_by,:created_at)", record)
         for item in payload["lines"]:
-            if not db.execute("SELECT 1 FROM products WHERE id=?", (item["product_id"],)).fetchone():
+            product = db.execute("SELECT sku,active FROM products WHERE id=?", (item["product_id"],)).fetchone()
+            if not product:
                 raise DomainError(404, "SKU tidak ditemukan.")
+            if not product["active"]:
+                raise DomainError(422, f'SKU {product["sku"]} nonaktif; tidak dapat dipakai pada order baru.')
             line = str(uuid4())
             db.execute("INSERT INTO order_lines VALUES(?,?,?,?)", (line, record["id"], item["product_id"], item["quantity"]))
             db.executemany("INSERT INTO balances VALUES(?,?,?)", [

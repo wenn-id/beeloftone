@@ -49,11 +49,152 @@ class ProductCreate(Input):
     name: Text
     color: str = Field(default="", max_length=80)
     size: str = Field(default="", max_length=40)
+    # M01 (issue #43): klasifikasi opsional; relasi divalidasi di store
+    # (kategori -> subkategori -> tipe harus konsisten).
+    category_id: str | None = Field(default=None, max_length=160)
+    subcategory_id: str | None = Field(default=None, max_length=160)
+    type_id: str | None = Field(default=None, max_length=160)
+    series_id: str | None = Field(default=None, max_length=160)
+    color_id: str | None = Field(default=None, max_length=160)
+    size_id: str | None = Field(default=None, max_length=160)
+    uom_code: str = Field(default="PCS", max_length=16)
 
     @field_validator("sku")
     @classmethod
     def normalize_sku(cls, value):
         return value.upper()
+
+    @field_validator("uom_code")
+    @classmethod
+    def normalize_uom(cls, value):
+        return value.upper()
+
+
+class ProductUpdate(Input):
+    """Ubah master produk. SKU identitas tidak dapat diubah.
+
+    Field klasifikasi: None = tidak diubah; string kosong = lepas (NULL);
+    selain itu harus merujuk master aktif yang relasinya valid.
+    """
+
+    name: Text | None = None
+    color: str | None = Field(default=None, max_length=80)
+    size: str | None = Field(default=None, max_length=40)
+    category_id: str | None = Field(default=None, max_length=160)
+    subcategory_id: str | None = Field(default=None, max_length=160)
+    type_id: str | None = Field(default=None, max_length=160)
+    series_id: str | None = Field(default=None, max_length=160)
+    color_id: str | None = Field(default=None, max_length=160)
+    size_id: str | None = Field(default=None, max_length=160)
+    uom_code: str | None = Field(default=None, max_length=16)
+    active: bool | None = None
+
+    @field_validator("uom_code")
+    @classmethod
+    def normalize_uom(cls, value):
+        return value.upper() if value else value
+
+
+# ---------------------------------------------------------------------------
+# M01 master katalog (issue #43): satuan, klasifikasi produk, warna/ukuran,
+# klasifikasi bahan, dan template BOM. Kode master dinormalisasi UPPERCASE dan
+# immutable setelah dibuat (identitas); yang boleh berubah hanya nama,
+# relasi induk, atribut deskriptif, dan status aktif.
+# ---------------------------------------------------------------------------
+
+
+class MasterCreate(Input):
+    code: Text
+    name: Text
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class MasterUpdate(Input):
+    name: Text | None = None
+    active: bool | None = None
+
+
+class UomCreate(MasterCreate):
+    # range_text menyimpan verbatim metadata legacy "Range"; maknanya BELUM
+    # terverifikasi dan dilarang dipakai sebagai faktor konversi.
+    range_text: str = Field(default="", max_length=160)
+    note: str = Field(default="", max_length=1000)
+
+
+class UomUpdate(MasterUpdate):
+    range_text: str | None = Field(default=None, max_length=160)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ProductCategoryCreate(MasterCreate):
+    pass
+
+
+class ProductCategoryUpdate(MasterUpdate):
+    pass
+
+
+class ProductSubcategoryCreate(MasterCreate):
+    category_id: Text
+
+
+class ProductSubcategoryUpdate(MasterUpdate):
+    category_id: Text | None = None
+
+
+class ProductTypeCreate(MasterCreate):
+    subcategory_id: Text
+
+
+class ProductTypeUpdate(MasterUpdate):
+    subcategory_id: Text | None = None
+
+
+class ProductSeriesCreate(MasterCreate):
+    pass
+
+
+class ProductSeriesUpdate(MasterUpdate):
+    pass
+
+
+class ColorCreate(MasterCreate):
+    pass
+
+
+class ColorUpdate(MasterUpdate):
+    pass
+
+
+class SizeCreate(MasterCreate):
+    sort_order: Annotated[int, Field(strict=True, ge=0, le=9999)] = 0
+
+
+class SizeUpdate(MasterUpdate):
+    sort_order: Annotated[int, Field(strict=True, ge=0, le=9999)] | None = None
+
+
+class MaterialClassCreate(MasterCreate):
+    level: Literal[1, 2, 3]
+    parent_id: Text | None = None
+
+    @model_validator(mode="after")
+    def check_hierarchy(self):
+        if self.level == 1 and self.parent_id is not None:
+            raise ValueError("Klasifikasi level 1 tidak memiliki induk.")
+        if self.level > 1 and not self.parent_id:
+            raise ValueError("Klasifikasi level 2/3 wajib memiliki induk.")
+        return self
+
+
+class MaterialClassUpdate(MasterUpdate):
+    # Level tidak dapat diubah setelah dibuat (menjaga hierarki existing);
+    # pemindahan induk divalidasi di store terhadap level yang tersimpan.
+    parent_id: str | None = Field(default=None, max_length=160)
 
 
 class UserCreate(Input):
@@ -854,11 +995,52 @@ class MaterialCreate(Input):
     code: Text
     name: Text
     unit: Literal['m', 'kg', 'pcs']
+    # M01 (issue #43): klasifikasi, deskripsi, dan harga referensi opsional.
+    # Harga referensi terpisah dari harga aktual PO/receipt dan histori biaya.
+    class_id: str | None = Field(default=None, max_length=160)
+    description: str = Field(default="", max_length=1000)
+    reference_price: Annotated[str, StringConstraints(
+        pattern=r"^[0-9]{1,10}(\.[0-9]{1,2})?$", max_length=13)] | None = None
 
     @field_validator('code')
     @classmethod
     def normalize_code(cls, value):
         return value.upper()
+
+    @field_validator('reference_price')
+    @classmethod
+    def normalize_reference_price(cls, value):
+        if value is None:
+            return value
+        amount = Decimal(value)
+        if amount <= 0:
+            raise ValueError('Harga referensi harus positif.')
+        return format(amount, '.2f')
+
+
+class MaterialUpdate(Input):
+    """Ubah master bahan. Kode/nama/satuan identitas tidak dapat diubah
+    (ditegakkan trigger materials_identity_immutable).
+
+    class_id: None = tidak diubah; string kosong = lepas (NULL).
+    """
+
+    class_id: str | None = Field(default=None, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+    reference_price: Annotated[str, StringConstraints(
+        pattern=r"^[0-9]{1,10}(\.[0-9]{1,2})?$", max_length=13)] | None = None
+    clear_reference_price: bool = False
+    active: bool | None = None
+
+    @field_validator('reference_price')
+    @classmethod
+    def normalize_reference_price(cls, value):
+        if value is None:
+            return value
+        amount = Decimal(value)
+        if amount <= 0:
+            raise ValueError('Harga referensi harus positif.')
+        return format(amount, '.2f')
 
 
 class MaterialQuantity(Input):
@@ -1290,3 +1472,38 @@ class BomSave(Input):
         if len({c.material_id for c in components}) != len(components):
             raise ValueError('Gabungkan bahan yang sama menjadi satu baris BOM.')
         return sorted(components, key=lambda c: c.material_id)
+
+
+class BomTemplateCreate(MasterCreate):
+    """Template bahan: cetakan komponen untuk menerbitkan revisi BOM baru.
+
+    Tidak menggantikan mekanisme BOM berversi; apply selalu INSERT revisi baru.
+    """
+
+    product_type_id: Text | None = None
+    components: list[BomComponent] = Field(min_length=1, max_length=100)
+
+    @field_validator('components')
+    @classmethod
+    def unique_materials(cls, components):
+        if len({c.material_id for c in components}) != len(components):
+            raise ValueError('Gabungkan bahan yang sama menjadi satu baris template.')
+        return sorted(components, key=lambda c: c.material_id)
+
+
+class BomTemplateUpdate(MasterUpdate):
+    product_type_id: str | None = Field(default=None, max_length=160)
+    components: list[BomComponent] | None = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator('components')
+    @classmethod
+    def unique_materials(cls, components):
+        if components is not None and len({c.material_id for c in components}) != len(components):
+            raise ValueError('Gabungkan bahan yang sama menjadi satu baris template.')
+        return sorted(components, key=lambda c: c.material_id) if components else components
+
+
+class BomTemplateApply(Input):
+    product_id: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]

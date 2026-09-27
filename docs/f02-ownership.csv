@@ -7,12 +7,14 @@ table,ai_investigations,A3,O01/O02/X01/R01,A0,beeloft/ai_investigations.sql
 table,audit_events,A3,O01/O02/X01/R01,A0,beeloft/audit_trail.sql
 table,balances,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
 table,bom_revisions,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bom.sql
+table,bom_templates,A1,M01,A2,beeloft/master_catalog.sql
 table,browser_sessions,A3,O01/O02/X01/R01,A0,beeloft/browser_sessions.sql
 table,bundle_handoff_acceptances,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
 table,bundle_handoff_cancellations,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
 table,bundle_handoffs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundle_handoffs.sql
 table,bundle_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
 table,bundles,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
+table,colors,A1,M01,A2,beeloft/master_catalog.sql
 table,cutting_run_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
 table,cutting_runs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
 table,final_qc_record_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
@@ -56,6 +58,7 @@ table,marketplace_sale_settlements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft
 table,marketplace_shipment_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_shipping.sql
 table,marketplace_shipments,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/marketplace_shipping.sql
 table,material_batches,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/materials.sql
+table,material_classes,A1,M01,A2,beeloft/master_catalog.sql
 table,material_consumption,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/consumption.sql
 table,material_movements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/materials.sql
 table,material_reservation_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/reservations.sql
@@ -77,7 +80,11 @@ table,order_lines,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
 table,orders,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/schema.sql
 table,payroll_approval_request_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/payroll_approvals.sql
 table,payroll_approval_requests,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/payroll_approvals.sql
+table,product_categories,A1,M01,A2,beeloft/master_catalog.sql
 table,product_external_mapping_events,A3,O01/O02/X01/R01,A0,beeloft/product_external_mappings.sql
+table,product_series,A1,M01,A2,beeloft/master_catalog.sql
+table,product_subcategories,A1,M01,A2,beeloft/master_catalog.sql
+table,product_types,A1,M01,A2,beeloft/master_catalog.sql
 table,production_capacity_calendar_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/production_capacity.sql
 table,production_change_request_events,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/unified_approvals.sql
 table,production_change_requests,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/unified_approvals.sql
@@ -102,10 +109,12 @@ table,rework_completions,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/rework_completion
 table,sewing_job_results,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
 table,sewing_job_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
 table,sewing_jobs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
+table,sizes,A1,M01,A2,beeloft/master_catalog.sql
 table,supplier_payment_request_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
 table,supplier_payment_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
 table,supplier_returns,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_returns.sql
 table,suppliers,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
+table,uoms,A1,M01,A2,beeloft/master_catalog.sql
 table,users,A3,O01/O02/X01/R01,A0,beeloft/schema.sql
 table,warehouse_movement_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
 table,warehouse_movements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
@@ -369,3 +378,12 @@ endpoint,POST /api/production-change-requests/{request_id}/decisions,A1,P02,A3,b
 endpoint,GET /api/activity,A3,R01,A1/A2,beeloft/api.py#activity
 endpoint,GET /api/activity.csv,A3,R01,A1/A2,beeloft/api.py#export_activity
 endpoint,GET /api/backup,A3,O02,A0,beeloft/api.py#download_backup
+endpoint,GET /api/catalog/{catalog},A1,M01,A2,beeloft/api.py#catalog_list
+endpoint,POST /api/catalog/{catalog},A1,M01,A2,beeloft/api.py#catalog_create
+endpoint,POST /api/catalog/{catalog}/{row_id}/changes,A1,M01,A2,beeloft/api.py#catalog_change
+endpoint,GET /api/bom-templates,A1,M01,A2,beeloft/api.py#bom_templates
+endpoint,POST /api/bom-templates,A1,M01,A2,beeloft/api.py#create_bom_template
+endpoint,POST /api/bom-templates/{template_id}/changes,A1,M01,A2,beeloft/api.py#change_bom_template
+endpoint,POST /api/bom-templates/{template_id}/apply,A1,M01,A2,beeloft/api.py#apply_bom_template
+endpoint,POST /api/products/{product_id}/changes,A1,M01,A2,beeloft/api.py#change_product
+endpoint,POST /api/materials/{material_id}/changes,A1,M01,A2,beeloft/api.py#change_material
