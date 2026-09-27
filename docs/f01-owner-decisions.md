@@ -15,7 +15,8 @@ Baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0/schema 55).
 ## Status akses dan kerja
 
 - Issue #40 mencatat audit UI terdahulu pada 27 September 2026 (tanggal saja; jam observasi, filter, sampel, screenshot, dan nilai transaksi tidak tercatat di sumber yang tersedia). Issue #40 melaporkan dashboard + 30 menu, 8 form, dan satu detail payroll.
-- Percobaan sesi sekarang gagal sebelum login: `browser-harness: daemon default didn't come up`; native desktop melaporkan `windows: []`. Tidak ada kredensial dimasukkan, tidak ada sampel transaksi baru dibuka.
+- Percobaan sesi sebelumnya gagal sebelum login: `browser-harness: daemon default didn't come up`; native desktop melaporkan `windows: []`. Tidak ada kredensial dimasukkan, tidak ada sampel transaksi baru dibuka. Percobaan itu memakai harness lokal yang berbeda, bukan fasilitas browser sesi ini.
+- Sesi ini (2026-09-27): managed live-browser tersedia dan satu sesi read-only diluncurkan ke `https://backoffice.beeloftbaby.com/` untuk rantai bukti T03–T05 (pekerjaan → slip → pembayaran → kasbon; POS → pembayaran → stok; AP → settlement → pembayaran; modal persediaan). Tidak ada login tersimpan di vault untuk situs tersebut, sehingga sesi menunggu kredensial aman dari pengguna; belum ada sampel transaksi baru yang diperiksa. Lihat `EV-F01-0020` di `f01-legacy-evidence.md`.
 - Belum ditelusuri: job → slip → pembayaran → kasbon; invoice/tender POS; AP → PO/receipt → pembayaran; rincian file download; role/permission.
 - Sumber audit tidak mendukung klaim `/settings/periods` pernah diamati. Statusnya `UNVERIFIED`; bukan bukti route itu tidak ada.
 
@@ -576,11 +577,29 @@ Prior audit reports Title Reports, a payroll download action, and dashboard metr
 
 **Belum diketahui:**
 
-Downloaded file content/layout, other report formats, filters/timezone, metric definitions, reconciliation and report readership.
+Downloaded file content/layout, other report formats, filters/timezone, metric definitions, reconciliation and report readership. Actual legacy paper sizes and print practice are also unknown.
 
 **Usulan perubahan untuk One — belum berlaku:**
 
-Inventory required reports and preserve verified filters/totals; any template consolidation/retirement is proposal only.
+Proposed report/export strategy (not legacy behavior, not approved):
+
+1. **Output kind by purpose.** PDF print-ready for official/external documents; CSV for analysis, reconciliation, and migration extracts; in-app views for operational monitoring. Not every report needs all three formats.
+2. **Proposed mandatory document catalog at launch.** Each entry still needs owner verification that the legacy process actually requires it (see questions below); nothing is launched by default:
+
+| Document | User | Minimum content | Filters | Format |
+|---|---|---|---|---|
+| Payroll slip | employee (own slip only), HR/payroll | employee ref, period, gross components, deductions (incl. kasbon), net, payment status | period, employee | PDF print-ready |
+| SPK / job card | production | job code, article, target/actual qty, tariff reference, status | period, status | PDF / in-app |
+| POS receipt | cashier, customer | invoice no, lines, discount, tender/change, storage | date/shift | PDF print-ready |
+| Delivery note (surat jalan) | warehouse, customer | shipment lines, qty, document references | date | PDF print-ready |
+| Purchase order | purchasing, supplier | PO no, lines, prices, status | status/date | PDF print-ready |
+| Payment proof | finance | payment ref, amount, method, allocation | date/method | PDF print-ready |
+| Title reports | management | aggregates with preserved verified filters/totals | as verified | PDF + CSV |
+| Dashboard metric extracts | management | metric values per period | period | CSV |
+
+3. **Document lifecycle (proposal).** Draft → issued → corrected only by reversal or a new revision; issued documents are never silently edited. Document numbers are unique; the no-gap policy is decided with finance.
+4. **No locked paper size and no full set at launch without verified need.** Choose sizes only after confirming actual legacy print practice. PDFs must render legibly on common office paper; exact sizes are decided per document with its owner.
+5. **CSV schemas (proposal).** Column list, date basis, and totals defined per report; every CSV row carries its source document reference and revision for reconciliation.
 
 **Alternatif:**
 
@@ -596,7 +615,7 @@ Daily operations, statutory/management reporting, archive, and trust in dashboar
 
 **Pertanyaan persetujuan spesifik:**
 
-Which actual reports/files are required, who uses them, and what totals/filters must match?
+For each document in the catalog: is it actually used (verify the legacy need)? Who reads it? What columns, totals, and filters must match, and in which output format? What paper size is actually printed today?
 
 **Kesiapan:** `NEEDS_REPORT_AND_DOWNLOAD_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 
@@ -615,7 +634,30 @@ Complete role/account inventory, per-action permission checks, business unit sco
 
 **Usulan perubahan untuk One — belum berlaku:**
 
-One should enforce least privilege and maker-checker where owners require it; the suggested role matrix is not current legacy behavior.
+Proposed access model (not legacy behavior, not approved). Rights are separable and must NOT be bundled:
+
+- `view_salary` — payroll detail per employee (gross/net/components).
+- `view_margin_profit` — margin, P&L, and financial statements.
+- `create_transaction`, `edit_draft_transaction` — operational data entry.
+- `approve` — approve requests per domain (thresholds set by owner).
+- `pay_execute` — execute actual payments.
+- `export_data` — export/download reports and data.
+
+Proposed function matrix (function labels, not job titles; the owner maps real roles onto these):
+
+| Function | Create/edit | Approve | Pay | View salary | View margin/P&L | Export |
+|---|---|---|---|---|---|---|
+| Produksi | production tx | own domain* | no | no | no | operational only |
+| HR/payroll | payroll tx | payroll | no | yes | no | payroll only |
+| Finance/accounting | accounting tx | finance | yes | separate grant, default no | yes | yes |
+| Kasir | POS tx | no | tender only | no | no | own shift only |
+| Manajemen | no | yes (threshold) | no | separate grant only | yes | reports |
+
+\*No self-approval: the requester may not approve their own transaction. Proposed backup/delegation: each approval queue names a substitute approver. Exceptions that require a human decision (e.g., approving one's own claim, overriding a blocked validation) must be listed explicitly by the owner and are never automatic.
+
+`view_salary` and `view_margin_profit` are independent grants — salary view is never implied by a finance or management role, and they are not merged into a single Owner/Finance option. This proposal does not assume any company job structure or any specific person's authority.
+
+Technical: RBAC must be enforced per endpoint (known gap #45 O01); every permission grant and change is audit-logged.
 
 **Alternatif:**
 
@@ -631,7 +673,7 @@ Salary privacy, fraud prevention, operational access, and approvals.
 
 **Pertanyaan persetujuan spesifik:**
 
-Which roles may view, create, approve, pay, export, or reverse each domain? Who may see payroll?
+Which functions may view salary versus margin/P&L — granted separately? Who approves each domain and at what threshold? Who are the named backup approvers per queue? Which exceptions require an explicit human decision?
 
 **Kesiapan:** `NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 
@@ -650,7 +692,13 @@ Platforms in use, connector/aggregator, sync direction/frequency, order/stock/re
 
 **Usulan perubahan untuk One — belum berlaku:**
 
-Keep or replace integrations only after inventory; no automatic CSV-only or API-first rule is proposed as current.
+Proposed integration model (not current behavior, not approved). Split needs by flow — order, stock/reservation, shipping, cancellation/return, settlement — each with its own source of truth:
+
+- **Inventory of what One already has (baseline, read-only):** marketplace order/shipment/return/settlement snapshots, Jubelio order snapshots, Mekari finance snapshots — all read-only imports with no write-back. Sources: `EV-F01-0017`, `tests/test_integration_sync.py`, `tests/test_jubelio_order_snapshots.py`.
+- **External services actually used by Beeloft:** UNKNOWN. The owner must confirm which marketplaces, sales channels, Jubelio/Mekari usage, and logistics partners are really in use. Neither keeping nor retiring any of them is decided here.
+- **Per data-flow contract (proposal template):** source of truth (One vs external), sync direction (in / out / both), acceptable lag (e.g., minutes for stock, end-of-day for settlement — accepted by owner per flow), deduplication key (external event id + idempotency), failure handling (retry queue, quarantine with alert, reconciliation report).
+- **Transition option:** periodic scheduled import may be proposed as an interim step ONLY if operational needs (order-capture latency, stock accuracy) are still met at the owner-accepted lag.
+- **Explicitly not claimed:** a weekly CSV settlement does NOT substitute for full sales integration — it covers settlement only, not order, stock, or return timeliness.
 
 **Alternatif:**
 
@@ -666,7 +714,7 @@ Stock accuracy, channel uptime, order capture, and cutover scope.
 
 **Pertanyaan persetujuan spesifik:**
 
-Which sales/inventory/finance systems and channels are actually used, and which objects should remain synchronized with One?
+Which vendors/channels are actually used? For each flow (order, stock, ship, cancel/return, settle): source of truth, direction, acceptable lag, dedup key, and failure owner? Is scheduled import acceptable as an interim step, and at what lag?
 
 **Kesiapan:** `NEEDS_CHANNEL_AND_VENDOR_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 
@@ -720,7 +768,20 @@ User readiness, peak volumes, RPO/RTO, backup/restore, reconciliation, freeze wi
 
 **Usulan perubahan untuk One — belum berlaku:**
 
-Set measurable UAT/cutover/rollback gates with business/operations owners; a 1–2 week parallel run is only an option.
+Proposed recovery and cutover model (not current behavior, not approved):
+
+- **Separate RPO from RTO.** RPO = tolerable data-loss window (how much transaction history may be lost). RTO = target time to restore service. A daily backup is NOT an accepted 24h transaction loss unless the owner explicitly accepts RPO ≤ 24h.
+- **Target options (proposal; the owner picks with technical cost and impact understood):**
+
+| RPO option | Technical requirement | Impact |
+|---|---|---|
+| ~0 (near-zero) | continuous replication / WAL shipping + tested standby failover | highest infra cost and drill burden |
+| ≤ 1 hour | hourly snapshots + WAL archiving, tested restore | moderate cost; small loss window |
+| ≤ 24 hours | daily backup only | cheapest; up to a full day of transactions can be lost |
+
+RTO options (e.g., ≤ 1h / ≤ 4h / ≤ 24h) each require a documented restore drill on a separate environment with a measured restore time — no target is claimed met without a successful drill.
+- **Side-by-side (parallel) test design (proposal).** Exactly ONE system is the system of record for real transactions: all real payments, shipments, and customer-facing effects flow through it only. The comparison system runs shadow/read-only (mirrored or replayed data, no duplicate external effects).
+- **Pass criteria (proposal).** (a) Transaction counts/totals and balances reconcile within owner-agreed tolerance. (b) Critical scenarios pass: a full payroll cycle, one POS day, one AP payment run. (c) The recovery drill meets the chosen RTO/RPO. (d) The rollback procedure is tested, including how transactions created during the rollback window are handled. A 1–2 week duration is a time window, not a pass criterion.
 
 **Alternatif:**
 
@@ -736,7 +797,7 @@ Business continuity, double entry, data divergence, and recovery risk.
 
 **Pertanyaan persetujuan spesifik:**
 
-What readiness evidence and go/no-go authority are required before legacy shutdown? Is a parallel run mandatory?
+What RPO/RTO does the business accept, with cost and impact understood? Who owns go/no-go and incident response? What reconciliation tolerances define pass/fail? Is a parallel run mandatory before legacy shutdown?
 
 **Kesiapan:** `NEEDS_OPERATIONS_AND_UAT_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
 

@@ -22,7 +22,7 @@ Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**
 | Tugas | Status aktual | Bukti / gap |
 |---|---|---|
 | T00 Baseline/worktree | Terverifikasi | Baseline SHA/version/schema; branch terisolasi.
-| T01 Sumber legacy/access | Parsial/terhalang | Prior audit report ada; no new browser access; timestamps/sampling details missing.
+| T01 Sumber legacy/access | Berjalan/parsial | Prior audit report ada; sesi browser managed sesi ini diluncurkan (EV-F01-0020) dan menunggu kartu login aman pengguna; timestamps/sampling details masih kurang.
 | T02 Master/UOM | Parsial | Surface groups only; field-level types/required/relations not recorded.
 | T03 Jobs/payroll/cashbon | Belum | No linked transaction trace or slip values.
 | T04 POS/AP | Belum | No invoice/tender/refund or PO/receipt/settlement trace.
@@ -46,7 +46,7 @@ No zero-PII assertion until a fresh manual content review of the final diff. Sta
 
 ## Blockers / next evidence
 
-1. Safe authenticated browser session did not start. Resume read-only via approved UI session; do not type previously exposed credentials. If blocked, identify authorized way to launch signed-in session/rotate credential, then inspect the exact sample groups listed in `f01-legacy-evidence.md`.
+1. Authenticated browser session: prior local-harness attempt failed before login (different tooling). This session launched a managed live-browser read-only session (EV-F01-0020); it is parked awaiting the user's secure login card for `https://backoffice.beeloftbaby.com/`. No saved login exists in the vault; no credentials were typed. If login is not provided, fall back to owner-supplied evidence collection at the exact sample groups listed in `f01-legacy-evidence.md`.
 2. Need owner/process custodians to locate candidate job→payroll→paid evidence, linked cashbon balance events, POS invoices/tenders/refunds, and AP settlement→PO/receipt/invoice/payment. Store raw records in restricted location only; publish only synthetic IDs/results.
 3. Need accounting/role/channel/export/operations owners to supply evidence not visible in prior menu report.
 4. Only after those sources are reviewed can final recommendation set and owner-ready decision list be reduced.
