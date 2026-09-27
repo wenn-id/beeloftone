@@ -1,0 +1,919 @@
+{
+  "revision": "F01-CASES-20260927-1",
+  "execution_baseline": "96bb48fa8889b3a483411768e2543838e69233b0",
+  "synthetic": true,
+  "generated_at_wib": "2026-09-27T14:00:00+07:00",
+  "evidence_catalog": [
+    "EV-F01-0001",
+    "EV-F01-0002",
+    "EV-F01-0003",
+    "EV-F01-0004",
+    "EV-F01-0005",
+    "EV-F01-0006",
+    "EV-F01-0007",
+    "EV-F01-0008",
+    "EV-F01-0009",
+    "EV-F01-0010",
+    "EV-F01-0011",
+    "EV-F01-0012",
+    "EV-F01-0013",
+    "EV-F01-0014",
+    "EV-F01-0015",
+    "EV-F01-0016",
+    "EV-F01-0017",
+    "EV-F01-0018",
+    "EV-F01-0019",
+    "EV-F01-0020",
+    "EV-F01-0021",
+    "EV-F01-0022",
+    "EV-F01-0023",
+    "EV-F01-0024",
+    "EV-F01-0025",
+    "EV-F01-0026",
+    "EV-F01-0027",
+    "EV-F01-0028",
+    "EV-F01-0029",
+    "EV-F01-0030",
+    "EV-F01-0031",
+    "EV-F01-0032",
+    "EV-F01-0033",
+    "EV-F01-0034",
+    "EV-F01-0035"
+  ],
+  "decisions": [
+    "D01",
+    "D02",
+    "D03",
+    "D04",
+    "D05",
+    "D06",
+    "D07",
+    "D08",
+    "D09",
+    "D10",
+    "D11",
+    "D12",
+    "D13",
+    "D14",
+    "D15",
+    "D16",
+    "D17",
+    "D18",
+    "D19",
+    "D20"
+  ],
+  "cases": [
+    {
+      "id": "CASE-QTY-01",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P01",
+        "P11",
+        "P22"
+      ],
+      "decision_ids": [
+        "D01",
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0033"
+      ],
+      "description": "Kuantitas bulat 12 pcs sama dengan 1.0000 lusin",
+      "inputs": {
+        "realisasi_pcs": 12,
+        "tarif_per_lusin": "24000.00"
+      },
+      "candidate_rule": "realisasi_lusin = realisasi_pcs / 12; amount = realisasi_lusin * tarif_per_lusin",
+      "candidate_result": {
+        "realisasi_lusin": "1.0000",
+        "amount": "24000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah presisi tampilan lusin 4 desimal atau 2 desimal?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-QTY-02",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P01",
+        "P11",
+        "P22"
+      ],
+      "decision_ids": [
+        "D01",
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0033"
+      ],
+      "description": "Kuantitas pecahan 11 pcs (11/12 lusin = 0.9167 lusin pada tampilan 4 desimal)",
+      "inputs": {
+        "realisasi_pcs": 11,
+        "tarif_per_lusin": "24000.00"
+      },
+      "candidate_rule": "amount = (Decimal(realisasi_pcs) / Decimal(12)) * tarif_per_lusin",
+      "candidate_result": {
+        "realisasi_lusin_display": "0.9167",
+        "exact_amount": "22000.00",
+        "display_amount": "22000.80"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah backend menghitung exact fraction (Rp 22.000,00) atau dari nilai display (Rp 22.000,80)?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-QTY-03",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P01",
+        "P11",
+        "P22"
+      ],
+      "decision_ids": [
+        "D01",
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0033"
+      ],
+      "description": "Kuantitas pecahan 13 pcs (13/12 lusin = 1.0833 lusin)",
+      "inputs": {
+        "realisasi_pcs": 13,
+        "tarif_per_lusin": "24000.00"
+      },
+      "candidate_rule": "amount = (Decimal(13) / Decimal(12)) * 24000.00",
+      "candidate_result": {
+        "realisasi_lusin_display": "1.0833",
+        "exact_amount": "26000.00",
+        "display_amount": "25999.20"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Konfirmasi mode pembulatan pecahan lusin",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-QTY-04",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P01",
+        "P11",
+        "P22"
+      ],
+      "decision_ids": [
+        "D01",
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0033"
+      ],
+      "description": "Kuantitas pecahan 1 pcs (1/12 lusin = 0.0833 lusin)",
+      "inputs": {
+        "realisasi_pcs": 1,
+        "tarif_per_lusin": "24000.00"
+      },
+      "candidate_rule": "amount = (Decimal(1) / Decimal(12)) * 24000.00",
+      "candidate_result": {
+        "realisasi_lusin_display": "0.0833",
+        "exact_amount": "2000.00",
+        "display_amount": "1999.20"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "none",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-QTY-05",
+      "ex_id": "EX01",
+      "process_ids": [
+        "P01",
+        "P04"
+      ],
+      "decision_ids": [
+        "D01",
+        "D02"
+      ],
+      "evidence_ids": [
+        "EV-F01-0019"
+      ],
+      "description": "Penolakan pembuatan order baru dengan SKU yang sudah dinonaktifkan",
+      "inputs": {
+        "sku": "SKU-INACTIVE-01",
+        "status": "inactive"
+      },
+      "candidate_rule": "If product.status == 'inactive', reject order creation with 422",
+      "candidate_result": {
+        "allowed": false,
+        "http_status": 422
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah SKU nonaktif boleh menyelesaikan order lama yang sedang berjalan?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-RATE-01",
+      "ex_id": "EX03",
+      "process_ids": [
+        "P03",
+        "P11",
+        "P22"
+      ],
+      "decision_ids": [
+        "D04",
+        "D05"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0011",
+        "EV-F01-0027"
+      ],
+      "description": "Tarif berubah di tengah periode (effective date locking berdasarkan tanggal pengerjaan)",
+      "inputs": {
+        "tarif_lama": "18000.00",
+        "tarif_baru": "21000.00",
+        "tanggal_berlaku_baru": "2026-09-16",
+        "job_date": "2026-09-10"
+      },
+      "candidate_rule": "Tarif mengunci revisi yang aktif pada job_date, bukan tanggal penarikan payroll",
+      "candidate_result": {
+        "applied_rate": "18000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah penguncian tarif pada tanggal job dibuat atau tanggal job disetujui supervisor?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-RATE-02",
+      "ex_id": "EX03",
+      "process_ids": [
+        "P03",
+        "P11"
+      ],
+      "decision_ids": [
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0010",
+        "EV-F01-0027"
+      ],
+      "description": "Pekerjaan tanpa master tarif yang terdaftar",
+      "inputs": {
+        "sku": "SKU-NEW-01",
+        "job_type": "OBRAS-CUSTOM",
+        "registered_rate": null
+      },
+      "candidate_rule": "Tolak input job baru bila mapping tarif belum disahkan di Master Service Setting",
+      "candidate_result": {
+        "allowed": false,
+        "error": "MISSING_SERVICE_RATE"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah diizinkan tarif manual ad-hoc dengan otorisasi khusus?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-RATE-03",
+      "ex_id": "EX03",
+      "process_ids": [
+        "P11",
+        "P13",
+        "P22"
+      ],
+      "decision_ids": [
+        "D05"
+      ],
+      "evidence_ids": [
+        "EV-F01-0029"
+      ],
+      "description": "Perbedaan Target vs Aktual vs Payable Qty akibat adanya reject jahit",
+      "inputs": {
+        "target_pcs": 120,
+        "actual_completed_pcs": 120,
+        "qc_rejected_pcs": 12,
+        "rate_per_dozen": "24000.00"
+      },
+      "candidate_rule": "payable_qty = actual_completed_pcs - qc_rejected_pcs; upah dihitung dari payable_qty",
+      "candidate_result": {
+        "payable_pcs": 108,
+        "payable_lusin": "9.0000",
+        "amount": "216000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah reject akibat cacat bahan tetap dibayar ke operator jahit?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-RATE-04",
+      "ex_id": "EX03",
+      "process_ids": [
+        "P11",
+        "P13"
+      ],
+      "decision_ids": [
+        "D05"
+      ],
+      "evidence_ids": [
+        "EV-F01-0029"
+      ],
+      "description": "Pengerjaan rework jahit (apakah mendapat upah tambahan atau tanggungan operator)",
+      "inputs": {
+        "rework_pcs": 12,
+        "is_original_operator": true
+      },
+      "candidate_rule": "Rework oleh operator asal tidak mendapat upah tambahan (rate = 0); rework oleh operator lain mendapat tarif perbaikan",
+      "candidate_result": {
+        "additional_pay": "0.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Kebijakan resmi penanggungan biaya rework antar-operator",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-PAY-01",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P22"
+      ],
+      "decision_ids": [
+        "D06"
+      ],
+      "evidence_ids": [
+        "EV-F01-0031",
+        "EV-F01-0032",
+        "EV-F01-0033"
+      ],
+      "description": "Perhitungan slip gaji normal dengan tunjangan dan potongan kasbon",
+      "inputs": {
+        "subtotal_job": "450000.00",
+        "premi_hadir": "50000.00",
+        "uang_transport": "75000.00",
+        "bonus": "25000.00",
+        "potongan_lain": "10000.00",
+        "cashbon_payment": "100000.00"
+      },
+      "candidate_rule": "gross = subtotal_job + premi + transport + bonus; net = gross - potongan_lain - cashbon_payment",
+      "candidate_result": {
+        "gross": "600000.00",
+        "net": "490000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah Gross di slip legacy mencakup tunjangan atau hanya subtotal borongan?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-PAY-02",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P22"
+      ],
+      "decision_ids": [
+        "D04",
+        "D06"
+      ],
+      "evidence_ids": [
+        "EV-F01-0033"
+      ],
+      "description": "Pembulatan per baris pekerjaan vs pembulatan di total slip",
+      "inputs": {
+        "lines": [
+          {
+            "pcs": 5,
+            "rate_dozen": "15000.00"
+          },
+          {
+            "pcs": 7,
+            "rate_dozen": "17000.00"
+          }
+        ]
+      },
+      "candidate_rule": "Rounding per row (ROUND_HALF_UP 2 desimal) kemudian dijumlahkan",
+      "candidate_result": {
+        "row1_amount": "6250.00",
+        "row2_amount": "9916.67",
+        "total_subtotal": "16166.67"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah total slip dibulatkan ke kelipatan Rp 100 terdekat?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-PAY-03",
+      "ex_id": "EX05",
+      "process_ids": [
+        "P24"
+      ],
+      "decision_ids": [
+        "D08"
+      ],
+      "evidence_ids": [
+        "EV-F01-0030",
+        "EV-F01-0033"
+      ],
+      "description": "Cicilan kasbon terakhir bernilai lebih kecil dari cicilan normal",
+      "inputs": {
+        "sisa_saldo_kasbon": "35000.00",
+        "cicilan_standar": "100000.00"
+      },
+      "candidate_rule": "potongan_kasbon = min(cicilan_standar, sisa_saldo_kasbon)",
+      "candidate_result": {
+        "potongan_kasbon": "35000.00",
+        "sisa_saldo_baru": "0.00",
+        "kasbon_lunas": true
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "none",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-PAY-04",
+      "ex_id": "EX05",
+      "process_ids": [
+        "P22",
+        "P24"
+      ],
+      "decision_ids": [
+        "D08"
+      ],
+      "evidence_ids": [
+        "EV-F01-0030",
+        "EV-F01-0033"
+      ],
+      "description": "Net pay tidak mencukupi untuk memotong cicilan kasbon penuh (cap net zero)",
+      "inputs": {
+        "net_before_kasbon": "60000.00",
+        "cicilan_kasbon": "100000.00"
+      },
+      "candidate_rule": "potongan_kasbon = min(cicilan_kasbon, net_before_kasbon); sisa cicilan tertunggak di kasbon",
+      "candidate_result": {
+        "potongan_tereksekusi": "60000.00",
+        "net_final": "0.00",
+        "cicilan_tertunda": "40000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah diperbolehkan slip gaji bernilai negatif bila kasbon dipotong paksa?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-PAY-05",
+      "ex_id": "EX04",
+      "process_ids": [
+        "P22",
+        "P23"
+      ],
+      "decision_ids": [
+        "D07"
+      ],
+      "evidence_ids": [
+        "EV-F01-0032"
+      ],
+      "description": "Koreksi slip payroll setelah status Paid",
+      "inputs": {
+        "slip_id": "PAY-202609-001",
+        "status": "paid",
+        "koreksi_pcs": -12
+      },
+      "candidate_rule": "Slip berstatus Paid tidak boleh diedit in-place. Koreksi dicatat sebagai event pembalik di periode berjalan.",
+      "candidate_result": {
+        "direct_edit_allowed": false,
+        "adjustment_slip_required": true
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Mekanisme pengembalian kas bila terjadi overpayment upah",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-POS-01",
+      "ex_id": "EX06",
+      "process_ids": [
+        "P17"
+      ],
+      "decision_ids": [
+        "D10"
+      ],
+      "evidence_ids": [
+        "EV-F01-0021"
+      ],
+      "description": "Faktur POS dengan diskon persentase per baris",
+      "inputs": {
+        "qty": 2,
+        "unit_price": "75000.00",
+        "discount_percent": "10.0"
+      },
+      "candidate_rule": "subtotal = (qty * unit_price) * (1 - discount_percent/100)",
+      "candidate_result": {
+        "gross": "150000.00",
+        "discount_nominal": "15000.00",
+        "subtotal": "135000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "none",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-POS-02",
+      "ex_id": "EX06",
+      "process_ids": [
+        "P17"
+      ],
+      "decision_ids": [
+        "D10"
+      ],
+      "evidence_ids": [
+        "EV-F01-0021"
+      ],
+      "description": "Faktur POS dengan diskon nominal per faktur",
+      "inputs": {
+        "subtotal_items": "250000.00",
+        "order_discount_nominal": "25000.00"
+      },
+      "candidate_rule": "total_faktur = subtotal_items - order_discount_nominal",
+      "candidate_result": {
+        "total_faktur": "225000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Otorisasi kasir untuk diskon manual di atas nominal tertentu",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-POS-03",
+      "ex_id": "EX06",
+      "process_ids": [
+        "P18"
+      ],
+      "decision_ids": [
+        "D11"
+      ],
+      "evidence_ids": [
+        "EV-F01-0021"
+      ],
+      "description": "Pembayaran tunai kasir POS dengan uang kembalian",
+      "inputs": {
+        "total_faktur": "135000.00",
+        "cash_tendered": "150000.00"
+      },
+      "candidate_rule": "change_amount = cash_tendered - total_faktur",
+      "candidate_result": {
+        "change_amount": "15000.00",
+        "status": "paid"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "none",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-AP-01",
+      "ex_id": "EX08",
+      "process_ids": [
+        "P06",
+        "P07",
+        "P25"
+      ],
+      "decision_ids": [
+        "D12"
+      ],
+      "evidence_ids": [
+        "EV-F01-0024"
+      ],
+      "description": "AP Settlement with-PO mencocokkan nilai penerimaan barang",
+      "inputs": {
+        "po_reference": "PO-2026-001",
+        "received_amount": "5000000.00",
+        "invoiced_amount": "5000000.00",
+        "payment_amount": "5000000.00"
+      },
+      "candidate_rule": "Tagihan disetujui sesuai batas nilai barang yang telah diterima (received value limit)",
+      "candidate_result": {
+        "approved": true,
+        "outstanding": "0.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "none",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-AP-02",
+      "ex_id": "EX08",
+      "process_ids": [
+        "P25"
+      ],
+      "decision_ids": [
+        "D12"
+      ],
+      "evidence_ids": [
+        "EV-F01-0024"
+      ],
+      "description": "AP Settlement pengeluaran non-PO (biaya operasional/makloon langsung)",
+      "inputs": {
+        "po_reference": null,
+        "category": "MAINTENANCE_SEWING_MACHINE",
+        "amount": "350000.00"
+      },
+      "candidate_rule": "Pengeluaran non-PO memerlukan approval finance dan COA beban yang eksplisit",
+      "candidate_result": {
+        "requires_po": false,
+        "approval_required": true
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Daftar kategori beban non-PO resmi Beeloft",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-STK-01",
+      "ex_id": "EX09",
+      "process_ids": [
+        "P14",
+        "P26"
+      ],
+      "decision_ids": [
+        "D13"
+      ],
+      "evidence_ids": [
+        "EV-F01-0022"
+      ],
+      "description": "Valuasi persediaan produk jadi berdasarkan Capital",
+      "inputs": {
+        "quantity": 250,
+        "capital_per_unit": "38500.00"
+      },
+      "candidate_rule": "total_capital = Decimal(quantity) * Decimal(capital_per_unit)",
+      "candidate_result": {
+        "total_capital": "9625000.00"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah nilai capital di-update berdasarkan biaya produksi nyata atau standard costing?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-STK-02",
+      "ex_id": "EX09",
+      "process_ids": [
+        "P14"
+      ],
+      "decision_ids": [
+        "D13"
+      ],
+      "evidence_ids": [
+        "EV-F01-0023"
+      ],
+      "description": "Penanganan anomali stok negatif dengan identitas kosong (#108)",
+      "inputs": {
+        "sku": null,
+        "quantity": -5,
+        "storage": "STORAGE-UNKNOWN"
+      },
+      "candidate_rule": "Tolak/karantina pada dry-run import. Jangan dimasukkan ke ledger aktif One.",
+      "candidate_result": {
+        "quarantined": true,
+        "allowed_in_ledger": false
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Keputusan pemilik terhadap nasib fisik 5 unit barang tersebut",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-CTRL-01",
+      "ex_id": "EX10",
+      "process_ids": [
+        "P27"
+      ],
+      "decision_ids": [
+        "D14",
+        "D15"
+      ],
+      "evidence_ids": [
+        "EV-F01-0034"
+      ],
+      "description": "Transaksi pada periode akuntansi yang telah ditutup (closed period)",
+      "inputs": {
+        "transaction_date": "2026-08-15",
+        "closed_period_cutoff": "2026-08-31"
+      },
+      "candidate_rule": "Tolak pencatatan pada periode tutup dengan HTTP 422 / 409",
+      "candidate_result": {
+        "allowed": false,
+        "error": "PERIOD_CLOSED"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Wewenang khusus role admin untuk reopen periode",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-CTRL-02",
+      "ex_id": "EX12",
+      "process_ids": [
+        "P29"
+      ],
+      "decision_ids": [
+        "D17"
+      ],
+      "evidence_ids": [
+        "EV-F01-0034",
+        "EV-F01-0035"
+      ],
+      "description": "Pemisahan tugas (pemohon pengeluaran kas / payroll tidak boleh menyetujui pengajuannya sendiri)",
+      "inputs": {
+        "requester_account": "USER-FIN-01",
+        "approver_account": "USER-FIN-01"
+      },
+      "candidate_rule": "Server menolak 403 bila approver == requester",
+      "candidate_result": {
+        "allowed": false,
+        "http_status": 403
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Apakah pemilik tunggal (owner) memiliki hak bypass pemisahan tugas?",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    },
+    {
+      "id": "CASE-CTRL-03",
+      "ex_id": "EX14",
+      "process_ids": [
+        "P32"
+      ],
+      "decision_ids": [
+        "D19"
+      ],
+      "evidence_ids": [
+        "EV-F01-0034"
+      ],
+      "description": "Cutoff migrasi saldo awal vs replay transaksi historis",
+      "inputs": {
+        "cutoff_date": "2026-09-30",
+        "opening_stock_value": "150000000.00",
+        "replay_history": false
+      },
+      "candidate_rule": "Pilih salah satu: saldo awal (opening balance) atau replay event historis, jangan digabung keduanya agar tidak terjadi pencatatan ganda",
+      "candidate_result": {
+        "chosen_strategy": "OPENING_BALANCE_WITH_AUDIT_ARCHIVE",
+        "double_count_risk": false
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC",
+      "unresolved_questions": "Rentang tahun arsip legacy yang wajib disimpan untuk audit",
+      "approvals": {
+        "status": "PENDING_OWNER_APPROVAL",
+        "approver": null,
+        "approved_at": null
+      }
+    }
+  ],
+  "f02_scenario_mapping": {
+    "QTY-RATE-01": [
+      "CASE-QTY-01",
+      "CASE-QTY-02",
+      "CASE-QTY-03",
+      "CASE-QTY-04"
+    ],
+    "RATE-02": [
+      "CASE-RATE-01",
+      "CASE-RATE-02"
+    ],
+    "CHARGE-01": [
+      "CASE-RATE-03",
+      "CASE-RATE-04"
+    ],
+    "PAYROLL-01": [
+      "CASE-PAY-01",
+      "CASE-PAY-02"
+    ],
+    "LOAN-01": [
+      "CASE-PAY-03",
+      "CASE-PAY-04"
+    ],
+    "PAY-01": [
+      "CASE-POS-03",
+      "CASE-AP-01"
+    ],
+    "PERIOD-01": [
+      "CASE-CTRL-01"
+    ],
+    "SRC-04": [
+      "CASE-CTRL-03"
+    ]
+  },
+  "sign_off": {
+    "status": "PENDING_OWNER_APPROVAL",
+    "reviewer": "A0",
+    "approved_at": null,
+    "reference": null
+  }
+}
