@@ -1,6 +1,6 @@
 {
-  "contract_revision": "F02-draft-1",
-  "baseline_commit": "efe1156c4557e0f4b69f0000d674ce74fdc4ae0c",
+  "contract_revision": "F02-draft-2",
+  "baseline_commit": "8c8b797cff11c1ff153dc997b2fea3fba8c2de1f",
   "status": "DRAFT_NOT_BUSINESS_ACCEPTED",
   "synthetic": true,
   "sign_off": {
@@ -9,6 +9,38 @@
     "A2": null,
     "A3": null,
     "business_owners": null
+  },
+  "demo_assumptions": {
+    "policy_ref": "DEMO-20260928-1",
+    "scope": "Asumsi sementara HANYA untuk demo presentasi Senin 2026-09-28 WIB. Bukan fakta legacy, bukan kebijakan produksi yang disetujui.",
+    "replaceable_via": "Ganti objek ContractPolicy (beeloft/contracts.py) atau policy_ref pada hasil kalkulasi; kontrak teknis tidak berubah.",
+    "assumptions": [
+      {
+        "id": "DA-01",
+        "statement": "Upah = (pcs / 12) x tarif_per_lusin dihitung rasional eksak (integer/Fraction) sampai pembulatan akhir; tanpa pembulatan kuantitas.",
+        "pending_decision": "D04"
+      },
+      {
+        "id": "DA-02",
+        "statement": "Nominal upah dibulatkan HALF_UP ke rupiah penuh (kelipatan 100 minor), satu kali di tahap akhir per realisasi.",
+        "pending_decision": "D04/D06"
+      },
+      {
+        "id": "DA-03",
+        "statement": "Kasbon boleh dipotong penuh dari upah bruto (rasio maksimum 1.0).",
+        "pending_decision": "D08"
+      },
+      {
+        "id": "DA-04",
+        "statement": "Penjualan demo memakai pembayaran simulasi; dampak stok dicatat sebagai adjustment keluar demo.",
+        "pending_decision": "D10/D11"
+      },
+      {
+        "id": "DA-05",
+        "statement": "Seluruh data demo sintetis dan terpisah dari data produksi.",
+        "pending_decision": null
+      }
+    ]
   },
   "baseline_models": [
     {
@@ -715,6 +747,485 @@
       },
       "expected_business_result": null,
       "expected_invariant": "Tidak mengubah jurnal asal; post/close serialize. Tanggal reversal/reopen dan approver harus disahkan."
+    }
+  ],
+  "contract_vectors": [
+    {
+      "id": "CV-QTY-01",
+      "function": "pcs_to_lusin",
+      "args": [
+        480
+      ],
+      "expected": "40"
+    },
+    {
+      "id": "CV-QTY-02",
+      "function": "pcs_to_lusin",
+      "args": [
+        13
+      ],
+      "expected": "13/12"
+    },
+    {
+      "id": "CV-QTY-03",
+      "function": "pcs_to_lusin",
+      "args": [
+        0
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-QTY-04",
+      "function": "lusin_to_pcs",
+      "args": [
+        {
+          "__fraction__": "40"
+        }
+      ],
+      "expected": 480
+    },
+    {
+      "id": "CV-QTY-05",
+      "function": "lusin_to_pcs",
+      "args": [
+        {
+          "__fraction__": "11/10"
+        }
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-MONEY-01",
+      "function": "parse_money",
+      "args": [
+        "85000"
+      ],
+      "expected": {
+        "__decimal__": "85000"
+      }
+    },
+    {
+      "id": "CV-MONEY-02",
+      "function": "parse_money",
+      "args": [
+        "72000.50"
+      ],
+      "expected": {
+        "__decimal__": "72000.50"
+      }
+    },
+    {
+      "id": "CV-MONEY-03",
+      "function": "parse_money",
+      "args": [
+        "72.005"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-MONEY-04",
+      "function": "parse_money",
+      "args": [
+        "1,000"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-MONEY-05",
+      "function": "parse_money",
+      "args": [
+        "1e3"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-MONEY-06",
+      "function": "money_to_minor",
+      "args": [
+        {
+          "__decimal__": "72000"
+        }
+      ],
+      "expected": 7200000
+    },
+    {
+      "id": "CV-MONEY-07",
+      "function": "money_to_minor",
+      "args": [
+        {
+          "__decimal__": "72.005"
+        }
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-MONEY-08",
+      "function": "minor_to_money",
+      "args": [
+        7200000
+      ],
+      "expected": {
+        "__decimal__": "72000"
+      }
+    },
+    {
+      "id": "CV-MONEY-09",
+      "function": "round_to_minor",
+      "args": [
+        {
+          "__decimal__": "1.005"
+        }
+      ],
+      "kwargs": {
+        "mode": "HALF_UP"
+      },
+      "expected": 101
+    },
+    {
+      "id": "CV-MONEY-10",
+      "function": "round_to_minor",
+      "args": [
+        {
+          "__decimal__": "1.005"
+        }
+      ],
+      "kwargs": {
+        "mode": "DOWN"
+      },
+      "expected": 100
+    },
+    {
+      "id": "CV-MONEY-11",
+      "function": "round_to_minor",
+      "args": [
+        {
+          "__decimal__": "1.005"
+        }
+      ],
+      "kwargs": {
+        "mode": "BANKERS"
+      },
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-IDEM-01",
+      "function": "validate_idempotency_key",
+      "args": [
+        "demo-20260928:pay-001"
+      ],
+      "expected": "demo-20260928:pay-001"
+    },
+    {
+      "id": "CV-IDEM-02",
+      "function": "validate_idempotency_key",
+      "args": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ],
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "id": "CV-IDEM-03",
+      "function": "validate_idempotency_key",
+      "args": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-IDEM-04",
+      "function": "validate_idempotency_key",
+      "args": [
+        "ada spasi"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-SRC-01",
+      "function": "source_namespace",
+      "args": [
+        "mekari",
+        "DEMO-A",
+        "payroll"
+      ],
+      "expected": [
+        "mekari",
+        "DEMO-A",
+        "payroll"
+      ]
+    },
+    {
+      "id": "CV-SRC-02",
+      "function": "source_namespace",
+      "args": [
+        "",
+        "DEMO-A",
+        "payroll"
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-SRC-03",
+      "function": "canonical_source_key",
+      "args": [
+        "mekari",
+        "DEMO-A",
+        "payroll",
+        "42",
+        "L1"
+      ],
+      "expected": [
+        "mekari",
+        "DEMO-A",
+        "payroll",
+        "42",
+        "L1"
+      ]
+    },
+    {
+      "id": "CV-SRC-04",
+      "function": "canonical_source_key",
+      "args": [
+        "mekari",
+        "DEMO-B",
+        "payroll",
+        "42",
+        "L1"
+      ],
+      "expected": [
+        "mekari",
+        "DEMO-B",
+        "payroll",
+        "42",
+        "L1"
+      ]
+    },
+    {
+      "id": "CV-WAGE-01",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 480,
+        "rate_per_lusin_minor": 180000,
+        "rate_revision": "RATE-20260928-1"
+      },
+      "expected": {
+        "pcs": 480,
+        "lusin_exact": "40",
+        "rate_per_lusin_minor": 180000,
+        "rate_revision": "RATE-20260928-1",
+        "wage_minor": 7200000,
+        "calculation_policy_ref": "DEMO-20260928-1",
+        "rounding_mode": "HALF_UP",
+        "rounding_multiple_minor": 100,
+        "rounding_stage": "final_per_realization"
+      }
+    },
+    {
+      "id": "CV-WAGE-02",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 360,
+        "rate_per_lusin_minor": 250000,
+        "rate_revision": "RATE-20260928-1"
+      },
+      "expected_wage_minor": 7500000
+    },
+    {
+      "id": "CV-WAGE-03",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 100,
+        "rate_per_lusin_minor": 180000,
+        "rate_revision": ""
+      },
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-STATE-01",
+      "function": "validate_state_record",
+      "args": [
+        {
+          "approval_ref": "APR-1",
+          "payment_ref": null,
+          "posting_ref": null
+        }
+      ],
+      "expected": {
+        "approval_ref": "APR-1",
+        "payment_ref": null,
+        "posting_ref": null
+      }
+    },
+    {
+      "id": "CV-STATE-02",
+      "function": "validate_state_record",
+      "args": [
+        {
+          "approval_ref": "X",
+          "payment_ref": "X"
+        }
+      ],
+      "raises": "ValueError"
+    },
+    {
+      "id": "CV-DEDUP-01",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-1",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "external_snapshot"
+          },
+          {
+            "canonical_transaction_id": "TX-1",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "native"
+          },
+          {
+            "canonical_transaction_id": "TX-2",
+            "measure": "amount_minor",
+            "amount": 500,
+            "source_kind": "external_snapshot"
+          }
+        ]
+      ],
+      "expected_total": {
+        "amount_minor": 1500
+      },
+      "expected_excluded": 1
+    },
+    {
+      "id": "CV-DEDUP-02",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-1",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "native"
+          },
+          {
+            "canonical_transaction_id": "TX-1",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "native"
+          }
+        ]
+      ],
+      "expected_total": {
+        "amount_minor": 1000
+      },
+      "expected_excluded": 1
+    },
+    {
+      "id": "CV-WAGE-04",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 10000,
+        "rate_revision": "R1"
+      },
+      "expected_wage_minor": 800,
+      "note": "temuan-1: 1 pcs @ Rp100/lusin, rupiah penuh -> 800 bukan 833"
+    },
+    {
+      "id": "CV-WAGE-05",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 13,
+        "rate_per_lusin_minor": 180000,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "DOWN"
+      },
+      "expected_wage_minor": 195000,
+      "note": "temuan-2: 13*180000/12 eksak 195000, bukan 194999"
+    },
+    {
+      "id": "CV-WAGE-06",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 150,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "HALF_UP"
+      },
+      "expected_wage_minor": 13,
+      "note": "temuan-2: 12.5 HALF_UP -> 13"
+    },
+    {
+      "id": "CV-WAGE-07",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 150,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "DOWN"
+      },
+      "expected_wage_minor": 12,
+      "note": "temuan-2: 12.5 DOWN -> 12"
+    },
+    {
+      "id": "CV-DEDUP-03",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-9",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "native"
+          },
+          {
+            "canonical_transaction_id": "TX-9",
+            "measure": "amount_minor",
+            "amount": 1200,
+            "source_kind": "native"
+          }
+        ]
+      ],
+      "raises": "ValueError",
+      "note": "temuan-3: otoritas setara nominal beda -> konflik eksplisit"
+    },
+    {
+      "id": "CV-DEDUP-04",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-8",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "external_snapshot"
+          },
+          {
+            "canonical_transaction_id": "TX-8",
+            "measure": "amount_minor",
+            "amount": 1200,
+            "source_kind": "native"
+          }
+        ]
+      ],
+      "expected_total": {
+        "amount_minor": 1200
+      },
+      "expected_excluded": 0,
+      "expected_superseded": 1,
+      "note": "temuan-3: native menang atas snapshot, tercatat di superseded"
     }
   ]
 }
