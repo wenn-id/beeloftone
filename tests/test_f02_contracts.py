@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -81,9 +82,11 @@ if __name__ == '__main__':
 
 
 def _hydrate(value):
-    """Ubah marker {"__decimal__": s} pada fixture menjadi Decimal."""
+    """Ubah marker {"__decimal__": s} / {"__fraction__": s} pada fixture."""
     if isinstance(value, dict) and set(value) == {'__decimal__'}:
         return Decimal(value['__decimal__'])
+    if isinstance(value, dict) and set(value) == {'__fraction__'}:
+        return Fraction(value['__fraction__'])
     if isinstance(value, list):
         return [_hydrate(item) for item in value]
     if isinstance(value, dict):
@@ -92,7 +95,9 @@ def _hydrate(value):
 
 
 def _normalize(result):
-    """Samakan tuple->list agar sebanding dengan JSON fixture."""
+    """Samakan tuple->list dan Fraction->str agar sebanding dengan JSON fixture."""
+    if isinstance(result, Fraction):
+        return str(result)
     if isinstance(result, (tuple, list)):
         return [_normalize(item) for item in result]
     if isinstance(result, dict):
@@ -115,6 +120,8 @@ class F02Issue41ContractTest(unittest.TestCase):
                 func = getattr(contracts, vector['function'])
                 args = _hydrate(vector.get('args', []))
                 kwargs = _hydrate(vector.get('kwargs', {}))
+                if 'policy' in vector:
+                    kwargs['policy'] = contracts.ContractPolicy(**vector['policy'])
                 if 'raises' in vector:
                     with self.assertRaises(getattr(__import__('builtins'), vector['raises'])):
                         func(*args, **kwargs)
@@ -124,10 +131,13 @@ class F02Issue41ContractTest(unittest.TestCase):
                     self.assertEqual(result, _normalize(_hydrate(vector['expected'])))
                 if 'expected_wage_minor' in vector:
                     self.assertEqual(result['wage_minor'], vector['expected_wage_minor'])
-                    self.assertEqual(result['calculation_policy_ref'], 'DEMO-20260928-1')
+                    expected_ref = vector.get('policy', {}).get('policy_ref', 'DEMO-20260928-1')
+                    self.assertEqual(result['calculation_policy_ref'], expected_ref)
                 if 'expected_total' in vector:
                     self.assertEqual(result['total'], vector['expected_total'])
                     self.assertEqual(len(result['excluded']), vector['expected_excluded'])
+                if 'expected_superseded' in vector:
+                    self.assertEqual(len(result['superseded']), vector['expected_superseded'])
 
     def test_demo_assumptions_are_versioned_and_replaceable(self):
         fixture = json.loads((REPO / 'tests/fixtures/f02-contracts.json').read_text(encoding='utf-8'))
@@ -138,14 +148,20 @@ class F02Issue41ContractTest(unittest.TestCase):
             self.assertTrue(item['id'].startswith('DA-'))
             self.assertTrue(item['statement'])
         # Policy bisa diganti tanpa mengubah kontrak: hasil membawa policy_ref.
-        custom = contracts.ContractPolicy(policy_ref='CUSTOM-1', wage_money_rounding='DOWN')
-        result = contracts.wage_for_realization(
-            pcs=13, rate_per_lusin_minor=180000, rate_revision='R1', policy=custom)
-        self.assertEqual(result['calculation_policy_ref'], 'CUSTOM-1')
-        self.assertNotEqual(
-            result['wage_minor'],
-            contracts.wage_for_realization(
-                pcs=13, rate_per_lusin_minor=180000, rate_revision='R1')['wage_minor'])
+        # Pakai contoh yang memang pecahan (1 pcs @ 150 minor = 12.5) agar
+        # perbedaan mode terbukti, bukan artefak presisi.
+        minor_policy = {'wage_rounding_multiple_minor': 1}
+        down = contracts.ContractPolicy(policy_ref='CUSTOM-DOWN', wage_money_rounding='DOWN',
+                                        **minor_policy)
+        half_up = contracts.ContractPolicy(policy_ref='CUSTOM-HALF-UP', wage_money_rounding='HALF_UP',
+                                           **minor_policy)
+        result_down = contracts.wage_for_realization(
+            pcs=1, rate_per_lusin_minor=150, rate_revision='R1', policy=down)
+        result_half_up = contracts.wage_for_realization(
+            pcs=1, rate_per_lusin_minor=150, rate_revision='R1', policy=half_up)
+        self.assertEqual(result_down['calculation_policy_ref'], 'CUSTOM-DOWN')
+        self.assertEqual(result_down['wage_minor'], 12)
+        self.assertEqual(result_half_up['wage_minor'], 13)
 
     def test_replay_same_idempotency_key_produces_no_second_effect(self):
         """Replay key+payload sama: hasil tersimpan, efek bisnis tepat satu."""
@@ -219,4 +235,78 @@ class F02Issue41ContractTest(unittest.TestCase):
         result = contracts.dedupe_contributions(records)
         self.assertEqual(result['total'], {'net_minor': 12700000})
         self.assertEqual(len(result['excluded']), 1)
-        self.assertEqual(result['excluded'][0]['source_kind'], 'external_snapshot')
+        self.assertEqual(result['excluded'][0]['record']['source_kind'], 'external_snapshot')
+
+    # --- Regression test temuan review PR #111 ---
+
+    def test_wage_rounding_multiple_is_separate_from_storage_unit(self):
+        """Temuan 1: unit simpan uang (minor) != kelipatan pembulatan upah.
+        1 pcs @ Rp100/lusin = Rp8.333... -> kebijakan rupiah penuh = 800 minor,
+        bukan 833. Tahap yang dicatat harus sesuai pemakaian aktual."""
+        result = contracts.wage_for_realization(
+            pcs=1, rate_per_lusin_minor=10000, rate_revision='R1')
+        self.assertEqual(result['wage_minor'], 800)
+        self.assertEqual(result['rounding_multiple_minor'], 100)
+        self.assertEqual(result['rounding_mode'], 'HALF_UP')
+        self.assertEqual(result['rounding_stage'], 'final_per_realization')
+        # Kelipatan 1 minor memberi hasil presisi simpan — beda kebijakan, beda hasil.
+        minor_policy = contracts.ContractPolicy(
+            policy_ref='REGRESI-1', wage_rounding_multiple_minor=1)
+        precise = contracts.wage_for_realization(
+            pcs=1, rate_per_lusin_minor=10000, rate_revision='R1', policy=minor_policy)
+        self.assertEqual(precise['wage_minor'], 833)
+        self.assertEqual(precise['rounding_multiple_minor'], 1)
+
+    def test_wage_fraction_arithmetic_exact_until_final_rounding(self):
+        """Temuan 2: 13 pcs @ 180000 minor/lusin = tepat 195000 untuk mode apa
+        pun; Decimal(13)/12 yang terpotong tidak boleh dipakai perantara."""
+        for mode in ('DOWN', 'HALF_UP', 'UP'):
+            policy = contracts.ContractPolicy(
+                policy_ref=f'REGRESI-{mode}', wage_money_rounding=mode,
+                wage_rounding_multiple_minor=1)
+            with self.subTest(mode=mode):
+                result = contracts.wage_for_realization(
+                    pcs=13, rate_per_lusin_minor=180000, rate_revision='R1', policy=policy)
+                self.assertEqual(result['wage_minor'], 195000)
+        # pcs_to_lusin rasional eksak, bukan Decimal terpotong.
+        self.assertEqual(contracts.pcs_to_lusin(13), Fraction(13, 12))
+
+    def test_dedup_conflict_is_explicit_and_order_independent(self):
+        """Temuan 3: replay identik boleh didedup; otoritas setara + nominal
+        beda -> error; otoritas beda + nominal beda -> pemenang eksplisit dan
+        yang kalah tercatat di superseded. Hasil sama untuk kedua urutan."""
+        def record(kind, amount):
+            return {'canonical_transaction_id': 'REG-1', 'measure': 'amount_minor',
+                    'amount': amount, 'source_kind': kind}
+
+        native_a = record('native', 1200)
+        native_b = record('native', 1000)
+        snap_a = record('external_snapshot', 1200)
+        snap_b = record('external_snapshot', 1000)
+
+        # Replay identik: dedup aman, hasil tak bergantung urutan.
+        for first, second in ((native_a, snap_a), (snap_a, native_a)):
+            with self.subTest(order=(first['source_kind'], second['source_kind'])):
+                result = contracts.dedupe_contributions([first, second])
+                self.assertEqual(result['total'], {'amount_minor': 1200})
+                self.assertEqual(result['winners'][0]['source_kind'], 'native')
+                self.assertEqual(len(result['excluded']), 1)
+                self.assertEqual(len(result['superseded']), 0)
+
+        # Konflik: otoritas setara, nominal beda -> ValueError dua urutan.
+        for first, second in ((native_a, native_b), (native_b, native_a),
+                              (snap_a, snap_b), (snap_b, snap_a)):
+            with self.subTest(conflict=(first['source_kind'], first['amount'],
+                                        second['source_kind'], second['amount'])):
+                with self.assertRaises(ValueError):
+                    contracts.dedupe_contributions([first, second])
+
+        # Otoritas beda, nominal beda: native menang eksplisit, snapshot ke superseded.
+        for first, second in ((native_a, snap_b), (snap_b, native_a)):
+            with self.subTest(supersede=(first['source_kind'], second['source_kind'])):
+                result = contracts.dedupe_contributions([first, second])
+                self.assertEqual(result['total'], {'amount_minor': 1200})
+                self.assertEqual(result['winners'][0]['source_kind'], 'native')
+                self.assertEqual(len(result['superseded']), 1)
+                self.assertEqual(result['superseded'][0]['record']['source_kind'],
+                                 'external_snapshot')

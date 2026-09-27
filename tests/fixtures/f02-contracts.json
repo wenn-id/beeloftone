@@ -17,12 +17,12 @@
     "assumptions": [
       {
         "id": "DA-01",
-        "statement": "Upah = (pcs / 12) x tarif_per_lusin dengan pcs/12 eksak (Decimal), tanpa pembulatan kuantitas.",
+        "statement": "Upah = (pcs / 12) x tarif_per_lusin dihitung rasional eksak (integer/Fraction) sampai pembulatan akhir; tanpa pembulatan kuantitas.",
         "pending_decision": "D04"
       },
       {
         "id": "DA-02",
-        "statement": "Nominal upah dibulatkan HALF_UP ke rupiah, tahap per pekerja per jenis pekerjaan.",
+        "statement": "Nominal upah dibulatkan HALF_UP ke rupiah penuh (kelipatan 100 minor), satu kali di tahap akhir per realisasi.",
         "pending_decision": "D04/D06"
       },
       {
@@ -756,9 +756,7 @@
       "args": [
         480
       ],
-      "expected": {
-        "__decimal__": "40"
-      }
+      "expected": "40"
     },
     {
       "id": "CV-QTY-02",
@@ -766,9 +764,7 @@
       "args": [
         13
       ],
-      "expected": {
-        "__decimal__": "1.083333333333333333333333333"
-      }
+      "expected": "13/12"
     },
     {
       "id": "CV-QTY-03",
@@ -783,7 +779,7 @@
       "function": "lusin_to_pcs",
       "args": [
         {
-          "__decimal__": "40"
+          "__fraction__": "40"
         }
       ],
       "expected": 480
@@ -793,7 +789,7 @@
       "function": "lusin_to_pcs",
       "args": [
         {
-          "__decimal__": "1.1"
+          "__fraction__": "11/10"
         }
       ],
       "raises": "ValueError"
@@ -1018,7 +1014,9 @@
         "rate_revision": "RATE-20260928-1",
         "wage_minor": 7200000,
         "calculation_policy_ref": "DEMO-20260928-1",
-        "rounding_stage": "per_employee_per_work_type"
+        "rounding_mode": "HALF_UP",
+        "rounding_multiple_minor": 100,
+        "rounding_stage": "final_per_realization"
       }
     },
     {
@@ -1121,6 +1119,113 @@
         "amount_minor": 1000
       },
       "expected_excluded": 1
+    },
+    {
+      "id": "CV-WAGE-04",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 10000,
+        "rate_revision": "R1"
+      },
+      "expected_wage_minor": 800,
+      "note": "temuan-1: 1 pcs @ Rp100/lusin, rupiah penuh -> 800 bukan 833"
+    },
+    {
+      "id": "CV-WAGE-05",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 13,
+        "rate_per_lusin_minor": 180000,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "DOWN"
+      },
+      "expected_wage_minor": 195000,
+      "note": "temuan-2: 13*180000/12 eksak 195000, bukan 194999"
+    },
+    {
+      "id": "CV-WAGE-06",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 150,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "HALF_UP"
+      },
+      "expected_wage_minor": 13,
+      "note": "temuan-2: 12.5 HALF_UP -> 13"
+    },
+    {
+      "id": "CV-WAGE-07",
+      "function": "wage_for_realization",
+      "kwargs": {
+        "pcs": 1,
+        "rate_per_lusin_minor": 150,
+        "rate_revision": "R1"
+      },
+      "policy": {
+        "policy_ref": "TEST-minor-1",
+        "wage_rounding_multiple_minor": 1,
+        "wage_money_rounding": "DOWN"
+      },
+      "expected_wage_minor": 12,
+      "note": "temuan-2: 12.5 DOWN -> 12"
+    },
+    {
+      "id": "CV-DEDUP-03",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-9",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "native"
+          },
+          {
+            "canonical_transaction_id": "TX-9",
+            "measure": "amount_minor",
+            "amount": 1200,
+            "source_kind": "native"
+          }
+        ]
+      ],
+      "raises": "ValueError",
+      "note": "temuan-3: otoritas setara nominal beda -> konflik eksplisit"
+    },
+    {
+      "id": "CV-DEDUP-04",
+      "function": "dedupe_contributions",
+      "args": [
+        [
+          {
+            "canonical_transaction_id": "TX-8",
+            "measure": "amount_minor",
+            "amount": 1000,
+            "source_kind": "external_snapshot"
+          },
+          {
+            "canonical_transaction_id": "TX-8",
+            "measure": "amount_minor",
+            "amount": 1200,
+            "source_kind": "native"
+          }
+        ]
+      ],
+      "expected_total": {
+        "amount_minor": 1200
+      },
+      "expected_excluded": 0,
+      "expected_superseded": 1,
+      "note": "temuan-3: native menang atas snapshot, tercatat di superseded"
     }
   ]
 }

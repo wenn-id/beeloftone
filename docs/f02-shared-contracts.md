@@ -42,7 +42,7 @@ produksi yang disetujui.
 | ID | ID domain umumnya UUID4 server yang disimpan sebagai TEXT; sequence adalah urutan event, bukan ID bisnis. `Text` input menerima teks terpangkas 1–160 karakter, bukan validator UUID | Pertahankan ID internal stabil dan FK; kode/nama/reference bukan kunci join lintas sistem. Bedakan `production_order_id`, `sales_order_id`, `employee_id`, `user_id`, dan `party_id`; pemetaan employee/user tidak otomatis sama (D01/D09/D17) |
 | Qty produk | `Quantity`: integer JSON strict, positif, maksimum 1.000.000.000 pcs; boolean/string/pecahan ditolak. Field outcome boleh nol sesuai model | `target_qty`, `actual_qty`, `payable_qty` terpisah. Jangan ubah target menjadi actual atau menyimpulkan payable dari completed (D02/D05) |
 | Qty bahan | Master `m`, `kg`, `pcs`; API string Decimal maksimal 3 desimal, positif sampai 1.000.000 unit. Store memakai integer `*_milli`; `pcs` harus bulat di Store | Simpan nilai dalam unit dasar master, konversi tercatat bersama versinya. Unit dasar/konversi tambahan dan presisi rol/lembar/setelan menunggu D01/D03 |
-| Lusin | Tidak ada rumus upah lusin native | Konversi fisik 12 pcs = 1 lusin tidak menetapkan apakah 13 pcs dibayar 13/12, 1, atau 2 lusin. Simpan pcs asal; pembulatan kuantitas upah dan tahapnya menunggu D04 |
+| Lusin | Tidak ada rumus upah lusin native | Konversi fisik 12 pcs = 1 lusin dihitung rasional eksak (`Fraction`; mis. 13 pcs = 13/12, bukan Decimal terpotong). Konversi tidak menetapkan apakah 13 pcs dibayar 13/12, 1, atau 2 lusin. Simpan pcs asal; pembulatan kuantitas upah dan tahapnya menunggu D04 |
 | Uang | Input string desimal biasa, tanpa pemisah ribuan/eksponen/tanda; output uang 2 desimal. `Decimal` untuk hitung, `*_minor` integer untuk penyimpanan utama (100 minor = 1 IDR). Beberapa payload/riwayat tetap JSON | Jangan lewatkan uang melalui float atau JavaScript `Number` untuk kalkulasi authoritative. Currency eksplisit; HEAD laporan/snapshot memakai IDR. Currency/scale lain harus diputuskan D14 |
 | Batas uang | `PurchasePrice` >0 sampai 1.000.000.000; `SewingJobCreate.cost` 0 sampai 1.000.000.000.000; supplier payment >0 sampai 1.000.000.000.000; `FinanceAmount` memakai maksimal 15 digit sebelum titik dan 2 sesudahnya, lalu validasi per field | Jangan menyamakan batas semua field. Validasi string, finite, skala, tanda dan overflow total sebelum tulis. Nilai negatif untuk komponen potongan/adjustment memerlukan tipe/arah eksplisit, bukan mengirim negatif ke model positif existing |
 | Nilai hilang | Costing memberi `total_cost=null` dan coverage gap bila data tidak lengkap | Unknown bukan nol. Simpan alasan/bukti yang kurang; blokir finalisasi yang memerlukan angka tersebut |
@@ -67,8 +67,15 @@ BASELINE sudah mempunyai beberapa titik pembulatan yang berbeda:
 Ini bukan keputusan memakai half-up di seluruh payroll. Kontrak PROPOSED untuk
 hasil kalkulasi menyertakan `calculation_policy_ref`, `quantity_scale`,
 `money_scale`, `rounding_mode`, `rounding_stage`, dan input/rate revision yang
-dipakai. Nilainya untuk charge/payroll/sales/valuasi menunggu D04/D10/D13/D14.
-Jangan menghitung ulang histori menggunakan konfigurasi terbaru.
+dipakai. **Unit penyimpanan uang (integer minor) dipisahkan dari kelipatan
+pembulatan**: kebijakan boleh membulatkan ke kelipatan yang lebih kasar
+daripada presisi simpan (mis. upah ke rupiah penuh = kelipatan 100 minor,
+sementara uang tetap disimpan per minor). `wage_for_realization` menghitung
+`pcs × rate / 12` sebagai integer eksak (`divround`) dan membulatkan tepat
+satu kali di akhir ke kelipatan policy; tahap yang dicatat
+(`final_per_realization`) harus sesuai pemakaian aktual fungsi. Nilainya untuk
+charge/payroll/sales/valuasi menunggu D04/D10/D13/D14. Jangan menghitung ulang
+histori menggunakan konfigurasi terbaru.
 
 ## Sumber transaksi dan pencegahan hitung ganda
 
@@ -102,6 +109,11 @@ Aturan review kontrak:
    transaksi yang dipetakan, snapshot pasangannya hanya untuk rekonsiliasi. Jumlah
    contribution untuk satu canonical transaction pada satu ukuran laporan adalah
    paling banyak satu. Jangan `SUM(native) + SUM(snapshot)` untuk scope sama.
+   **Deteksi konflik**: replay identik boleh dideduplikasi; dua record otoritas
+   setara dengan nominal berbeda adalah konflik eksplisit (error, bukan diam-diam
+   mengambil salah satu); otoritas berbeda dengan nominal berbeda dimenangkan
+   yang berotoritas lebih tinggi dan yang kalah tercatat di `superseded` untuk
+   rekonsiliasi. Hasil tidak boleh bergantung urutan input.
 4. Mapping/authority/cutoff belum disahkan atau ambigu: tandai unresolved dan
    jangan terbitkan total gabungan seolah lengkap. Jangan menebak kesamaan dari
    reference, nominal, employee name atau tanggal saja. Agregat snapshot payroll
@@ -222,8 +234,8 @@ agar konsumen tahu asumsi mana yang dipakai.
 
 | ID | Asumsi sementara | Keputusan tertunda |
 |---|---|---|
-| DA-01 | Upah = (pcs / 12) × tarif_per_lusin; pcs/12 dihitung eksak (Decimal), tanpa pembulatan kuantitas | D04 |
-| DA-02 | Nominal upah dibulatkan HALF_UP ke rupiah, tahap per pekerja per jenis pekerjaan | D04/D06 |
+| DA-01 | Upah = (pcs / 12) × tarif_per_lusin dihitung rasional eksak (integer/`Fraction`) sampai pembulatan akhir; tanpa pembulatan kuantitas | D04 |
+| DA-02 | Nominal upah dibulatkan HALF_UP ke rupiah penuh (kelipatan 100 minor), satu kali di tahap akhir per realisasi | D04/D06 |
 | DA-03 | Kasbon boleh dipotong penuh dari upah bruto (rasio maksimum 1.0) | D08 |
 | DA-04 | Penjualan demo memakai pembayaran simulasi; dampak stok sebagai adjustment keluar demo | D10/D11 |
 | DA-05 | Seluruh data demo sintetis dan terpisah dari data produksi | – |
@@ -321,5 +333,7 @@ sign-off rumus payroll/accounting baru. Risiko utama: D01–D20 tetap OPEN
 instruksi pemilik 2026-09-27), tidak ada source-authority/cutoff produksi yang
 disahkan, dan belum ada pemisahan akses gaji per fungsi. Langkah berikut:
 reviewer A1/A2/A3 melengkapi expected result skenario PROPOSED/BLOCKED_F01 dan
-sign-off pada revisi fixture yang sama, baru membuka implementasi domain yang
-bergantung (P03/I01/H01 charge & payroll, A01/A02 posting & close).
+sign-off pada revisi fixture yang sama, lalu fondasi berikutnya adalah
+**#43 M01** (master produk, bahan dan satuan) dan **#44 M02** (unit usaha,
+gudang, pihak dan employee) — jangan melompati dependensi langsung ke
+P03/I01/H01.

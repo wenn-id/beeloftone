@@ -26,7 +26,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
-from typing import Iterable, Mapping, Optional, Sequence
+from fractions import Fraction
+from typing import Iterable, Mapping, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +94,6 @@ def canonical_source_key(
 # Kuantitas, satuan dasar, konversi pcs/lusin
 # ---------------------------------------------------------------------------
 
-#: Konversi fisik: 12 pcs = 1 lusin. Ini konversi satuan, BUKAN keputusan
-#: berapa lusin yang dibayar untuk N pcs — itu kebijakan (lihat ContractPolicy).
-PCS_PER_LUSIN = Decimal(12)
-
 #: Batas kontrak Quantity: integer strict, 1..1_000_000_000 pcs.
 QTY_MIN = 1
 QTY_MAX = 1_000_000_000
@@ -111,26 +108,29 @@ def check_quantity(pcs: int) -> int:
     return pcs
 
 
-def pcs_to_lusin(pcs: int) -> Decimal:
-    """Konversi pcs -> lusin sebagai Decimal eksak, tanpa pembulatan diam-diam.
+def pcs_to_lusin(pcs: int) -> Fraction:
+    """Konversi pcs -> lusin sebagai rasional eksak (``Fraction``).
 
-    pcs asal SELALU disimpan; hasil konversi ini untuk kalkulasi, bukan
-    pengganti data asal.
+    Tidak ada pembulatan diam-diam: 13 pcs = Fraction(13, 12), bukan
+    Decimal yang terpotong presisinya. pcs asal SELALU disimpan; hasil
+    konversi ini untuk kalkulasi/display, bukan pengganti data asal.
     """
     check_quantity(pcs)
-    return Decimal(pcs) / PCS_PER_LUSIN
+    return Fraction(pcs, 12)
 
 
-def lusin_to_pcs(lusin: Decimal) -> int:
+def lusin_to_pcs(lusin: Fraction) -> int:
     """Konversi lusin -> pcs; hanya untuk kelipatan eksak 12.
 
     Menolak nilai non-kelipatan daripada memotong diam-diam — keputusan
     pembulatan kuantitas upah adalah kebijakan, bukan konversi satuan.
     """
-    if not isinstance(lusin, Decimal):
-        raise ValueError(f"lusin harus Decimal, diterima: {lusin!r}")
-    pcs = lusin * PCS_PER_LUSIN
-    if pcs != pcs.to_integral_value():
+    if isinstance(lusin, int) and not isinstance(lusin, bool):
+        lusin = Fraction(lusin)
+    if not isinstance(lusin, Fraction):
+        raise ValueError(f"lusin harus Fraction, diterima: {lusin!r}")
+    pcs = lusin * 12
+    if pcs.denominator != 1:
         raise ValueError(f"{lusin} lusin bukan kelipatan pcs bulat")
     return int(pcs)
 
@@ -197,6 +197,29 @@ def round_to_minor(amount: Decimal, mode: str = "HALF_UP") -> int:
     return int((amount * MINOR_PER_UNIT).to_integral_value(rounding=_ROUNDING_MODES[mode]))
 
 
+def divround(numer: int, denom: int, mode: str = "HALF_UP") -> int:
+    """Pembagian integer dengan mode pembulatan eksplisit.
+
+    Aritmatika tetap eksak (integer) sampai pembulatan akhir — tidak ada
+    Decimal perantara yang memotong pecahan berulang (mis. 13/12).
+    Mode: HALF_UP, DOWN, UP. ``denom`` harus positif.
+    """
+    if mode not in _ROUNDING_MODES:
+        raise ValueError(f"mode pembulatan tidak dikenal: {mode!r}")
+    if not isinstance(numer, int) or isinstance(numer, bool):
+        raise ValueError(f"numer harus integer, diterima: {numer!r}")
+    if not isinstance(denom, int) or isinstance(denom, bool) or denom <= 0:
+        raise ValueError(f"denom harus integer positif, diterima: {denom!r}")
+    quotient, remainder = divmod(numer, denom)
+    if remainder == 0:
+        return quotient
+    if mode == "DOWN":
+        return quotient
+    if mode == "UP":
+        return quotient + 1
+    return quotient + (1 if 2 * remainder >= denom else 0)  # HALF_UP
+
+
 # ---------------------------------------------------------------------------
 # Kebijakan kalkulasi berversi (pemisah invariant vs pilihan bisnis)
 # ---------------------------------------------------------------------------
@@ -210,12 +233,20 @@ class ContractPolicy:
 
     policy_ref: str
     #: Cara mengubah pcs realisasi menjadi kuantitas upah: "EXACT" = hitung
-    #: dengan pcs/12 eksak (Decimal); kebijakan lain menunggu keputusan D04.
+    #: dengan pcs/12 rasional eksak; kebijakan lain menunggu keputusan D04.
     wage_lusin_rounding: str = "EXACT"
-    #: Mode pembulatan nominal upah ke minor.
+    #: Mode pembulatan nominal upah.
     wage_money_rounding: str = "HALF_UP"
-    #: Tahap pembulatan nominal upah.
-    wage_money_rounding_stage: str = "per_employee_per_work_type"
+    #: Kelipatan pembulatan nominal upah dalam minor. 100 = rupiah penuh,
+    #: 1 = sen/minor. Ini TERPISAH dari unit penyimpanan uang (minor):
+    #: kebijakan boleh membulatkan ke kelipatan yang lebih kasar daripada
+    #: presisi simpan.
+    wage_rounding_multiple_minor: int = 100
+    #: Tahap pembulatan nominal upah. Nilai yang dicatat harus sesuai cara
+    #: fungsi dipakai: wage_for_realization melakukan tepat SATU pembulatan
+    #: di akhir per realisasi ("final_per_realization"). Agregasi per
+    #: pekerja/per jenis pekerjaan adalah keputusan pemanggil.
+    wage_money_rounding_stage: str = "final_per_realization"
     #: Rasio maksimum potongan kasbon terhadap upah bruto per payroll.
     kasbon_max_deduction_ratio: str = "1.0"
 
@@ -225,14 +256,16 @@ class ContractPolicy:
 #: Versi ini dirujuk hasil kalkulasi demo via ``calculation_policy_ref``.
 DEMO_POLICY = ContractPolicy(
     policy_ref="DEMO-20260928-1",
-    # DEMO_ASSUMPTION: upah = (pcs / 12) x tarif_per_lusin, pcs/12 eksak
-    # tanpa pembulatan kuantitas; keputusan D04 (13 pcs dibayar berapa)
-    # belum final dan tidak diasumsikan di sini.
+    # DEMO_ASSUMPTION: upah = (pcs / 12) x tarif_per_lusin dihitung rasional
+    # eksak (integer/Fraction) sampai pembulatan akhir; keputusan D04
+    # (13 pcs dibayar berapa) belum final dan tidak diasumsikan di sini.
     wage_lusin_rounding="EXACT",
-    # DEMO_ASSUMPTION: nominal upah dibulatkan HALF_UP ke rupiah per
-    # pekerja per jenis pekerjaan; tahap/mode final menunggu D04/D06.
+    # DEMO_ASSUMPTION: nominal upah dibulatkan HALF_UP ke RUPIAH PENUH
+    # (kelipatan 100 minor), satu kali di akhir per realisasi; tahap/mode
+    # final menunggu D04/D06.
     wage_money_rounding="HALF_UP",
-    wage_money_rounding_stage="per_employee_per_work_type",
+    wage_rounding_multiple_minor=100,
+    wage_money_rounding_stage="final_per_realization",
     # DEMO_ASSUMPTION: kasbon boleh dipotong penuh dari upah bruto pada
     # demo; batas potongan, net-tidak-cukup, dan urutan cicilan (D08)
     # belum final.
@@ -254,6 +287,11 @@ def wage_for_realization(
     Satu realization/work component tidak ditagih dua kali — itu dijamin
     idempotency key + canonical source key di lapisan tulis, bukan di sini.
 
+    Aritmatika eksak sampai akhir: upah = pcs x rate / 12 dihitung sebagai
+    integer (``divround``), baru dibulatkan SEKALI ke kelipatan
+    ``policy.wage_rounding_multiple_minor``. Tidak ada Decimal perantara
+    yang memotong pecahan berulang.
+
     Mengembalikan dict dengan ``calculation_policy_ref`` agar konsumen tahu
     asumsi mana yang dipakai dan bisa menggantinya per versi kebijakan.
     """
@@ -261,11 +299,13 @@ def wage_for_realization(
     minor_to_money(rate_per_lusin_minor)  # validasi rate
     if not rate_revision:
         raise ValueError("rate_revision wajib dicatat (snapshot tarif transaksi)")
-    lusin_exact = pcs_to_lusin(pcs)  # EXACT: pcs asal tidak dibulatkan
-    wage_minor = round_to_minor(
-        lusin_exact * minor_to_money(rate_per_lusin_minor),
-        mode=policy.wage_money_rounding,
-    )
+    multiple = policy.wage_rounding_multiple_minor
+    if not isinstance(multiple, int) or isinstance(multiple, bool) or multiple <= 0:
+        raise ValueError(f"wage_rounding_multiple_minor harus integer positif, diterima: {multiple!r}")
+    lusin_exact = pcs_to_lusin(pcs)  # Fraction eksak, mis. 13/12
+    # pcs * rate (integer minor*pcs) / 12 -> minor, dibulatkan ke kelipatan policy
+    wage_minor = divround(pcs * rate_per_lusin_minor, 12 * multiple,
+                          mode=policy.wage_money_rounding) * multiple
     return {
         "pcs": pcs,
         "lusin_exact": str(lusin_exact),
@@ -273,6 +313,8 @@ def wage_for_realization(
         "rate_revision": rate_revision,
         "wage_minor": wage_minor,
         "calculation_policy_ref": policy.policy_ref,
+        "rounding_mode": policy.wage_money_rounding,
+        "rounding_multiple_minor": multiple,
         "rounding_stage": policy.wage_money_rounding_stage,
     }
 
@@ -321,21 +363,42 @@ def validate_state_record(record: Mapping[str, Optional[str]]) -> dict:
 # Pencegahan hitung ganda: native vs snapshot
 # ---------------------------------------------------------------------------
 
+#: Peringkat otoritas sumber untuk satu transaksi ekonomi yang sama.
+#: native/imported yang sudah authoritative mengalahkan snapshot (yang
+#: kemudian hanya untuk rekonsiliasi) — ini aturan kontrak yang
+#: terdokumentasi, bukan "record pertama menang".
+_AUTHORITY_RANK = {
+    "native": 3,
+    "imported_transaction": 3,
+    "opening_balance": 2,
+    "external_snapshot": 1,
+}
+
+
 def dedupe_contributions(
     records: Iterable[Mapping],
 ) -> dict:
-    """Agregasi kontribusi tanpa hitung ganda.
+    """Agregasi kontribusi tanpa hitung ganda, dengan deteksi konflik eksplisit.
 
     Tiap record: ``canonical_transaction_id`` (identitas transaksi ekonomi),
     ``measure`` (ukuran laporan, mis. "qty_pcs" / "amount_minor"),
-    ``amount`` (Decimal/int), ``source_kind``.
-    Aturan: untuk satu (canonical_transaction_id, measure), kontribusi
-    dihitung PALING BANYAK SATU. Bila native/imported sudah authoritative
-    untuk transaksi yang dipetakan, snapshot pasangannya hanya untuk
-    rekonsiliasi dan dikecualikan dari total.
+    ``amount`` (int/Decimal), ``source_kind``.
+
+    Aturan untuk satu (canonical_transaction_id, measure):
+    - replay identik (nominal sama) -> dideduplikasi diam-diam ke ``excluded``;
+      bila peringkat otoritas berbeda, yang tertinggi menang atribusi.
+    - nominal berbeda dan peringkat otoritas sama -> KONFLIK: raise
+      ValueError. Tidak boleh diam-diam mengambil salah satunya.
+    - nominal berbeda dan peringkat berbeda -> yang berotoritas lebih tinggi
+      menang (aturan kontrak), yang kalah dicatat eksplisit di
+      ``superseded`` untuk rekonsiliasi — bukan hilang diam-diam.
+
+    Hasil tidak bergantung urutan input: pemenang selalu ditentukan oleh
+    (peringkat otoritas, nominal), bukan posisi record.
     """
     winners: dict[tuple[str, str], Mapping] = {}
-    excluded: list[Mapping] = []
+    excluded: list[dict] = []
+    superseded: list[dict] = []
     for rec in records:
         key = (rec["canonical_transaction_id"], rec["measure"])
         kind = rec["source_kind"]
@@ -345,15 +408,30 @@ def dedupe_contributions(
         if current is None:
             winners[key] = rec
             continue
-        # native/imported mengalahkan snapshot untuk transaksi yang sama
-        rank = {"native": 3, "imported_transaction": 3, "opening_balance": 2,
-                "external_snapshot": 1}
-        if rank[kind] > rank[current["source_kind"]]:
-            excluded.append(current)
+        rank, current_rank = _AUTHORITY_RANK[kind], _AUTHORITY_RANK[current["source_kind"]]
+        if rec["amount"] == current["amount"]:
+            if rank > current_rank:
+                excluded.append({"record": current, "reason": "identical_replay_attribution"})
+                winners[key] = rec
+            else:
+                excluded.append({"record": rec, "reason": "identical_replay"})
+            continue
+        if rank == current_rank:
+            raise ValueError(
+                "konflik dedup: dua record otoritas setara "
+                f"({current['source_kind']}) untuk {key} dengan nominal berbeda "
+                f"({current['amount']} vs {rec['amount']}); butuh rekonsiliasi, "
+                "tidak boleh dideduplikasi diam-diam"
+            )
+        if rank > current_rank:
+            superseded.append({"record": current, "reason": "superseded_by_authoritative",
+                               "winner": rec})
             winners[key] = rec
         else:
-            excluded.append(rec)
-    total = {}
+            superseded.append({"record": rec, "reason": "superseded_by_authoritative",
+                               "winner": current})
+    total: dict[str, object] = {}
     for (tx, measure), rec in winners.items():
         total[measure] = total.get(measure, 0) + rec["amount"]
-    return {"total": total, "winners": list(winners.values()), "excluded": excluded}
+    return {"total": total, "winners": list(winners.values()),
+            "excluded": excluded, "superseded": superseded}
