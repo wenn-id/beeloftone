@@ -4,9 +4,9 @@ Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**
 
 - Execution baseline tercatat: `96bb48fa8889b3a483411768e2543838e69233b0`, versi aplikasi 0.114.0, schema 55.
 - Prior audit di Issue #40 bertanggal 27 September 2026 hanya mencatat tanggal; jam observasi dan transaction sampling tidak tersedia.
-- Browser headless gagal sebelum halaman login (`browser-harness: daemon default didn't come up`); desktop capture memberi `windows: []`. Tidak ada login, kredensial diketik, atau transaksi diperiksa dalam sesi revisi ini. Lihat `EV-F01-0018`.
+- Browser headless percobaan awal gagal sebelum halaman login (`browser-harness: daemon default didn't come up`; tooling berbeda); lihat `EV-F01-0018`. Sesi managed live-browser read-only berikutnya berhasil login dengan kredensial pengguna via Secure Vault (~13:08 WIB) dan menyelesaikan observasi transaksi 13:20–13:55 WIB (EV-F01-0021..26). Tidak ada form selain login yang disubmit; tidak ada aksi Save/Pay/Approve/Void/Return/adjust/delete. Tidak ada nama pribadi atau nominal yang dicatat di repo.
 - `/settings/periods` tidak didukung bukti sumber audit yang tersedia dan kini `UNVERIFIED`. Lihat `EV-F01-0019`.
-- T03/T04 transaction traces belum dilakukan: jobs/payroll/payment/cashbon, POS/tenders/returns, AP/PO/receipt/payment. T01–T08 tidak dinyatakan selesai.
+- T03–T05 transaction traces parsial selesai 2026-09-27 13:20–13:55 WIB (EV-F01-0021..26): rantai payroll (job→tarif→slip→komponen kasbon), AP settlement non-PO, modal stok + anomali negatif. Belum ditemukan: slip paid, contoh settlement with-PO, transaksi POS, perubahan saldo kasbon, halaman supplier bill, isi file unduhan. T01–T08 tidak dinyatakan selesai; overall tetap IN_PROGRESS.
 - Contoh JSON adalah ilustrasi sintetis; tidak menetapkan expected business results atau perilaku legacy.
 
 ## D14 decision and code-scope verification
@@ -22,11 +22,11 @@ Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**
 | Tugas | Status aktual | Bukti / gap |
 |---|---|---|
 | T00 Baseline/worktree | Terverifikasi | Baseline SHA/version/schema; branch terisolasi.
-| T01 Sumber legacy/access | Berjalan/parsial | Prior audit report ada; sesi browser managed sesi ini diluncurkan (EV-F01-0020) dan menunggu kartu login aman pengguna; timestamps/sampling details masih kurang.
+| T01 Sumber legacy/access | Berjalan/parsial | Prior audit report ada; sesi browser managed sesi ini login via Secure Vault dan menyelesaikan observasi read-only 13:20–13:55 WIB (EV-F01-0021..26). Metodologi sampling penuh #40 belum dijalankan (walkthrough terarah, bukan 100 sampel per modul).
 | T02 Master/UOM | Parsial | Surface groups only; field-level types/required/relations not recorded.
-| T03 Jobs/payroll/cashbon | Belum | No linked transaction trace or slip values.
-| T04 POS/AP | Belum | No invoice/tender/refund or PO/receipt/settlement trace.
-| T05 stock/accounting/reports | Parsial | Issue #108 UI report; cost method/report file/accounting period unverified.
+| T03 Jobs/payroll/cashbon | Parsial | EV-F01-0021: job list 31 Draft (A1), tariff master 578 records, master payroll 0, payroll list 1066 unpaid slips (A2), kasbon 0 records. No causal link A1↔A2; no paid slip, no kasbon balance change. |
+| T04 POS/AP | Parsial | EV-F01-0022: POS 0 records on all filters; 4 templates. EV-F01-0023: 946 AP settlements; A3 non-PO detail; no with-PO example; no supplier bill page. No invoice/tender/refund trace. |
+| T05 stock/accounting/reports | Parsial | EV-F01-0024: 9,646 stock records; negative-stock anomaly CONFIRMED (-29, blank product/SKU) — root cause #108 still unresolved. EV-F01-0025: Title Reports 0 records; dashboard cards observed (no metric definitions); payrolls.xlsx + stock-cards.xlsx downloaded, contents NOT inspected. Accounting period unverified. |
 | T06 roles/integration/migration/ops | Belum | No role matrix/vendor list/export/profile/runbook evidence.
 | T07 synthetic cases | Parsial | Scenarios are questions/illustrations only; no legacy oracle.
 | T08 document verification | Berjalan | Re-run structural/consistency/privacy checks after this revision; not UAT.
@@ -46,7 +46,7 @@ No zero-PII assertion until a fresh manual content review of the final diff. Sta
 
 ## Blockers / next evidence
 
-1. Authenticated browser session: prior local-harness attempt failed before login (different tooling). This session launched a managed live-browser read-only session (EV-F01-0020); it is parked awaiting the user's secure login card for `https://backoffice.beeloftbaby.com/`. No saved login exists in the vault; no credentials were typed. If login is not provided, fall back to owner-supplied evidence collection at the exact sample groups listed in `f01-legacy-evidence.md`.
-2. Need owner/process custodians to locate candidate job→payroll→paid evidence, linked cashbon balance events, POS invoices/tenders/refunds, and AP settlement→PO/receipt/invoice/payment. Store raw records in restricted location only; publish only synthetic IDs/results.
+1. Authenticated browser session: completed 2026-09-27 ~13:08–13:55 WIB. User submitted Secure Vault credentials; managed browser signed in read-only and observed transaction chains (EV-F01-0021..26). Prior local-harness failure (EV-F01-0018) was different tooling and is superseded for this session.
+2. Need owner/process custodians to locate: a Paid payroll slip (all 1066 observed were Unpaid), a with-PO AP settlement example, the supplier bill document behind "Remaining Bill", any POS invoice/tender/void examples, kasbon balance-change events, and the contents of payrolls.xlsx / stock-cards.xlsx (downloaded but not inspected). Store raw records in restricted location only; publish only synthetic IDs/results.
 3. Need accounting/role/channel/export/operations owners to supply evidence not visible in prior menu report.
 4. Only after those sources are reviewed can final recommendation set and owner-ready decision list be reduced.

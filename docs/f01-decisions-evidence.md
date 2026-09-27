@@ -201,11 +201,11 @@ mengklaim kontrak bisnis final. Paket berikutnya mengikuti dependensi penerimaan
 | D13 | EV-F01-0013, EV-F01-0016 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_COST_AND_ANOMALY_TRACE |
 | D14 | EV-F01-0001, EV-F01-0017 | DIRECTION_SELECTED_BY_USER (Opsi B: Native full accounting); detail kebijakan OPEN | Detail COA/akun kontrol, event/timing pengakuan, pajak, periode lock, dan laporan |
 | D15 | EV-F01-0019, EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ACCOUNTING_WORKFLOW_EVIDENCE |
-| D16 | EV-F01-0014, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_REPORT_AND_DOWNLOAD_TRACE |
-| D17 | EV-F01-0012, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE |
-| D18 | EV-F01-0001, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_AND_VENDOR_TRACE |
-| D19 | EV-F01-0016, EV-F01-0017 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_EXPORT_AND_PROFILE |
-| D20 | EV-F01-0001, EV-F01-0018 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_OPERATIONS_AND_UAT_EVIDENCE |
+| D16 | EV-F01-0014, EV-F01-0015, EV-F01-0024, EV-F01-0025 | DIRECT_OBSERVATION (parsial) / PROPOSED (bukan rule verified) | NEEDS_DOWNLOAD_CONTENT_TRACE: exports downloaded but contents uninspected; Title Reports 0 records; metrics undefined |
+| D17 | EV-F01-0012, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE (no change; access observed but role matrix not) |
+| D18 | EV-F01-0001, EV-F01-0015, EV-F01-0022 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_AND_VENDOR_TRACE: POS observed empty on filters tried (not proof); vendor/channel ownership unconfirmed |
+| D19 | EV-F01-0016, EV-F01-0017, EV-F01-0024, EV-F01-0025 | DIRECT_OBSERVATION (parsial) / PROPOSED (bukan rule verified) | NEEDS_EXPORT_AND_PROFILE: negative-stock anomaly confirmed, cause unresolved; export contents uninspected |
+| D20 | EV-F01-0001, EV-F01-0018, EV-F01-0026 | ACCESS_GRANTED / PROPOSED (bukan rule verified) | NEEDS_OPERATIONS_AND_UAT_EVIDENCE |
 
 ### Koreksi periode akuntansi
 
