@@ -1098,18 +1098,18 @@ class VersionAndSchemaTest(unittest.TestCase):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'),
                             re.M).group(1)
-        self.assertEqual(version, '0.114.0', 'A6.4 is the visible workspace milestone')
+        self.assertEqual(version, '0.115.0', 'A6.4 is the visible workspace milestone')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 221, 'A6.4 is presentation only')
+        self.assertEqual(len(contract['paths']), 228, 'A6.4 is presentation only')
 
     def test_the_schema_did_not_move_and_no_migration_was_added(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 55, 'A6.4 is presentation only')
+        self.assertEqual(max(versions), 56, 'A6.4 is presentation only')
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory

@@ -397,6 +397,7 @@ const workspaceDestinations={
   'materials':'materials-view',
   'workforce':'people-view',
   'products':'products-view',
+  'master-catalog':'master-catalog-view',
   'activity':'activity-view',
   'wip-ageing-insights':'analytics-view',
   'capacity-plan':'analytics-view',
@@ -432,6 +433,7 @@ const workspaceSections=[
   {id:'materials-view',view:'materials',invalidate(){materialsRequest++;}},
   {id:'people-view',view:'people',invalidate(){peopleRequest++;}},
   {id:'products-view',view:'products',invalidate(){productsRequest++;}},
+  {id:'master-catalog-view',view:'master-catalog',invalidate(){masterCatalogRequest++;}},
   {id:'activity-view',view:'activity',invalidate(){activityRequest++;}},
   {id:'analytics-view',view:'analytics',invalidate(){analyticsRequest++;}},
   {id:'ai-view',view:'ai',invalidate(){aiRequest++;aiHistoryRequest++;}},
@@ -1731,6 +1733,12 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (/^\/api\/workforce\/employees(\/[^/]+\/(changes|attendance))?$/.test(path)) { if (view === 'people') loadPeople(); }
       else if (/^\/api\/products\/[^/]+\/external-mappings\/jubelio$/.test(path)) { if (view === 'products') loadProducts(); productMappingDialog(result.product_id); }
       else if (/^\/api\/products\/[^/]+\/bom$/.test(path)) bomDialog(result.product_id);
+      else if (/^\/api\/materials\/[^/]+\/changes$/.test(path)) { if (view === 'materials') loadMaterials(); materialMasterDialog(); }
+      else if (path.startsWith('/api/catalog/') || path.startsWith('/api/bom-templates')) {
+        const parts = path.split('/');
+        if (parts[2] === 'catalog' && parts[3]) delete catalogCache[parts[3]];
+        if (view === 'master-catalog') loadCatalogTab();
+      }
       else if (view === 'materials') loadMaterials();
       else if (view === 'people') loadPeople();
       else if (view === 'products') loadProducts();
@@ -1854,21 +1862,16 @@ function paintProducts() {
       + `<span class="data-primary">${e(p.sku)}</span>`
       + `<span class="data-secondary">${e(p.name)}</span>`
       + (variant ? `<span class="data-meta">${e(variant)}</span>` : '')
-      + `<span class="chip-row">${state}</span></span>`
+      + (p.category_name || p.type_name ? `<span class="data-meta">${e([p.category_name,p.type_name].filter(Boolean).join(' · '))}</span>` : '')
+      + `<span class="chip-row">${state}`
+      + (p.active ? '' : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>')
+      + `</span></span>`
       + '<span class="record-row-aside">'
       + `<button type="button" class="action-secondary" data-action="product-mapping" data-id="${e(p.id)}" aria-label="Jubelio ${e(p.sku)}">Jubelio</button>`
       + `<button type="button" class="action-secondary" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button>`
+      + (user.role==='admin' ? `<button type="button" class="action-secondary" data-action="edit-product" data-id="${e(p.id)}" aria-label="Ubah ${e(p.sku)}">Ubah</button>` : '')
       + '</span></li>';
   }).join('')}</ul>`;
-}
-function productForm() {
-  if (guardPending()) return;
-  formDialog('Tambah SKU',
-    '<div class="field"><label class="field-label" for="product-sku">Kode SKU</label><input id="product-sku" name="sku" type="text" required maxlength="160"></div>'
-    + '<div class="field"><label class="field-label" for="product-name">Nama produk</label><input id="product-name" name="name" type="text" required maxlength="160"></div>'
-    + '<div class="field"><label class="field-label" for="product-color">Warna</label><input id="product-color" name="color" type="text" maxlength="80"></div>'
-    + '<div class="field"><label class="field-label" for="product-size">Ukuran</label><input id="product-size" name="size" type="text" maxlength="40"></div>',
-    form => Object.fromEntries(new FormData(form)), '/api/products', 'Gunakan satu kode SKU untuk setiap kombinasi produk, warna, dan ukuran.');
 }
 async function productMappingDialog(productId) {
   if (guardPending()) return;
@@ -1928,13 +1931,123 @@ async function productMappingHistoryDialog(productId) {
   async function load(){const button=$('product-mapping-history-more');button.disabled=true;message('product-mapping-history-error','');try{const rows=await api.get(`/api/products/${encodeURIComponent(productId)}/external-mappings/jubelio/history?`+new URLSearchParams({limit:20,...(before?{before}:{})}));if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;if(!before)$('product-mapping-history').replaceChildren();appendRows('product-mapping-history',rows.map(row=>{const mapped=row.status==='mapped';return `<li class="timeline-item timeline-item-${mapped?'success':'warning'}"><time class="timeline-time" datetime="${e(row.created_at)}">${purchaseStamp(row.created_at)}</time><span class="timeline-event">Revisi ${n(row.revision)} · ${mapped?'Terhubung':'Dilepas'}</span>${mapped?`<span class="timeline-actor">${e(row.external_sku)} · ${e(row.external_id)}</span>`:''}<span class="timeline-actor">dicatat ${e(row.actor_name)}</span><p class="timeline-detail reason">${e(row.reason)}</p></li>`;}).join(''));if(!before&&!rows.length)$('product-mapping-history').innerHTML='<li class="timeline-item"><span class="timeline-event">Belum ada riwayat mapping.</span></li>';before=rows.at(-1)?.sequence||before;button.hidden=rows.length<20;}catch(error){if(version===epoch&&modal===dialogVersion){message('product-mapping-history-error',error.message,true);clearDialogLoading();button.hidden=false;button.textContent='Coba lagi';}}finally{button.disabled=false;}}
   $('product-mapping-history-more').onclick=load;await load();
 }
+// ---------------------------------------------------------------------------
+// M01 Master katalog (issue #43): klasifikasi, satuan, template BOM.
+// ---------------------------------------------------------------------------
+let masterCatalogRequest = 0;
+const catalogCache = {};
+async function catalogRows(kind) {
+  if (!catalogCache[kind]) catalogCache[kind] = allRows('/api/catalog/' + kind);
+  return catalogCache[kind];
+}
+async function loadCatalogs() {
+  const [uoms, product_categories, product_subcategories, product_types, product_series, colors, sizes, material_classes] = await Promise.all([
+    catalogRows('uoms'), catalogRows('product-categories'), catalogRows('product-subcategories'),
+    catalogRows('product-types'), catalogRows('product-series'), catalogRows('colors'),
+    catalogRows('sizes'), catalogRows('material-classes')]);
+  return {uoms, product_categories, product_subcategories, product_types, product_series, colors, sizes, material_classes};
+}
+function catalogSelectOptions(rows, current, parentKey = null) {
+  return rows.map(r => `<option value="${e(r.id)}"${String(r.id) === String(current || '') ? ' selected' : ''}`
+    + `${parentKey ? ` data-parent="${e(r[parentKey] || '')}"` : ''}>${e(r.code)} · ${e(r.name)}${r.active ? '' : ' (nonaktif)'}</option>`).join('');
+}
+function classificationFields(catalog, current = {}, prefix = 'product') {
+  const sel = (name, label, rows, parentKey = null) =>
+    `<div class="field"><label class="field-label" for="${prefix}-${name}">${label}</label>`
+    + `<select id="${prefix}-${name}" name="${name}"><option value="">— Tanpa ${label.toLowerCase()} —</option>`
+    + catalogSelectOptions(rows, current[name], parentKey) + `</select></div>`;
+  return sel('category_id', 'Kategori', catalog.product_categories)
+    + sel('subcategory_id', 'Subkategori', catalog.product_subcategories, 'category_id')
+    + sel('type_id', 'Tipe produk', catalog.product_types, 'subcategory_id')
+    + sel('series_id', 'Seri', catalog.product_series)
+    + sel('color_id', 'Warna', catalog.colors)
+    + sel('size_id', 'Ukuran', catalog.sizes)
+    + `<div class="field"><span class="field-label">Satuan</span><input type="text" value="PCS · Pieces" disabled aria-label="Satuan produk"><input type="hidden" name="uom_code" value="PCS"><p class="field-help">Produk dihitung dalam pcs; lusin hanya tampilan turunan eksak (12 pcs = 1 lusin).</p></div>`;
+}
+function wireClassificationCascade(form) {
+  const cascade = (parentName, childName) => {
+    const parent = form.elements[parentName], child = form.elements[childName];
+    if (!parent || !child) return;
+    const apply = () => {
+      const pv = parent.value;
+      for (const opt of child.options) {
+        if (!opt.value) { opt.hidden = false; continue; }
+        opt.hidden = !!pv && opt.dataset.parent !== pv;
+      }
+      if (child.selectedOptions[0]?.hidden) child.value = '';
+    };
+    parent.addEventListener('change', apply);
+    apply();
+  };
+  cascade('category_id', 'subcategory_id');
+  cascade('subcategory_id', 'type_id');
+}
+function collectClassification(form, {allowClear = false} = {}) {
+  const data = new FormData(form);
+  const get = name => { const v = data.get(name); return v == null ? '' : String(v).trim(); };
+  const fk = name => { const v = get(name); return v === '' ? (allowClear ? '' : undefined) : v; };
+  return {category_id: fk('category_id'), subcategory_id: fk('subcategory_id'), type_id: fk('type_id'),
+    series_id: fk('series_id'), color_id: fk('color_id'), size_id: fk('size_id'),
+    uom_code: get('uom_code') || undefined};
+}
+async function productForm() {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Tambah SKU', '<p class="state">Memuat klasifikasi…</p>');
+  const modal = dialogVersion;
+  try {
+    const catalog = await loadCatalogs();
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    formDialog('Tambah SKU',
+      '<div class="field"><label class="field-label" for="product-sku">Kode SKU</label><input id="product-sku" name="sku" type="text" required maxlength="160"></div>'
+      + '<div class="field"><label class="field-label" for="product-name">Nama produk</label><input id="product-name" name="name" type="text" required maxlength="160"></div>'
+      + '<div class="field"><label class="field-label" for="product-color">Warna</label><input id="product-color" name="color" type="text" maxlength="80"></div>'
+      + '<div class="field"><label class="field-label" for="product-size">Ukuran</label><input id="product-size" name="size" type="text" maxlength="40"></div>'
+      + classificationFields(catalog),
+      form => {
+        const data = new FormData(form);
+        return {sku: String(data.get('sku')).trim(), name: String(data.get('name')).trim(),
+          color: String(data.get('color') || '').trim(), size: String(data.get('size') || '').trim(),
+          ...collectClassification(form)};
+      }, '/api/products', 'Gunakan satu kode SKU untuk setiap kombinasi produk, warna, dan ukuran. Klasifikasi bersifat opsional dan dapat dilengkapi belakangan.');
+    wireClassificationCascade($('action-form'));
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form SKU gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button class="action-secondary" data-action="new-product">Coba lagi</button></p></div>`; }
+}
+async function productEditForm(productId) {
+  if (guardPending()) return;
+  const product = productsCache.find(p => p.id === productId);
+  if (!product) return;
+  const version = epoch;
+  openDialog('Ubah SKU', '<p class="state">Memuat klasifikasi…</p>');
+  const modal = dialogVersion;
+  try {
+    const catalog = await loadCatalogs();
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    formDialog(`Ubah ${product.sku}`,
+      `<p class="form-info">Kode SKU <strong>${e(product.sku)}</strong> tidak dapat diubah.</p>`
+      + `<div class="field"><label class="field-label" for="edit-product-name">Nama produk</label><input id="edit-product-name" name="name" type="text" required maxlength="160" value="${e(product.name)}"></div>`
+      + `<div class="field"><label class="field-label" for="edit-product-color">Warna</label><input id="edit-product-color" name="color" type="text" maxlength="80" value="${e(product.color || '')}"></div>`
+      + `<div class="field"><label class="field-label" for="edit-product-size">Ukuran</label><input id="edit-product-size" name="size" type="text" maxlength="40" value="${e(product.size || '')}"></div>`
+      + classificationFields(catalog, product, 'edit-product')
+      + `<div class="field"><label class="field-label" for="edit-product-active">Status</label><select id="edit-product-active" name="active"><option value="1"${product.active ? ' selected' : ''}>Aktif</option><option value="0"${product.active ? '' : ' selected'}>Nonaktif</option></select>`
+      + `<p class="field-help">SKU nonaktif ditolak untuk order baru; riwayat order dan saldo lama tetap utuh.</p></div>`,
+      form => {
+        const data = new FormData(form);
+        return {name: String(data.get('name')).trim(), color: String(data.get('color') || '').trim(),
+          size: String(data.get('size') || '').trim(), active: data.get('active') === '1',
+          ...collectClassification(form, {allowClear: true})};
+      }, `/api/products/${encodeURIComponent(productId)}/changes`,
+      `${product.sku} · perubahan klasifikasi atau status tidak menulis ulang riwayat transaksi.`);
+    wireClassificationCascade($('action-form'));
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form ubah SKU gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`; }
+}
 async function orderForm() {
   if (guardPending()) return;
   const version = epoch;
   openDialog('Buat order produksi', '<p class="state">Memuat SKU dan penanggung jawab…</p>');
   const modalVersion = dialogVersion;
   try {
-    const [products, users] = await Promise.all([allRows('/api/products'), api.get('/api/users')]);
+    const [products, users] = await Promise.all([allRows('/api/products',{status:'active'}), api.get('/api/users')]);
     if (version !== epoch || modalVersion !== dialogVersion || !$('dialog').open) return;
     // Keadaan tanpa SKU tetap jalur yang jujur dan tetap membawa aksi yang sungguhan, sekarang
     // digambar sebagai keadaan kosong A6.0 alih-alih satu paragraf dan satu tombol.
@@ -1979,7 +2092,7 @@ async function orderForm() {
     $('add-line').onclick = addLine; addLine();
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-order">Coba lagi</button>`; }
 }
-$('products').onclick = showProducts; $('new-order').onclick = orderForm;
+$('products').onclick = showProducts; $('master-catalog').onclick = showMasterCatalog; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = showAuditEvents;
 $('workforce').onclick = showPeople;
 $('scan-bundle').onclick = () => showScanner('bundle');
@@ -2003,12 +2116,16 @@ document.addEventListener('click', event => {
     'marketing-budget-request':()=>marketingBudgetRequestDialog(id),
     'receive-po':()=>purchaseReceiptForm(id),'qc-intake-form':()=>purchaseReceiptForm(id,true),
     'qc-intake':()=>qualityIntakeDialog(id),
-    'new-material':materialForm,'material-master':materialMasterDialog,'receive-material':receiptForm,
+    'new-material':materialForm,'edit-material':()=>materialEditForm(id),'material-master':materialMasterDialog,'receive-material':receiptForm,
     bom:() => bomDialog(id),'edit-bom':() => bomForm(id),'bom-history':() => bomHistoryDialog(id),requirements:requirementsDialog,
     'product-mapping':()=>productMappingDialog(id),'edit-product-mapping':()=>productMappingForm(id),
     'unmap-product':()=>unmapProductForm(id),'product-mapping-history':()=>productMappingHistoryDialog(id),
     // Reset dari keadaan kosong-tersaring memakai jalur yang sama dengan tombol di command bar.
     'reset-product-search':()=>{$('products-search').value='';paintProducts();$('products-search').focus();},
+    'reset-catalog-search':()=>{$('master-catalog-search').value='';paintCatalogTab();$('master-catalog-search').focus();},
+    'edit-catalog':()=>catalogTab === 'bom_template' ? templateForm(id) : catalogRowForm(catalogTab,id),
+    'toggle-catalog':()=>catalogTab === 'bom_template' ? toggleTemplateRow(id) : toggleCatalogRow(catalogTab,id),
+    'apply-template':()=>applyTemplateForm(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
     bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':()=>navigateFromDialog(()=>showScanner('bundle')),
     'bundle-handoffs':()=>bundleHandoffsDialog(id),'new-bundle-handoff':()=>bundleHandoffForm(id),
@@ -2083,7 +2200,7 @@ document.addEventListener('click', event => {
     'workforce-request-decision':()=>workforceRequestDecisionForm(id,button.dataset.status),
     'capacity-plan':showCapacityPlan,'production-quality-insights':showProductionQualityInsights,
     'new-work-center':()=>capacityWorkCenterForm(),
-    'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
+    'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,'edit-product':()=>productEditForm(id),
     'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();
 });
@@ -2401,7 +2518,7 @@ async function bomForm(id) {
   if (guardPending()) return;
   const version = epoch; openDialog('Susun BOM','<p class="state">Memuat bahan dan versi BOM…</p>'); const modal = dialogVersion;
   try {
-    const [bom,materials] = await Promise.all([api.get(`/api/products/${encodeURIComponent(id)}/bom`),allRows('/api/materials')]);
+    const [bom,materials] = await Promise.all([api.get(`/api/products/${encodeURIComponent(id)}/bom`),allRows('/api/materials',{status:'active'})]);
     if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
     if (!materials.length) { $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Master bahan belum ada.</p><p class="empty-state-copy">Admin perlu menambah master bahan melalui menu Bahan baku sebelum menyusun BOM.</p></div>`; return; }
     formDialog('Susun BOM','<div class="full field-wide"><h3 class="workspace-section-title">Bahan per 1 pcs</h3><p class="field-help">Satu baris per bahan. Bahan yang sama tidak boleh muncul di dua baris; maksimal 100 baris dan minimal satu bahan.</p><div id="bom-lines"></div><div class="field-actions"><button type="button" id="bom-add" class="action-secondary">Tambah bahan BOM</button></div></div>'+reasonField(),
@@ -7041,7 +7158,7 @@ async function purchaseRequestForm(orderId=null) {
   const version=epoch;
   openDialog('Buat PR',requestLoading('Memuat bahan dan order…'));const modal=dialogVersion;
   try{
-    const [materials,orders]=await Promise.all([allRows('/api/materials'),allRows('/api/orders')]);
+    const [materials,orders]=await Promise.all([allRows('/api/materials',{status:'active'}),allRows('/api/orders')]);
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     if(!materials.length){$('dialog-content').innerHTML=`<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Master bahan belum ada.</p><p class="empty-state-copy">Tambahkan master bahan sebelum mengajukan pembelian.</p></div>`;return;}
     // A6.7: the A6 field grammar, exactly as A6.2's BOM editor. Names, limits, the `#pr-order`
@@ -7586,6 +7703,7 @@ async function materialMasterDialog() {
   try {
     const materials = await allRows('/api/materials');
     if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    materialMasterCache = materials;
     // Master bahan adalah identitas, bukan saldo: kode, nama, satuan, dan tidak satu pun kuantitas.
     $('dialog-content').innerHTML = (materials.length
       ? `<p class="info-panel">${svgIcon('info','icon-sm')}<span>Identitas bahan. Saldo dan stok bebas dicatat per batch di halaman Bahan baku.</span></p>`
@@ -7593,26 +7711,368 @@ async function materialMasterDialog() {
         + `<ul id="material-master-list" class="record-list">${materials.map(m => '<li class="record-row">'
           + `<span class="metric-icon">${svgIcon('box','icon-sm')}</span>`
           + `<span class="record-row-copy"><span class="data-primary">${e(m.code)}</span>`
-          + `<span class="data-secondary">${e(m.name)} · ${e(m.unit)}</span></span></li>`).join('')}</ul>`
+          + `<span class="data-secondary">${e(m.name)} · ${e(m.unit)}</span>`
+          + (m.class_name ? `<span class="data-meta">${e(m.class_name)}</span>` : '')
+          + (m.reference_price ? `<span class="data-meta">Acuan ${e(commandMoney(m.reference_price))}</span>` : '')
+          + `<span class="chip-row">${m.active ? '' : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>'}</span></span>`
+          + (user.role === 'admin' ? `<span class="record-row-aside"><button type="button" class="action-secondary" data-action="edit-material" data-id="${e(m.id)}" aria-label="Ubah ${e(m.code)}">Ubah</button></span>` : '')
+          + `</li>`).join('')}</ul>`
       : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada bahan.</p>`
         + '<p class="empty-state-copy">Admin dapat menambahkan master pertama.</p></div>')
       + (user.role === 'admin' ? '<div class="field-actions field-actions-end"><button class="action-primary" data-action="new-material">Tambah bahan</button></div>' : '');
   } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Master bahan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button class="action-secondary" data-action="material-master">Coba lagi</button></p></div>`; }
 }
-function materialForm() {
+let materialMasterCache = [];
+function materialClassOptions(classes, current) {
+  return classes.map(c => `<option value="${e(c.id)}"${String(c.id) === String(current || '') ? ' selected' : ''}>${'—'.repeat(Math.max(0, c.level - 1))} ${e(c.code)} · ${e(c.name)}${c.active ? '' : ' (nonaktif)'}</option>`).join('');
+}
+async function materialForm() {
   if (guardPending()) return;
-  formDialog('Tambah bahan',
-    '<div class="field"><label class="field-label" for="material-code">Kode bahan</label><input id="material-code" name="code" type="text" required maxlength="160"></div>'
-    + '<div class="field"><label class="field-label" for="material-name">Nama bahan</label><input id="material-name" name="name" type="text" required maxlength="160"></div>'
-    + '<div class="field"><label class="field-label" for="material-unit">Satuan dasar</label><select id="material-unit" name="unit"><option value="m">Meter (m)</option><option value="kg">Kilogram (kg)</option><option value="pcs">Buah (pcs)</option></select>'
-    + '<p class="field-help">Satuan menentukan ketelitian jumlah: pcs bulat, m dan kg sampai tiga desimal.</p></div>',
-    form => Object.fromEntries(new FormData(form)), '/api/materials','Satu kode untuk setiap jenis bahan. Kode, nama, dan satuan tidak dapat diubah setelah disimpan.');
+  const version = epoch;
+  openDialog('Tambah bahan', '<p class="state">Memuat klasifikasi…</p>');
+  const modal = dialogVersion;
+  try {
+    const classes = await catalogRows('material-classes');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    formDialog('Tambah bahan',
+      '<div class="field"><label class="field-label" for="material-code">Kode bahan</label><input id="material-code" name="code" type="text" required maxlength="160"></div>'
+      + '<div class="field"><label class="field-label" for="material-name">Nama bahan</label><input id="material-name" name="name" type="text" required maxlength="160"></div>'
+      + '<div class="field"><label class="field-label" for="material-unit">Satuan dasar</label><select id="material-unit" name="unit"><option value="m">Meter (m)</option><option value="kg">Kilogram (kg)</option><option value="pcs">Buah (pcs)</option></select>'
+      + '<p class="field-help">Satuan menentukan ketelitian jumlah: pcs bulat, m dan kg sampai tiga desimal.</p></div>'
+      + `<div class="field"><label class="field-label" for="material-class">Klasifikasi</label><select id="material-class" name="class_id"><option value="">— Tanpa klasifikasi —</option>${materialClassOptions(classes.filter(c => c.active))}</select></div>`
+      + '<div class="field"><label class="field-label" for="material-description">Deskripsi</label><input id="material-description" name="description" type="text" maxlength="1000"></div>'
+      + '<div class="field"><label class="field-label" for="material-ref-price">Harga acuan (Rp)</label><input id="material-ref-price" name="reference_price" type="text" inputmode="decimal" maxlength="18" placeholder="15000.50"><p class="field-help">Opsional. Hanya acuan perencanaan; harga aktual tetap mengikuti PO dan penerimaan.</p></div>',
+      form => {
+        const data = new FormData(form);
+        const ref = String(data.get('reference_price') || '').trim();
+        return {code: String(data.get('code')).trim(), name: String(data.get('name')).trim(), unit: data.get('unit'),
+          class_id: String(data.get('class_id') || '').trim() || undefined,
+          description: String(data.get('description') || '').trim() || undefined,
+          reference_price: ref || undefined};
+      }, '/api/materials','Satu kode untuk setiap jenis bahan. Kode, nama, dan satuan tidak dapat diubah setelah disimpan.');
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form bahan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p><p class="error-state-action"><button class="action-secondary" data-action="new-material">Coba lagi</button></p></div>`; }
+}
+async function materialEditForm(materialId) {
+  if (guardPending()) return;
+  const material = materialMasterCache.find(m => m.id === materialId);
+  if (!material) return;
+  const version = epoch;
+  openDialog('Ubah bahan', '<p class="state">Memuat klasifikasi…</p>');
+  const modal = dialogVersion;
+  try {
+    const classes = await catalogRows('material-classes');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    formDialog(`Ubah ${material.code}`,
+      `<p class="form-info">Kode <strong>${e(material.code)}</strong>, nama, dan satuan tidak dapat diubah.</p>`
+      + `<div class="field"><label class="field-label" for="edit-material-class">Klasifikasi</label><select id="edit-material-class" name="class_id"><option value="">— Tanpa klasifikasi —</option>${materialClassOptions(classes, material.class_id)}</select></div>`
+      + `<div class="field"><label class="field-label" for="edit-material-description">Deskripsi</label><input id="edit-material-description" name="description" type="text" maxlength="1000" value="${e(material.description || '')}"></div>`
+      + `<div class="field"><label class="field-label" for="edit-material-ref-price">Harga acuan (Rp)</label><input id="edit-material-ref-price" name="reference_price" type="text" inputmode="decimal" maxlength="18" value="${e(material.reference_price || '')}" placeholder="15000.50"><p class="field-help">Kosongkan untuk menghapus acuan. Harga aktual PO dan penerimaan tidak berubah.</p></div>`
+      + `<div class="field"><label class="field-label" for="edit-material-active">Status</label><select id="edit-material-active" name="active"><option value="1"${material.active ? ' selected' : ''}>Aktif</option><option value="0"${material.active ? '' : ' selected'}>Nonaktif</option></select>`
+      + `<p class="field-help">Bahan nonaktif ditolak untuk BOM, template, PR, dan penerimaan baru; stok dan riwayat tetap utuh.</p></div>`,
+      form => {
+        const data = new FormData(form);
+        return {class_id: String(data.get('class_id') || '').trim(),
+          description: String(data.get('description') || '').trim(),
+          reference_price: String(data.get('reference_price') || '').trim(),
+          active: data.get('active') === '1'};
+      }, `/api/materials/${encodeURIComponent(materialId)}/changes`,
+      `${material.code} · ${material.name} · perubahan metadata tidak menulis ulang riwayat.`);
+  } catch (error) { if (version === epoch && modal === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form ubah bahan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`; }
+}
+// -- Halaman Master katalog -------------------------------------------------
+const CATALOG_TABS = [
+  {kind: 'uom', api: 'uoms', title: 'Satuan'},
+  {kind: 'product_category', api: 'product-categories', title: 'Kategori produk'},
+  {kind: 'product_subcategory', api: 'product-subcategories', title: 'Subkategori produk'},
+  {kind: 'product_type', api: 'product-types', title: 'Tipe produk'},
+  {kind: 'product_series', api: 'product-series', title: 'Seri produk'},
+  {kind: 'color', api: 'colors', title: 'Warna'},
+  {kind: 'size', api: 'sizes', title: 'Ukuran'},
+  {kind: 'material_class', api: 'material-classes', title: 'Klasifikasi bahan'},
+  {kind: 'bom_template', api: null, title: 'Template BOM'},
+];
+let catalogTab = 'uoms';
+let catalogRowsCache = [];
+function showMasterCatalog() {
+  activateWorkspace('master-catalog');
+  $('master-catalog-back').onclick = showBoard;
+  $('master-catalog-refresh').onclick = () => loadCatalogTab();
+  $('new-catalog-row').onclick = () => catalogTab === 'bom_template' ? templateForm() : catalogRowForm(catalogTab);
+  $('master-catalog-search').oninput = paintCatalogTab;
+  $('master-catalog-clear').onclick = () => { $('master-catalog-search').value = ''; paintCatalogTab(); $('master-catalog-search').focus(); };
+  $('master-catalog-search-form').onsubmit = event => event.preventDefault();
+  loadCatalogTab();
+}
+function renderCatalogTabs() {
+  $('master-catalog-tabs').innerHTML = CATALOG_TABS.map(t =>
+    `<button type="button" role="tab" aria-selected="${t.kind === catalogTab}" class="${t.kind === catalogTab ? 'action-primary' : 'action-secondary'}" data-catalog-tab="${t.kind}">${e(t.title)}</button>`).join('');
+  $('master-catalog-tabs').querySelectorAll('[data-catalog-tab]').forEach(button => button.onclick = () => {
+    if (catalogTab === button.dataset.catalogTab) return;
+    catalogTab = button.dataset.catalogTab;
+    $('master-catalog-search').value = '';
+    loadCatalogTab();
+  });
+}
+async function loadCatalogTab() {
+  const request = ++masterCatalogRequest, version = epoch;
+  const tab = CATALOG_TABS.find(t => t.kind === catalogTab);
+  $('master-catalog-heading').textContent = tab.title;
+  $('new-catalog-row').hidden = user.role !== 'admin';
+  renderCatalogTabs();
+  if (!markRefreshing('master-catalog-list')) {
+    pageState('master-catalog-message', 'loading', `Memuat ${tab.title.toLowerCase()}…`);
+    $('master-catalog-list').replaceChildren();
+  }
+  try {
+    const rows = tab.kind === 'bom_template' ? await allRows('/api/bom-templates') : await catalogRows(tab.api);
+    if (version !== epoch || request !== masterCatalogRequest || view !== 'master-catalog') return;
+    settleRefreshing('master-catalog-list');
+    catalogRowsCache = rows;
+    paintCatalogTab();
+  } catch (error) {
+    if (version === epoch && request === masterCatalogRequest && view === 'master-catalog') {
+      settleRefreshing('master-catalog-list');
+      if (error.status === 401) fail(error, 'master-catalog-message');
+      else pageState('master-catalog-message', 'error', `${tab.title} gagal dimuat.`, error.message,
+        '<button id="master-catalog-retry" type="button" class="action-secondary">Coba lagi</button>');
+      if ($('master-catalog-retry')) $('master-catalog-retry').onclick = loadCatalogTab;
+    }
+  }
+}
+function catalogRowHtml(tab, r) {
+  let meta = '';
+  if (tab.kind === 'uom') {
+    if (r.range_text) meta += `<span class="data-meta">Rentang: ${e(r.range_text)} (makna belum terverifikasi)</span>`;
+    if (r.note) meta += `<span class="data-meta">${e(r.note)}</span>`;
+  } else if (tab.kind === 'size') meta += `<span class="data-meta">Urutan ${n(r.sort_order)}</span>`;
+  else if (tab.kind === 'material_class') meta += `<span class="data-meta">Level ${n(r.level)}</span>`;
+  if (r.parent_name) meta += `<span class="data-meta">${e(r.parent_name)}</span>`;
+  if (tab.kind === 'bom_template') {
+    meta += `<span class="data-meta">${n(r.components.length)} bahan</span>`;
+    if (r.product_type_name) meta += `<span class="data-meta">Tipe: ${e(r.product_type_name)}</span>`;
+  }
+  const chip = r.active ? '' : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>';
+  let actions = '';
+  if (user.role === 'admin') {
+    if (tab.kind === 'bom_template') actions += `<button type="button" class="action-secondary" data-action="apply-template" data-id="${e(r.id)}">Terapkan</button>`;
+    actions += `<button type="button" class="action-secondary" data-action="edit-catalog" data-id="${e(r.id)}">Ubah</button>`
+      + `<button type="button" class="action-quiet" data-action="toggle-catalog" data-id="${e(r.id)}">${r.active ? 'Nonaktifkan' : 'Aktifkan'}</button>`;
+  }
+  return `<li class="record-row"><span class="metric-icon">${svgIcon(tab.kind === 'bom_template' ? 'layers' : 'tag', 'icon-sm')}</span>`
+    + `<span class="record-row-copy"><span class="data-primary">${e(r.code)}</span><span class="data-secondary">${e(r.name)}</span>${meta}<span class="chip-row">${chip}</span></span>`
+    + (actions ? `<span class="record-row-aside">${actions}</span>` : '') + `</li>`;
+}
+function paintCatalogTab() {
+  const tab = CATALOG_TABS.find(t => t.kind === catalogTab);
+  const q = $('master-catalog-search').value.trim().toLowerCase();
+  const rows = !q ? catalogRowsCache : catalogRowsCache.filter(r => [r.code, r.name, r.parent_name || ''].some(v => (v || '').toLowerCase().includes(q)));
+  $('master-catalog-count').textContent = !catalogRowsCache.length ? ''
+    : q ? `${n(rows.length)} dari ${n(catalogRowsCache.length)}` : `${n(catalogRowsCache.length)} ${tab.title.toLowerCase()}`;
+  if (rows.length) pageState('master-catalog-message', '');
+  else if (catalogRowsCache.length) pageState('master-catalog-message', 'empty', 'Tidak ada yang cocok dengan pencarian ini.', 'Periksa ejaan kode atau nama.',
+    '<button type="button" class="action-secondary" data-action="reset-catalog-search">Reset pencarian</button>');
+  else pageState('master-catalog-message', 'empty', `Belum ada ${tab.title.toLowerCase()}.`,
+    user.role === 'admin' ? 'Tambahkan entri pertama lewat tombol Tambah.' : 'Minta admin menambahkan entri.');
+  $('master-catalog-list').innerHTML = !rows.length ? '' : `<ul class="record-list">${rows.map(r => catalogRowHtml(tab, r)).join('')}</ul>`;
+}
+async function catalogRowForm(kind, rowId = null) {
+  if (guardPending()) return;
+  const tab = CATALOG_TABS.find(t => t.kind === kind);
+  const row = rowId ? catalogRowsCache.find(r => r.id === rowId) : null;
+  if (rowId && !row) return;
+  const version = epoch;
+  openDialog(row ? `Ubah ${tab.title}` : `Tambah ${tab.title}`, '<p class="state">Memuat…</p>');
+  const modal = dialogVersion;
+  try {
+    const catalog = await loadCatalogs();
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    const parentSelect = (key, label, rows, current, parentKey = null, levelKey = null) =>
+      `<div class="field"><label class="field-label" for="catalog-${key}">${label}</label><select id="catalog-${key}" name="${key}">`
+      + rows.map(r => `<option value="${e(r.id)}"${String(r.id) === String(current || '') ? ' selected' : ''}`
+        + `${parentKey ? ` data-parent="${e(r[parentKey] || '')}"` : ''}${levelKey ? ` data-level="${r[levelKey]}"` : ''}>${e(r.code)} · ${e(r.name)}${r.active ? '' : ' (nonaktif)'}</option>`).join('')
+      + `</select></div>`;
+    let fields = '';
+    if (!row) fields += '<div class="field"><label class="field-label" for="catalog-code">Kode</label><input id="catalog-code" name="code" type="text" required maxlength="64"><p class="field-help">Huruf besar otomatis; kode tidak dapat diubah setelah disimpan.</p></div>';
+    else fields += `<p class="form-info">Kode <strong>${e(row.code)}</strong> tidak dapat diubah.</p>`;
+    fields += `<div class="field"><label class="field-label" for="catalog-name">Nama</label><input id="catalog-name" name="name" type="text" required maxlength="160"${row ? ` value="${e(row.name)}"` : ''}></div>`;
+    if (kind === 'product_subcategory') fields += parentSelect('category_id', 'Kategori', catalog.product_categories, row?.category_id);
+    if (kind === 'product_type') fields += parentSelect('subcategory_id', 'Subkategori', catalog.product_subcategories, row?.subcategory_id, 'category_id');
+    if (kind === 'material_class') {
+      if (!row) fields += `<div class="field"><label class="field-label" for="catalog-level">Level</label><select id="catalog-level" name="level"><option value="1">1 — Kelompok besar</option><option value="2">2 — Sub kelompok</option><option value="3">3 — Jenis bahan</option></select></div>`;
+      else fields += `<p class="form-info">Level ${n(row.level)} tidak dapat diubah.</p>`;
+      fields += `<div class="field"><label class="field-label" for="catalog-parent_id">Klasifikasi induk</label><select id="catalog-parent_id" name="parent_id"><option value="">— Tanpa induk —</option>`
+        + catalog.material_classes.map(c => `<option value="${e(c.id)}" data-level="${c.level}"${String(c.id) === String(row?.parent_id || '') ? ' selected' : ''}>${e(c.code)} · ${e(c.name)}${c.active ? '' : ' (nonaktif)'}</option>`).join('')
+        + `</select><p class="field-help">Level 1 tanpa induk; level 2/3 wajib berinduk tepat satu level di atasnya.</p></div>`;
+    }
+    if (kind === 'uom') {
+      fields += `<div class="field"><label class="field-label" for="catalog-range_text">Rentang (teks legacy)</label><input id="catalog-range_text" name="range_text" type="text" maxlength="64" value="${e(row?.range_text || '')}"><p class="field-help">Disimpan verbatim apa adanya; maknanya belum terverifikasi dan bukan faktor konversi.</p></div>`
+        + `<div class="field"><label class="field-label" for="catalog-note">Catatan</label><input id="catalog-note" name="note" type="text" maxlength="1000" value="${e(row?.note || '')}"></div>`;
+    }
+    if (kind === 'size') fields += `<div class="field"><label class="field-label" for="catalog-sort_order">Urutan tampil</label><input id="catalog-sort_order" name="sort_order" type="number" step="1" value="${row ? n(row.sort_order) : 0}"></div>`;
+    if (row) fields += `<div class="field"><label class="field-label" for="catalog-active">Status</label><select id="catalog-active" name="active"><option value="1"${row.active ? ' selected' : ''}>Aktif</option><option value="0"${row.active ? '' : ' selected'}>Nonaktif</option></select><p class="field-help">Entri nonaktif ditolak untuk data baru; riwayat lama tetap utuh.</p></div>`;
+    formDialog(row ? `Ubah ${row.code}` : `Tambah ${tab.title}`,
+      fields,
+      form => {
+        const data = new FormData(form);
+        const get = name => { const v = data.get(name); return v == null ? '' : String(v).trim(); };
+        const payload = {name: get('name')};
+        if (!row) payload.code = get('code');
+        for (const key of ['category_id', 'subcategory_id', 'parent_id']) { const v = get(key); if (v !== '' || row) payload[key] = v || undefined; }
+        if (kind === 'material_class' && !row) payload.level = Number(get('level'));
+        if (kind === 'uom') { payload.range_text = get('range_text'); payload.note = get('note'); }
+        if (kind === 'size') payload.sort_order = Number(get('sort_order'));
+        if (row) payload.active = get('active') === '1';
+        return payload;
+      },
+      row ? `/api/catalog/${tab.api}/${encodeURIComponent(row.id)}/changes` : `/api/catalog/${tab.api}`,
+      row ? `${row.code} · ${row.name}` : `Kode ${tab.title.toLowerCase()} bersifat unik dan tidak dapat diubah.`);
+    // Induk klasifikasi bahan difilter mengikuti level yang dipilih.
+    const levelSel = $('catalog-level'), parentSel = $('catalog-parent_id');
+    if (levelSel && parentSel) {
+      const applyLevel = () => {
+        const want = Number(levelSel.value) - 1;
+        for (const opt of parentSel.options) {
+          if (!opt.value) { opt.hidden = want !== 0; continue; }
+          opt.hidden = Number(opt.dataset.level) !== want;
+        }
+        if (parentSel.selectedOptions[0]?.hidden) parentSel.value = '';
+      };
+      levelSel.addEventListener('change', applyLevel);
+      applyLevel();
+    }
+  } catch (error) { if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return; $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`; }
+}
+function toggleCatalogRow(kind, rowId) {
+  const tab = CATALOG_TABS.find(t => t.kind === kind);
+  const row = catalogRowsCache.find(r => r.id === rowId);
+  if (!row || kind === 'bom_template') return;
+  if (guardPending()) return;
+  formDialog(row.active ? `Nonaktifkan ${row.code}` : `Aktifkan ${row.code}`,
+    reasonField('Alasan perubahan status'),
+    form => ({active: !row.active, reason: new FormData(form).get('reason').trim()}),
+    `/api/catalog/${tab.api}/${encodeURIComponent(rowId)}/changes`,
+    row.active
+      ? `${row.code} · ${row.name}\nEntri nonaktif ditolak untuk data baru; riwayat lama tetap utuh.`
+      : `${row.code} · ${row.name}`);
+}
+function toggleTemplateRow(rowId) {
+  const row = catalogRowsCache.find(r => r.id === rowId);
+  if (!row || guardPending()) return;
+  formDialog(row.active ? `Nonaktifkan ${row.code}` : `Aktifkan ${row.code}`,
+    reasonField('Alasan perubahan status'),
+    form => ({active: !row.active, reason: new FormData(form).get('reason').trim()}),
+    `/api/bom-templates/${encodeURIComponent(rowId)}/changes`,
+    row.active
+      ? `${row.code} · ${row.name}\nTemplate nonaktif tidak dapat diterapkan; riwayat BOM tetap utuh.`
+      : `${row.code} · ${row.name}`);
+}
+// -- Template BOM -----------------------------------------------------------
+function templateComponentRow(materials, component = {}) {
+  const rowId = 'tplc-' + Math.random().toString(36).slice(2);
+  return `<div class="line-input" data-component-row>`
+    + `<div class="field"><label class="field-label" for="${rowId}-m">Bahan</label><select id="${rowId}-m" data-material required>`
+    + materials.map(m => `<option value="${e(m.id)}"${m.id === component.material_id ? ' selected' : ''}>${e(m.code)} · ${e(m.name)} (${e(m.unit)})${m.active ? '' : ' (nonaktif)'}</option>`).join('')
+    + `</select></div>`
+    + `<div class="field"><label class="field-label" for="${rowId}-q">Jumlah per pcs</label><input id="${rowId}-q" data-quantity type="text" inputmode="decimal" required maxlength="32" value="${e(component.quantity || '')}" placeholder="1.500"></div>`
+    + `<button type="button" class="action-quiet" data-remove-row aria-label="Hapus baris bahan">Hapus</button></div>`;
+}
+async function templateForm(rowId = null) {
+  if (guardPending()) return;
+  const row = rowId ? catalogRowsCache.find(r => r.id === rowId) : null;
+  if (rowId && !row) return;
+  const version = epoch;
+  openDialog(row ? 'Ubah template BOM' : 'Tambah template BOM', '<p class="state">Memuat bahan dan tipe produk…</p>');
+  const modal = dialogVersion;
+  try {
+    const [materials, types] = await Promise.all([allRows('/api/materials'), catalogRows('product-types')]);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!materials.filter(m => m.active).length && !row) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada bahan aktif.</p><p class="empty-state-copy">Tambahkan master bahan aktif terlebih dahulu.</p></div>`;
+      return;
+    }
+    let fields = '';
+    if (!row) fields += '<div class="field"><label class="field-label" for="template-code">Kode template</label><input id="template-code" name="code" type="text" required maxlength="64"><p class="field-help">Kode tidak dapat diubah setelah disimpan.</p></div>';
+    else fields += `<p class="form-info">Kode <strong>${e(row.code)}</strong> tidak dapat diubah.</p>`;
+    fields += `<div class="field"><label class="field-label" for="template-name">Nama template</label><input id="template-name" name="name" type="text" required maxlength="160"${row ? ` value="${e(row.name)}"` : ''}></div>`
+      + `<div class="field"><label class="field-label" for="template-type">Tipe produk</label><select id="template-type" name="product_type_id"><option value="">— Semua tipe —</option>`
+      + types.map(t => `<option value="${e(t.id)}"${t.id === row?.product_type_id ? ' selected' : ''}>${e(t.code)} · ${e(t.name)}${t.active ? '' : ' (nonaktif)'}</option>`).join('')
+      + `</select></div>`
+      + '<div class="full field-wide"><h3 class="workspace-section-title">Komposisi bahan</h3><p class="field-help">Jumlah mengikuti satuan bahan: pcs bulat, m/kg sampai tiga desimal.</p><div id="template-components"></div>'
+      + '<div class="field-actions"><button type="button" id="template-add-row" class="action-secondary">Tambah baris bahan</button></div></div>';
+    if (row) fields += `<div class="field"><label class="field-label" for="template-active">Status</label><select id="template-active" name="active"><option value="1"${row.active ? ' selected' : ''}>Aktif</option><option value="0"${row.active ? '' : ' selected'}>Nonaktif</option></select></div>`;
+    formDialog(row ? `Ubah ${row.code}` : 'Tambah template BOM', fields,
+      form => {
+        const data = new FormData(form);
+        const components = [...form.querySelectorAll('[data-component-row]')].map(el => ({
+          material_id: el.querySelector('[data-material]').value,
+          quantity: el.querySelector('[data-quantity]').value.trim(),
+        })).filter(c => c.material_id && c.quantity);
+        const payload = {name: String(data.get('name')).trim(), product_type_id: String(data.get('product_type_id') || '').trim(), components};
+        if (!row) payload.code = String(data.get('code')).trim();
+        else payload.active = data.get('active') === '1';
+        return payload;
+      },
+      row ? `/api/bom-templates/${encodeURIComponent(row.id)}/changes` : '/api/bom-templates',
+      'Template adalah cetakan komposisi; menerapkannya menerbitkan revisi BOM baru tanpa menghapus revisi lama.');
+    const container = $('template-components');
+    const materialChoices = materials.slice().sort((a, b) => a.code.localeCompare(b.code));
+    const addRow = (component = {}) => {
+      container.insertAdjacentHTML('beforeend', templateComponentRow(materialChoices, component));
+    };
+    (row?.components?.length ? row.components : [{}]).forEach(addRow);
+    $('template-add-row').onclick = () => addRow();
+    container.addEventListener('click', event => {
+      const remove = event.target.closest('[data-remove-row]');
+      if (remove && container.children.length > 1) remove.closest('[data-component-row]').remove();
+      else if (remove) notify('Template memerlukan minimal satu bahan.');
+    });
+  } catch (error) { if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return; $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form template gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`; }
+}
+async function applyTemplateForm(templateId) {
+  if (guardPending()) return;
+  const template = catalogRowsCache.find(r => r.id === templateId);
+  if (!template) return;
+  const version = epoch;
+  openDialog(`Terapkan ${template.code}`, '<p class="state">Memuat SKU aktif…</p>');
+  const modal = dialogVersion;
+  try {
+    const products = await allRows('/api/products', {status: 'active'});
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!products.length) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada SKU aktif.</p><p class="empty-state-copy">Aktifkan atau tambahkan SKU terlebih dahulu.</p></div>`;
+      return;
+    }
+    formDialog(`Terapkan ${template.code}`,
+      `<div class="field"><label class="field-label" for="apply-product">SKU tujuan</label><select id="apply-product" name="product_id" required>`
+      + products.map(p => option(p.id, `${p.sku} · ${p.name}`)).join('') + `</select></div>`
+      + `<p class="form-info" id="apply-revision-info">Memuat revisi BOM…</p>`
+      + `<input type="hidden" name="expected_revision" id="apply-revision" value="0">`
+      + reasonField('Alasan penerapan template'),
+      form => {
+        const data = new FormData(form);
+        return {product_id: data.get('product_id'), reason: String(data.get('reason')).trim(),
+          expected_revision: Number(data.get('expected_revision'))};
+      },
+      `/api/bom-templates/${encodeURIComponent(templateId)}/apply`,
+      `${template.code} · ${template.name}\nMenerapkan template menerbitkan revisi BOM baru; revisi lama tetap tersimpan.`);
+    const updateRevision = async () => {
+      const productId = $('apply-product').value;
+      $('apply-revision-info').textContent = 'Memuat revisi BOM…';
+      try {
+        const bom = await api.get(`/api/products/${encodeURIComponent(productId)}/bom`);
+        $('apply-revision').value = bom.revision;
+        $('apply-revision-info').textContent = `Revisi BOM saat ini: ${n(bom.revision)}. Penerapan menerbitkan revisi ${n(bom.revision + 1)}.`;
+      } catch (error) { $('apply-revision-info').textContent = `Revisi BOM gagal dimuat: ${error.message}`; }
+    };
+    $('apply-product').onchange = updateRevision;
+    await updateRevision();
+  } catch (error) { if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return; $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form penerapan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`; }
 }
 async function receiptForm() {
   if (guardPending()) return;
   const version = epoch; openDialog('Terima batch bahan','<p class="state">Memuat bahan…</p>'); const modal = dialogVersion;
   try {
-    const materials = await allRows('/api/materials');
+    const materials = await allRows('/api/materials',{status:'active'});
     if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
     if (!materials.length) { $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Master bahan belum tersedia.</p><p class="empty-state-copy">Admin perlu menambahkannya terlebih dahulu.</p></div>`; return; }
     formDialog('Terima batch bahan',
