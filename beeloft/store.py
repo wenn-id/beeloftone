@@ -2106,7 +2106,7 @@ class Store:
         parent = spec.get('parent')
         join, parent_cols = '', ''
         if parent:
-            join = f'LEFT JOIN {parent[1]} p ON p.id=t.{parent[0]}'
+            join = f' LEFT JOIN {parent[1]} p ON p.id=t.{parent[0]}'
             parent_cols = ',p.code AS parent_code,p.name AS parent_name'
         order = 't.sort_order,t.code' if kind == 'size' else 't.code'
         params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
