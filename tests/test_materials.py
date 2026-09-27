@@ -125,8 +125,18 @@ class MaterialsTest(TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
             for table in ['materials','material_batches','material_movements']:
                 for query in ['DELETE FROM '+table, 'UPDATE '+table+' SET id=id']:
-                    with self.assertRaises(sqlite3.IntegrityError):
+                    # Migrasi 56 (issue #43): trigger materials_no_update diganti
+                    # materials_identity_immutable — update no-op (id=id) pada
+                    # materials kini diizinkan karena identitas tidak berubah;
+                    # yang tetap diblokir adalah DELETE dan perubahan identitas.
+                    if table == 'materials' and query.startswith('UPDATE'):
                         db.execute(query)
+                    else:
+                        with self.assertRaises(sqlite3.IntegrityError):
+                            db.execute(query)
+            # Perubahan identitas bahan tetap diblokir.
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("UPDATE materials SET code='UBAH' WHERE id=id")
         Store(self.path)
         self.assertEqual(self.batch(batch['id'])['balance'], '10.125')
 

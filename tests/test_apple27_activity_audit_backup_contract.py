@@ -350,11 +350,11 @@ class GlobalTest(unittest.TestCase):
 
     def test_version_schema_and_routes(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.115.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.116.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 247, 'A6.6 is presentation only')
+        self.assertEqual(len(contract['paths']), 254, 'A6.6 is presentation only')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
         self.assertEqual(max(versions), 57)

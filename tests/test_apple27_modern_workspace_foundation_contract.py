@@ -126,7 +126,8 @@ MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-vi
                      'analytics-view', 'ai-view', 'integrations-view',
                      'activity-view', 'audit-view', 'backup-view',
                      'purchase-requests-view', 'marketing-budgets-view', 'approvals-view',
-                     'masters-view')      # M02: the business-masters workspace
+                     'master-catalog-view',          # M01 (#43): the master-catalog workspace
+                     'masters-view')                 # M02 (#44): the business-masters workspace
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -228,6 +229,15 @@ MIGRATED_RENDERERS = frozenset({
     # supplierPaymentForm, payrollApprovalForm) and every Produksi / warehouse / marketplace child
     # dialog A6.1 left on legacy markup. They render through formDialog(), whose A6.8 chrome is CSS
     # scoped to `#action-form`, so they gained the modern shell without their markup changing.
+    # ---- M01 (issue #43): Master katalog ----
+    # The master catalog page (UOM, categories, colors, sizes, material classes, BOM templates)
+    # and its forms, migrated to the A6 primitives.
+    'showMasterCatalog', 'renderCatalogTabs', 'loadCatalogTab', 'catalogRowHtml',
+    'paintCatalogTab', 'catalogRowForm', 'toggleCatalogRow', 'toggleTemplateRow',
+    'templateComponentRow', 'templateForm', 'productEditForm', 'materialEditForm',
+    'applyTemplateForm', 'catalogRows', 'loadCatalogs', 'catalogSelectOptions',
+    'classificationFields',
+
     # ---- M02: Master bisnis (issue #44) ----
     # The masters roster and the location-mapping roster, both record lists built from the same
     # A6.0 shapes the A6.2 catalogs use; plus the field grammar the masters forms and the
@@ -798,7 +808,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.115.0')
+        self.assertEqual(version, '0.116.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -822,7 +832,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 247)
+        self.assertEqual(len(contract['paths']), 254)
 
 
 if __name__ == '__main__':

@@ -10,9 +10,13 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
+from pydantic import ValidationError as PydanticValidationError
 
 from beeloft.models import AiActionProposalCreate, AiActionProposalDecision, AiInvestigationFeedbackCreate, AttendanceSave, BrowserSessionLogin, BundleHandoffCreate, CapacityCalendarSave, EmployeeChange, EmployeeCreate, IntegrationSyncRunCreate, InvestigationCreate, IssueCreate, IssueResolve, JubelioListingSnapshotImport, JubelioOrderSnapshotImport, JubelioReturnSnapshotImport, JubelioStockSnapshotImport, MekariFinanceSnapshotImport, MekariPayableSnapshotImport, MekariPayrollSnapshotImport, MekariReceivableSnapshotImport, MovementCreate, OrderChange, OrderCreate, PayrollApprovalDecision, PayrollApprovalRequestCreate, ProductCreate, ProductExternalMappingSave, ProductionChangeRequestCreate, ReversalCreate, RoutingStandardSave, STAGES, TRANSITIONS, WorkforceRequestCreate, WorkforceRequestDecision, WorkCenterChange, WorkCenterCreate
 from beeloft.models import MaterialCreate, MaterialReceipt, MaterialIssue, MaterialReservation, MaterialConsumption, BomSave
+from beeloft.models import MaterialUpdate, ProductUpdate
+from beeloft.models import MasterCreate, MasterUpdate, UomCreate, UomUpdate, ProductCategoryCreate, ProductCategoryUpdate, ProductSubcategoryCreate, ProductSubcategoryUpdate, ProductTypeCreate, ProductTypeUpdate, ProductSeriesCreate, ProductSeriesUpdate, ColorCreate, ColorUpdate, SizeCreate, SizeUpdate, MaterialClassCreate, MaterialClassUpdate
+from beeloft.models import BomTemplateCreate, BomTemplateUpdate, BomTemplateApply
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
@@ -69,7 +73,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.115.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.116.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -546,8 +550,82 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return store.create_product(body.model_dump(mode="json"), user, key)
 
     @app.get("/api/products", tags=["Products"])
-    def products(user: Actor, limit: Limit = 100, offset: Offset = 0):
-        return store.products(limit, offset)
+    def products(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                 q: Annotated[str, Query(max_length=160)] = '',
+                 status: Literal['all','active','inactive'] = 'all',
+                 category_id: Annotated[str, Query(max_length=64)] = ''):
+        return store.products(limit, offset, q, status, category_id)
+
+    @app.post('/api/products/{product_id}/changes', tags=['Products'])
+    def change_product(product_id: str, body: ProductUpdate, user: Actor, key: RequestKey):
+        return store.update_product(product_id, body.model_dump(mode='json'), user, key)
+
+    CATALOG_MODELS = {
+        'uoms': (UomCreate, UomUpdate),
+        'product-categories': (ProductCategoryCreate, ProductCategoryUpdate),
+        'product-subcategories': (ProductSubcategoryCreate, ProductSubcategoryUpdate),
+        'product-types': (ProductTypeCreate, ProductTypeUpdate),
+        'product-series': (ProductSeriesCreate, ProductSeriesUpdate),
+        'colors': (ColorCreate, ColorUpdate),
+        'sizes': (SizeCreate, SizeUpdate),
+        'material-classes': (MaterialClassCreate, MaterialClassUpdate),
+    }
+    CATALOG_KINDS = {'uoms': 'uom', 'product-categories': 'product_category',
+                     'product-subcategories': 'product_subcategory', 'product-types': 'product_type',
+                     'product-series': 'product_series', 'colors': 'color',
+                     'sizes': 'size', 'material-classes': 'material_class'}
+
+    def _catalog_models(catalog: str):
+        try:
+            return CATALOG_MODELS[catalog]
+        except KeyError:
+            raise DomainError(404, 'Katalog tidak dikenal.') from None
+
+    def _catalog_payload(model, body: dict):
+        try:
+            return model.model_validate(body).model_dump(mode='json')
+        except PydanticValidationError as exc:
+            details = '; '.join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())
+            raise DomainError(422, f'Data katalog tidak valid: {details}') from exc
+
+    @app.get('/api/catalog/{catalog}', tags=['Master Catalog'])
+    def catalog_list(catalog: str, user: Actor, limit: Limit = 100, offset: Offset = 0,
+                     q: Annotated[str, Query(max_length=160)] = '',
+                     status: Literal['all','active','inactive'] = 'all'):
+        kind = CATALOG_KINDS.get(catalog)
+        if not kind:
+            raise DomainError(404, 'Katalog tidak dikenal.')
+        return store.master_list(kind, q, status, limit, offset)
+
+    @app.post('/api/catalog/{catalog}', status_code=201, tags=['Master Catalog'])
+    def catalog_create(catalog: str, body: dict, user: Actor, key: RequestKey):
+        create_model, _ = _catalog_models(catalog)
+        payload = _catalog_payload(create_model, body)
+        return store.create_master(CATALOG_KINDS[catalog], payload, user, key)
+
+    @app.post('/api/catalog/{catalog}/{row_id}/changes', tags=['Master Catalog'])
+    def catalog_change(catalog: str, row_id: str, body: dict, user: Actor, key: RequestKey):
+        _, update_model = _catalog_models(catalog)
+        payload = _catalog_payload(update_model, body)
+        return store.update_master(CATALOG_KINDS[catalog], row_id, payload, user, key)
+
+    @app.get('/api/bom-templates', tags=['Master Catalog'])
+    def bom_templates(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                      q: Annotated[str, Query(max_length=160)] = '',
+                      status: Literal['all','active','inactive'] = 'all'):
+        return store.bom_templates(q, status, limit, offset)
+
+    @app.post('/api/bom-templates', status_code=201, tags=['Master Catalog'])
+    def create_bom_template(body: BomTemplateCreate, user: Actor, key: RequestKey):
+        return store.create_bom_template(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/bom-templates/{template_id}/changes', tags=['Master Catalog'])
+    def change_bom_template(template_id: str, body: BomTemplateUpdate, user: Actor, key: RequestKey):
+        return store.update_bom_template(template_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/bom-templates/{template_id}/apply', tags=['Master Catalog'])
+    def apply_bom_template(template_id: str, body: BomTemplateApply, user: Actor, key: RequestKey):
+        return store.apply_bom_template(template_id, body.model_dump(mode='json'), user, key)
 
     @app.get('/api/work-centers', tags=['Production Capacity'])
     def work_centers(user: Actor, status: Literal['all','active','inactive'] = 'all'):
@@ -816,8 +894,15 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return store.create_material(body.model_dump(mode='json'), user, key)
 
     @app.get('/api/materials', tags=['Materials'])
-    def materials(user: Actor, limit: Limit = 100, offset: Offset = 0):
-        return store.materials(limit, offset)
+    def materials(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                  q: Annotated[str, Query(max_length=160)] = '',
+                  status: Literal['all','active','inactive'] = 'all',
+                  class_id: Annotated[str, Query(max_length=64)] = ''):
+        return store.materials(limit, offset, q, status, class_id)
+
+    @app.post('/api/materials/{material_id}/changes', tags=['Materials'])
+    def change_material(material_id: str, body: MaterialUpdate, user: Actor, key: RequestKey):
+        return store.update_material(material_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/material-batches', status_code=201, tags=['Materials'])
     def receive_material(body: MaterialReceipt, user: Actor, key: RequestKey):

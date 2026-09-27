@@ -30,6 +30,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan baku'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'People', content: '#workforce-list .record-row'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Master SKU', content: '#product-list .record-row'},
+    {name: 'Master katalog', nav: 'master-catalog', section: 'master-catalog-view', heading: 'Master katalog', content: '#master-catalog-list .record-row'},
     {name: 'Scan bundle', nav: 'scan-bundle', section: 'bundle-scan-view', heading: 'Scan bundle'},
     {name: 'Scan barang jadi', nav: 'scan-finished-goods', section: 'finished-goods-scan-view', heading: 'Scan barang jadi'},
     {name: 'Cadangan data', nav: 'backup', section: 'backup-view', heading: 'Cadangan data'},
@@ -108,6 +109,14 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     assert.equal(await page.locator('#app-sidebar [aria-current]').count(), 1, 'exactly one sidebar item carries aria-current');
     assert.equal(await page.locator('#' + destination.nav).getAttribute('aria-current'), 'page', `aria-current on ${destination.name}`);
     assert.equal(await page.locator('#dialog').getAttribute('open'), null, `${destination.name} must not open the global dialog`);
+    if (destination.nav === 'master-catalog') {
+      await page.locator(destination.content).first().waitFor();
+      assert.equal(await page.locator('#master-catalog-heading').textContent(), 'Satuan');
+      assert.equal(await page.getByRole('tab', {name: 'Satuan', exact: true})
+        .getAttribute('aria-selected'), 'true', 'the initial catalog tab loads its unit records');
+      assert.deepEqual((await page.locator('#master-catalog-list .data-primary').allTextContents()).sort(),
+        (await apiGet('/api/catalog/uoms')).map(row => row.code).sort());
+    }
   }
   // The order detail is an internal section reached from a board row, so it
   // shares the board's nav item. Re-enter the board before opening one.

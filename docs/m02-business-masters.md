@@ -4,7 +4,7 @@ Implementasi [#44](https://github.com/wenn-id/beeloftone/issues/44) di atas
 `docs/m02-master-readiness.md`. Hasil kerja ini tidak mengulang audit F01/F02
 atau meminta sign-off bisnis; kontrak F02 dipakai sebagaimana adanya.
 
-Branch: `feat/m02-business-masters-44`. Versi aplikasi `0.115.0`, skema `57`.
+Branch: `feat/m02-business-masters-44`. Versi aplikasi `0.116.0`, skema `57`.
 
 ## Apa yang dibangun
 
@@ -118,19 +118,18 @@ data pribadi nyata; seluruh fixture sintetis.
 
 ## Status integrasi
 
-#43 belum merged saat PR ini disiapkan, tetapi cabangnya
-(`origin/feat/m01-master-catalog-43`) sudah mengambil migrasi 56 secara definitif
-(`Migrasi 56 — M01 master katalog` di `beeloft/master_catalog.sql`). Karena urutan
-integrasi #43 dulu lalu #44, dan kedua cabang tidak boleh memakai nomor migrasi
-yang sama — bila #43 merge lebih dulu, sebuah DB di versi 56 akan membuat branch
-runner `if version < 56` meloncati pembuatan tabel master M02 seluruhnya — migrasi
-ini dinaikkan ke **57** sejak awal. Nomor 57 dipakai di `PRAGMA user_version` di
-`business_masters.sql`, branch runner `if version < 57` di `store.py`, tuple versi
-yang diterima `Store.__init__`, dan assertion `user_version` pada seluruh suite.
-Konflik file bersama (`store.py`, `models.py`, `api.py`, `app.mjs`) diselesaikan
-dengan menjaga kedua fitur; urutan integrasi #43 dulu, lalu #44.
+#43 ([Roadmap M01] Master produk, bahan dan satuan, PR #113) sudah merged ke main
+sebagai commit `9a81939` dan **sudah diintegrasikan ke cabang ini** (`git merge
+origin/main`). Karena #43 mengambil migrasi 56 secara definitif dan urutan
+integrasi #43 dulu lalu #44, migrasi M02 dinaikkan ke **57** sejak awal — bila
+tidak, sebuah DB di versi 56 akan membuat branch runner `if version < 56`
+meloncati pembuatan tabel master M02 seluruhnya. Nomor 57 dipakai di `PRAGMA
+user_version` di `business_masters.sql`, branch runner `if version < 57` di
+`store.py` (setelah branch 56 milik #43), tuple versi yang diterima
+`Store.__init__`, dan assertion `user_version` pada seluruh suite. Versi aplikasi
+dinaikkan ke `0.116.0` karena #43 sudah mengambil `0.115.0` di main.
 
-### Resep resolusi konflik (dry-run `git merge-tree` terhadap `origin/feat/m01-master-catalog-43`)
+### Resolusi konflik yang dilakukan (`git merge origin/main`)
 
 75 file konflik, 77 file auto-merge. `beeloft/api.py` dan `docs/openapi.json`
 auto-merge bersih. Semua konflik jatuh ke kelas berikut, masing-masing diselesaikan
@@ -141,15 +140,16 @@ dengan union (kedua fitur dipertahankan):
 | Assertion `user_version` | ~70 file test | Kedua cabang mengangkat angka yang sama dari basis 55 (#43 ke 56, #44 ke 57). Ambil **57**: kedua migrasi berjalan, ladder 55 → 56 → 57. |
 | Assertion `max(versions)` | 10 contract test | Ambil **57** (SQL file dengan `PRAGMA user_version` tertinggi setelah union). |
 | Ladder migrasi | `beeloft/store.py` | Simpan kedua branch: `if version < 56` (#43, `master_catalog.sql`) lalu `if version < 57` (M02, `business_masters.sql`) setelahnya. Union tuple versi diterima `Store.__init__`. |
+| Versi aplikasi + jumlah path | `pyproject.toml`, `beeloft/api.py`, 10 contract test, `docs/openapi.json` | #43 dan M02 sama-sama mengambil `0.115.0` dari basis `0.114.0`; M02 dinaikkan ke `0.116.0`. `openapi.json` diregenerasi dari runtime: **254 path, 103 skema** (228 milik #43 + 26 M02). |
 | Model Pydantic | `beeloft/models.py` | Union kedua set model; tidak ada nama yang bentrok (#43 memakai prefix katalog, M02 memakai prefix master). |
 | Renderer UI | `beeloft/static/app.mjs` | Union kedua set fungsi. |
 | Section HTML | `beeloft/static/index.html` | Union kedua section. |
 | Kontrak containment A6.0 | `tests/test_apple27_modern_workspace_foundation_contract.py` | `MIGRATED_SECTIONS` dan `MIGRATED_RENDERERS` butuh tambahan renderer katalog #43; union dengan blok M02 yang sudah ada. |
 | Csv kepemilikan | `docs/f02-ownership.csv` | Union kedua set baris. |
-| Jumlah test | `README.md` | Ambil hasil rerun suite setelah union; jangan ambil angka salah satu cabang. |
+| Jumlah test | `README.md` | Ambil hasil rerun suite setelah union: **1180** (1161 M02 + 19 test katalog #43). |
 
 Tidak ada overlap semantik: #43 mengubah tabel `products`/`materials`, M02 tidak
 menyentuhnya (pemetaan lokasi M02 membaca `material_batches.location` read-only
 sebagai overlay, tanpa kolom di tabel milik #43). `suppliers.active` hanya ditambah
-M02. Setelah resolusi, jalankan full suite (termasuk upgrade dari DB 54 dan dari
-DB pasca-migrasi-#43) sebelum merge.
+M02. Full suite (termasuk upgrade dari DB 54 dan dari DB pasca-migrasi-#43)
+dijalankan ulang setelah resolusi.
