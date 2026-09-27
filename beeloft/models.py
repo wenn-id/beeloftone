@@ -156,6 +156,10 @@ class EmployeeCreate(Input):
     code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
     name: Text
     department: Text
+    # M02: tautan opsional ke jabatan dan unit usaha. Wajib divalidasi server-side;
+    # department tetap teks bebas dan TIDAK disamakan dengan jabatan/unit.
+    position_id: Text | None = None
+    business_unit_id: Text | None = None
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
     @field_validator('code')
@@ -169,6 +173,8 @@ class EmployeeChange(Input):
     name: Text
     department: Text
     active: Annotated[bool, Field(strict=True)]
+    position_id: Text | None = None
+    business_unit_id: Text | None = None
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
@@ -883,6 +889,10 @@ class PurchaseOrderReceipt(MaterialQuantity):
 
 class MaterialReceipt(PurchaseOrderReceipt):
     supplier: Text
+    # M02: tautan opsional ke identitas lokasi/pemasok. Bila diisi, teks
+    # location/supplier harus cocok dengan master yang dipilih.
+    storage_id: Text | None = None
+    supplier_id: Text | None = None
 
 
 class SupplierReturn(MaterialQuantity):
@@ -972,6 +982,16 @@ class SewingJobCreate(ReversalCreate):
     quantity_out: Quantity
     cost: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
     sent_date: date
+    # M02: employee_id hanya untuk job internal. Makloon/vendor tetap memakai
+    # assignee teks dan tidak boleh ditautkan ke employee.
+    employee_id: Text | None = None
+
+    @model_validator(mode='after')
+    def employee_only_internal(self):
+        if self.employee_id is not None and self.assignment_type != 'internal':
+            raise ValueError('Tautan employee hanya untuk job internal. '
+                             'Makloon memakai nama assignee teks.')
+        return self
 
     @field_validator('cost')
     @classmethod
@@ -1224,6 +1244,8 @@ class PurchaseOrderCreate(ReversalCreate):
     expected_date: date
     terms: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     prices: list[PurchasePrice] = Field(min_length=1, max_length=100)
+    # M02: unit usaha pemilik PO. Opsional agar payload lama tetap diterima.
+    business_unit_id: Text | None = None
 
     @field_validator('prices')
     @classmethod
@@ -1290,3 +1312,135 @@ class BomSave(Input):
         if len({c.material_id for c in components}) != len(components):
             raise ValueError('Gabungkan bahan yang sama menjadi satu baris BOM.')
         return sorted(components, key=lambda c: c.material_id)
+
+
+# ---------------------------------------------------------------------------
+# M02 — Master: unit usaha, lokasi, pelanggan, jabatan, metode pembayaran.
+# Semua memakai pola identity + events: kolom active hidup di event sehingga
+# histori tetap terbaca setelah master dinonaktifkan.
+# ---------------------------------------------------------------------------
+
+class BusinessUnitCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class BusinessUnitChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+StorageKind = Literal['warehouse', 'retail', 'production', 'other']
+
+
+class StorageCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    kind: StorageKind
+    business_unit_id: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class StorageChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    kind: StorageKind
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class CustomerCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    contact: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = ''
+    address: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ''
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class CustomerChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    contact: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = ''
+    address: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ''
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class PositionCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class PositionChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+PaymentMethodKind = Literal['cash', 'bank_transfer', 'qris', 'ewallet', 'other']
+
+
+class PaymentMethodCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    kind: PaymentMethodKind
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('code')
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class PaymentMethodChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    kind: PaymentMethodKind
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class SupplierChange(Input):
+    # Identitas pemasok immutable (kontrak F02). Hanya status aktif yang diubah.
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class EmployeeLegacyIdCreate(Input):
+    # employee_id diambil dari path endpoint, bukan body, sehingga permintaan
+    # tidak dapat menulis legacy ID milik karyawan lain.
+    legacy_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    source_system: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class StorageLocationMapping(Input):
+    # Pemetaan eksplisit admin untuk kasus pending/ambiguous. Teks asli tidak
+    # berubah; hanya identitas storage yang ditautkan.
+    storage_id: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

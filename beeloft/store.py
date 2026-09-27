@@ -173,7 +173,10 @@ def audit_category(operation):
         return 'purchasing'
     if root.startswith(('material-', 'consumption-', 'bom')):
         return 'materials'
-    if root == 'supplier' or root.startswith('product') or root == 'workforce-employee':
+    if root == 'supplier' or root.startswith('product') or root == 'workforce-employee' \
+            or root in ('business-unit', 'storage', 'customer', 'position', 'payment-method') \
+            or root.startswith('storage-location-mapping') \
+            or root == 'workforce-employee-legacy':
         return 'master_data'
     return 'production'
 
@@ -215,7 +218,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -360,6 +363,35 @@ class Store:
                     if name not in columns:
                         db.execute(f'ALTER TABLE final_qc_records ADD COLUMN {name} {definition}')
                 db.executescript(Path(__file__).with_name('rework_completions.sql').read_text(encoding='utf-8'))
+            if version < 57:
+                # M02 (#44): master unit usaha, storage/lokasi, pihak, position dan
+                # metode pembayaran, plus tautan employee/job dan overlay pemetaan
+                # lokasi teks. Semua kolom baru additive/nullable; payload lama tetap
+                # sah dan tidak ada baris existing yang ditulis ulang.
+                db.executescript(Path(__file__).with_name('business_masters.sql').read_text(encoding='utf-8'))
+                # Tabel master harus ada sebelum ALTER bersifat referensial, dan ADD
+                # COLUMN tidak idempoten: test membangun skema lengkap lalu memutar
+                # balik user_version untuk mensimulasikan DB lama, jadi tiap ALTER
+                # dijaga dengan cek keberadaan kolom.
+                for table, name, definition in (
+                    ('suppliers', 'active', 'INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))'),
+                    ('workforce_employee_events', 'position_id', 'TEXT REFERENCES positions(id)'),
+                    ('workforce_employee_events', 'business_unit_id', 'TEXT REFERENCES business_units(id)'),
+                    ('sewing_jobs', 'employee_id', 'TEXT REFERENCES workforce_employees(id)'),
+                    ('purchase_orders', 'business_unit_id', 'TEXT REFERENCES business_units(id)'),
+                ):
+                    columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+                    if name not in columns:
+                        db.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
+                # Trigger imutabilitas supplier diganti: hanya status aktif yang
+                # boleh diubah, identitas (kode/nama/kontak/alamat) tetap terkunci.
+                db.execute('DROP TRIGGER IF EXISTS supplier_no_update')
+                db.execute("""CREATE TRIGGER supplier_no_update BEFORE UPDATE ON suppliers
+WHEN NEW.code<>OLD.code OR NEW.name<>OLD.name
+    OR NEW.contact<>OLD.contact OR NEW.address<>OLD.address
+    OR NEW.reason<>OLD.reason OR NEW.actor_id<>OLD.actor_id
+    OR NEW.created_at<>OLD.created_at
+BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status aktif.'); END""")
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2062,6 +2094,23 @@ class Store:
                       available=balance-reserved,reserved_for_order=own,available_to_order=balance-reserved+own).items()})
         record['received_quantity'] = self._material_decimal(received)
         record['scan_code'] = material_batch_scan_code(record['id'])
+        # Resolusi identitas storage untuk lokasi teks batch (overlay baca:
+        # tidak mengubah baris batch). Null bila belum dipetakan.
+        mapping = db.execute('''SELECT m.storage_id,s.code AS storage_code,se.name AS storage_name,
+            b.code AS unit_code,bu.name AS unit_name,m.match_status
+            FROM storage_location_mappings m
+            LEFT JOIN storages s ON s.id=m.storage_id
+            LEFT JOIN storage_events se ON se.sequence=(SELECT MAX(y.sequence)
+                FROM storage_events y WHERE y.storage_id=s.id)
+            LEFT JOIN business_units b ON b.id=s.business_unit_id
+            LEFT JOIN business_unit_events bu ON bu.sequence=(SELECT MAX(y.sequence)
+                FROM business_unit_events y WHERE y.unit_id=b.id)
+            WHERE m.source_table='material_batches' AND m.source_column='location'
+              AND m.source_ref=?''', (batch_id,)).fetchone()
+        record['storage'] = ({'id': mapping['storage_id'], 'code': mapping['storage_code'],
+                              'name': mapping['storage_name'], 'unit_code': mapping['unit_code'],
+                              'unit_name': mapping['unit_name'],
+                              'match_status': mapping['match_status']} if mapping and mapping['storage_id'] else None)
         corrected = db.execute('SELECT 1 FROM material_movements WHERE reversal_of=?',
                                (record['receipt_id'],)).fetchone()
         record['status'] = 'corrected' if corrected else 'active'
@@ -2269,12 +2318,41 @@ class Store:
         if not material:
             raise DomainError(404, 'Bahan tidak ditemukan.')
         quantity = self._material_amount(payload['quantity'], material['unit'])
-        record = {k:v for k,v in payload.items() if k not in ('quantity','reason')}
-        record.update(id=str(uuid4()), created_by=actor['id'], created_at=now())
+        # Penerimaan langsung tetap menerima teks lokasi/supplier (payload lama
+        # sah). Bila storage_id/supplier_id diisi, teks harus cocok dengan master
+        # yang dipilih agar identitas dan label selalu selaras; master harus aktif.
+        storage_id = payload.get('storage_id')
+        if storage_id:
+            storage = self._require_active_master(db, 'storage', storage_id, 'Lokasi')
+            if payload['location'].strip().casefold() != storage['name'].strip().casefold():
+                raise DomainError(422, 'Nama lokasi teks tidak sesuai dengan lokasi (storage) '
+                                       'yang dipilih. Samakan teks dengan nama lokasi.')
+        supplier_id = payload.get('supplier_id')
+        if supplier_id:
+            supplier = db.execute('SELECT id,code,name,active FROM suppliers WHERE id=?',
+                                  (supplier_id,)).fetchone()
+            if not supplier:
+                raise DomainError(404, 'Pemasok tidak ditemukan.')
+            if not supplier['active']:
+                raise DomainError(422, 'Pemasok nonaktif tidak dapat dipakai untuk transaksi baru.')
+            if payload['supplier'].strip().casefold() != supplier['name'].strip().casefold():
+                raise DomainError(422, 'Nama pemasok teks tidak sesuai dengan pemasok yang dipilih.')
+        batch_id = str(uuid4())
+        record = dict(id=batch_id, material_id=payload['material_id'], reference=payload['reference'],
+                      supplier=payload['supplier'], location=payload['location'],
+                      received_date=payload['received_date'], created_by=actor['id'], created_at=now())
         db.execute('''INSERT INTO material_batches VALUES(:id,:material_id,:reference,:supplier,:location,
             :received_date,:created_by,:created_at)''', record)
-        self._material_movement(db, record['id'], 'receipt', quantity, None, payload['reason'], actor['id'])
-        return self._material_batch(db, record['id'])
+        self._material_movement(db, batch_id, 'receipt', quantity, None, payload['reason'], actor['id'])
+        if storage_id:
+            # Overlay pemetaan: baris transaksi tidak diubah; identitas storage
+            # dicatat di storage_location_mappings sebagai confirmed eksplisit.
+            db.execute('''INSERT INTO storage_location_mappings(
+                id,source_table,source_column,source_ref,raw_text,storage_id,match_status,
+                match_basis,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,'explicit',?,?,?)''',
+                       (str(uuid4()), 'material_batches', 'location', batch_id, payload['location'],
+                        storage_id, 'confirmed', payload['reason'], actor['id'], now()))
+        return self._material_batch(db, batch_id)
 
     def issue_material(self, payload, actor, key):
         def perform(db):
@@ -2673,16 +2751,24 @@ class Store:
         row=db.execute('''SELECT j.*,b.reference AS bundle_reference,b.quantity AS bundle_quantity,
             b.cutting_run_id,r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
             m.line_id,p.sku,p.name AS product_name,p.color,p.size,source.id AS batch_id,
-            source.reference AS batch_reference,s.code AS material_code,u.name AS actor_name
+            source.reference AS batch_reference,s.code AS material_code,u.name AS actor_name,
+            we.code AS employee_code,wx.name AS employee_name
             FROM sewing_jobs j JOIN bundles b ON b.id=j.bundle_id
             JOIN cutting_runs r ON r.id=b.cutting_run_id JOIN orders o ON o.id=r.order_id
             JOIN movements m ON m.id=b.output_movement_id JOIN order_lines l ON l.id=m.line_id
             JOIN products p ON p.id=l.product_id JOIN material_consumption c ON c.id=r.consumption_id
             JOIN material_movements i ON i.id=c.issue_id JOIN material_batches source ON source.id=i.batch_id
-            JOIN materials s ON s.id=source.material_id JOIN users u ON u.id=j.actor_id WHERE j.id=?''',(job_id,)).fetchone()
+            JOIN materials s ON s.id=source.material_id JOIN users u ON u.id=j.actor_id
+            LEFT JOIN workforce_employees we ON we.id=j.employee_id
+            LEFT JOIN workforce_employee_events wx ON wx.employee_id=we.id
+                AND wx.sequence=(SELECT MAX(z.sequence) FROM workforce_employee_events z
+                    WHERE z.employee_id=we.id)
+            WHERE j.id=?''',(job_id,)).fetchone()
         if not row:
             raise DomainError(404,'Job sewing tidak ditemukan.')
         record=dict(row)
+        record['employee']=({'id':record['employee_id'],'code':record.pop('employee_code'),
+                             'name':record.pop('employee_name')} if record['employee_id'] else None)
         record['cost']=format(Decimal(record.pop('cost_minor'))/100,'.2f')
         result=db.execute('''SELECT x.*,u.name AS actor_name FROM sewing_job_results x
             JOIN users u ON u.id=x.actor_id WHERE x.job_id=?''',(job_id,)).fetchone()
@@ -2724,12 +2810,23 @@ class Store:
                 raise DomainError(409,'Bundle sudah dikoreksi.')
             if payload['quantity_out']>bundle['sewing_unassigned_quantity']:
                 raise DomainError(409,'Jumlah keluar melebihi bundle yang belum dialokasikan. Muat ulang data terbaru.')
+            employee_id=payload.get('employee_id')
+            if employee_id:
+                # Job internal menautkan employee stabil (ID, bukan nama bebas);
+                # makloon/vendor tetap memakai assignee teks dan TIDAK boleh
+                # ditautkan ke employee.
+                if payload['assignment_type']!='internal':
+                    raise DomainError(422,'Penugasan makloon tidak boleh menautkan karyawan; '
+                                           'isi assignee vendor pada kolom teks.')
+                employee=self._employee(db,employee_id)
+                if not employee['active']:
+                    raise DomainError(422,'Karyawan nonaktif tidak dapat dipakai untuk transaksi baru.')
             job_id=str(uuid4())
             db.execute('''INSERT INTO sewing_jobs(id,reference,bundle_id,assignment_type,assignee,quantity_out,
-                cost_minor,sent_date,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                cost_minor,sent_date,reason,actor_id,created_at,employee_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (job_id,payload['reference'],bundle_id,payload['assignment_type'],payload['assignee'],
                  payload['quantity_out'],int(Decimal(payload['cost'])*100),payload['sent_date'],
-                 payload['reason'],actor['id'],now()))
+                 payload['reason'],actor['id'],now(),employee_id))
             return self._sewing_job(db,job_id)
         return self._write(actor,('admin','operator'),key,'sewing-job:'+bundle_id,payload,perform)
 
@@ -5920,17 +6017,13 @@ class Store:
             return self._purchase_request(db, request_id)
         return self._write(actor, ('admin','operator'), key, 'purchase-request-decision:'+request_id, payload, perform)
 
-    def suppliers(self, limit=100, offset=0):
-        with self.transaction() as db:
-            return [dict(row) for row in db.execute('''SELECT s.*,u.name AS actor_name FROM suppliers s
-                JOIN users u ON u.id=s.actor_id ORDER BY s.code,s.id LIMIT ? OFFSET ?''', (limit,offset))]
-
     def create_supplier(self, payload, actor, key):
         def perform(db):
             record = dict(id=str(uuid4()), **payload, actor_id=actor['id'], created_at=now())
-            db.execute('''INSERT INTO suppliers(id,code,name,contact,address,reason,actor_id,created_at)
-                VALUES(:id,:code,:name,:contact,:address,:reason,:actor_id,:created_at)''', record)
-            return record
+            db.execute('''INSERT INTO suppliers(id,code,name,contact,address,reason,actor_id,created_at,active)
+                VALUES(:id,:code,:name,:contact,:address,:reason,:actor_id,:created_at,1)''', record)
+            return dict(db.execute('SELECT * FROM suppliers WHERE id=?',
+                                   (record['id'],)).fetchone())
         return self._write(actor, ('admin',), key, 'supplier', payload, perform)
 
     def _purchase_order(self, db, order_id):
@@ -5945,6 +6038,11 @@ class Store:
         total_minor = record.pop('total_minor')
         record['total'] = format(Decimal(total_minor) / 100, '.2f')
         record['currency'] = 'IDR'
+        unit = db.execute('''SELECT b.code,bu.name FROM business_units b
+            JOIN business_unit_events bu ON bu.unit_id=b.id
+                AND bu.sequence=(SELECT MAX(z.sequence) FROM business_unit_events z WHERE z.unit_id=b.id)
+            WHERE b.id=?''', (record['business_unit_id'],)).fetchone() if record['business_unit_id'] else None
+        record['business_unit'] = dict(unit) if unit else None
         record['approval_history'] = [dict(event) for event in db.execute('''SELECT e.*,u.name AS actor_name
             FROM purchase_order_approval_events e JOIN users u ON u.id=e.actor_id
             WHERE e.order_id=? ORDER BY e.sequence DESC''', (order_id,))]
@@ -6031,9 +6129,15 @@ class Store:
                 raise DomainError(409, 'PR harus disetujui dan memakai revisi terbaru. Buka ulang PR.')
             if any(po['status'] not in ('cancelled','rejected') for po in pr['purchase_orders']):
                 raise DomainError(409, 'PR sudah memiliki PO aktif atau ditutup. Gunakan PR baru untuk pembelian tambahan.')
-            supplier = db.execute('SELECT id,code,name,contact,address FROM suppliers WHERE id=?', (payload['supplier_id'],)).fetchone()
+            supplier = db.execute('SELECT id,code,name,contact,address,active FROM suppliers WHERE id=?', (payload['supplier_id'],)).fetchone()
             if not supplier:
                 raise DomainError(404, 'Pemasok tidak ditemukan.')
+            if not supplier['active']:
+                raise DomainError(422, 'Pemasok nonaktif tidak dapat dipakai untuk transaksi baru. '
+                                       'Aktifkan kembali pemasok atau pilih pemasok lain.')
+            if payload.get('business_unit_id'):
+                self._require_active_master(db, 'business-unit', payload['business_unit_id'],
+                                            'Unit usaha')
             prices = {line['material_id']:line['unit_price'] for line in payload['prices']}
             if set(prices) != {line['material_id'] for line in pr['lines']}:
                 raise DomainError(422, 'Isi harga tepat satu kali untuk seluruh bahan PR. Jumlah bahan mengikuti PR.')
@@ -6049,9 +6153,11 @@ class Store:
                 raise DomainError(409, 'Total PO melebihi estimasi PR yang disetujui. Ajukan PR baru dengan nilai yang sesuai.')
             order_id, timestamp = str(uuid4()), now()
             db.execute('''INSERT INTO purchase_orders(id,reference,request_id,request_revision,supplier_id,supplier,
-                expected_date,terms,lines,total_minor,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                expected_date,terms,lines,total_minor,reason,actor_id,created_at,business_unit_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (order_id,payload['reference'],pr['id'],pr['revision'],supplier['id'],json.dumps(dict(supplier)),
-                 payload['expected_date'],payload['terms'],json.dumps(lines),total,payload['reason'],actor['id'],timestamp))
+                 payload['expected_date'],payload['terms'],json.dumps(lines),total,payload['reason'],actor['id'],timestamp,
+                 payload.get('business_unit_id')))
             db.execute('''INSERT INTO purchase_order_approval_events(order_id,status,reason,actor_id,created_at)
                 VALUES(?,'submitted',?,?,?)''', (order_id,payload['reason'],actor['id'],timestamp))
             return self._purchase_order(db, order_id)
@@ -7309,11 +7415,21 @@ class Store:
     def _employee(self,db,employee_id):
         row=db.execute('''SELECT e.id,e.code,e.created_by,e.created_at,
             x.sequence,x.id AS event_id,x.revision,x.name,x.department,x.active,x.reason,
-            x.actor_id,x.created_at AS updated_at,u.name AS actor_name
+            x.position_id,x.business_unit_id,
+            x.actor_id,x.created_at AS updated_at,u.name AS actor_name,
+            p.code AS position_code,pe.name AS position_name,
+            b.code AS business_unit_code,bu.name AS business_unit_name
             FROM workforce_employees e JOIN workforce_employee_events x
                 ON x.employee_id=e.id AND x.sequence=(SELECT MAX(y.sequence)
                     FROM workforce_employee_events y WHERE y.employee_id=e.id)
-            JOIN users u ON u.id=x.actor_id WHERE e.id=?''',(employee_id,)).fetchone()
+            JOIN users u ON u.id=x.actor_id
+            LEFT JOIN positions p ON p.id=x.position_id
+            LEFT JOIN position_events pe ON pe.position_id=p.id
+                AND pe.sequence=(SELECT MAX(z.sequence) FROM position_events z WHERE z.position_id=p.id)
+            LEFT JOIN business_units b ON b.id=x.business_unit_id
+            LEFT JOIN business_unit_events bu ON bu.unit_id=b.id
+                AND bu.sequence=(SELECT MAX(z.sequence) FROM business_unit_events z WHERE z.unit_id=b.id)
+            WHERE e.id=?''',(employee_id,)).fetchone()
         if not row:
             raise DomainError(404,'Karyawan tidak ditemukan.')
         record=dict(row);record['active']=bool(record['active']);return record
@@ -7350,15 +7466,31 @@ class Store:
             return {'employee':employee,'items':rows,
                     'next_before':rows[-1]['sequence'] if more else None}
 
+    def _validate_employee_links(self,db,payload):
+        """Position dan business_unit bersifat opsional, tapi bila diisi harus
+        merujuk master yang ada dan aktif. Department tetap teks bebas dan
+        TIDAK disamakan dengan position (D17/EX17)."""
+        if payload.get('position_id'):
+            position=self._master_current(db,'position',payload['position_id'])
+            if not position['active']:
+                raise DomainError(422,'Jabatan nonaktif tidak dapat dipakai untuk data karyawan.')
+        if payload.get('business_unit_id'):
+            unit=self._master_current(db,'business-unit',payload['business_unit_id'])
+            if not unit['active']:
+                raise DomainError(422,'Unit usaha nonaktif tidak dapat dipakai untuk data karyawan.')
+
     def create_employee(self,payload,actor,key):
         def perform(db):
+            self._validate_employee_links(db,payload)
             employee_id=str(uuid4());created=now()
             db.execute('''INSERT INTO workforce_employees(id,code,created_by,created_at)
                 VALUES(?,?,?,?)''',(employee_id,payload['code'],actor['id'],created))
             db.execute('''INSERT INTO workforce_employee_events(id,employee_id,revision,name,
-                department,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                department,active,reason,actor_id,created_at,position_id,business_unit_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
                 (str(uuid4()),employee_id,1,payload['name'],payload['department'],1,
-                 payload['reason'],actor['id'],created))
+                 payload['reason'],actor['id'],created,
+                 payload.get('position_id'),payload.get('business_unit_id')))
             return self._employee(db,employee_id)
         return self._write(actor,('admin',),key,'workforce-employee',payload,perform)
 
@@ -7368,12 +7500,17 @@ class Store:
             if current['revision']!=payload['expected_revision']:
                 raise DomainError(409,'Data karyawan sudah berubah. Muat ulang lalu coba lagi.')
             if (current['name']==payload['name'] and current['department']==payload['department']
-                    and current['active']==payload['active']):
+                    and current['active']==payload['active']
+                    and current['position_id']==payload.get('position_id')
+                    and current['business_unit_id']==payload.get('business_unit_id')):
                 raise DomainError(422,'Belum ada perubahan pada data karyawan.')
+            self._validate_employee_links(db,payload)
             db.execute('''INSERT INTO workforce_employee_events(id,employee_id,revision,name,
-                department,active,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)''',
+                department,active,reason,actor_id,created_at,position_id,business_unit_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
                 (str(uuid4()),employee_id,current['revision']+1,payload['name'],
-                 payload['department'],int(payload['active']),payload['reason'],actor['id'],now()))
+                 payload['department'],int(payload['active']),payload['reason'],actor['id'],now(),
+                 payload.get('position_id'),payload.get('business_unit_id')))
             return self._employee(db,employee_id)
         return self._write(actor,('admin',),key,'workforce-employee:'+employee_id,payload,perform)
 
@@ -7628,3 +7765,507 @@ class Store:
         except BaseException:
             destination.unlink(missing_ok=True)
             raise
+
+    # ==================================================================
+    # M02 (#44): unit usaha, storage/lokasi, pihak (customer/supplier),
+    # employee, position dan metode pembayaran.
+    #
+    # Master event-sourced mengikuti pola workforce: tabel identitas immutable
+    # (id/code) + tabel *_events berversi. Status aktif/nonaktif hidup di
+    # event, sehingga histori tetap terbaca setelah master nonaktif.
+    # ==================================================================
+
+    #: Konfigurasi master. identity_extra = kolom identitas immutable tambahan;
+    #: mutable = kolom yang boleh berubah (disimpan per revisi). active dan
+    #: reason selalu ada di setiap event.
+    MASTER_SPECS = {
+        'business-unit': {'root': 'business_units', 'events': 'business_unit_events',
+                          'fk': 'unit_id', 'identity_extra': (), 'mutable': ('name',),
+                          'label': 'Unit usaha'},
+        'storage': {'root': 'storages', 'events': 'storage_events', 'fk': 'storage_id',
+                    'identity_extra': ('business_unit_id',), 'mutable': ('name', 'kind'),
+                    'label': 'Lokasi'},
+        'customer': {'root': 'customers', 'events': 'customer_events', 'fk': 'customer_id',
+                     'identity_extra': (), 'mutable': ('name', 'contact', 'address'),
+                     'label': 'Pelanggan'},
+        'position': {'root': 'positions', 'events': 'position_events', 'fk': 'position_id',
+                     'identity_extra': (), 'mutable': ('name',), 'label': 'Jabatan'},
+        'payment-method': {'root': 'payment_methods', 'events': 'payment_method_events',
+                           'fk': 'payment_method_id', 'identity_extra': (),
+                           'mutable': ('name', 'kind'), 'label': 'Metode pembayaran'},
+    }
+
+    def _master_current(self, db, name, master_id):
+        """Baca state terbaru sebuah master (event dengan sequence tertinggi)."""
+        spec = self.MASTER_SPECS[name]
+        identity = ['id', 'code', 'created_by', 'created_at'] + list(spec['identity_extra'])
+        columns = (','.join(f'r.{c}' for c in identity) + ','
+                   + ','.join(f'x.{c}' for c in spec['mutable'])
+                   + ',x.sequence,x.id AS event_id,x.revision,x.active,x.reason,x.actor_id,'
+                     'x.created_at AS updated_at,u.name AS actor_name')
+        row = db.execute(
+            f'SELECT {columns} FROM {spec["root"]} r '
+            f'JOIN {spec["events"]} x ON x.{spec["fk"]}=r.id '
+            f'AND x.sequence=(SELECT MAX(y.sequence) FROM {spec["events"]} y WHERE y.{spec["fk"]}=r.id) '
+            f'JOIN users u ON u.id=x.actor_id WHERE r.id=?', (master_id,)).fetchone()
+        if not row:
+            raise DomainError(404, f"{spec['label']} tidak ditemukan.")
+        record = dict(row)
+        record['active'] = bool(record['active'])
+        return record
+
+    def _validate_master_payload(self, db, name, payload, current):
+        """Validasi domain per-master. current diisi saat ini mengubah (boleh None)."""
+        spec = self.MASTER_SPECS[name]
+        self_id = current['id'] if current else None
+        if name == 'storage':
+            # Unit pemilik adalah identitas: diambil dari data lama saat mengubah.
+            unit_id = payload['business_unit_id'] if current is None \
+                else current['business_unit_id']
+            unit = self._master_current(db, 'business-unit', unit_id)
+            if not unit['active'] and current is None:
+                raise DomainError(422, 'Unit usaha nonaktif tidak dapat memiliki lokasi baru. '
+                                       'Aktifkan unit terlebih dahulu.')
+            # Nama storage unik per unit (kasus tidak peka). Nama sama di unit
+            # berbeda tetap sah: itu dua identitas lokasi yang berbeda.
+            clash = db.execute(
+                '''SELECT r.id FROM storages r
+                   JOIN storage_events x ON x.sequence=(SELECT MAX(y.sequence)
+                       FROM storage_events y WHERE y.storage_id=r.id)
+                   WHERE r.business_unit_id=? AND lower(trim(x.name))=lower(trim(?))
+                     AND r.id<>COALESCE(?, '')''',
+                (unit_id, payload['name'], self_id)).fetchone()
+            if clash:
+                raise DomainError(409, 'Nama lokasi sudah dipakai pada unit usaha ini. '
+                                       'Gunakan nama lain atau unit lain.')
+        if name == 'business-unit' and current is None:
+            # Kode unit global unik dijaga UNIQUE constraint; pesan diperjelas di sini.
+            pass
+
+    def _create_master(self, name, payload, actor, key):
+        spec = self.MASTER_SPECS[name]
+
+        def perform(db):
+            self._validate_master_payload(db, name, payload, None)
+            master_id, created = str(uuid4()), now()
+            identity = {'id': master_id, 'code': payload['code'],
+                        'created_by': actor['id'], 'created_at': created}
+            for column in spec['identity_extra']:
+                identity[column] = payload[column]
+            db.execute(f"INSERT INTO {spec['root']}({','.join(identity)}) "
+                       f"VALUES({','.join(':' + c for c in identity)})", identity)
+            event = {'id': str(uuid4()), spec['fk']: master_id, 'revision': 1,
+                     'active': 1, 'reason': payload['reason'],
+                     'actor_id': actor['id'], 'created_at': created}
+            for column in spec['mutable']:
+                event[column] = payload[column]
+            db.execute(f"INSERT INTO {spec['events']}({','.join(event)}) "
+                       f"VALUES({','.join(':' + c for c in event)})", event)
+            return self._master_return(db, name, master_id)
+
+        return self._write(actor, ('admin',), key, name, payload, perform)
+
+    def _change_master(self, name, master_id, payload, actor, key):
+        spec = self.MASTER_SPECS[name]
+
+        def perform(db):
+            current = self._master_current(db, name, master_id)
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, f"Data {spec['label'].lower()} sudah berubah. "
+                                       'Muat ulang lalu coba lagi.')
+            mutable = list(spec['mutable'])
+            if all(current[column] == payload[column] for column in mutable) \
+                    and current['active'] == payload['active']:
+                raise DomainError(422, f'Belum ada perubahan pada data {spec["label"].lower()}.')
+            # Nonaktifkan unit usaha hanya jika tidak ada lokasi aktif yang
+            # menempel; relasi unit-lokasi eksplisit tidak boleh yatim piatu.
+            if name == 'business-unit' and not payload['active'] and current['active']:
+                active_storage = db.execute(
+                    '''SELECT r.id FROM storages r
+                       JOIN storage_events x ON x.sequence=(SELECT MAX(y.sequence)
+                           FROM storage_events y WHERE y.storage_id=r.id)
+                       WHERE r.business_unit_id=? AND x.active=1 LIMIT 1''',
+                    (master_id,)).fetchone()
+                if active_storage:
+                    raise DomainError(409, 'Unit usaha masih memiliki lokasi aktif. '
+                                           'Nonaktifkan lokasi tersebut dahulu.')
+            self._validate_master_payload(db, name, payload, current)
+            event = {'id': str(uuid4()), spec['fk']: master_id,
+                     'revision': current['revision'] + 1, 'active': int(payload['active']),
+                     'reason': payload['reason'], 'actor_id': actor['id'], 'created_at': now()}
+            for column in mutable:
+                event[column] = payload[column]
+            db.execute(f"INSERT INTO {spec['events']}({','.join(event)}) "
+                       f"VALUES({','.join(':' + c for c in event)})", event)
+            return self._master_return(db, name, master_id)
+
+        return self._write(actor, ('admin',), key, f'{name}:{master_id}', payload, perform)
+
+    def _masters(self, name, status='all', query='', limit=100, offset=0):
+        spec = self.MASTER_SPECS[name]
+        extra = ',r.' + ',r.'.join(spec['identity_extra']) if spec['identity_extra'] else ''
+        params = {'status': status, 'query': query.strip().casefold()}
+        with self.transaction() as db:
+            ids = [row['id'] for row in db.execute(
+                f'''SELECT r.id FROM {spec["root"]} r
+                    JOIN {spec["events"]} x ON x.{spec["fk"]}=r.id
+                    AND x.sequence=(SELECT MAX(y.sequence) FROM {spec["events"]} y
+                        WHERE y.{spec["fk"]}=r.id){extra}
+                    WHERE (:status='all' OR x.active=(:status='active'))
+                      AND (:query='' OR instr(lower(r.code),:query)>0
+                        OR instr(lower(x.name),:query)>0)
+                    ORDER BY x.active DESC,r.code,r.id''', params)]
+            return {'total': len(ids), 'limit': limit, 'offset': offset,
+                    'items': [self._master_current(db, name, value)
+                              for value in ids[offset:offset + limit]]}
+
+    def _master(self, name, master_id):
+        with self.transaction() as db:
+            return self._master_return(db, name, master_id)
+
+    def _master_return(self, db, name, master_id):
+        """Baca state terakhir master untuk dikembalikan ke pemanggil. Storage
+        selalu membawa kode/nama unit pemilik agar nama yang sama di unit
+        berbeda tetap dapat dibedakan."""
+        record = self._master_current(db, name, master_id)
+        if name == 'storage':
+            self._storage_unit_overlay(db, record)
+        return record
+
+    def _master_history(self, name, master_id, limit=100, before=None):
+        spec = self.MASTER_SPECS[name]
+        with self.transaction() as db:
+            master = self._master_current(db, name, master_id)
+            rows = [dict(row) for row in db.execute(
+                f'''SELECT x.*,u.name AS actor_name FROM {spec["events"]} x
+                    JOIN users u ON u.id=x.actor_id
+                    WHERE x.{spec["fk"]}=? AND (? IS NULL OR x.sequence<?)
+                    ORDER BY x.sequence DESC LIMIT ?''',
+                (master_id, before, before, limit + 1))]
+            more = len(rows) > limit
+            rows = rows[:limit]
+            for row in rows:
+                row['active'] = bool(row['active'])
+            return {spec['fk']: master, 'items': rows,
+                    'next_before': rows[-1]['sequence'] if more else None}
+
+    # --- Unit usaha -------------------------------------------------
+
+    def business_units(self, status='all', query='', limit=100, offset=0):
+        return self._masters('business-unit', status, query, limit, offset)
+
+    def business_unit(self, unit_id):
+        return self._master('business-unit', unit_id)
+
+    def business_unit_history(self, unit_id, limit=100, before=None):
+        return self._master_history('business-unit', unit_id, limit, before)
+
+    def create_business_unit(self, payload, actor, key):
+        return self._create_master('business-unit', payload, actor, key)
+
+    def change_business_unit(self, unit_id, payload, actor, key):
+        return self._change_master('business-unit', unit_id, payload, actor, key)
+
+    # --- Storage / lokasi -------------------------------------------
+
+    @staticmethod
+    def _storage_unit_overlay(db, storage):
+        """Lampirkan kode/nama unit pemilik. Nama lokasi yang sama di unit
+        berbeda tetap terlihat sebagai dua identitas yang berbeda."""
+        row = db.execute(
+            '''SELECT b.code AS unit_code,be.name AS unit_name FROM business_units b
+               JOIN business_unit_events be ON be.sequence=(SELECT MAX(y.sequence)
+                   FROM business_unit_events y WHERE y.unit_id=b.id)
+               WHERE b.id=?''', (storage['business_unit_id'],)).fetchone()
+        storage['unit_code'] = row['unit_code'] if row else None
+        storage['unit_name'] = row['unit_name'] if row else None
+        storage['label'] = f"{storage['name']} · {storage['unit_code']}" if row else storage['name']
+        return storage
+
+    def storages(self, business_unit_id='', status='all', query='', limit=100, offset=0):
+        params = {'unit': business_unit_id, 'status': status,
+                  'active': 1 if status == 'active' else 0,
+                  'query': query.strip().casefold()}
+        with self.transaction() as db:
+            ids = [row['id'] for row in db.execute(
+                '''SELECT r.id FROM storages r
+                   JOIN storage_events x ON x.sequence=(SELECT MAX(y.sequence)
+                       FROM storage_events y WHERE y.storage_id=r.id)
+                   WHERE (:unit='' OR r.business_unit_id=:unit)
+                     AND (:status='all' OR x.active=:active)
+                     AND (:query='' OR instr(lower(r.code),:query)>0
+                       OR instr(lower(x.name),:query)>0)
+                   ORDER BY x.active DESC,r.code,r.id''', params)]
+            return {'total': len(ids), 'limit': limit, 'offset': offset,
+                    'items': [self._storage_unit_overlay(db, self._master_current(db, 'storage', value))
+                              for value in ids[offset:offset + limit]]}
+
+    def storage(self, storage_id):
+        return self._master('storage', storage_id)
+
+    def storage_history(self, storage_id, limit=100, before=None):
+        return self._master_history('storage', storage_id, limit, before)
+
+    def create_storage(self, payload, actor, key):
+        return self._create_master('storage', payload, actor, key)
+
+    def change_storage(self, storage_id, payload, actor, key):
+        return self._change_master('storage', storage_id, payload, actor, key)
+
+    # --- Customer ---------------------------------------------------
+
+    def customers(self, status='all', query='', limit=100, offset=0):
+        return self._masters('customer', status, query, limit, offset)
+
+    def customer(self, customer_id):
+        return self._master('customer', customer_id)
+
+    def customer_history(self, customer_id, limit=100, before=None):
+        return self._master_history('customer', customer_id, limit, before)
+
+    def create_customer(self, payload, actor, key):
+        return self._create_master('customer', payload, actor, key)
+
+    def change_customer(self, customer_id, payload, actor, key):
+        return self._change_master('customer', customer_id, payload, actor, key)
+
+    # --- Position ---------------------------------------------------
+
+    def positions(self, status='all', query='', limit=100, offset=0):
+        return self._masters('position', status, query, limit, offset)
+
+    def position(self, position_id):
+        return self._master('position', position_id)
+
+    def position_history(self, position_id, limit=100, before=None):
+        return self._master_history('position', position_id, limit, before)
+
+    def create_position(self, payload, actor, key):
+        return self._create_master('position', payload, actor, key)
+
+    def change_position(self, position_id, payload, actor, key):
+        return self._change_master('position', position_id, payload, actor, key)
+
+    # --- Metode pembayaran ------------------------------------------
+
+    def payment_methods(self, status='all', query='', limit=100, offset=0):
+        return self._masters('payment-method', status, query, limit, offset)
+
+    def payment_method(self, payment_method_id):
+        return self._master('payment-method', payment_method_id)
+
+    def payment_method_history(self, payment_method_id, limit=100, before=None):
+        return self._master_history('payment-method', payment_method_id, limit, before)
+
+    def create_payment_method(self, payload, actor, key):
+        return self._create_master('payment-method', payload, actor, key)
+
+    def change_payment_method(self, payment_method_id, payload, actor, key):
+        return self._change_master('payment-method', payment_method_id, payload, actor, key)
+
+    # --- Supplier: status aktif + perubahan tercatat -----------------
+
+    def suppliers(self, status='all', query='', limit=100, offset=0):
+        params = {'status': status, 'query': query.strip().casefold(),
+                  'active': 1 if status == 'active' else 0}
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute(
+                '''SELECT s.*,u.name AS actor_name FROM suppliers s
+                   JOIN users u ON u.id=s.actor_id
+                   WHERE (:status='all' OR s.active=:active)
+                     AND (:query='' OR instr(lower(s.code),:query)>0
+                       OR instr(lower(s.name),:query)>0)
+                   ORDER BY s.active DESC,s.code,s.id LIMIT :limit OFFSET :offset''',
+                dict(params, limit=limit, offset=offset))]
+
+    def change_supplier(self, supplier_id, payload, actor, key):
+        """Hanya status aktif yang diubah. Identitas (kode/nama/kontak/alamat)
+        immutable sesuai kontrak F02; histori PO utuh karena PO menyimpan
+        snapshot JSON pemasok saat dibuat."""
+
+        def perform(db):
+            supplier = db.execute('SELECT active FROM suppliers WHERE id=?',
+                                  (supplier_id,)).fetchone()
+            if not supplier:
+                raise DomainError(404, 'Pemasok tidak ditemukan.')
+            if supplier['active'] == int(payload['active']):
+                raise DomainError(422, 'Belum ada perubahan pada data pemasok.')
+            db.execute('UPDATE suppliers SET active=? WHERE id=?',
+                       (int(payload['active']), supplier_id))
+            return dict(db.execute('SELECT * FROM suppliers WHERE id=?',
+                                   (supplier_id,)).fetchone())
+
+        return self._write(actor, ('admin',), key, f'supplier:{supplier_id}', payload, perform)
+
+    # --- Mapping ID employee legacy ---------------------------------
+
+    def employee_legacy_ids(self, employee_id='', limit=100, offset=0):
+        with self.transaction() as db:
+            return [dict(row) for row in db.execute(
+                '''SELECT l.*,e.code AS employee_code,u.name AS actor_name
+                   FROM workforce_employee_legacy_ids l
+                   JOIN workforce_employees e ON e.id=l.employee_id
+                   JOIN users u ON u.id=l.actor_id
+                   WHERE (:employee_id='' OR l.employee_id=:employee_id)
+                   ORDER BY l.created_at DESC,l.id LIMIT :limit OFFSET :offset''',
+                dict(employee_id=employee_id, limit=limit, offset=offset))]
+
+    def create_employee_legacy_id(self, payload, actor, key):
+        def perform(db):
+            self._employee(db, payload['employee_id'])  # 404 jika tidak ada
+            mapping_id = str(uuid4())
+            db.execute('''INSERT INTO workforce_employee_legacy_ids(
+                id,employee_id,legacy_id,source_system,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?)''',
+                       (mapping_id, payload['employee_id'], payload['legacy_id'].strip(),
+                        payload['source_system'].strip(), payload['reason'],
+                        actor['id'], now()))
+            return dict(db.execute('SELECT * FROM workforce_employee_legacy_ids WHERE id=?',
+                                   (mapping_id,)).fetchone())
+
+        return self._write(actor, ('admin',), key,
+                           f'workforce-employee-legacy:{payload["employee_id"]}', payload, perform)
+
+    # --- Pemetaan lokasi teks -> identitas storage -------------------
+
+    #: Sumber lokasi teks yang dipetakan. Overlay baca: baris transaksi
+    #: TIDAK pernah diubah, hanya dicatat pemetaannya di tabel terpisah.
+    LOCATION_TEXT_SOURCES = (
+        ('material_batches', 'id', 'location'),
+        ('finished_goods_receipts', 'id', 'location'),
+        ('warehouse_movements', 'id', 'from_location'),
+        ('warehouse_movements', 'id', 'to_location'),
+        ('marketplace_reservations', 'id', 'location'),
+        ('marketplace_picks', 'id', 'staging_location'),
+        ('bundle_handoffs', 'id', 'from_location'),
+        ('bundle_handoffs', 'id', 'to_location'),
+        ('marketplace_returns', 'id', 'return_location'),
+        ('finished_goods_adjustments', 'id', 'location'),
+        ('finished_goods_stock_counts', 'id', 'location'),
+        ('qc_intakes', 'id', 'location'),
+    )
+
+    @staticmethod
+    def _location_candidates(db, normalized_text):
+        """Storage aktif yang namanya cocok (kasus tidak peka, sudah di-trim).
+        Pencocokan hanya pada nama; unit pemilik TIDAK ditebak dari teks."""
+        return db.execute(
+            '''SELECT r.id,r.business_unit_id FROM storages r
+               JOIN storage_events x ON x.sequence=(SELECT MAX(y.sequence)
+                   FROM storage_events y WHERE y.storage_id=r.id)
+               WHERE lower(trim(x.name))=? AND x.active=1''',
+            (normalized_text,)).fetchall()
+
+    def recompute_location_mappings(self, actor, key):
+        """Pindai ulang seluruh lokasi teks dan catat pemetaan deterministik.
+
+        Aturan (sesuai issue #44): cocokkan hanya jika tepat SATU storage aktif
+        di seluruh unit yang namanya sama. Nol kandidat -> pending; lebih dari
+        satu (nama sama di unit berbeda) -> ambiguous, tidak ditebak unitnya.
+        Pemetaan eksplisit buatan admin (match_basis='explicit') dipertahankan.
+        """
+        def perform(db):
+            stats = {'confirmed': 0, 'pending': 0, 'ambiguous': 0, 'preserved': 0, 'rows': 0}
+            for table, id_column, column in self.LOCATION_TEXT_SOURCES:
+                for row in db.execute(f'SELECT {id_column} AS ref,{column} AS text FROM {table}'):
+                    stats['rows'] += 1
+                    raw = row['text']
+                    existing = db.execute(
+                        '''SELECT id,match_basis,storage_id FROM storage_location_mappings
+                           WHERE source_table=? AND source_column=? AND source_ref=?''',
+                        (table, column, row['ref'])).fetchone()
+                    if existing and existing['match_basis'] == 'explicit':
+                        stats['preserved'] += 1
+                        continue
+                    candidates = self._location_candidates(db, raw.strip().casefold())
+                    if len(candidates) == 1:
+                        status, basis, storage_id = 'confirmed', 'unique_name', candidates[0]['id']
+                    elif candidates:
+                        status, basis, storage_id = 'ambiguous', 'ambiguous_name', None
+                    else:
+                        status, basis, storage_id = 'pending', 'none', None
+                    fields = dict(source_table=table, source_column=column, source_ref=row['ref'],
+                                  storage_id=storage_id, match_status=status, match_basis=basis,
+                                  raw_text=raw)
+                    if existing:
+                        db.execute('''UPDATE storage_location_mappings SET storage_id=:storage_id,
+                            match_status=:match_status,match_basis=:match_basis,
+                            reason=:reason WHERE id=:id''',
+                                   dict(fields, reason='recompute', id=existing['id']))
+                    else:
+                        db.execute('''INSERT INTO storage_location_mappings(
+                            id,source_table,source_column,source_ref,raw_text,storage_id,
+                            match_status,match_basis,reason,actor_id,created_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                                   (str(uuid4()), table, column, row['ref'], raw, storage_id,
+                                    status, basis, 'recompute', actor['id'], now()))
+                    stats[{'confirmed': 'confirmed', 'pending': 'pending',
+                           'ambiguous': 'ambiguous'}[status]] += 1
+            return stats
+
+        return self._write(actor, ('admin',), key, 'storage-location-mapping-recompute',
+                           {}, perform)
+
+    def storage_location_mappings(self, match_status='all', storage_id='', query='',
+                                  limit=100, offset=0):
+        params = {'status': match_status, 'storage': storage_id, 'query': query.strip().casefold()}
+        with self.transaction() as db:
+            rows = db.execute(
+                '''SELECT m.*,s.code AS storage_code,se.name AS storage_name,
+                          b.code AS unit_code,bu.name AS unit_name,u.name AS actor_name
+                   FROM storage_location_mappings m
+                   LEFT JOIN storages s ON s.id=m.storage_id
+                   LEFT JOIN storage_events se ON se.sequence=(SELECT MAX(y.sequence)
+                       FROM storage_events y WHERE y.storage_id=s.id)
+                   LEFT JOIN business_units b ON b.id=s.business_unit_id
+                   LEFT JOIN business_unit_events bu ON bu.sequence=(SELECT MAX(y.sequence)
+                       FROM business_unit_events y WHERE y.unit_id=b.id)
+                   JOIN users u ON u.id=m.actor_id
+                   WHERE (:status='all' OR m.match_status=:status)
+                     AND (:storage='' OR m.storage_id=:storage)
+                     AND (:query='' OR instr(lower(m.raw_text),:query)>0)
+                   ORDER BY CASE m.match_status WHEN 'pending' THEN 0 WHEN 'ambiguous' THEN 1
+                            ELSE 2 END,m.raw_text,m.id LIMIT :limit OFFSET :offset''',
+                dict(params, limit=limit, offset=offset))
+            return [dict(row) for row in rows]
+
+    def map_storage_location(self, mapping_id, payload, actor, key):
+        """Pemetaan eksplisit oleh admin untuk kasus pending/ambiguous. Teks
+        asli (raw_text) tidak berubah; hanya identitas storage yang ditautkan."""
+
+        def perform(db):
+            mapping = db.execute('SELECT * FROM storage_location_mappings WHERE id=?',
+                                 (mapping_id,)).fetchone()
+            if not mapping:
+                raise DomainError(404, 'Pemetaan lokasi tidak ditemukan.')
+            storage = self._master_current(db, 'storage', payload['storage_id'])
+            db.execute('''UPDATE storage_location_mappings SET storage_id=?,match_status='confirmed',
+                match_basis='explicit',reason=? WHERE id=?''',
+                       (storage['id'], payload['reason'], mapping_id))
+            return dict(db.execute('SELECT * FROM storage_location_mappings WHERE id=?',
+                                   (mapping_id,)).fetchone())
+
+        return self._write(actor, ('admin',), key,
+                           f'storage-location-mapping:{mapping_id}', payload, perform)
+
+    def location_mapping_summary(self):
+        """Ringkasan pemetaan untuk laporan/demo: per teks unik, jumlah pemakaian
+        dan status. Tidak mengubah data transaksi."""
+        with self.transaction() as db:
+            rows = db.execute(
+                '''SELECT raw_text,match_status,match_basis,storage_id,
+                          COUNT(*) AS usage_count,
+                          COUNT(DISTINCT source_table) AS source_tables
+                   FROM storage_location_mappings GROUP BY raw_text,match_status,
+                        match_basis,storage_id
+                   ORDER BY CASE match_status WHEN 'pending' THEN 0 WHEN 'ambiguous' THEN 1
+                            ELSE 2 END,raw_text''')
+            return [dict(row) for row in rows]
+
+    def _require_active_master(self, db, name, master_id, label):
+        """Validasi referensi master pada transaksi BARU: harus ada dan aktif.
+        Histori dan koreksi transaksi lama tidak memanggil ini."""
+        record = self._master_current(db, name, master_id)
+        if not record['active']:
+            raise DomainError(422, f'{label} nonaktif tidak dapat dipakai untuk transaksi baru.')
+        return record

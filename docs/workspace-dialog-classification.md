@@ -13,6 +13,7 @@ they do not replace that page's primary roster, report, or queue.
 | Owning context / focused task | Functions retained |
 |---|---|
 | Audit: inspect one event | `auditEventDialog` |
+| Master bisnis: riwayat revisi satu master (unit, lokasi, pelanggan, jabatan, metode pembayaran) | `masterHistoryDialog` |
 | Master SKU: mapping and mapping history for one SKU | `productMappingDialog`, `productMappingHistoryDialog` |
 | Master SKU / order: BOM and revision history for one SKU | `bomDialog`, `bomHistoryDialog` |
 | Production order: changes and approval history | `orderChangesDialog`, `productionChangeRequestsDialog`, `productionChangeRequestDialog` |

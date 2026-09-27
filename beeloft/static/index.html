@@ -22,6 +22,7 @@
     <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3.4 15.5a9 9 0 1 1 17.2 0"/><path d="M12 13.2 16.2 9.6"/><circle cx="12" cy="14.4" r="1.5"/></symbol>
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3.2 21 8l-9 4.8L3 8l9-4.8Z"/><path d="M3 13.2 12 18l9-4.8"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24"><path d="M20.5 8.3v7.4L12 20.4 3.5 15.7V8.3L12 3.6l8.5 4.7Z"/><path d="M3.5 8.3 12 13l8.5-4.7M12 13v7.4"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 20.5V5.4A1.4 1.4 0 0 1 5.4 4h5.2a1.4 1.4 0 0 1 1.4 1.4v15.1"/><path d="M12 20.5h8"/><path d="M14 20.5V8.6a1.4 1.4 0 0 1 1.4-1.4h3.2A1.4 1.4 0 0 1 20 8.6v11.9"/><path d="M7 8h3M7 12h3"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9.2" cy="8.2" r="3.3"/><path d="M2.8 20a6.4 6.4 0 0 1 12.8 0"/><path d="M16.6 5.6a3.3 3.3 0 0 1 0 5.6"/><path d="M17.6 14.6A6.4 6.4 0 0 1 21.2 20"/></symbol>
     <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8.5V6.4A2.4 2.4 0 0 1 6.4 4h2.1M15.5 4h2.1A2.4 2.4 0 0 1 20 6.4v2.1M20 15.5v2.1a2.4 2.4 0 0 1-2.4 2.4h-2.1M8.5 20H6.4A2.4 2.4 0 0 1 4 17.6v-2.1"/><path d="M4 12h16"/></symbol>
     <symbol id="i-barcode" viewBox="0 0 24 24"><path d="M3.5 6v12M7 6v12M10.5 6v8M14 6v12M17.5 6v8M20.5 6v12"/></symbol>
@@ -128,6 +129,7 @@
           </div>
           <div class="nav-group nav-group-tail">
             <p class="nav-section-label">Bisnis</p>
+            <button id="business-masters" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-building"/></svg>Master bisnis</button>
             <button id="purchase-requests" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-cart"/></svg>Permintaan pembelian</button>
             <button id="marketing-budgets" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-megaphone"/></svg>Budget marketing</button>
           </div>
@@ -222,6 +224,28 @@
         <div class="workspace-subhead"><h2 id="products-catalog-heading" class="workspace-section-title">Katalog SKU</h2><span id="products-count" class="workspace-meta"></span></div>
         <p id="products-message" class="state" role="status" hidden></p>
         <div id="product-list" class="product-list list-host"></div>
+        </section>
+      </section>
+      <section id="masters-view" class="workspace-page" hidden>
+        <button id="masters-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Master bisnis</h1><p class="workspace-subtitle">Unit usaha, lokasi, pelanggan, jabatan, dan metode pembayaran. Nonaktifkan, jangan hapus: histori transaksi tetap terbaca.</p></div><div class="workspace-actions"><button id="masters-refresh" type="button" class="action-secondary">Muat ulang</button><button id="new-master" class="action-primary" type="button" hidden>Tambah</button></div></div>
+        <section class="masters-work" aria-labelledby="masters-catalog-heading">
+        <div id="masters-tabs" class="command-bar filter-row" role="tablist" aria-label="Jenis master">
+          <button type="button" class="filter-chip" role="tab" data-master-tab="unit" aria-selected="true">Unit usaha</button>
+          <button type="button" class="filter-chip" role="tab" data-master-tab="storage" aria-selected="false">Lokasi</button>
+          <button type="button" class="filter-chip" role="tab" data-master-tab="customer" aria-selected="false">Pelanggan</button>
+          <button type="button" class="filter-chip" role="tab" data-master-tab="position" aria-selected="false">Jabatan</button>
+          <button type="button" class="filter-chip" role="tab" data-master-tab="payment-method" aria-selected="false">Metode pembayaran</button>
+          <button type="button" class="filter-chip" role="tab" data-master-tab="mapping" aria-selected="false">Pemetaan lokasi</button>
+        </div>
+        <form id="masters-search-form" class="command-bar">
+          <label class="command-search"><span class="visually-hidden">Cari kode atau nama master</span><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-search"/></svg><input id="masters-search" type="search" maxlength="160" aria-label="Cari kode atau nama master" aria-describedby="masters-note" placeholder="Cari kode atau nama"></label>
+          <div class="command-actions"><button id="masters-clear" type="button" class="action-quiet">Reset pencarian</button></div>
+        </form>
+        <p id="masters-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Master menyimpan identitas dan status aktif secara terpisah. Lokasi yang dinonaktifkan tetap terbaca di histori; transaksi baru akan menolaknya.</span></p>
+        <div class="workspace-subhead"><h2 id="masters-catalog-heading" class="workspace-section-title">Unit usaha</h2><span id="masters-count" class="workspace-meta"></span></div>
+        <p id="masters-message" class="state" role="status" hidden></p>
+        <div id="master-list" class="list-host"></div>
         </section>
       </section>
       <section id="analytics-view" class="workspace-page" hidden>
