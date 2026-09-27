@@ -1,0 +1,797 @@
+{
+  "revision": "F01-CASES-20260927-6",
+  "execution_baseline": "96bb48fa8889b3a483411768e2543838e69233b0",
+  "synthetic": true,
+  "generated_at_wib": "2026-09-27 ~13:40 WIB",
+  "evidence_catalog": [
+    "EV-F01-0001",
+    "EV-F01-0002",
+    "EV-F01-0003",
+    "EV-F01-0004",
+    "EV-F01-0005",
+    "EV-F01-0006",
+    "EV-F01-0007",
+    "EV-F01-0008",
+    "EV-F01-0009",
+    "EV-F01-0010",
+    "EV-F01-0011",
+    "EV-F01-0012",
+    "EV-F01-0013",
+    "EV-F01-0014",
+    "EV-F01-0015",
+    "EV-F01-0016",
+    "EV-F01-0017",
+    "EV-F01-0018",
+    "EV-F01-0019",
+    "EV-F01-0020",
+    "EV-F01-0021",
+    "EV-F01-0022",
+    "EV-F01-0023",
+    "EV-F01-0024",
+    "EV-F01-0025",
+    "EV-F01-0026",
+    "EV-F01-0027",
+    "EV-F01-0028",
+    "EV-F01-0029",
+    "EV-F01-0030"
+  ],
+  "decisions": [
+    {
+      "decision_id": "D01",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D01-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D02",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D02-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D03",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D03-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D04",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D04-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D05",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D05-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D06",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D06-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D07",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D07-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D08",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D08-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D09",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D09-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D10",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D10-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D11",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D11-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D12",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D12-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D13",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D13-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D14",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D14-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D15",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D15-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D16",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D16-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D17",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D17-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D18",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D18-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D19",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D19-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D20",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D20-RULE-20260927-1"
+    }
+  ],
+  "cases": [
+    {
+      "id": "SYN-D01",
+      "ex_id": "EX01",
+      "process_ids": [],
+      "decision_ids": [
+        "D01"
+      ],
+      "evidence_ids": [
+        "EV-F01-0008",
+        "EV-F01-0009",
+        "EV-F01-0012"
+      ],
+      "description": "Synthetic: SKU-A with size M/color Blue/UOM pcs; whether a missing Series field blocks save is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: SKU-A with size M/color Blue/UOM pcs; whether a missing Series field blocks save is unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Exact field list, required/optional rules, uniqueness, inactive-master behavior, UOM Range meaning, duplicate IDs, and live transactions against inactive masters.",
+        "Which fields and master relationships must remain for operations? Are any identified fields approved for retirement?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D02",
+      "ex_id": "EX02",
+      "process_ids": [],
+      "decision_ids": [
+        "D02"
+      ],
+      "evidence_ids": [
+        "EV-F01-0011"
+      ],
+      "description": "Synthetic: plan target 1,000 pcs, 600 cut, 400 remaining; disposition and approval are unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: plan target 1,000 pcs, 600 cut, 400 remaining; disposition and approval are unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether targets/PIC/dates can change after cutting, partial cancellation, approval gates, plan-to-cut lineage, and correction behavior.",
+        "After cutting starts, what changes are allowed, who approves, and how is uncompleted quantity closed?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D03",
+      "ex_id": "EX03",
+      "process_ids": [],
+      "decision_ids": [
+        "D03"
+      ],
+      "evidence_ids": [
+        "EV-F01-0011"
+      ],
+      "description": "Synthetic: 1 roll 25 kg, 100 sheets, 2 setelan; arithmetic target is 200 pcs if those units mean what labels suggest; legacy effect not evidenced. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: 1 roll 25 kg, 100 sheets, 2 setelan; arithmetic target is 200 pcs if those units mean what labels suggest; legacy effect not evidenced.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Actual consumption formula, unit conversion precision, waste vs reusable remainder, mixed-size behavior, corrections, and tie to inventory.",
+        "Which quantities are actual measurements, what formula does legacy use, and how should reusable remainder/waste be recorded?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D04",
+      "ex_id": "EX04",
+      "process_ids": [],
+      "decision_ids": [
+        "D04"
+      ],
+      "evidence_ids": [
+        "EV-F01-0003",
+        "EV-F01-0009",
+        "EV-F01-0010"
+      ],
+      "description": "Synthetic illustration only: 11 pcs / 12 × Rp25,000 = Rp22,916.666… before rounding. Display/paid amount unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "quantity_pcs": "11",
+        "pieces_per_dozen": "12",
+        "rate_per_dozen_idr": "25000",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": "Pure arithmetic illustration: (11 / 12) * 25000; rounding rule is deliberately unset.",
+      "candidate_result": {
+        "exact_unrounded_idr": "22916.66666666666666666666667",
+        "rounded_business_amount": null
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Persisted conversion precision, amount formula, rounding point/mode, effective tariff date, tariff edits after job creation, missing/inactive tariff behavior.",
+        "What quantity precision, tariff effective-date rule, and rounding point/mode must One preserve?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D05",
+      "ex_id": "EX05",
+      "process_ids": [],
+      "decision_ids": [
+        "D05"
+      ],
+      "evidence_ids": [
+        "EV-F01-0003"
+      ],
+      "description": "Synthetic: 100 produced, 95 accepted, 3 rework, 2 reject; payable quantity is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "produced_pcs": "100",
+        "accepted_pcs": "95",
+        "rework_pcs": "3",
+        "reject_pcs": "2",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether reject/rework is recorded, paid, deducted, reworked by same/different employee, or netted by supervisor outside system.",
+        "How does legacy pay for rejected and reworked pieces, who records them, and should One preserve or change that rule?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D06",
+      "ex_id": "EX06",
+      "process_ids": [],
+      "decision_ids": [
+        "D06"
+      ],
+      "evidence_ids": [
+        "EV-F01-0002"
+      ],
+      "description": "Synthetic: gross Rp950,000, allowance Rp110,000, other deduction Rp10,000, cashbon Rp150,000; arithmetic result depends on what gross includes. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: gross Rp950,000, allowance Rp110,000, other deduction Rp10,000, cashbon Rp150,000; arithmetic result depends on what gross includes.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Exact definitions/formulas, whether gross already includes allowances, attendance/leave/overtime rules, manual vs derived values, tax/statutory deductions, negative-net handling.",
+        "Please confirm the actual component definitions and calculation source after reviewing the linked slip(s); which parts may change in One?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D07",
+      "ex_id": "EX07",
+      "process_ids": [],
+      "decision_ids": [
+        "D07"
+      ],
+      "evidence_ids": [
+        "EV-F01-0002"
+      ],
+      "description": "Synthetic: a job dated in a paid period is entered later; destination period and re-open policy unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: a job dated in a paid period is entered later; destination period and re-open policy unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Cutoff, late jobs, overlapping periods, partial payment, what Paid means, posting/journal, reopen/correction after payment, and any relation to bank/cash proof.",
+        "What is the cutoff rule for late jobs, and how are paid or posted slips corrected without rewriting payment history?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D08",
+      "ex_id": "EX08",
+      "process_ids": [],
+      "decision_ids": [
+        "D08"
+      ],
+      "evidence_ids": [
+        "EV-F01-0004"
+      ],
+      "description": "Synthetic: outstanding Rp300,000; scheduled deduction Rp200,000; payroll available Rp150,000. Actual legacy behavior unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "opening_balance_idr": "300000",
+        "scheduled_deduction_idr": "200000",
+        "available_pay_idr": "150000",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether payroll deduction changes outstanding balance automatically, manual settlement steps, installment schedule, balance-forward, final installment, and reversals.",
+        "Show/confirm the actual deduction-to-balance history; then decide what happens when available pay is less than scheduled installment."
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D09",
+      "ex_id": "EX09",
+      "process_ids": [],
+      "decision_ids": [
+        "D09"
+      ],
+      "evidence_ids": [
+        "EV-F01-0005",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: retail one-item cash sale vs wholesale 50-dozen order with terms; current legacy workflow unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: retail one-item cash sale vs wholesale 50-dozen order with terms; current legacy workflow unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether wholesale, marketplace, online, or other sales are recorded in POS, another module, external platform, or manual records; order-to-fulfillment flow.",
+        "Which sales channels are in actual use, and where is each order/payment currently recorded?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D10",
+      "ex_id": "EX10",
+      "process_ids": [],
+      "decision_ids": [
+        "D10"
+      ],
+      "evidence_ids": [
+        "EV-F01-0005"
+      ],
+      "description": "Synthetic: price Rp65,000 and fixed discount Rp15,000; whether allowed and where applied is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: price Rp65,000 and fixed discount Rp15,000; whether allowed and where applied is unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Price source/lock, discount basis and authorization, percent vs fixed discounts, tax, rounding, invoice finalization, and historical price snapshots.",
+        "What price/discount rules actually run in legacy, and what permissions should One change, if any?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D11",
+      "ex_id": "EX11",
+      "process_ids": [],
+      "decision_ids": [
+        "D11"
+      ],
+      "evidence_ids": [
+        "EV-F01-0006"
+      ],
+      "description": "Synthetic: total Rp180,000 paid Rp100,000 cash + Rp80,000 QR; whether legacy allows this is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "invoice_total_idr": "180000",
+        "cash_tender_idr": "100000",
+        "qris_tender_idr": "80000",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Split tenders, partial payment/AR, overpayment, refunds, exchange, void timing/roles, cash or bank settlement, and stock reversal.",
+        "Which tender combinations and refund/void flows are used today, and who can perform/approve each?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D12",
+      "ex_id": "EX12",
+      "process_ids": [],
+      "decision_ids": [
+        "D12"
+      ],
+      "evidence_ids": [
+        "EV-F01-0007"
+      ],
+      "description": "Synthetic: invoice for 500 kg vs receipt for 480 kg; variance handling and payable amount unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "invoice_qty_kg": "500",
+        "receipt_qty_kg": "480",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Purchase request/order/receipt chain, three-way match, partial settlement, allocation to invoices/POs, payment evidence, non-PO types, and reversal.",
+        "Trace one with-PO and one non-PO settlement, including receipt and payment proof; what matching rules should One preserve/change?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D13",
+      "ex_id": "EX13",
+      "process_ids": [],
+      "decision_ids": [
+        "D13"
+      ],
+      "evidence_ids": [
+        "EV-F01-0013",
+        "EV-F01-0016"
+      ],
+      "description": "Synthetic: 100 units at Rp20,000 and 100 at Rp22,000; moving-average arithmetic would be Rp21,000, but legacy method is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "qty_a": "100",
+        "unit_cost_a_idr": "20000",
+        "qty_b": "100",
+        "unit_cost_b_idr": "22000",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": "Illustrates weighted average arithmetic only; not a legacy or approved valuation rule.",
+      "candidate_result": {
+        "illustrative_weighted_average_idr": "21000"
+      },
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Capital calculation method, valuation layers, receipt costs, WIP/COGS treatment, negative-stock policy, and root cause of #108.",
+        "What method does legacy currently use? After verifying that, which valuation method should One use and how should #108 be classified?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D14",
+      "ex_id": "EX14",
+      "process_ids": [],
+      "decision_ids": [
+        "D14"
+      ],
+      "evidence_ids": [
+        "EV-F01-0001",
+        "EV-F01-0017"
+      ],
+      "description": "Synthetic only: illustrative future native-GL receipt posting; D14 direction is selected, but account mapping, recognition, tax, period, and expected accounting result remain unapproved. This does not evidence legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC_DIRECTION_SELECTED_DETAILS_OPEN",
+      "unresolved_questions": [
+        "External accounting tool/process, actual COA, source-of-truth per ledger, data exchange, posting timing, payroll/AP/POS journals.",
+        "For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified.",
+        "Selected target scope: native full accounting Option B; still need authorized accounting owner to decide COA/accounts, posting events/timing, taxes, precision/rounding, period lock/late adjustments, reports, roles, and migration.",
+        "No legacy transaction or external accounting source was sampled; current accounting workflow remains unknown."
+      ],
+      "approvals": [],
+      "synthetic": true
+    },
+    {
+      "id": "SYN-D15",
+      "ex_id": "EX15",
+      "process_ids": [],
+      "decision_ids": [
+        "D15"
+      ],
+      "evidence_ids": [
+        "EV-F01-0019",
+        "EV-F01-0002"
+      ],
+      "description": "Synthetic: August close on 5 September then a late invoice; acceptance path unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: August close on 5 September then a late invoice; acceptance path unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether a separate legacy route exists, how monthly books close, late adjustments, reopen permissions, payroll cutoff, and reports.",
+        "Does the company currently close periods outside the audited legacy menu? What close/reopen and late-posting policy should One implement?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D16",
+      "ex_id": "EX16",
+      "process_ids": [],
+      "decision_ids": [
+        "D16"
+      ],
+      "evidence_ids": [
+        "EV-F01-0014",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: compare one dashboard period total with underlying POS invoices; no source values are preserved. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: compare one dashboard period total with underlying POS invoices; no source values are preserved.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Downloaded file content/layout, other report formats, filters/timezone, metric definitions, reconciliation and report readership.",
+        "Which actual reports/files are required, who uses them, and what totals/filters must match?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D17",
+      "ex_id": "EX17",
+      "process_ids": [],
+      "decision_ids": [
+        "D17"
+      ],
+      "evidence_ids": [
+        "EV-F01-0012",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: same user requests and approves a supplier payment; whether current legacy blocks it is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: same user requests and approves a supplier payment; whether current legacy blocks it is unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Complete role/account inventory, per-action permission checks, business unit scoping, salary access, self-approval, delegation, audit log.",
+        "Which roles may view, create, approve, pay, export, or reverse each domain? Who may see payroll?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D18",
+      "ex_id": "EX18",
+      "process_ids": [],
+      "decision_ids": [
+        "D18"
+      ],
+      "evidence_ids": [
+        "EV-F01-0001",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: duplicate marketplace order event; idempotency behavior unknown in legacy. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: duplicate marketplace order event; idempotency behavior unknown in legacy.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Platforms in use, connector/aggregator, sync direction/frequency, order/stock/refund/settlement ownership, retries and reconciliation.",
+        "Which sales/inventory/finance systems and channels are actually used, and which objects should remain synchronized with One?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D19",
+      "ex_id": "EX19",
+      "process_ids": [],
+      "decision_ids": [
+        "D19"
+      ],
+      "evidence_ids": [
+        "EV-F01-0016",
+        "EV-F01-0017"
+      ],
+      "description": "Synthetic: cutover 30 Sep; stock/cashbon/AP balance values and archival reconciliation must be measured, not assumed. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: cutover 30 Sep; stock/cashbon/AP balance values and archival reconciliation must be measured, not assumed.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Available exports, history depth, IDs/relations, balances/open items, paid/unpaid jobs, cashbon, AR/AP, WIP, deltas and record counts.",
+        "After evidence/profile, which domains require replay and which may use approved opening balances? What archive/retention is required?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D20",
+      "ex_id": "EX20",
+      "process_ids": [],
+      "decision_ids": [
+        "D20"
+      ],
+      "evidence_ids": [
+        "EV-F01-0001",
+        "EV-F01-0018"
+      ],
+      "description": "Synthetic: payroll and POS totals are compared in parallel; no target tolerances or source data are established. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: payroll and POS totals are compared in parallel; no target tolerances or source data are established.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "User readiness, peak volumes, RPO/RTO, backup/restore, reconciliation, freeze window, rollback controls and support coverage.",
+        "What readiness evidence and go/no-go authority are required before legacy shutdown? Is a parallel run mandatory?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    }
+  ],
+  "sign_off": {
+    "status": "PENDING",
+    "owner": null,
+    "approved_at": null,
+    "revision": null
+  }
+}

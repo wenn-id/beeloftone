@@ -1,15 +1,10 @@
 # F01: register proses bisnis
 
-Status: **discovery untuk review, belum dibekukan / belum business accepted**.
+Status: **IN_PROGRESS; bukti transaksi belum lengkap; belum BUSINESS_ACCEPTED**.
 Issue [#40](https://github.com/wenn-id/beeloftone/issues/40), induk
-[#39](https://github.com/wenn-id/beeloftone/issues/39). Diperiksa 21 September 2026
-pada `2bee57075b2e0826dfcd581691d37585e7dd1df2` (v0.97.0, schema 55), menggantikan
-baseline teknis issue `f8921e763a8b317f3680229aedb9406ddba687c8` (v0.87.0, schema 55).
+[#39](https://github.com/wenn-id/beeloftone/issues/39). Execution baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0, schema 55). Baseline perencanaan 21 September dan issue awal tetap dicatat di bagian sejarah; bukan HEAD saat ini.
 
-Register ini menginventaris cakupan roadmap dan kemampuan kode, bukan hasil
-wawancara atau audit akun legacy. Dokumen legacy tersamarkan, daftar role perusahaan,
-dan persetujuan pemilik proses belum diterima. Karena itu kelengkapan seluruh proses
-perusahaan masih harus dikonfirmasi. Tidak terlihat pada akun audit, tidak ada menu,
+Register ini menginventaris cakupan roadmap dan kemampuan kode. Issue #40 juga mencatat audit UI legacy terdahulu tanggal 27 September 2026; audit itu melaporkan permukaan tertentu, tetapi tidak menyediakan raw captures, transaksi, sampling log, full role matrix, atau approval. Karena itu kelengkapan seluruh proses perusahaan dan aturan backend tetap harus dikonfirmasi. Tidak terlihat pada akun audit, tidak ada menu,
 atau tidak ditemukan di kode **tidak berarti proses boleh dihapus atau gap selesai**.
 
 ## Cara membaca dan sumber
@@ -134,3 +129,13 @@ terlewat, dan menghubungkan Dxx serta EXxx ke contoh yang disetujui. Akun `viewe
 bukan bukti bahwa semua auditor/manajer boleh melihat seluruh data payroll.
 Detail keputusan, katalog dokumen, dan syarat freeze ada di
 [F01 keputusan dan bukti](f01-decisions-evidence.md).
+
+
+## Addendum sumber audit terdahulu
+
+Issue #40 melaporkan audit permukaan UI read-only pada 27 September 2026: dashboard, 30 menu, 8 form, satu detail payroll. Detail saat tersedia di `docs/f01-legacy-evidence.md`; seluruhnya `PRIOR_AUDIT_REPORTED`, bukan transaksi/formula terverifikasi. Payroll→payment→cashbon, POS payment/refund, AP→PO/receipt/payment, permission, report contents, dan seluruh status backend belum ditelusuri. `/settings/periods` tetap `UNVERIFIED`. Tidak ada status Pxx yang ditandai selesai hanya berdasarkan audit permukaan.
+
+
+### D14 capability evidence and roadmap distinction
+
+The current One baseline has domain-specific operational ledgers and reversals and read-only external accounting snapshots/reconciliation. These do not form a native General Ledger. See the capability inventory in `f01-decisions-evidence.md`; references identify current code/tests and limits. Native COA/journal header-lines/source posting are absent from schema 55 inventory; #46 A01 implements foundations after #41/#44, while #59 A02 builds close/reopen, reconciliation and reports after operational producers. Do not create a competing operational ledger or double count a source event. The D14 target direction (Option B) is selected by user instruction; detailed rules remain open.

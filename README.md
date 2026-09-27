@@ -203,9 +203,15 @@ adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snap
 
 ## Dokumentasi
 
-- [Register proses bisnis F01](docs/f01-process-register.md) dan
-  [keputusan, bukti, serta gerbang sign-off](docs/f01-decisions-evidence.md) untuk
-  roadmap penggantian backoffice #40. Status discovery; belum business accepted.
+- [Register proses bisnis F01](docs/f01-process-register.md),
+  [keputusan, bukti, serta gerbang sign-off](docs/f01-decisions-evidence.md),
+  [bukti legacy dan sampling](docs/f01-legacy-evidence.md),
+  [peta field legacy](docs/f01-field-map.csv),
+  [kasus sintetis](docs/f01-legacy-cases.json),
+  [paket review pemilik](docs/f01-owner-decisions.md),
+  [handoff F02](docs/f01-f02-handoff.md), dan
+  [verifikasi](docs/f01-verification.md) untuk
+  roadmap penggantian backoffice #40. Status: discovery in progress; bukti transaksi belum lengkap; belum business accepted.
 - [Kontrak transaksi dan data bersama F02](docs/f02-shared-contracts.md), dengan
   fixture sintetis dan inventaris pemilik tabel/endpoint untuk #41. Draft persiapan;
   penerimaan kontrak menunggu keputusan F01 dan sign-off A1/A2/A3 serta A0/pemilik bisnis.
