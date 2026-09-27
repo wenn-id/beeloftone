@@ -10,6 +10,75 @@ commit merge di bawah; issue tersebut tidak dibuka ulang. Pemeriksaan F03
 menemukan satu sisa bug scope produksi #29 pada HEAD dan memperbaikinya di branch
 ini. Status penerimaan bisnis dan reviewer tetap terpisah dari status teknis.
 
+Pass kedua, re-verifikasi pada HEAD segar, dicatat di bagian
+"Re-verifikasi pada HEAD" di bawah. Pass kedua ini tidak menemukan bug yang
+masih berlaku, sehingga tidak ada perubahan kode aplikasi; hasilnya hanya bukti
+verifikasi terarah dan pembaruan dokumen ini.
+
+## Re-verifikasi pada HEAD
+
+Setelah pass pertama digabung sebagai `145e734` (PR #78), ~30 PR lain menyusul
+sampai `bc984aa`, termasuk penulisan ulang besar UI workspace A6.0–A6.8 dan
+A5.2 yang menyentuh `app.mjs`, halaman AI, dan dialog. Pass kedua pada
+27 September 2026 memeriksa apakah seluruh perbaikan #26–#37 masih bertahan pada
+HEAD segar, atau diregresi oleh gelombang UI tersebut.
+
+- Commit dasar: `bc984aa5e04b1ba9d9f18f430049cab8afa2e488` (origin/main terbaru
+  saat pemeriksaan, aplikasi 0.104.0, 58 modul schema, OpenAPI 221 path / 85
+  schema). Branch `fix/f03-technical-audit-42`, dibuat dari origin/main tanpa
+  menyentuh branch agent lain.
+- Kedua belas commit perbaikan pada matriks adalah ancestor HEAD (diverifikasi
+  dengan `git merge-base --is-ancestor`): `07680ee`, `33ba7ee`, `10d330e`,
+  `80c1d03`, `c884f86`, `5d0b316`, `c388a0f`, `f79d51d`, `4125dcc`, `9f897b2`,
+  `b2803ec`, `2bee570`. Tidak ada perbaikan yang terhapus atau ditimpa.
+- Kode perbaikan masih ada pada HEAD (pemeriksaan langsung sumber): subject exact
+  `oidc.py:200-206` dan callback 401 `api.py:194`; encoding `client_secret_basic`
+  `oidc.py:96`; query authorization endpoint dipertahankan `oidc.py:147`;
+  state non-ASCII ditolak via `oidc_state_bytes` `api.py:34-46,191-194`;
+  batas integer `SQLITE_MAX_INTEGER` pada `Offset`/`Before` `api.py:56,123-124`;
+  overflow timezone → 422 `api.py:1468-1469`; margin `None` aman
+  `brain.py:190-191`; scope produksi memakai ID `brain.py:133-164`;
+  `order_ids` internal `store.py:7146-7192`; focus identitas tanpa hidrasi order
+  `brain.py:31-47`; kunci tombol submit login `app.mjs:824-844`.
+
+Lingkungan pass kedua: Windows 11, Python 3.12.14, SQLite 3.53.1, Node.js
+24.18.0, Playwright (modul Node) dengan Chromium; dependencies dari venv lokal.
+Database hanya sementara dan sintetis; tidak ada akses ke produksi. CI memakai
+Linux/Node.js 22, sehingga hasil lokal tidak dinyatakan sebagai hasil CI.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| `python -m unittest discover -s tests` | 640 test OK, 836,610 detik, exit 0; 0 failure, 0 error. |
+| 12 modul audit verbose (oidc_sso, ai_investigation, production_scope, ai_focus_hydration, query_integer_bounds, openapi_contract, readme_test_count, contribution_margin, product_external_mappings, session_logout, approval_aggregates, date_boundaries) | 175 test OK, 221,418 detik, exit 0. |
+| `tests/run_browser.py --node node --playwright-module playwright --channel chromium` | Runner utama dan seluruh modul acceptance PASS; exit 0, tanpa error JavaScript. |
+| `python -m compileall -q beeloft` | Lulus. |
+| `node --check beeloft/static/{app,client,workspace}.mjs` | Lulus ketiganya. |
+| `node tests/test_client.mjs` | Lulus (client, CSV, date boundary). |
+| `create_app(db_sementara).openapi()` vs `docs/openapi.json` | Identik seluruh dokumen: 221 path, 85 schema, versi 0.104.0. |
+| `python -m pip check` | No broken requirements. |
+
+Bukti tes bernama per issue, semuanya `ok` pada HEAD:
+
+| Issue | Test pembuktian pada HEAD |
+|---|---|
+| #26 | `OidcSsoTest.test_signed_token_with_distinct_whitespace_subject_does_not_open_the_linked_account` |
+| #27 | modul browser `Product mapping`: "delayed-response draft survival, post-logout guard" PASS |
+| #28 | `AiInvestigationTest.test_zero_net_revenue_margin_answers_without_a_ratio` |
+| #29 | `AiInvestigationTest.test_production_focus_uses_selected_ids_instead_of_text_search`, `test_focused_production_answer_never_reports_another_order`, `test_focused_production_aggregate_covers_results_beyond_one_page` |
+| #30 | modul browser `Login form`: "double click plus requestSubmit plus Enter still send exactly one session exchange" PASS |
+| #31 | `OidcSsoTest.test_authorization_endpoint_query_is_kept_as_separate_parameters` |
+| #32 | `OidcBasicAuthTest.test_basic_auth_form_encodes_each_credential_before_base64`, `test_client_secret_post_keeps_the_secret_in_the_form_body` |
+| #33 | `QueryIntegerBoundsTest.test_oversized_offset_and_before_is_422_not_500`, `test_signed_64bit_boundary_is_accepted` |
+| #34 | `TimestampTimezoneBoundaryTest` (modul date_boundaries) OK |
+| #35 | `OidcSsoTest.test_non_ascii_state_cookie_is_rejected_without_a_server_error` |
+| #36 | `ApprovalPathHydrationTest.test_approval_cost_stays_flat_while_the_order_population_grows`, `test_approval_path_never_touches_order_detail_tables` |
+| #37 | `VersionMetadataConsistencyTest.test_package_runtime_and_stored_contract_state_one_version`, `ReadmeTestCountTest.test_readme_states_current_test_count` |
+
+Kesimpulan pass kedua: **tidak ada temuan #26–#37 yang masih berlaku pada HEAD.**
+Semua perbaikan bertahan setelah gelombang UI; issue tidak dibuka ulang dan tidak
+ada perubahan kosmetik. Hasil yang sah untuk #42 adalah verifikasi terarah ini
+plus pembaruan bukti — tidak ada perubahan kode aplikasi yang dipaksakan.
+
 ## Matriks bukti
 
 Kolom bukti lama merekam reproduksi sebelum/sesudah perbaikan terdahulu.
@@ -104,9 +173,12 @@ klaim penggunaan memori atau waktu konstan.
 
 ## Handoff dan batas penerimaan
 
-- File berubah: `beeloft/brain.py`, `beeloft/store.py`,
+- File berubah pass pertama: `beeloft/brain.py`, `beeloft/store.py`,
   `tests/test_ai_investigation.py`, `README.md`, dan dokumen ini. Commit akhir
-  beserta bukti hasil suite dicatat pada PR F03.
+  beserta bukti hasil suite dicatat pada PR F03 (#78).
+- File berubah pass kedua: hanya dokumen ini (bukti re-verifikasi pada HEAD).
+  Tidak ada perubahan kode aplikasi, API, schema/migrasi, dependency, atau
+  aturan nominal/qty. Commit dasar `bc984aa`; PR khusus #42.
 - Tidak ada perubahan API publik, schema/migrasi, dependency, aturan nominal/qty,
   penulisan ledger, izin, idempotency, revision guard atau mekanisme reversal.
   Filter ID adalah argumen internal; pencarian teks `/api/production-board`
