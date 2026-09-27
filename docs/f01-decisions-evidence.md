@@ -191,17 +191,17 @@ mengklaim kontrak bisnis final. Paket berikutnya mengikuti dependensi penerimaan
 | D03 | EV-F01-0011 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_TRANSACTION_TRACE |
 | D04 | EV-F01-0003, EV-F01-0009, EV-F01-0010 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_SLIP_AND_HISTORY_TRACE |
 | D05 | EV-F01-0003 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_OWNER_AND_LEGACY_CASES |
-| D06 | EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_SLIP_TRACE |
+| D06 | EV-F01-0002, EV-F01-0021, EV-F01-0027 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_SLIP_TRACE: 1,066 = Unpaid-filtered count + 271 Paid found; job–slip linkage nominal without key |
 | D07 | EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_LINKED_SLIP_AND_PAYMENT_TRACE |
 | D08 | EV-F01-0004 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_LINKED_CASHBON_PAYROLL_TRACE |
-| D09 | EV-F01-0005, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_TRACE |
-| D10 | EV-F01-0005 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_TRANSACTION_TRACE |
-| D11 | EV-F01-0006 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_PAYMENT_TRACE |
-| D12 | EV-F01-0007 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_AP_TRANSACTION_TRACE |
+| D09 | EV-F01-0005, EV-F01-0015, EV-F01-0022, EV-F01-0027 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_TRACE: POS 1,288 records unfiltered (phase-1 emptiness was a filter artifact); B1 detail observed |
+| D10 | EV-F01-0005, EV-F01-0022, EV-F01-0027 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_TRANSACTION_TRACE: B1 invoice detail observed (line discounts 0%, transfer, no change) |
+| D11 | EV-F01-0006, EV-F01-0022, EV-F01-0027 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_PAYMENT_TRACE: B1 transfer payment with tendered amount, no change; no refund/void examples |
+| D12 | EV-F01-0007, EV-F01-0023, EV-F01-0027 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_AP_TRANSACTION_TRACE: with-PO hunt 20 rows all "-" (sample limit 20+2 of 946) |
 | D13 | EV-F01-0013, EV-F01-0016 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_COST_AND_ANOMALY_TRACE |
 | D14 | EV-F01-0001, EV-F01-0017 | DIRECTION_SELECTED_BY_USER (Opsi B: Native full accounting); detail kebijakan OPEN | Detail COA/akun kontrol, event/timing pengakuan, pajak, periode lock, dan laporan |
 | D15 | EV-F01-0019, EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ACCOUNTING_WORKFLOW_EVIDENCE |
-| D16 | EV-F01-0014, EV-F01-0015, EV-F01-0024, EV-F01-0025 | DIRECT_OBSERVATION (parsial) / PROPOSED (bukan rule verified) | NEEDS_DOWNLOAD_CONTENT_TRACE: exports downloaded but contents uninspected; Title Reports 0 records; metrics undefined |
+| D16 | EV-F01-0014, EV-F01-0015, EV-F01-0024, EV-F01-0025, EV-F01-0027 | DIRECT_OBSERVATION (parsial) / PROPOSED (bukan rule verified) | NEEDS_DOWNLOAD_CONTENT_TRACE: exports downloaded but contents UNVERIFIED (no file tooling in browser session); Title Reports 2 records (Main/Not Main); metrics undefined |
 | D17 | EV-F01-0012, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE (no change; access observed but role matrix not) |
 | D18 | EV-F01-0001, EV-F01-0015, EV-F01-0022 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_AND_VENDOR_TRACE: POS observed empty on filters tried (not proof); vendor/channel ownership unconfirmed |
 | D19 | EV-F01-0016, EV-F01-0017, EV-F01-0024, EV-F01-0025 | DIRECT_OBSERVATION (parsial) / PROPOSED (bukan rule verified) | NEEDS_EXPORT_AND_PROFILE: negative-stock anomaly confirmed, cause unresolved; export contents uninspected |
