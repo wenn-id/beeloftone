@@ -2,7 +2,7 @@
 
 Issue [#40](https://github.com/wenn-id/beeloftone/issues/40) · Draft PR [#109](https://github.com/wenn-id/beeloftone/pull/109)
 Baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0/schema 55).
-**Status:** IN_PROGRESS / bukti transaksi belum lengkap. Tidak ada persetujuan yang dicatat. Semua usulan tetap `PROPOSED`; #40 tetap OPEN.
+**Status:** IN_PROGRESS / bukti transaksi belum lengkap. Satu-satunya arah yang dipilih adalah cakupan target D14 Opsi B berdasarkan instruksi langsung pengguna; detail D14 tetap OPEN, tidak ada approver identity/title yang dicatat. D01–D13 dan D15–D20 tetap usulan/terbuka; #40 tetap OPEN.
 
 ## Cara membaca
 
