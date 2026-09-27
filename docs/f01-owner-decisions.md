@@ -1,176 +1,760 @@
-# Paket Review Keputusan Bisnis F01 — Beeloft One
+# Paket Keputusan F01 — untuk review pemilik
 
-Status Dokumen: **PROPOSED / REVIEW_READY** (Menunggu Pengesahan Pemilik Bisnis)
-Versi: `F01-OWNER-20260927-1`
-Baseline Eksekusi: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0, schema 55)
-Tanggal Penyusunan: 27 September 2026 WIB
-Induk Issue: [#40](https://github.com/wenn-id/beeloftone/issues/40)
+Issue [#40](https://github.com/wenn-id/beeloftone/issues/40) · Draft PR [#109](https://github.com/wenn-id/beeloftone/pull/109)
+Baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0/schema 55).
+**Status:** IN_PROGRESS / bukti transaksi belum lengkap. Tidak ada persetujuan yang dicatat. Semua usulan tetap `PROPOSED`; #40 tetap OPEN.
 
----
+## Cara membaca
 
-## 1. Panduan untuk Pemilik Bisnis
+- **Legacy terbukti** berarti hanya hal yang tertulis pada audit UI terdahulu di issue #40 atau issue #108; bukan pembuktian formula/backend atau pemakaian perusahaan secara menyeluruh.
+- **Belum diketahui** menyebut bukti transaksi/role/dokumen yang belum tersedia.
+- **Usulan One** adalah rekomendasi, bukan aturan berjalan dan bukan persetujuan.
+- Contoh angka/alur bertanda **sintetis** tidak membuktikan legacy.
+- `READY_TO_DECIDE` berarti arah kebijakan target dapat dipilih dengan catatan evidensial; bukan berarti legacy sudah dipahami atau keputusan diterima untuk freeze.
 
-Dokumen ini disusun khusus sebagai paket peninjauan (review package) bagi pemilik bisnis (Business Owner) Beeloft Baby dan pemangku kepentingan proses bisnis untuk menetapkan keputusan definitif (**D01–D20**).
+## Status akses dan kerja
 
-Keputusan dalam dokumen ini diperlukan agar arsitektur transaksi bersama (**F02 / Issue #41**) dan gelombang implementasi teknis (**W1–W7**) dapat dibangun di atas aturan bisnis yang mengikat, tanpa spekulasi pengembang.
+- Issue #40 mencatat audit UI terdahulu pada 27 September 2026 (tanggal saja; jam observasi, filter, sampel, screenshot, dan nilai transaksi tidak tercatat di sumber yang tersedia). Issue #40 melaporkan dashboard + 30 menu, 8 form, dan satu detail payroll.
+- Percobaan sesi sekarang gagal sebelum login: `browser-harness: daemon default didn't come up`; native desktop melaporkan `windows: []`. Tidak ada kredensial dimasukkan, tidak ada sampel transaksi baru dibuka.
+- Belum ditelusuri: job → slip → pembayaran → kasbon; invoice/tender POS; AP → PO/receipt → pembayaran; rincian file download; role/permission.
+- Sumber audit tidak mendukung klaim `/settings/periods` pernah diamati. Statusnya `UNVERIFIED`; bukan bukti route itu tidak ada.
 
-### Status Keputusan Saat Ini
-- **Status Sekarang:** Seluruh keputusan berstatus `PROPOSED` (Usulan Berdasarkan Bukti Audit).
-- **Syarat Menjadi `BUSINESS_ACCEPTED`:** Pemilik bisnis menyetujui rekomendasi atau memilih alternatif kebijakan yang tersedia, mencatatkan nama/inisial pemberi persetujuan, tanggal efektif, dan nomor referensi persetujuan pada tabel sign-off di Bagian 10.
+## Daftar ringkas D01–D20
 
----
-
-## 2. Domain A: Produksi, Potong, Jahit & Bahan (D02, D03)
-
-### Keputusan D02: Status & Alur Otorisasi Planning Produksi
-- **Temuan Bukti:** Audit form `/production/planning` dan riwayat pengerjaan menunjukkan pembuatan rencana potong menetapkan target pcs dan PIC penjahit.
-- **Masalah Kebijakan:** Apa yang terjadi jika target produksi diubah setelah kain sebagian sudah dipotong dan menjadi WIP di meja jahit?
-- **Pola Teramati (SUPPORTED_PATTERN):** Target awal tidak boleh ditimpa langsung (`in-place update`) jika sudah ada run cutting yang dimulai. Perubahan target harus dicatat sebagai revisi rencana dengan alasan dan otorisasi supervisor produksi.
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Kunci target asli setelah cutting dimulai. Perubahan kuantitas dilakukan via pembuatan Rencana Tambahan (Split Run) atau revisi terkontrol dengan log perubahan.
-  - *Opsi 2:* Izinkan pembatalan parsial sisa target yang belum masuk cutting, tetapi kunci kuantitas yang sudah berstatus bundle di penjahit.
-- **Rekomendasi Agent:** Pilih Opsi 1 untuk menjaga integritas saldo WIP dan pelaporan yield bahan.
-
-### Keputusan D03: Formula Pemotongan Bahan (Cutting) & Konversi Satuan
-- **Temuan Bukti:** Form `/production/cutting/create` memuat parameter: rol, berat kain (kg), lembar gelar, setelan per lembar, dan berat produk (gram).
-- **Rumus Usulan:**
-  $$\text{Target Pcs} = \text{Lembar} \times \text{Setelan per Lembar}$$
-  $$\text{Toleransi Susut Bahan} = \frac{\text{Berat Aktual (kg)} \times 1.000 - (\text{Output Pcs} \times \text{Gramatur Produk})}{\text{Berat Aktual (kg)} \times 1.000} \times 100\%$$
-- **Masalah Kebijakan:** Apakah sisa kain perca/ujung rol (waste) diakui sebagai beban biaya langsung (scrap expense) atau dikembalikan ke gudang sebagai kain perca kiloan?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Catat berat sisa potongan secara terpisah. Sisa layak pakai dikembalikan ke stok perca; sisa rusak masuk biaya limbah produksi (scrap).
-  - *Opsi 2:* Seluruh selisih berat rol dikurangkan langsung sebagai biaya bahan produksi tanpa pencatatan stok perca.
-
----
-
-## 3. Domain B: Upah Pekerjaan Borongan, Payroll & Kasbon (D04, D05, D06, D07, D08)
-
-### Keputusan D04: Basis Tarif Borongan & Pembulatan Pecahan Lusin
-- **Temuan Bukti:** Satuan borongan legacy menggunakan **Lusin** (1 lusin = 12 pcs). Bukti pecahan: 11 pcs = 0.9167 lusin; 13 pcs = 1.0833 lusin.
-- **Masalah Kebijakan:** Pembulatan upah dilakukan di setiap baris pekerjaan (line item) atau dijumlahkan dulu baru dibulatkan di total slip?
-- **Analisis Selisih:** Pada tarif Rp 25.000/lusin untuk 11 pcs, pembulatan 4 desimal per baris menghasilkan Rp 22.918, sedangkan perkalian exact pecahan menghasilkan Rp 22.917 (selisih Rp 1).
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Simpan tarif per lusin, hitung upah per baris pengerjaan menggunakan `ROUND_HALF_UP` ke satuan rupiah penuh (`scale=0`), kemudian jumlahkan ke gross pay. Ini menjamin kecocokan persis antara apa yang dilihat pekerja di slip fisik dengan total akumulasi.
-  - *Opsi 2:* Akumulasikan pecahan lusin presisi tinggi hingga subtotal periode, baru dibulatkan di akhir.
-
-### Keputusan D05: Kelayakan Bayar Upah, Reject & Rework
-- **Temuan Bukti:** Penjahit mencatat realisasi pengerjaan SPK. Di lapangan sering terjadi barang reject (cacat jahitan) atau rework (perbaikan).
-- **Masalah Kebijakan:** Apakah jahitan cacat/reject dibayar upahnya? Apakah pekerjaan perbaikan (rework) mendapatkan upah tambahan?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Hanya kuantitas **Payable Pcs** (LOLOS QC) yang dibayar upahnya. Pekerjaan rework akibat kelalaian operator yang sama tidak mendapatkan upah tambahan. Rework yang ditugaskan ke operator lain dibayar sesuai tarif job rework khusus.
-  - *Opsi 2:* Semua barang yang dikerjakan dibayar, denda cacat dipotongkan via komponen potongan gaji terpisah.
-
-### Keputusan D06: Komponen Slip Gaji & Perlindungan Upah
-- **Temuan Bukti:** Komponen slip legacy: Gaji Kotor (Gross Borongan), Tunjangan Transport, Premi Hadir, Bonus Produksi, Potongan, Cashbon Payment, dan Net Pay.
-- **Masalah Kebijakan:** Bagaimana aturan pemotongan jika pekerja tidak masuk atau memiliki pinjaman kasbon besar sehingga Net Pay berpotensi negatif?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* **Batas Bawah Nol.** Gaji bersih (Net Pay) tidak boleh negatif. Jika cicilan kasbon melebihi sisa gaji, sistem otomatis memotong maksimum hingga Net Pay = Rp 0. Sisa cicilan yang belum terpotong dialihkan ke periode penggajian berikutnya.
-  - *Opsi 2:* Gaji bersih diperbolehkan bernilai negatif dan menjadi piutang berjalan karyawan.
-
-### Keputusan D07: Periode Cutoff Penggajian & Penanganan Pekerjaan Terlambat
-- **Temuan Bukti:** Siklus payroll mingguan/dua mingguan.
-- **Masalah Kebijakan:** SPK jahit yang diserahkan melewati tanggal batas cutoff periode berjalan masuk ke mana?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Pekerjaan yang diajukan/diapprove setelah jam cutoff otomatis dimasukkan ke slip periode berikutnya (tidak ada pembukaan mundur periode yang sudah tutup).
-  - *Opsi 2:* Membuka kembali (reopen) slip periode berjalan untuk memasukkan susulan.
-
-### Keputusan D08: Aturan Pinjaman Kasbon & Pelunasan Mandiri
-- **Temuan Bukti:** Form `/payroll/cash-receipt` mencatat pencairan pinjaman dan pemotongan otomatis via payroll.
-- **Masalah Kebijakan:** Apakah karyawan diperbolehkan melunasi kasbon langsung secara tunai/transfer di luar payroll?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Boleh. Pelunasan manual dicatat via kuitansi penerimaan kasbon kas masuk (`direct cash receipt`), yang seketika mengurangi saldo kartu pinjaman karyawan tanpa menunggu siklus payroll berikutnya.
-  - *Opsi 2:* Pelunasan hanya boleh terjadi melalui pemotongan slip gaji.
-
----
-
-## 4. Domain C: Master Data, Satuan & Struktur Usaha (D01)
-
-### Keputusan D01: Standarisasi Taksonomi & Penghapusan Kolom Usang
-- **Temuan Bukti:** Master produk memiliki kategori, subkategori, tipe, seri, warna, ukuran, dan UOM. Bahan memiliki 3 tingkat kategori.
-- **Rekomendasi Pembersihan Kolom:**
-  - Kolom legacy yang diusulkan dihapus (`RETIRE_PROPOSED`): Field catatan bebas yang tidak terpakai, duplikasi nama vendor di level SKU.
-  - Seluruh variasi warna dan ukuran dijadikan master terkelola, bukan teks bebas, untuk mencegah typo barcode.
-- **Pilihan Kebijakan bagi Pemilik:** Menyetujui daftar penghapusan kolom di `docs/f01-field-map.csv`.
-
----
-
-## 5. Domain D: Penjualan, POS, Diskon & Pembayaran (D09, D10, D11)
-
-### Keputusan D09: Pengelolaan Template Gerai Kasir (POS Template)
-- **Temuan Bukti:** Menu `/sales/pos-template` mengaitkan unit usaha toko ritel dengan gudang sumber barang default.
-- **Rekomendasi:** Pertahankan konsep POS Template di Beeloft One untuk membatasi kasir toko hanya memotong stok dari gudang toko fisik mereka sendiri, bukan gudang utama pabrik.
-
-### Keputusan D10: Hierarki Diskon & Pembulatan Nilai Penjualan
-- **Temuan Bukti:** Kasir mendukung diskon per item (persen) dan diskon total belanja (nominal rupiah).
-- **Rekomendasi:** Diskon per baris dihitung lebih dahulu, kemudian diskon nota dialokasikan secara proporsional ke baris barang untuk keperluan pencatatan akuntansi dan margin penjualan.
-
-### Keputusan D11: Penanganan Kembalian, Selisih Bayar & Retur Kasir
-- **Temuan Bukti:** Pembayaran tunai menghitung uang kembalian. Pembayaran non-tunai (EDC/QRIS) harus tepat sesuai total belanja.
-- **Rekomendasi:** Retur barang di kasir POS wajib mereferensikan nomor struk asli. Barang retur masuk status `INSPECTED_RETURN` di gudang toko, bukan langsung menjadi stok siap jual sebelum diperiksa kelayakannya.
-
----
-
-## 6. Domain E: Pembelian, Hutang Supplier & AP Settlement (D12)
-
-### Keputusan D12: Aturan Pencatatan Tagihan & Pelunasan Faktur (AP Settlement)
-- **Temuan Bukti:** Menu `/orders/ap-settlement` mencatat pembayaran faktur supplier bahan kain/aksesoris.
-- **Masalah Kebijakan:** Bolehkah AP Settlement dibuat untuk pengeluaran operasional umum yang tidak memiliki Purchase Order (Non-PO)?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* Bedakan jelas antara **AP Pembelian Bahan (With PO)** yang wajib mencocokkan Surat Jalan/Penerimaan Barang (3-Way Matching: PO - Receipt - Invoice) dengan **Pengeluaran Biaya Operasional (Non-PO)** yang memerlukan otorisasi manajer keuangan.
-  - *Opsi 2:* Seluruh pengeluaran wajib dibuatkan PO formal terlebih dahulu.
-
----
-
-## 7. Domain F: Valuasi Persediaan, COGS & Akuntansi (D13, D14, D15)
-
-### Keputusan D13: Metode Valuasi Persediaan Bahan & Produk Jadi
-- **Temuan Bukti:** Legacy mencatat harga modal statis (Capital) pada master barang.
-- **Masalah Kebijakan:** Bagaimana Beeloft One menilai persediaan saat harga bahan kain naik-turun antar batch kedatangan?
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* **Metode Rata-Rata Bergerak (Moving Average).** Setiap ada penerimaan PO bahan dengan harga berbeda, harga pokok rata-rata per satuan diperbarui secara otomatis. Sederhana, akurat, dan sesuai standar UMKM garmen Indonesia.
-  - *Opsi 2:* Metode FIFO (First-In, First-Out) berbasis lot penerimaan.
-  - *Opsi 3:* Standard Costing (biaya standar tetap yang dievaluasi tiap semester).
-
-### Keputusan D14 & D15: Batasan Akuntansi Buku Besar & Periode Fiskal
-- **Temuan Bukti:** Menu akuntansi native (COA, Jurnal Umum, Neraca) tidak tampak di menu legacy yang diaudit (pencatatan eksternal menggunakan spreadsheet/Mekari).
-- **Rekomendasi:** Beeloft One menerapkan Buku Besar subledger terpadu dengan penutupan periode bulanan terkunci. Transaksi yang bertanggal pada bulan yang sudah ditutup ditolak otomatis oleh sistem.
-
----
-
-## 8. Domain G: Tata Kelola Akses, Integrasi & Operasional (D16, D17, D18, D19, D20)
-
-### Keputusan D16: Standardisasi Judul Laporan (Title Reports)
-- **Rekomendasi:** Pertahankan tabel konfigurasi judul laporan cetak (`/support/title-report`) untuk memuat Kop Surat resmi perusahaan, logo, alamat, dan nomor kontak pada seluruh cetakan PDF (Slip Gaji, Invoice POS, Surat Jalan Cutting, dan PO).
-
-### Keputusan D17: Pemisahan Tugas (Segregation of Duties)
-- **Rekomendasi Mutlak:** Pemohon pengeluaran kas atau pembuat slip gaji tidak boleh menyetujui pengajuannya sendiri (Anti Self-Approval).
-
-### Keputusan D18: Strategi Integrasi Kanal Penjualan Eksternal
-- **Rekomendasi:** Pisahkan kanal penjualan langsung (POS Toko) yang bersifat instan dengan sinkronisasi marketplace (Shopee/TikTok/Tokopedia) yang beroperasi melalui batch ingestion berkala dan karantina order jika ada SKU yang belum terpetakan.
-
-### Keputusan D19: Strategi Migrasi Data Legacy ke Beeloft One
-- **Pilihan Kebijakan bagi Pemilik:**
-  - *Opsi 1 (Direkomendasikan):* **Cutoff Saldo Awal (Opening Balance Migration).** Migrasikan master data (produk, bahan, karyawan, supplier), saldo akhir kasbon karyawan, dan saldo fisik persediaan per tanggal cutoff. Transaksi historis lama disimpan sebagai arsip baca di database terpisah. Ini mencegah duplikasi data transaksi dan beban rekonsiliasi yang rumit.
-  - *Opsi 2:* Replay seluruh histori transaksi tahun berjalan dari awal tahun buku.
-
-### Keputusan D20: Target Pemulihan Operasional (RPO / RTO)
-- **Rekomendasi:** Cadangan data (backup) otomatis setiap 24 jam dengan retensi 30 hari. Target pemulihan (RTO) maksimum 2 jam jika terjadi gangguan server.
-
----
-
-## 9. Tindak Lanjut Khusus Anomali Stok Negatif (#108)
-
-- **Fakta:** Teramati 1 baris stok minus dengan SKU/identitas kosong pada tabel `/stocks/stck-prdct` legacy.
-- **Kebijakan Migrasi:** Baris data yang tidak memiliki SKU sah atau bersaldo negatif dilarang diimpor ke buku besar Beeloft One. Seluruh data anomali harus masuk ke tabel karantina (`quarantine_exceptions`) untuk diperiksa fisik sebelum diakui saldonya.
-
----
-
-## 10. Formulir Persetujuan Resmi Pemilik Bisnis (Sign-Off Gate)
-
-| Peran Pemilik Bisnis | Nama / Identitas | Tanggal Persetujuan | Status | Referensi Dokumen / Memo |
+| ID | Status aturan legacy | Status target One | Bukti | Kesiapan pertanyaan owner |
 |---|---|---|---|---|
-| Pemilik Bisnis / Direksi | [Menunggu Penetapan] | [YYYY-MM-DD] | PENDING | [No. Memo / Tanda Tangan] |
-| Kepala Produksi & QC | [Menunggu Penetapan] | [YYYY-MM-DD] | PENDING | [No. Memo / Tanda Tangan] |
-| Kepala HR & Payroll | [Menunggu Penetapan] | [YYYY-MM-DD] | PENDING | [No. Memo / Tanda Tangan] |
-| Kepala Keuangan & Akuntansi | [Menunggu Penetapan] | [YYYY-MM-DD] | PENDING | [No. Memo / Tanda Tangan] |
-| Koordinator Teknis (A0) | Agent Koordinator | 2026-09-27 | REVIEW_READY | F01-EXEC-20260927-1 |
+| D01 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0008`, `EV-F01-0009`, `EV-F01-0012` | `BLOCKED_BY_FIELD_AND_TRANSACTION_EVIDENCE` |
+| D02 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0011` | `NEEDS_LEGACY_TRACE` |
+| D03 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0011` | `NEEDS_TRANSACTION_TRACE` |
+| D04 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0003`, `EV-F01-0009`, `EV-F01-0010` | `NEEDS_SLIP_AND_HISTORY_TRACE` |
+| D05 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0003` | `NEEDS_OWNER_AND_LEGACY_CASES` |
+| D06 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0002` | `NEEDS_SLIP_TRACE` |
+| D07 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0002` | `NEEDS_LINKED_SLIP_AND_PAYMENT_TRACE` |
+| D08 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0004` | `NEEDS_LINKED_CASHBON_PAYROLL_TRACE` |
+| D09 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0005`, `EV-F01-0015` | `NEEDS_CHANNEL_TRACE` |
+| D10 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0005` | `NEEDS_POS_TRANSACTION_TRACE` |
+| D11 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0006` | `NEEDS_POS_PAYMENT_TRACE` |
+| D12 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0007` | `NEEDS_AP_TRANSACTION_TRACE` |
+| D13 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0013`, `EV-F01-0016` | `NEEDS_COST_AND_ANOMALY_TRACE` |
+| D14 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0001`, `EV-F01-0017` | `OWNER_SCOPE_DECISION_POSSIBLE_WITH_EVIDENCE_CAVEAT` |
+| D15 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0019`, `EV-F01-0002` | `NEEDS_ACCOUNTING_WORKFLOW_EVIDENCE` |
+| D16 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0014`, `EV-F01-0015` | `NEEDS_REPORT_AND_DOWNLOAD_TRACE` |
+| D17 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0012`, `EV-F01-0015` | `NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE` |
+| D18 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0001`, `EV-F01-0015` | `NEEDS_CHANNEL_AND_VENDOR_TRACE` |
+| D19 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0016`, `EV-F01-0017` | `NEEDS_EXPORT_AND_PROFILE` |
+| D20 | `PRIOR_AUDIT_REPORTED` / lihat rincian | `PROPOSED` | `EV-F01-0001`, `EV-F01-0018` | `NEEDS_OPERATIONS_AND_UAT_EVIDENCE` |
+
+## D01 — Master data, UOM, product/material fields
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports product and material master areas, classifications, status, UOM, and product variants.
+
+**Sumber dan keterbatasan:** `EV-F01-0008`, `EV-F01-0009`, `EV-F01-0012`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Exact field list, required/optional rules, uniqueness, inactive-master behavior, UOM Range meaning, duplicate IDs, and live transactions against inactive masters.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Map required relations explicitly in One; keep field retirements as proposals until owners confirm business use.
+
+**Alternatif:**
+
+A) Preserve all legacy fields/relations. B) Retire or merge only fields owners confirm unused.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: SKU-A with size M/color Blue/UOM pcs; whether a missing Series field blocks save is unknown.
+
+**Dampak jika dipilih:**
+
+Master data usability, historical references, stock and migration reconciliation.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which fields and master relationships must remain for operations? Are any identified fields approved for retirement?
+
+**Kesiapan:** `BLOCKED_BY_FIELD_AND_TRANSACTION_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D02 — Planning changes and cutting linkage
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports planning code/date/target/status and cutting areas.
+
+**Sumber dan keterbatasan:** `EV-F01-0011`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Whether targets/PIC/dates can change after cutting, partial cancellation, approval gates, plan-to-cut lineage, and correction behavior.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One could preserve revision history and require a reason/approval for post-start changes; proposal only.
+
+**Alternatif:**
+
+A) Allow edits under current legacy convention once verified. B) Require controlled revisions after work starts.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: plan target 1,000 pcs, 600 cut, 400 remaining; disposition and approval are unknown.
+
+**Dampak jika dipilih:**
+
+WIP, capacity, material reservations, and downstream job quantities.
+
+**Pertanyaan persetujuan spesifik:**
+
+After cutting starts, what changes are allowed, who approves, and how is uncompleted quantity closed?
+
+**Kesiapan:** `NEEDS_LEGACY_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D03 — Cutting quantities and material usage
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports fields/areas for rolls, weight, sheets, setelan, grams, and realization.
+
+**Sumber dan keterbatasan:** `EV-F01-0011`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Actual consumption formula, unit conversion precision, waste vs reusable remainder, mixed-size behavior, corrections, and tie to inventory.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One could store measured issued/returned quantities separately from planned output and calculated usage; method remains proposal.
+
+**Alternatif:**
+
+A) Keep legacy calculation after transaction proof. B) Adopt measured actual issue/return with separate estimated standard.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: 1 roll 25 kg, 100 sheets, 2 setelan; arithmetic target is 200 pcs if those units mean what labels suggest; legacy effect not evidenced.
+
+**Dampak jika dipilih:**
+
+Material stock, production yield, and cost of finished goods.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which quantities are actual measurements, what formula does legacy use, and how should reusable remainder/waste be recorded?
+
+**Kesiapan:** `NEEDS_TRANSACTION_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D04 — Piecework tariff, dozen conversion, rounding
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports tariff, realization in lusin, and amount fields across job/payroll surfaces; service settings/history also appear.
+
+**Sumber dan keterbatasan:** `EV-F01-0003`, `EV-F01-0009`, `EV-F01-0010`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Persisted conversion precision, amount formula, rounding point/mode, effective tariff date, tariff edits after job creation, missing/inactive tariff behavior.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should snapshot the applied tariff and expose exact quantity precision; rounding point/mode must follow verified legacy rule or explicit owner approval.
+
+**Alternatif:**
+
+A) Match verified legacy per-line rule. B) Aggregate exact fractions then round at payroll total. C) Owner-approved alternative.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic illustration only: 11 pcs / 12 × Rp25,000 = Rp22,916.666… before rounding. Display/paid amount unknown.
+
+**Dampak jika dipilih:**
+
+Employee pay, payroll totals, auditability, and historical tariff reproducibility.
+
+**Pertanyaan persetujuan spesifik:**
+
+What quantity precision, tariff effective-date rule, and rounding point/mode must One preserve?
+
+**Kesiapan:** `NEEDS_SLIP_AND_HISTORY_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D05 — Reject, rework, and payable quantity
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports target/realization and jobs; no reject/rework treatment is preserved in the issue audit.
+
+**Sumber dan keterbatasan:** `EV-F01-0003`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Whether reject/rework is recorded, paid, deducted, reworked by same/different employee, or netted by supervisor outside system.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Record actual, accepted, reject, and rework separately only if owners confirm; do not set reject unpaid or rework unpaid by default.
+
+**Alternatif:**
+
+A) Preserve one net payable quantity if that is verified legacy practice. B) Track separate quality quantities and owner-approved payable rules.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: 100 produced, 95 accepted, 3 rework, 2 reject; payable quantity is unknown.
+
+**Dampak jika dipilih:**
+
+Piecework pay, QC yield, cost, and employee disputes.
+
+**Pertanyaan persetujuan spesifik:**
+
+How does legacy pay for rejected and reworked pieces, who records them, and should One preserve or change that rule?
+
+**Kesiapan:** `NEEDS_OWNER_AND_LEGACY_CASES`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D06 — Payroll components and deductions
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports gross/net and payroll component fields (including components summarized in the report).
+
+**Sumber dan keterbatasan:** `EV-F01-0002`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Exact definitions/formulas, whether gross already includes allowances, attendance/leave/overtime rules, manual vs derived values, tax/statutory deductions, negative-net handling.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should represent components transparently and avoid double-counting; do not invent a net-pay floor or formulas.
+
+**Alternatif:**
+
+A) Reproduce verified component-by-component legacy calculation. B) Change selected components with explicit approval and effective date.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: gross Rp950,000, allowance Rp110,000, other deduction Rp10,000, cashbon Rp150,000; arithmetic result depends on what gross includes.
+
+**Dampak jika dipilih:**
+
+Pay correctness, compliance review, and reconciliation to payroll payment.
+
+**Pertanyaan persetujuan spesifik:**
+
+Please confirm the actual component definitions and calculation source after reviewing the linked slip(s); which parts may change in One?
+
+**Kesiapan:** `NEEDS_SLIP_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D07 — Payroll period, approval, payment, posting, correction
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports payroll period/batch and payroll payment status as visible areas.
+
+**Sumber dan keterbatasan:** `EV-F01-0002`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Cutoff, late jobs, overlapping periods, partial payment, what Paid means, posting/journal, reopen/correction after payment, and any relation to bank/cash proof.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Keep approval, payment-recorded, and posted as distinct states; exact transitions must match verified legacy or be approved.
+
+**Alternatif:**
+
+A) Preserve verified legacy reopen/correction transitions. B) Lock paid periods and use a separately approved adjustment flow.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: a job dated in a paid period is entered later; destination period and re-open policy unknown.
+
+**Dampak jika dipilih:**
+
+Payroll history, cash/bank reconciliation, and duplicate/delayed wages.
+
+**Pertanyaan persetujuan spesifik:**
+
+What is the cutoff rule for late jobs, and how are paid or posted slips corrected without rewriting payment history?
+
+**Kesiapan:** `NEEDS_LINKED_SLIP_AND_PAYMENT_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D08 — Cashbon lifecycle and payroll deductions
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports cashbon records and Cashbon Payment in payroll.
+
+**Sumber dan keterbatasan:** `EV-F01-0004`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Whether payroll deduction changes outstanding balance automatically, manual settlement steps, installment schedule, balance-forward, final installment, and reversals.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should preserve a linked audit trail between disbursement, payroll deduction, and repayment; do not introduce a non-negative net rule without authority.
+
+**Alternatif:**
+
+A) Match verified legacy deduction/balance behavior. B) Adopt an owner-approved cap/recovery rule with explicit carry-forward.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: outstanding Rp300,000; scheduled deduction Rp200,000; payroll available Rp150,000. Actual legacy behavior unknown.
+
+**Dampak jika dipilih:**
+
+Employee liability, payroll net, cash, and duplicate repayment prevention.
+
+**Pertanyaan persetujuan spesifik:**
+
+Show/confirm the actual deduction-to-balance history; then decide what happens when available pay is less than scheduled installment.
+
+**Kesiapan:** `NEEDS_LINKED_CASHBON_PAYROLL_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D09 — Sales channels: POS and non-POS
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports POS/POS Template and dashboard sales/customer/product areas.
+
+**Sumber dan keterbatasan:** `EV-F01-0005`, `EV-F01-0015`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Whether wholesale, marketplace, online, or other sales are recorded in POS, another module, external platform, or manual records; order-to-fulfillment flow.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One may need separate retail POS and non-POS sales paths if the business uses both; do not assume either is in scope.
+
+**Alternatif:**
+
+A) POS-only if confirmed. B) POS plus distinct order/invoice flow for confirmed channels.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: retail one-item cash sale vs wholesale 50-dozen order with terms; current legacy workflow unknown.
+
+**Dampak jika dipilih:**
+
+Order lifecycle, stock reservation, receivables, fulfillment, and integration scope.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which sales channels are in actual use, and where is each order/payment currently recorded?
+
+**Kesiapan:** `NEEDS_CHANNEL_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D10 — Price, discounts, tax, invoice calculation
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports POS invoice/customer/product/unit/storage/discount areas.
+
+**Sumber dan keterbatasan:** `EV-F01-0005`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Price source/lock, discount basis and authorization, percent vs fixed discounts, tax, rounding, invoice finalization, and historical price snapshots.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should preserve price/discount auditability and calculate from explicit line/order bases; rate and authorization limits remain open.
+
+**Alternatif:**
+
+A) Match verified current POS rules. B) Adopt controlled price/discount overrides with role-specific approval.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: price Rp65,000 and fixed discount Rp15,000; whether allowed and where applied is unknown.
+
+**Dampak jika dipilih:**
+
+Sales totals, margins, receipts, discounts, and cashier reconciliation.
+
+**Pertanyaan persetujuan spesifik:**
+
+What price/discount rules actually run in legacy, and what permissions should One change, if any?
+
+**Kesiapan:** `NEEDS_POS_TRANSACTION_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D11 — Tender, change, partial payment, refund, void
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports payment method, paid amount, and change fields on POS.
+
+**Sumber dan keterbatasan:** `EV-F01-0006`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Split tenders, partial payment/AR, overpayment, refunds, exchange, void timing/roles, cash or bank settlement, and stock reversal.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should keep each tender/refund/void traceable and distinguish UI status from actual money movement; supported tender combinations need evidence.
+
+**Alternatif:**
+
+A) Match verified legacy tender/void behavior. B) Add split tenders/controlled reversals with owner-approved controls.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: total Rp180,000 paid Rp100,000 cash + Rp80,000 QR; whether legacy allows this is unknown.
+
+**Dampak jika dipilih:**
+
+Cashier close, payment reconciliation, stock, revenue, and chargebacks/refunds.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which tender combinations and refund/void flows are used today, and who can perform/approve each?
+
+**Kesiapan:** `NEEDS_POS_PAYMENT_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D12 — Purchasing, PO/receipt, AP settlement
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports AP Settlement, supplier document, and with/non-PO context.
+
+**Sumber dan keterbatasan:** `EV-F01-0007`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Purchase request/order/receipt chain, three-way match, partial settlement, allocation to invoices/POs, payment evidence, non-PO types, and reversal.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should link obligations to source documents and payment separately if legacy does so; do not assume strict matching without transaction proof or owner decision.
+
+**Alternatif:**
+
+A) Preserve verified legacy linking/non-PO behavior. B) Require PO/receipt match for selected purchase classes, with approved non-PO exceptions.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: invoice for 500 kg vs receipt for 480 kg; variance handling and payable amount unknown.
+
+**Dampak jika dipilih:**
+
+Supplier balances, inventory receipt, duplicate payment risk, and cash/bank records.
+
+**Pertanyaan persetujuan spesifik:**
+
+Trace one with-PO and one non-PO settlement, including receipt and payment proof; what matching rules should One preserve/change?
+
+**Kesiapan:** `NEEDS_AP_TRANSACTION_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D13 — Inventory capital, costing, WIP and anomaly #108
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports quantity, Capital, and Total by unit/storage; #108 reports one negative quantity row with product identity placeholder.
+
+**Sumber dan keterbatasan:** `EV-F01-0013`, `EV-F01-0016`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Capital calculation method, valuation layers, receipt costs, WIP/COGS treatment, negative-stock policy, and root cause of #108.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should retain provenance and reject/quarantine only records proven invalid under owner-approved rules. Moving average is one possible proposal, not current policy.
+
+**Alternatif:**
+
+A) Match verified legacy valuation. B) Adopt moving average. C) Adopt FIFO/standard cost if accounting owners choose.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: 100 units at Rp20,000 and 100 at Rp22,000; moving-average arithmetic would be Rp21,000, but legacy method is unknown.
+
+**Dampak jika dipilih:**
+
+Inventory valuation, margin, COGS, opening balances, and migration integrity.
+
+**Pertanyaan persetujuan spesifik:**
+
+What method does legacy currently use? After verifying that, which valuation method should One use and how should #108 be classified?
+
+**Kesiapan:** `NEEDS_COST_AND_ANOMALY_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D14 — Accounting scope, accounts, journal/ledger
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+The recorded audit menu inventory does not list GL/COA/journal pages; this only describes the audited account/menu inventory, not the whole company accounting process.
+
+**Sumber dan keterbatasan:** `EV-F01-0001`, `EV-F01-0017`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+External accounting tool/process, actual COA, source-of-truth per ledger, data exchange, posting timing, payroll/AP/POS journals.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Decide One accounting scope only after mapping the actual company workflow; operational subledger/export vs native GL are alternatives, not settled.
+
+**Alternatif:**
+
+A) One operational subledgers with controlled export to existing accounting process. B) One includes native GL/COA/journals.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown.
+
+**Dampak jika dipilih:**
+
+Replacement completeness, reconciliation, audit, and finance workload.
+
+**Pertanyaan persetujuan spesifik:**
+
+For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified.
+
+**Kesiapan:** `OWNER_SCOPE_DECISION_POSSIBLE_WITH_EVIDENCE_CAVEAT`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D15 — Accounting period close/reopen
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+The recorded audit sources do not support the prior claim that `/settings/periods` was observed. Correct status: unverified. Payroll period/batch area was reported, but that is not proof of accounting period control.
+
+**Sumber dan keterbatasan:** `EV-F01-0019`, `EV-F01-0002`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Whether a separate legacy route exists, how monthly books close, late adjustments, reopen permissions, payroll cutoff, and reports.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One could provide controlled period close/reopen after current business rule and accounting workflow are verified.
+
+**Alternatif:**
+
+A) Reproduce actual close/reopen rule if found. B) Define a new close/reopen control with owner approval.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: August close on 5 September then a late invoice; acceptance path unknown.
+
+**Dampak jika dipilih:**
+
+Period reporting, audit trails, late postings, and finance operations.
+
+**Pertanyaan persetujuan spesifik:**
+
+Does the company currently close periods outside the audited legacy menu? What close/reopen and late-posting policy should One implement?
+
+**Kesiapan:** `NEEDS_ACCOUNTING_WORKFLOW_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D16 — Reports, exports, title report, dashboard metrics
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports Title Reports, a payroll download action, and dashboard metric areas.
+
+**Sumber dan keterbatasan:** `EV-F01-0014`, `EV-F01-0015`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Downloaded file content/layout, other report formats, filters/timezone, metric definitions, reconciliation and report readership.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Inventory required reports and preserve verified filters/totals; any template consolidation/retirement is proposal only.
+
+**Alternatif:**
+
+A) Reproduce each verified report/layout. B) Consolidate after report owners confirm equivalence.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: compare one dashboard period total with underlying POS invoices; no source values are preserved.
+
+**Dampak jika dipilih:**
+
+Daily operations, statutory/management reporting, archive, and trust in dashboard.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which actual reports/files are required, who uses them, and what totals/filters must match?
+
+**Kesiapan:** `NEEDS_REPORT_AND_DOWNLOAD_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D17 — Roles, separation of duties, salary privacy
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit reports employee/position surfaces and dashboard user area.
+
+**Sumber dan keterbatasan:** `EV-F01-0012`, `EV-F01-0015`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Complete role/account inventory, per-action permission checks, business unit scoping, salary access, self-approval, delegation, audit log.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+One should enforce least privilege and maker-checker where owners require it; the suggested role matrix is not current legacy behavior.
+
+**Alternatif:**
+
+A) Mirror verified permissions then harden by explicit approval. B) Implement least-privilege roles with approved exceptions.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: same user requests and approves a supplier payment; whether current legacy blocks it is unknown.
+
+**Dampak jika dipilih:**
+
+Salary privacy, fraud prevention, operational access, and approvals.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which roles may view, create, approve, pay, export, or reverse each domain? Who may see payroll?
+
+**Kesiapan:** `NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D18 — External channels/integrations/source of truth
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+The recorded menu inventory names POS but does not itself establish integrations, vendors, or source-of-truth by object.
+
+**Sumber dan keterbatasan:** `EV-F01-0001`, `EV-F01-0015`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Platforms in use, connector/aggregator, sync direction/frequency, order/stock/refund/settlement ownership, retries and reconciliation.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Keep or replace integrations only after inventory; no automatic CSV-only or API-first rule is proposed as current.
+
+**Alternatif:**
+
+A) Keep current validated channels/integrations with One connectors. B) Stage import/export transition then add connectors. C) Retire only with owner evidence.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: duplicate marketplace order event; idempotency behavior unknown in legacy.
+
+**Dampak jika dipilih:**
+
+Stock accuracy, channel uptime, order capture, and cutover scope.
+
+**Pertanyaan persetujuan spesifik:**
+
+Which sales/inventory/finance systems and channels are actually used, and which objects should remain synchronized with One?
+
+**Kesiapan:** `NEEDS_CHANNEL_AND_VENDOR_TRACE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D19 — Migration, cutoff, opening balances, archive
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+#108 reports one visible anomalous row; this does not characterize overall data quality or migration strategy.
+
+**Sumber dan keterbatasan:** `EV-F01-0016`, `EV-F01-0017`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+Available exports, history depth, IDs/relations, balances/open items, paid/unpaid jobs, cashbon, AR/AP, WIP, deltas and record counts.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Choose replay vs opening balances only after source profiling and dry-run controls. Opening-balance migration is not approved.
+
+**Alternatif:**
+
+A) Replay validated transaction history. B) Load approved opening balances plus immutable archive. C) Hybrid per domain.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: cutover 30 Sep; stock/cashbon/AP balance values and archival reconciliation must be measured, not assumed.
+
+**Dampak jika dipilih:**
+
+Historical traceability, duplicate liabilities/payments, opening balances, and migration risk.
+
+**Pertanyaan persetujuan spesifik:**
+
+After evidence/profile, which domains require replay and which may use approved opening balances? What archive/retention is required?
+
+**Kesiapan:** `NEEDS_EXPORT_AND_PROFILE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+
+## D20 — Parallel run, cutover and operational readiness
+
+**Aturan legacy yang terbukti (batas: laporan audit UI terdahulu):**
+
+Prior audit inventory does not establish operational days, staffing/volume, parallel-run procedure, or rollback.
+
+**Sumber dan keterbatasan:** `EV-F01-0001`, `EV-F01-0018`. Bukti adalah ringkasan audit yang tersimpan di issue, tanpa record mentah/screenshot pada checkout ini. Tidak membuktikan rumus backend, seluruh alur, populasi transaksi, atau aturan perusahaan.
+
+**Belum diketahui:**
+
+User readiness, peak volumes, RPO/RTO, backup/restore, reconciliation, freeze window, rollback controls and support coverage.
+
+**Usulan perubahan untuk One — belum berlaku:**
+
+Set measurable UAT/cutover/rollback gates with business/operations owners; a 1–2 week parallel run is only an option.
+
+**Alternatif:**
+
+A) Parallel run after rehearsed reconciliation. B) Direct cutover only after risk and recovery acceptance.
+
+**Contoh sintetis (bukan bukti legacy):**
+
+Synthetic: payroll and POS totals are compared in parallel; no target tolerances or source data are established.
+
+**Dampak jika dipilih:**
+
+Business continuity, double entry, data divergence, and recovery risk.
+
+**Pertanyaan persetujuan spesifik:**
+
+What readiness evidence and go/no-go authority are required before legacy shutdown? Is a parallel run mandatory?
+
+**Kesiapan:** `NEEDS_OPERATIONS_AND_UAT_EVIDENCE`. Pertanyaan target tidak menutup kekurangan bukti aturan legacy; keputusan tetap memerlukan revisi/approval manusia dan tidak mengubah status menjadi accepted.
+
+## Pertanyaan yang dapat diputuskan sekarang
+
+1. **D14 — arah scope akuntansi target One saja:** apakah One harus menyediakan GL/COA native, atau boleh memakai sub-ledger dan ekspor ke proses akuntansi lain? Catatan: proses/sistem accounting yang sekarang belum terverifikasi; jawaban ini tidak boleh dipakai untuk menyatakan legacy tidak punya proses accounting.
+
+Keputusan D01–D13 dan D15–D20 **belum siap diminta sebagai approval final** karena pertanyaan legacy masih dapat dijawab lewat bukti transaksi, laporan, role, atau data operasional yang belum berhasil diakses. Jangan menyetujui formula reject/rework, moving average, penghapusan field, atau saldo awal migrasi berdasarkan paket ini.
+
+## Keputusan yang memerlukan pengambilan sampel legacy sebelum diajukan
+
+- D02–D08: planning/cutting, tarif, job, slip payroll, payment, kasbon, koreksi.
+- D09–D12: kanal sales, POS invoice/tender, refund/void, AP settlement, PO/receipt/payment.
+- D01, D13, D15–D20: field master, stock/cost, accounting close, report, roles, integration, exports/migration, operations.
+
+## Persetujuan
+
+Belum ada tanda tangan, approver, tanggal efektif, atau expected business result yang dicatat. Jangan mengisi persetujuan sebelum jawaban owner yang eksplisit dan bukti pendukung dilampirkan.

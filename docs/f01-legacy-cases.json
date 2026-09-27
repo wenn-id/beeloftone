@@ -1,8 +1,8 @@
 {
-  "revision": "F01-CASES-20260927-1",
+  "revision": "F01-CASES-20260927-2",
   "execution_baseline": "96bb48fa8889b3a483411768e2543838e69233b0",
   "synthetic": true,
-  "generated_at_wib": "2026-09-27T14:00:00+07:00",
+  "generated_at_wib": "2026-09-27T11:42:23+07:00",
   "evidence_catalog": [
     "EV-F01-0001",
     "EV-F01-0002",
@@ -22,898 +22,767 @@
     "EV-F01-0016",
     "EV-F01-0017",
     "EV-F01-0018",
-    "EV-F01-0019",
-    "EV-F01-0020",
-    "EV-F01-0021",
-    "EV-F01-0022",
-    "EV-F01-0023",
-    "EV-F01-0024",
-    "EV-F01-0025",
-    "EV-F01-0026",
-    "EV-F01-0027",
-    "EV-F01-0028",
-    "EV-F01-0029",
-    "EV-F01-0030",
-    "EV-F01-0031",
-    "EV-F01-0032",
-    "EV-F01-0033",
-    "EV-F01-0034",
-    "EV-F01-0035"
+    "EV-F01-0019"
   ],
   "decisions": [
-    "D01",
-    "D02",
-    "D03",
-    "D04",
-    "D05",
-    "D06",
-    "D07",
-    "D08",
-    "D09",
-    "D10",
-    "D11",
-    "D12",
-    "D13",
-    "D14",
-    "D15",
-    "D16",
-    "D17",
-    "D18",
-    "D19",
-    "D20"
+    {
+      "decision_id": "D01",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D01-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D02",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D02-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D03",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D03-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D04",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D04-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D05",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D05-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D06",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D06-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D07",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D07-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D08",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D08-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D09",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D09-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D10",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D10-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D11",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D11-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D12",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D12-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D13",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D13-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D14",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D14-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D15",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D15-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D16",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D16-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D17",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D17-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D18",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D18-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D19",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D19-RULE-20260927-1"
+    },
+    {
+      "decision_id": "D20",
+      "status": "PROPOSED",
+      "legacy_rule_status": "PRIOR_AUDIT_REPORTED_OR_UNKNOWN",
+      "rule_version": "D20-RULE-20260927-1"
+    }
   ],
   "cases": [
     {
-      "id": "CASE-QTY-01",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P01",
-        "P11",
-        "P22"
-      ],
-      "decision_ids": [
-        "D01",
-        "D04"
-      ],
-      "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0033"
-      ],
-      "description": "Kuantitas bulat 12 pcs sama dengan 1.0000 lusin",
-      "inputs": {
-        "realisasi_pcs": 12,
-        "tarif_per_lusin": "24000.00"
-      },
-      "candidate_rule": "realisasi_lusin = realisasi_pcs / 12; amount = realisasi_lusin * tarif_per_lusin",
-      "candidate_result": {
-        "realisasi_lusin": "1.0000",
-        "amount": "24000.00"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah presisi tampilan lusin 4 desimal atau 2 desimal?",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-QTY-02",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P01",
-        "P11",
-        "P22"
-      ],
-      "decision_ids": [
-        "D01",
-        "D04"
-      ],
-      "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0033"
-      ],
-      "description": "Kuantitas pecahan 11 pcs (11/12 lusin = 0.9167 lusin pada tampilan 4 desimal)",
-      "inputs": {
-        "realisasi_pcs": 11,
-        "tarif_per_lusin": "24000.00"
-      },
-      "candidate_rule": "amount = (Decimal(realisasi_pcs) / Decimal(12)) * tarif_per_lusin",
-      "candidate_result": {
-        "realisasi_lusin_display": "0.9167",
-        "exact_amount": "22000.00",
-        "display_amount": "22000.80"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah backend menghitung exact fraction (Rp 22.000,00) atau dari nilai display (Rp 22.000,80)?",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-QTY-03",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P01",
-        "P11",
-        "P22"
-      ],
-      "decision_ids": [
-        "D01",
-        "D04"
-      ],
-      "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0033"
-      ],
-      "description": "Kuantitas pecahan 13 pcs (13/12 lusin = 1.0833 lusin)",
-      "inputs": {
-        "realisasi_pcs": 13,
-        "tarif_per_lusin": "24000.00"
-      },
-      "candidate_rule": "amount = (Decimal(13) / Decimal(12)) * 24000.00",
-      "candidate_result": {
-        "realisasi_lusin_display": "1.0833",
-        "exact_amount": "26000.00",
-        "display_amount": "25999.20"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Konfirmasi mode pembulatan pecahan lusin",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-QTY-04",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P01",
-        "P11",
-        "P22"
-      ],
-      "decision_ids": [
-        "D01",
-        "D04"
-      ],
-      "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0033"
-      ],
-      "description": "Kuantitas pecahan 1 pcs (1/12 lusin = 0.0833 lusin)",
-      "inputs": {
-        "realisasi_pcs": 1,
-        "tarif_per_lusin": "24000.00"
-      },
-      "candidate_rule": "amount = (Decimal(1) / Decimal(12)) * 24000.00",
-      "candidate_result": {
-        "realisasi_lusin_display": "0.0833",
-        "exact_amount": "2000.00",
-        "display_amount": "1999.20"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "none",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-QTY-05",
+      "id": "SYN-D01",
       "ex_id": "EX01",
-      "process_ids": [
-        "P01",
-        "P04"
-      ],
+      "process_ids": [],
       "decision_ids": [
-        "D01",
+        "D01"
+      ],
+      "evidence_ids": [
+        "EV-F01-0008",
+        "EV-F01-0009",
+        "EV-F01-0012"
+      ],
+      "description": "Synthetic: SKU-A with size M/color Blue/UOM pcs; whether a missing Series field blocks save is unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: SKU-A with size M/color Blue/UOM pcs; whether a missing Series field blocks save is unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Exact field list, required/optional rules, uniqueness, inactive-master behavior, UOM Range meaning, duplicate IDs, and live transactions against inactive masters.",
+        "Which fields and master relationships must remain for operations? Are any identified fields approved for retirement?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D02",
+      "ex_id": "EX02",
+      "process_ids": [],
+      "decision_ids": [
         "D02"
       ],
       "evidence_ids": [
-        "EV-F01-0019"
+        "EV-F01-0011"
       ],
-      "description": "Penolakan pembuatan order baru dengan SKU yang sudah dinonaktifkan",
+      "description": "Synthetic: plan target 1,000 pcs, 600 cut, 400 remaining; disposition and approval are unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "sku": "SKU-INACTIVE-01",
-        "status": "inactive"
+        "example": "Synthetic: plan target 1,000 pcs, 600 cut, 400 remaining; disposition and approval are unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "If product.status == 'inactive', reject order creation with 422",
-      "candidate_result": {
-        "allowed": false,
-        "http_status": 422
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah SKU nonaktif boleh menyelesaikan order lama yang sedang berjalan?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether targets/PIC/dates can change after cutting, partial cancellation, approval gates, plan-to-cut lineage, and correction behavior.",
+        "After cutting starts, what changes are allowed, who approves, and how is uncompleted quantity closed?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-RATE-01",
+      "id": "SYN-D03",
       "ex_id": "EX03",
-      "process_ids": [
-        "P03",
-        "P11",
-        "P22"
-      ],
+      "process_ids": [],
       "decision_ids": [
-        "D04",
-        "D05"
+        "D03"
       ],
       "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0011",
-        "EV-F01-0027"
+        "EV-F01-0011"
       ],
-      "description": "Tarif berubah di tengah periode (effective date locking berdasarkan tanggal pengerjaan)",
+      "description": "Synthetic: 1 roll 25 kg, 100 sheets, 2 setelan; arithmetic target is 200 pcs if those units mean what labels suggest; legacy effect not evidenced. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "tarif_lama": "18000.00",
-        "tarif_baru": "21000.00",
-        "tanggal_berlaku_baru": "2026-09-16",
-        "job_date": "2026-09-10"
+        "example": "Synthetic: 1 roll 25 kg, 100 sheets, 2 setelan; arithmetic target is 200 pcs if those units mean what labels suggest; legacy effect not evidenced.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Tarif mengunci revisi yang aktif pada job_date, bukan tanggal penarikan payroll",
-      "candidate_result": {
-        "applied_rate": "18000.00"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah penguncian tarif pada tanggal job dibuat atau tanggal job disetujui supervisor?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Actual consumption formula, unit conversion precision, waste vs reusable remainder, mixed-size behavior, corrections, and tie to inventory.",
+        "Which quantities are actual measurements, what formula does legacy use, and how should reusable remainder/waste be recorded?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-RATE-02",
-      "ex_id": "EX03",
-      "process_ids": [
-        "P03",
-        "P11"
-      ],
+      "id": "SYN-D04",
+      "ex_id": "EX04",
+      "process_ids": [],
       "decision_ids": [
         "D04"
       ],
       "evidence_ids": [
-        "EV-F01-0010",
-        "EV-F01-0027"
+        "EV-F01-0003",
+        "EV-F01-0009",
+        "EV-F01-0010"
       ],
-      "description": "Pekerjaan tanpa master tarif yang terdaftar",
+      "description": "Synthetic illustration only: 11 pcs / 12 × Rp25,000 = Rp22,916.666… before rounding. Display/paid amount unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "sku": "SKU-NEW-01",
-        "job_type": "OBRAS-CUSTOM",
-        "registered_rate": null
+        "quantity_pcs": "11",
+        "pieces_per_dozen": "12",
+        "rate_per_dozen_idr": "25000",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Tolak input job baru bila mapping tarif belum disahkan di Master Service Setting",
+      "candidate_rule": "Pure arithmetic illustration: (11 / 12) * 25000; rounding rule is deliberately unset.",
       "candidate_result": {
-        "allowed": false,
-        "error": "MISSING_SERVICE_RATE"
+        "exact_unrounded_idr": "22916.66666666666666666666667",
+        "rounded_business_amount": null
       },
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah diizinkan tarif manual ad-hoc dengan otorisasi khusus?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Persisted conversion precision, amount formula, rounding point/mode, effective tariff date, tariff edits after job creation, missing/inactive tariff behavior.",
+        "What quantity precision, tariff effective-date rule, and rounding point/mode must One preserve?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-RATE-03",
-      "ex_id": "EX03",
-      "process_ids": [
-        "P11",
-        "P13",
-        "P22"
-      ],
+      "id": "SYN-D05",
+      "ex_id": "EX05",
+      "process_ids": [],
       "decision_ids": [
         "D05"
       ],
       "evidence_ids": [
-        "EV-F01-0029"
+        "EV-F01-0003"
       ],
-      "description": "Perbedaan Target vs Aktual vs Payable Qty akibat adanya reject jahit",
+      "description": "Synthetic: 100 produced, 95 accepted, 3 rework, 2 reject; payable quantity is unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "target_pcs": 120,
-        "actual_completed_pcs": 120,
-        "qc_rejected_pcs": 12,
-        "rate_per_dozen": "24000.00"
+        "produced_pcs": "100",
+        "accepted_pcs": "95",
+        "rework_pcs": "3",
+        "reject_pcs": "2",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "payable_qty = actual_completed_pcs - qc_rejected_pcs; upah dihitung dari payable_qty",
-      "candidate_result": {
-        "payable_pcs": 108,
-        "payable_lusin": "9.0000",
-        "amount": "216000.00"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah reject akibat cacat bahan tetap dibayar ke operator jahit?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether reject/rework is recorded, paid, deducted, reworked by same/different employee, or netted by supervisor outside system.",
+        "How does legacy pay for rejected and reworked pieces, who records them, and should One preserve or change that rule?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-RATE-04",
-      "ex_id": "EX03",
-      "process_ids": [
-        "P11",
-        "P13"
-      ],
-      "decision_ids": [
-        "D05"
-      ],
-      "evidence_ids": [
-        "EV-F01-0029"
-      ],
-      "description": "Pengerjaan rework jahit (apakah mendapat upah tambahan atau tanggungan operator)",
-      "inputs": {
-        "rework_pcs": 12,
-        "is_original_operator": true
-      },
-      "candidate_rule": "Rework oleh operator asal tidak mendapat upah tambahan (rate = 0); rework oleh operator lain mendapat tarif perbaikan",
-      "candidate_result": {
-        "additional_pay": "0.00"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Kebijakan resmi penanggungan biaya rework antar-operator",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-PAY-01",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P22"
-      ],
+      "id": "SYN-D06",
+      "ex_id": "EX06",
+      "process_ids": [],
       "decision_ids": [
         "D06"
       ],
       "evidence_ids": [
-        "EV-F01-0031",
-        "EV-F01-0032",
-        "EV-F01-0033"
+        "EV-F01-0002"
       ],
-      "description": "Perhitungan slip gaji normal dengan tunjangan dan potongan kasbon",
+      "description": "Synthetic: gross Rp950,000, allowance Rp110,000, other deduction Rp10,000, cashbon Rp150,000; arithmetic result depends on what gross includes. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "subtotal_job": "450000.00",
-        "premi_hadir": "50000.00",
-        "uang_transport": "75000.00",
-        "bonus": "25000.00",
-        "potongan_lain": "10000.00",
-        "cashbon_payment": "100000.00"
+        "example": "Synthetic: gross Rp950,000, allowance Rp110,000, other deduction Rp10,000, cashbon Rp150,000; arithmetic result depends on what gross includes.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "gross = subtotal_job + premi + transport + bonus; net = gross - potongan_lain - cashbon_payment",
-      "candidate_result": {
-        "gross": "600000.00",
-        "net": "490000.00"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah Gross di slip legacy mencakup tunjangan atau hanya subtotal borongan?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Exact definitions/formulas, whether gross already includes allowances, attendance/leave/overtime rules, manual vs derived values, tax/statutory deductions, negative-net handling.",
+        "Please confirm the actual component definitions and calculation source after reviewing the linked slip(s); which parts may change in One?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-PAY-02",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P22"
-      ],
-      "decision_ids": [
-        "D04",
-        "D06"
-      ],
-      "evidence_ids": [
-        "EV-F01-0033"
-      ],
-      "description": "Pembulatan per baris pekerjaan vs pembulatan di total slip",
-      "inputs": {
-        "lines": [
-          {
-            "pcs": 5,
-            "rate_dozen": "15000.00"
-          },
-          {
-            "pcs": 7,
-            "rate_dozen": "17000.00"
-          }
-        ]
-      },
-      "candidate_rule": "Rounding per row (ROUND_HALF_UP 2 desimal) kemudian dijumlahkan",
-      "candidate_result": {
-        "row1_amount": "6250.00",
-        "row2_amount": "9916.67",
-        "total_subtotal": "16166.67"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah total slip dibulatkan ke kelipatan Rp 100 terdekat?",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-PAY-03",
-      "ex_id": "EX05",
-      "process_ids": [
-        "P24"
-      ],
-      "decision_ids": [
-        "D08"
-      ],
-      "evidence_ids": [
-        "EV-F01-0030",
-        "EV-F01-0033"
-      ],
-      "description": "Cicilan kasbon terakhir bernilai lebih kecil dari cicilan normal",
-      "inputs": {
-        "sisa_saldo_kasbon": "35000.00",
-        "cicilan_standar": "100000.00"
-      },
-      "candidate_rule": "potongan_kasbon = min(cicilan_standar, sisa_saldo_kasbon)",
-      "candidate_result": {
-        "potongan_kasbon": "35000.00",
-        "sisa_saldo_baru": "0.00",
-        "kasbon_lunas": true
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "none",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-PAY-04",
-      "ex_id": "EX05",
-      "process_ids": [
-        "P22",
-        "P24"
-      ],
-      "decision_ids": [
-        "D08"
-      ],
-      "evidence_ids": [
-        "EV-F01-0030",
-        "EV-F01-0033"
-      ],
-      "description": "Net pay tidak mencukupi untuk memotong cicilan kasbon penuh (cap net zero)",
-      "inputs": {
-        "net_before_kasbon": "60000.00",
-        "cicilan_kasbon": "100000.00"
-      },
-      "candidate_rule": "potongan_kasbon = min(cicilan_kasbon, net_before_kasbon); sisa cicilan tertunggak di kasbon",
-      "candidate_result": {
-        "potongan_tereksekusi": "60000.00",
-        "net_final": "0.00",
-        "cicilan_tertunda": "40000.00"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah diperbolehkan slip gaji bernilai negatif bila kasbon dipotong paksa?",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-PAY-05",
-      "ex_id": "EX04",
-      "process_ids": [
-        "P22",
-        "P23"
-      ],
+      "id": "SYN-D07",
+      "ex_id": "EX07",
+      "process_ids": [],
       "decision_ids": [
         "D07"
       ],
       "evidence_ids": [
-        "EV-F01-0032"
+        "EV-F01-0002"
       ],
-      "description": "Koreksi slip payroll setelah status Paid",
+      "description": "Synthetic: a job dated in a paid period is entered later; destination period and re-open policy unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "slip_id": "PAY-202609-001",
-        "status": "paid",
-        "koreksi_pcs": -12
+        "example": "Synthetic: a job dated in a paid period is entered later; destination period and re-open policy unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Slip berstatus Paid tidak boleh diedit in-place. Koreksi dicatat sebagai event pembalik di periode berjalan.",
-      "candidate_result": {
-        "direct_edit_allowed": false,
-        "adjustment_slip_required": true
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Mekanisme pengembalian kas bila terjadi overpayment upah",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Cutoff, late jobs, overlapping periods, partial payment, what Paid means, posting/journal, reopen/correction after payment, and any relation to bank/cash proof.",
+        "What is the cutoff rule for late jobs, and how are paid or posted slips corrected without rewriting payment history?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-POS-01",
-      "ex_id": "EX06",
-      "process_ids": [
-        "P17"
+      "id": "SYN-D08",
+      "ex_id": "EX08",
+      "process_ids": [],
+      "decision_ids": [
+        "D08"
       ],
+      "evidence_ids": [
+        "EV-F01-0004"
+      ],
+      "description": "Synthetic: outstanding Rp300,000; scheduled deduction Rp200,000; payroll available Rp150,000. Actual legacy behavior unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "opening_balance_idr": "300000",
+        "scheduled_deduction_idr": "200000",
+        "available_pay_idr": "150000",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether payroll deduction changes outstanding balance automatically, manual settlement steps, installment schedule, balance-forward, final installment, and reversals.",
+        "Show/confirm the actual deduction-to-balance history; then decide what happens when available pay is less than scheduled installment."
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D09",
+      "ex_id": "EX09",
+      "process_ids": [],
+      "decision_ids": [
+        "D09"
+      ],
+      "evidence_ids": [
+        "EV-F01-0005",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: retail one-item cash sale vs wholesale 50-dozen order with terms; current legacy workflow unknown. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: retail one-item cash sale vs wholesale 50-dozen order with terms; current legacy workflow unknown.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether wholesale, marketplace, online, or other sales are recorded in POS, another module, external platform, or manual records; order-to-fulfillment flow.",
+        "Which sales channels are in actual use, and where is each order/payment currently recorded?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D10",
+      "ex_id": "EX10",
+      "process_ids": [],
       "decision_ids": [
         "D10"
       ],
       "evidence_ids": [
-        "EV-F01-0021"
+        "EV-F01-0005"
       ],
-      "description": "Faktur POS dengan diskon persentase per baris",
+      "description": "Synthetic: price Rp65,000 and fixed discount Rp15,000; whether allowed and where applied is unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "qty": 2,
-        "unit_price": "75000.00",
-        "discount_percent": "10.0"
+        "example": "Synthetic: price Rp65,000 and fixed discount Rp15,000; whether allowed and where applied is unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "subtotal = (qty * unit_price) * (1 - discount_percent/100)",
-      "candidate_result": {
-        "gross": "150000.00",
-        "discount_nominal": "15000.00",
-        "subtotal": "135000.00"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "none",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Price source/lock, discount basis and authorization, percent vs fixed discounts, tax, rounding, invoice finalization, and historical price snapshots.",
+        "What price/discount rules actually run in legacy, and what permissions should One change, if any?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-POS-02",
-      "ex_id": "EX06",
-      "process_ids": [
-        "P17"
-      ],
-      "decision_ids": [
-        "D10"
-      ],
-      "evidence_ids": [
-        "EV-F01-0021"
-      ],
-      "description": "Faktur POS dengan diskon nominal per faktur",
-      "inputs": {
-        "subtotal_items": "250000.00",
-        "order_discount_nominal": "25000.00"
-      },
-      "candidate_rule": "total_faktur = subtotal_items - order_discount_nominal",
-      "candidate_result": {
-        "total_faktur": "225000.00"
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Otorisasi kasir untuk diskon manual di atas nominal tertentu",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-POS-03",
-      "ex_id": "EX06",
-      "process_ids": [
-        "P18"
-      ],
+      "id": "SYN-D11",
+      "ex_id": "EX11",
+      "process_ids": [],
       "decision_ids": [
         "D11"
       ],
       "evidence_ids": [
-        "EV-F01-0021"
+        "EV-F01-0006"
       ],
-      "description": "Pembayaran tunai kasir POS dengan uang kembalian",
+      "description": "Synthetic: total Rp180,000 paid Rp100,000 cash + Rp80,000 QR; whether legacy allows this is unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "total_faktur": "135000.00",
-        "cash_tendered": "150000.00"
+        "invoice_total_idr": "180000",
+        "cash_tender_idr": "100000",
+        "qris_tender_idr": "80000",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "change_amount = cash_tendered - total_faktur",
-      "candidate_result": {
-        "change_amount": "15000.00",
-        "status": "paid"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "none",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Split tenders, partial payment/AR, overpayment, refunds, exchange, void timing/roles, cash or bank settlement, and stock reversal.",
+        "Which tender combinations and refund/void flows are used today, and who can perform/approve each?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-AP-01",
-      "ex_id": "EX08",
-      "process_ids": [
-        "P06",
-        "P07",
-        "P25"
-      ],
+      "id": "SYN-D12",
+      "ex_id": "EX12",
+      "process_ids": [],
       "decision_ids": [
         "D12"
       ],
       "evidence_ids": [
-        "EV-F01-0024"
+        "EV-F01-0007"
       ],
-      "description": "AP Settlement with-PO mencocokkan nilai penerimaan barang",
+      "description": "Synthetic: invoice for 500 kg vs receipt for 480 kg; variance handling and payable amount unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "po_reference": "PO-2026-001",
-        "received_amount": "5000000.00",
-        "invoiced_amount": "5000000.00",
-        "payment_amount": "5000000.00"
+        "invoice_qty_kg": "500",
+        "receipt_qty_kg": "480",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Tagihan disetujui sesuai batas nilai barang yang telah diterima (received value limit)",
-      "candidate_result": {
-        "approved": true,
-        "outstanding": "0.00"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "none",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Purchase request/order/receipt chain, three-way match, partial settlement, allocation to invoices/POs, payment evidence, non-PO types, and reversal.",
+        "Trace one with-PO and one non-PO settlement, including receipt and payment proof; what matching rules should One preserve/change?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-AP-02",
-      "ex_id": "EX08",
-      "process_ids": [
-        "P25"
-      ],
-      "decision_ids": [
-        "D12"
-      ],
-      "evidence_ids": [
-        "EV-F01-0024"
-      ],
-      "description": "AP Settlement pengeluaran non-PO (biaya operasional/makloon langsung)",
-      "inputs": {
-        "po_reference": null,
-        "category": "MAINTENANCE_SEWING_MACHINE",
-        "amount": "350000.00"
-      },
-      "candidate_rule": "Pengeluaran non-PO memerlukan approval finance dan COA beban yang eksplisit",
-      "candidate_result": {
-        "requires_po": false,
-        "approval_required": true
-      },
-      "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Daftar kategori beban non-PO resmi Beeloft",
-      "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
-      }
-    },
-    {
-      "id": "CASE-STK-01",
-      "ex_id": "EX09",
-      "process_ids": [
-        "P14",
-        "P26"
-      ],
+      "id": "SYN-D13",
+      "ex_id": "EX13",
+      "process_ids": [],
       "decision_ids": [
         "D13"
       ],
       "evidence_ids": [
-        "EV-F01-0022"
+        "EV-F01-0013",
+        "EV-F01-0016"
       ],
-      "description": "Valuasi persediaan produk jadi berdasarkan Capital",
+      "description": "Synthetic: 100 units at Rp20,000 and 100 at Rp22,000; moving-average arithmetic would be Rp21,000, but legacy method is unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "quantity": 250,
-        "capital_per_unit": "38500.00"
+        "qty_a": "100",
+        "unit_cost_a_idr": "20000",
+        "qty_b": "100",
+        "unit_cost_b_idr": "22000",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "total_capital = Decimal(quantity) * Decimal(capital_per_unit)",
+      "candidate_rule": "Illustrates weighted average arithmetic only; not a legacy or approved valuation rule.",
       "candidate_result": {
-        "total_capital": "9625000.00"
+        "illustrative_weighted_average_idr": "21000"
       },
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah nilai capital di-update berdasarkan biaya produksi nyata atau standard costing?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Capital calculation method, valuation layers, receipt costs, WIP/COGS treatment, negative-stock policy, and root cause of #108.",
+        "What method does legacy currently use? After verifying that, which valuation method should One use and how should #108 be classified?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-STK-02",
-      "ex_id": "EX09",
-      "process_ids": [
-        "P14"
-      ],
+      "id": "SYN-D14",
+      "ex_id": "EX14",
+      "process_ids": [],
       "decision_ids": [
-        "D13"
+        "D14"
       ],
       "evidence_ids": [
-        "EV-F01-0023"
+        "EV-F01-0001",
+        "EV-F01-0017"
       ],
-      "description": "Penanganan anomali stok negatif dengan identitas kosong (#108)",
+      "description": "Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "sku": null,
-        "quantity": -5,
-        "storage": "STORAGE-UNKNOWN"
+        "example": "Synthetic: daily POS close produces one cash summary; account mapping and export destination unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Tolak/karantina pada dry-run import. Jangan dimasukkan ke ledger aktif One.",
-      "candidate_result": {
-        "quarantined": true,
-        "allowed_in_ledger": false
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Keputusan pemilik terhadap nasib fisik 5 unit barang tersebut",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "External accounting tool/process, actual COA, source-of-truth per ledger, data exchange, posting timing, payroll/AP/POS journals.",
+        "For the target replacement, should One include a native GL/COA, or should accounting remain in a separate system with controlled exports? This decides target scope only; current external workflow remains unverified."
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-CTRL-01",
-      "ex_id": "EX10",
-      "process_ids": [
-        "P27"
-      ],
+      "id": "SYN-D15",
+      "ex_id": "EX15",
+      "process_ids": [],
       "decision_ids": [
-        "D14",
         "D15"
       ],
       "evidence_ids": [
-        "EV-F01-0034"
+        "EV-F01-0019",
+        "EV-F01-0002"
       ],
-      "description": "Transaksi pada periode akuntansi yang telah ditutup (closed period)",
+      "description": "Synthetic: August close on 5 September then a late invoice; acceptance path unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "transaction_date": "2026-08-15",
-        "closed_period_cutoff": "2026-08-31"
+        "example": "Synthetic: August close on 5 September then a late invoice; acceptance path unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Tolak pencatatan pada periode tutup dengan HTTP 422 / 409",
-      "candidate_result": {
-        "allowed": false,
-        "error": "PERIOD_CLOSED"
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Wewenang khusus role admin untuk reopen periode",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Whether a separate legacy route exists, how monthly books close, late adjustments, reopen permissions, payroll cutoff, and reports.",
+        "Does the company currently close periods outside the audited legacy menu? What close/reopen and late-posting policy should One implement?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-CTRL-02",
-      "ex_id": "EX12",
-      "process_ids": [
-        "P29"
+      "id": "SYN-D16",
+      "ex_id": "EX16",
+      "process_ids": [],
+      "decision_ids": [
+        "D16"
       ],
+      "evidence_ids": [
+        "EV-F01-0014",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: compare one dashboard period total with underlying POS invoices; no source values are preserved. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: compare one dashboard period total with underlying POS invoices; no source values are preserved.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Downloaded file content/layout, other report formats, filters/timezone, metric definitions, reconciliation and report readership.",
+        "Which actual reports/files are required, who uses them, and what totals/filters must match?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D17",
+      "ex_id": "EX17",
+      "process_ids": [],
       "decision_ids": [
         "D17"
       ],
       "evidence_ids": [
-        "EV-F01-0034",
-        "EV-F01-0035"
+        "EV-F01-0012",
+        "EV-F01-0015"
       ],
-      "description": "Pemisahan tugas (pemohon pengeluaran kas / payroll tidak boleh menyetujui pengajuannya sendiri)",
+      "description": "Synthetic: same user requests and approves a supplier payment; whether current legacy blocks it is unknown. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "requester_account": "USER-FIN-01",
-        "approver_account": "USER-FIN-01"
+        "example": "Synthetic: same user requests and approves a supplier payment; whether current legacy blocks it is unknown.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Server menolak 403 bila approver == requester",
-      "candidate_result": {
-        "allowed": false,
-        "http_status": 403
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Apakah pemilik tunggal (owner) memiliki hak bypass pemisahan tugas?",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Complete role/account inventory, per-action permission checks, business unit scoping, salary access, self-approval, delegation, audit log.",
+        "Which roles may view, create, approve, pay, export, or reverse each domain? Who may see payroll?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     },
     {
-      "id": "CASE-CTRL-03",
-      "ex_id": "EX14",
-      "process_ids": [
-        "P32"
+      "id": "SYN-D18",
+      "ex_id": "EX18",
+      "process_ids": [],
+      "decision_ids": [
+        "D18"
       ],
+      "evidence_ids": [
+        "EV-F01-0001",
+        "EV-F01-0015"
+      ],
+      "description": "Synthetic: duplicate marketplace order event; idempotency behavior unknown in legacy. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: duplicate marketplace order event; idempotency behavior unknown in legacy.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Platforms in use, connector/aggregator, sync direction/frequency, order/stock/refund/settlement ownership, retries and reconciliation.",
+        "Which sales/inventory/finance systems and channels are actually used, and which objects should remain synchronized with One?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D19",
+      "ex_id": "EX19",
+      "process_ids": [],
       "decision_ids": [
         "D19"
       ],
       "evidence_ids": [
-        "EV-F01-0034"
+        "EV-F01-0016",
+        "EV-F01-0017"
       ],
-      "description": "Cutoff migrasi saldo awal vs replay transaksi historis",
+      "description": "Synthetic: cutover 30 Sep; stock/cashbon/AP balance values and archival reconciliation must be measured, not assumed. Synthetic example only; it does not establish legacy behavior.",
       "inputs": {
-        "cutoff_date": "2026-09-30",
-        "opening_stock_value": "150000000.00",
-        "replay_history": false
+        "example": "Synthetic: cutover 30 Sep; stock/cashbon/AP balance values and archival reconciliation must be measured, not assumed.",
+        "all_values_synthetic": true
       },
-      "candidate_rule": "Pilih salah satu: saldo awal (opening balance) atau replay event historis, jangan digabung keduanya agar tidak terjadi pencatatan ganda",
-      "candidate_result": {
-        "chosen_strategy": "OPENING_BALANCE_WITH_AUDIT_ARCHIVE",
-        "double_count_risk": false
-      },
+      "candidate_rule": null,
+      "candidate_result": null,
       "expected_business_result": null,
-      "status": "DRAFT_SYNTHETIC",
-      "unresolved_questions": "Rentang tahun arsip legacy yang wajib disimpan untuk audit",
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "Available exports, history depth, IDs/relations, balances/open items, paid/unpaid jobs, cashbon, AR/AP, WIP, deltas and record counts.",
+        "After evidence/profile, which domains require replay and which may use approved opening balances? What archive/retention is required?"
+      ],
       "approvals": {
-        "status": "PENDING_OWNER_APPROVAL",
-        "approver": null,
-        "approved_at": null
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
+      }
+    },
+    {
+      "id": "SYN-D20",
+      "ex_id": "EX20",
+      "process_ids": [],
+      "decision_ids": [
+        "D20"
+      ],
+      "evidence_ids": [
+        "EV-F01-0001",
+        "EV-F01-0018"
+      ],
+      "description": "Synthetic: payroll and POS totals are compared in parallel; no target tolerances or source data are established. Synthetic example only; it does not establish legacy behavior.",
+      "inputs": {
+        "example": "Synthetic: payroll and POS totals are compared in parallel; no target tolerances or source data are established.",
+        "all_values_synthetic": true
+      },
+      "candidate_rule": null,
+      "candidate_result": null,
+      "expected_business_result": null,
+      "status": "DRAFT_SYNTHETIC / NOT A LEGACY ORACLE",
+      "unresolved_questions": [
+        "User readiness, peak volumes, RPO/RTO, backup/restore, reconciliation, freeze window, rollback controls and support coverage.",
+        "What readiness evidence and go/no-go authority are required before legacy shutdown? Is a parallel run mandatory?"
+      ],
+      "approvals": {
+        "status": "PENDING",
+        "approved_by": null,
+        "approved_at": null,
+        "reference": null
       }
     }
   ],
-  "f02_scenario_mapping": {
-    "QTY-RATE-01": [
-      "CASE-QTY-01",
-      "CASE-QTY-02",
-      "CASE-QTY-03",
-      "CASE-QTY-04"
-    ],
-    "RATE-02": [
-      "CASE-RATE-01",
-      "CASE-RATE-02"
-    ],
-    "CHARGE-01": [
-      "CASE-RATE-03",
-      "CASE-RATE-04"
-    ],
-    "PAYROLL-01": [
-      "CASE-PAY-01",
-      "CASE-PAY-02"
-    ],
-    "LOAN-01": [
-      "CASE-PAY-03",
-      "CASE-PAY-04"
-    ],
-    "PAY-01": [
-      "CASE-POS-03",
-      "CASE-AP-01"
-    ],
-    "PERIOD-01": [
-      "CASE-CTRL-01"
-    ],
-    "SRC-04": [
-      "CASE-CTRL-03"
-    ]
-  },
   "sign_off": {
-    "status": "PENDING_OWNER_APPROVAL",
-    "reviewer": "A0",
+    "status": "PENDING",
+    "owner": null,
     "approved_at": null,
-    "reference": null
+    "revision": null
   }
 }

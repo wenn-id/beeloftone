@@ -1,109 +1,185 @@
 # F01: keputusan, bukti, dan sign-off
 
-Pasangan [register proses](f01-process-register.md) untuk [issue #40](https://github.com/wenn-id/beeloftone/issues/40).
-Execution baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (aplikasi `0.114.0`, schema `55`), diperiksa 27 September 2026 WIB.
-Baseline historis: `2bee57075b2e0826dfcd581691d37585e7dd1df2` (v0.97.0/schema 55) dan `f8921e763a8b317f3680229aedb9406ddba687c8` (v0.87.0/schema 55) dipertahankan sebagai riwayat perencanaan, bukan HEAD saat ini.
-Status paket: **REVIEW_READY; belum Integrated atau Business accepted**.
-Seluruh keputusan bisnis dan contoh fixture berstatus usulan terverifikasi (**PROPOSED / DRAFT_SYNTHETIC**), menunggu penetapan dan sign-off resmi pemilik proses bisnis.
+Pasangan [register proses](f01-process-register.md) untuk
+[issue #40](https://github.com/wenn-id/beeloftone/issues/40).
+Execution baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (v0.114.0/schema 55). Status paket: **IN_PROGRESS; belum REVIEW_READY, belum Integrated, belum Business accepted**. Audit terdahulu tercatat di Issue #40 sebagai prior UI report only; tidak mengesahkan backend rules. Tidak ada keputusan bisnis atau
+contoh dokumen legacy yang diklaim telah disetujui dalam perubahan ini.
 
----
+## Batas yang sudah dinyatakan sumber
 
-## 1. Batas yang Dinyatakan Sumber dan Batas Tindakan
+Ketentuan berikut berasal dari #39/#40 dan issue anak, bukan keputusan baru agent:
 
-Ketentuan berikut berasal dari [#39](https://github.com/wenn-id/beeloftone/issues/39), [#40](https://github.com/wenn-id/beeloftone/issues/40), dan audit langsung 27 September 2026:
+- Seluruh proses wajib dipetakan ke One atau dihentikan dengan keputusan eksplisit
+  pemilik. Tidak terlihat pada akun audit tidak membuktikan proses tidak dipakai.
+- Target, realisasi aktual, dan kuantitas layak dibayar adalah konsep terpisah
+  ([#49](https://github.com/wenn-id/beeloftone/issues/49)).
+- Approved, paid, dan posted harus dibedakan
+  ([#41](https://github.com/wenn-id/beeloftone/issues/41)). Approval supplier saat
+  ini bukan bukti kas keluar; rekonsiliasi payroll membaca status eksternal.
+- Snapshot Jubelio/Mekari tetap read-only pada baseline. Target penggantian
+  backoffice tidak otomatis mengizinkan write-back atau menetapkan vendor yang
+  dihentikan. Kanal yang perlu sinkronisasi otomatis tidak cukup dengan snapshot
+  manual ([#58](https://github.com/wenn-id/beeloftone/issues/58)).
+- Pertahankan ledger, invariant uang/qty, idempotency, revision guard, transaksi
+  atomik, dan audit/reversal. Jangan menambahkan rumus payroll kedua di costing
+  atau menghitung biaya sewing lama dan charge jasa baru dua kali (#52/#53).
+- Gunakan data sintetis di repo/PR/CI. Tidak ada akses, perubahan, atau transaksi
+  produksi dalam paket discovery ini.
 
-1. **Seluruh proses wajib dipetakan:** 34 proses bisnis (P01–P34) dipetakan ke One atau dihentikan dengan keputusan eksplisit pemilik. Tidak terlihat pada akun audit tidak membuktikan proses tidak dipakai.
-2. **Pemisahan Konsep Transaksi:**
-   - Target produksi, realisasi aktual, dan kuantitas layak dibayar (payable) adalah konsep terpisah ([#49](https://github.com/wenn-id/beeloftone/issues/49)).
-   - Status transaksi *APPROVED*, *PAID*, dan *POSTED* harus dipisahkan secara tegas ([#41](https://github.com/wenn-id/beeloftone/issues/41)). Approval permohonan pembayaran supplier bukan bukti kas keluar; pencatatan pembayaran memerlukan bukti transfer atau kuitansi kas.
-3. **Penyelarasan Status Akses Legacy:**
-   - Akses read-only berotorisasi telah dilakukan pada 27 September 2026 (dashboard, 30 halaman menu, 8 form input, 1 detail payroll).
-   - Batas keselamatan F01 tetap berlaku: tidak ada mutasi bisnis yang dieksekusi pada sistem legacy (tidak ada submit form, perubahan status bayar, penyesuaian stok, pengajuan kasbon, mutasi uang, atau eksekusi payroll).
-   - Kalimat lama yang menyatakan *"tidak ada akses produksi"* telah diperbarui secara faktual untuk mencatat bahwa akses baca diotorisasi dan dilakukan.
-4. **Perlindungan Integritas Arsitektur One:**
-   - Pertahankan ledger double-entry, invariant uang/qty (integer / Decimal milli), idempotency, revision guard, transaksi atomik, dan audit trail/reversal berpasangan.
-   - Jangan menambahkan rumus payroll kedua di costing atau menghitung biaya sewing lama dan charge jasa baru dua kali ([#52](https://github.com/wenn-id/beeloftone/issues/52), [#53](https://github.com/wenn-id/beeloftone/issues/53)).
-5. **Privasi dan Keamanan Data:**
-   - Repositori publik, PR, dan CI hanya memuat contoh sintetis (`synthetic=true`).
-   - Tidak ada password, token, data pribadi karyawan/pelanggan, atau nominal transaksi nyata yang disimpan di repositori publik.
+## Register keputusan
 
----
+**Semua D01-D20 berstatus OPEN.** PJ di bawah adalah usulan peran penentu, belum
+penunjukan orang. Jawaban, approver, tanggal berlaku, dan bukti persetujuan belum
+tersedia. Daftar pilihan/kasus di kolom keputusan adalah pertanyaan untuk pemilik,
+bukan default implementasi. F02 dan paket domain tidak boleh menganggapnya disahkan
+karena dokumen ini di-merge. Batas waktu tiap keputusan: sebelum kontrak paket
+penerimanya diterima; A0 menetapkan jadwal bersama pemilik.
 
-## 2. Register Keputusan Bisnis (D01–D20)
-
-Status seluruh keputusan saat ini: **PROPOSED** (Usulan Berdasarkan Bukti Audit).
-Setiap keputusan memiliki versi aturan kandidat (`rule_version`), formula/usulan, presisi unit, bukti pendukung (`EV-F01-xxxx`), dan kasus uji sintetis (`CASE-xxx`).
-
-| ID | rule_version | Keputusan yang Harus Diisi Pemilik | Formula / Usulan Kandidat | Unit & Presisi | PJ Bisnis (Usulan) | Bukti Terkait | Kasus Sintetis Terkait | Issue Penerima | Status |
-|---|---|---|---|---|---|---|---|---|---|
-| D01 | `D01-RULE-20260927-1` | Standarisasi master produk, bahan, UOM, dan pembersihan kolom usang | Pertahankan hierarki kategori; hapus kolom catatan bebas tak terpakai; konversi eksplist | String ID, Decimal milli | Master + Operasi | EV-F01-0002..0005, 0011..0018 | CASE-QTY-05 | #43, #44, #41 | PROPOSED |
-| D02 | `D02-RULE-20260927-1` | Status & approval planning; perubahan target/tenggat setelah berjalan | Target awal dikunci setelah cutting dimulai; revisi target via rencana tambahan (split run) | Pcs (Integer) | Produksi | EV-F01-0006 | EX02 | #49, #41 | PROPOSED |
-| D03 | `D03-RULE-20260927-1` | Rumus cutting rol/berat/lembar/setelan; output, toleransi susut dan waste | Target Pcs = Lembar x Setelan; Toleransi susut dihitung dari berat rol vs gramatur baju | Kg, Gram, Pcs | Produksi + Gudang Bahan | EV-F01-0007, 0008, 0032 | CASE-QTY-06 | #49, #53 | PROPOSED |
-| D04 | `D04-RULE-20260927-1` | Basis upah borongan per lusin/pcs; pembulatan pecahan lusin dan uang | Lusin = Pcs / 12; Upah per baris dibulatkan ROUND_HALF_UP ke Rupiah penuh (scale=0) | Rupiah (Decimal), Lusin (4 desimal) | Payroll + Produksi | EV-F01-0009, 0010, 0027, 0031 | CASE-QTY-01..04, CASE-RATE-01 | #48, #55, #41 | PROPOSED |
-| D05 | `D05-RULE-20260927-1` | Kelayakan bayar upah, reject & rework; approval SPK pengerjaan | Hanya kuantitas LOLOS QC (Payable Pcs) yang dibayar; rework operator sendiri tidak dibayar | Pcs (Integer), Rupiah | Produksi + Payroll | EV-F01-0027, 0031 | CASE-RATE-03, CASE-RATE-04 | #52, #55, #53 | PROPOSED |
-| D06 | `D06-RULE-20260927-1` | Komponen slip gaji, tunjangan, premi, dan batas bawah upah (Net Pay >= 0) | Net Pay = Gross + Tunjangan + Premi + Bonus - Potongan - Kasbon; Batas bawah Net Pay = 0 | Rupiah (Decimal) | HR + Payroll | EV-F01-0028, 0029 | CASE-PAY-01 | #55 | PROPOSED |
-| D07 | `D07-RULE-20260927-1` | Periode & cutoff payroll mingguan; penanganan pekerjaan terlambat | SPK diserahkan lewat batas cutoff otomatis masuk ke periode berikutnya (tanpa reopen) | Tanggal ISO, Rupiah | Payroll + Finance | EV-F01-0028, 0029 | CASE-PAY-02 | #55, #46, #61 | PROPOSED |
-| D08 | `D08-RULE-20260927-1` | Aturan pinjaman kasbon, kartu saldo berjalan, dan pelunasan di luar payroll | Saldo Akhir = Saldo Awal + Pencairan - Cicilan; Pelunasan langsung kas diizinkan | Rupiah (Decimal) | Payroll + Finance | EV-F01-0030, 0033 | CASE-PAY-03, CASE-PAY-04 | #56, #46 | PROPOSED |
-| D09 | `D09-RULE-20260927-1` | Saluran penjualan selain POS; integrasi template kasir (POS Template) | POS Template mengikat kasir toko ke gudang sumber stok spesifik toko tersebut | String ID | Sales + Gudang | EV-F01-0019, 0020 | EX06 | #57 | PROPOSED |
-| D10 | `D10-RULE-20260927-1` | Otorisasi diskon, hierarki diskon baris vs nota, dan harga terkunci | Diskon baris dihitung lebih dahulu; diskon nota dialokasikan proporsional ke baris | Persen (2 desimal), Rupiah | Sales + Accounting | EV-F01-0020 | CASE-POS-01, CASE-POS-02 | #57, #41 | PROPOSED |
-| D11 | `D11-RULE-20260927-1` | Penanganan uang kembalian tunai, verifikasi non-tunai, dan retur kasir | Kembalian = Bayar Tunai - Total; Non-tunai wajib pas; Retur mereferensikan struk asli | Rupiah (Decimal) | Sales + Finance | EV-F01-0020 | CASE-POS-03 | #58, #46 | PROPOSED |
-| D12 | `D12-RULE-20260927-1` | Parity AP Settlement: pemisahan tagihan With-PO vs Non-PO operasional | Pembelian bahan wajib 3-way matching (PO-Receipt-Invoice); Biaya umum butuh approval | Rupiah (Decimal) | Purchasing + AP + Finance | EV-F01-0022 | CASE-AP-01, CASE-AP-02 | #50, #54, #46 | PROPOSED |
-| D13 | `D13-RULE-20260927-1` | Metode valuasi persediaan bahan dan produk jadi; penanganan anomali #108 | Metode Moving Average; Record stok negatif dengan SKU kosong masuk karantina migrasi | Rupiah (Decimal), Pcs | Accounting + Produksi | EV-F01-0021 | CASE-AP-05 | #53, #46 | PROPOSED |
-| D14 | `D14-RULE-20260927-1` | Struktur Bagan Akun Standar (COA), jurnal otomatis, dan aturan posting | Jurnal seimbang Debit = Kredit per event bisnis; mata uang IDR rupiah penuh | Rupiah (Decimal) | Accounting | EV-F01-0035 | EX10 | #46, #41 | PROPOSED |
-| D15 | `D15-RULE-20260927-1` | Periode tutup buku bulanan; hak close/reopen dan penolakan transaksi susulan | Transaksi pada periode tertutup ditolak otomatis 409 Conflict; reopen butuh otorisasi | Status Period | Accounting | EV-F01-0035 | CASE-CTRL-01 | #59, #61 | PROPOSED |
-| D16 | `D16-RULE-20260927-1` | Standardisasi konfigurasi judul laporan cetak (Title Reports) dan kop surat | Tabel Title Reports memuat nama perusahaan, kop, alamat, dan kontak untuk seluruh PDF | String Text | Manajemen + Operasi | EV-F01-0001 | EX11 | #60 | PROPOSED |
-| D17 | `D17-RULE-20260927-1` | Matriks peran pengguna (RBAC), hak akses, dan larangan self-approval | Pemohon pengeluaran kas atau slip gaji dilarang menyetujui pengajuannya sendiri (403) | Role Perms | Operasi + Seluruh Pemilik | EV-F01-0023, 0024, 0034 | CASE-CTRL-02 | #45, #41 | PROPOSED |
-| D18 | `D18-RULE-20260927-1` | Batas integrasi kanal eksternal; pemisahan order marketplace vs POS | POS bersifat realtime lokal; marketplace ingestion berkala dengan karantina unmapped SKU | Ingestion State | Sales Kanal + Operasi | EV-F01-0020 | EX13 | #57, #58, #51 | PROPOSED |
-| D19 | `D19-RULE-20260927-1` | Strategi migrasi data legacy: Cutoff Saldo Awal vs Replay Transaksi Historis | Migrasi Saldo Awal (Opening Balance) per tanggal cutoff; histori lama disimpan sebagai arsip | Migration Strategy | Operasi + Accounting | EV-F01-0034 | CASE-CTRL-03 | #51, #61, #63 | PROPOSED |
-| D20 | `D20-RULE-20260927-1` | Target pemulihan operasional (RPO / RTO), retensi backup, dan rollback | Backup harian retensi 30 hari; target RTO <= 2 jam; rollback menjamin keamanan data | Jam, Hari | Operasi + Manajemen | EV-F01-0034 | EX15 | #47, #62, #63 | PROPOSED |
-
----
-
-## 3. Katalog Bukti Sintetis (EX01–EX15)
-
-Status seluruh kelompok bukti saat ini: **DRAFT_SYNTHETIC** (Menunggu Pengesahan Pemilik).
-Seluruh contoh telah disusun dalam bentuk data sintetis non-sensitif pada `docs/f01-legacy-cases.json`.
-
-| ID | Kelompok Dokumen / Bukti | Proses Terkait | Status | Referensi Skenario Kasus Sintetis |
+| ID | Keputusan yang harus diisi pemilik | PJ bisnis (usulan) | Contoh untuk menetapkan expected result | Memblokir penerimaan |
 |---|---|---|---|---|
-| EX01 | Master produk, bahan, satuan, kategori, seri, warna, ukuran | P01, P02, P03, P20 | DRAFT_SYNTHETIC | CASE-QTY-05, FLD-SKU-001..010 |
-| EX02 | Dokumen planning, form cutting, lembar gelar, rasio setelan, berat | P04..P10 | DRAFT_SYNTHETIC | CASE-QTY-06, FLD-CUT-001..010 |
-| EX03 | SPK pengerjaan jahit, tarif per lusin, realisasi lusin, reject/rework | P03, P11..P13 | DRAFT_SYNTHETIC | CASE-QTY-01..04, CASE-RATE-01..05 |
-| EX04 | Slip gaji individu, komponen tunjangan/premi, net pay, rekap periodik | P20..P23 | DRAFT_SYNTHETIC | CASE-PAY-01, CASE-PAY-02, CASE-PAY-05 |
-| EX05 | Kartu pinjaman kasbon, pencairan, cicilan payroll, pelunasan mandiri | P24 | DRAFT_SYNTHETIC | CASE-PAY-03, CASE-PAY-04, FLD-LOAN-001..005 |
-| EX06 | Transaksi kasir POS, diskon item persen, diskon nota, struk belanja | P17, P18 | DRAFT_SYNTHETIC | CASE-POS-01, CASE-POS-02, FLD-POS-001..010 |
-| EX07 | Kembalian pembayaran tunai kasir, verifikasi EDC/QRIS, retur toko | P15..P19 | DRAFT_SYNTHETIC | CASE-POS-03, CASE-POS-04, CASE-POS-05 |
-| EX08 | Faktur supplier, AP Settlement with-PO, biaya operasional non-PO | P06, P07, P25, P28 | DRAFT_SYNTHETIC | CASE-AP-01, CASE-AP-02, CASE-AP-03 |
-| EX09 | Kartu stok gudang, harga modal (Capital), isolasi anomali stok negatif | P08, P14, P26 | DRAFT_SYNTHETIC | CASE-AP-04, CASE-AP-05 (#108) |
-| EX10 | Jurnal umum subledger, neraca saldo, penguncian periode bulanan | P23, P27 | DRAFT_SYNTHETIC | CASE-CTRL-01, FLD-ACC-001..005 |
-| EX11 | Template judul laporan cetak (Title Reports: nama perusahaan, alamat, logo) | P30, P34 | DRAFT_SYNTHETIC | FLD-TTL-001..005, EV-F01-0001 |
-| EX12 | Matriks hak akses pengguna (RBAC), aturan larangan self-approval | P29 | DRAFT_SYNTHETIC | CASE-CTRL-02, FLD-USR-001..005 |
-| EX13 | Kontrak payload event sinkronisasi kanal eksternal dan karantina unmapped | P15..P19, P31 | DRAFT_SYNTHETIC | EV-F01-0020, INTEGRATION_CONTRACTS |
-| EX14 | Matriks migrasi cutoff saldo awal, rekonsiliasi kontrol total, dan arsip | P32 | DRAFT_SYNTHETIC | CASE-CTRL-03, EV-F01-0034 |
-| EX15 | Runbook pemulihan sistem bencana, jadwal backup harian, dan SOP rollback | P33 | DRAFT_SYNTHETIC | EV-F01-0034, Operations Runbook |
+| D01 | Kolom master wajib/dihapus beserta alasan; kategori/subkategori/tipe/seri; unit dasar/konversi pcs-lusin; unit usaha/storage; position vs department; customer/supplier/metode bayar dan aturan nonaktif | Master, operasi, produksi, finance | EX01; ID lama duplikat, lokasi dengan nama sama lintas unit, nonaktif masih punya saldo | M01 #43, M02 #44, F02 #41 |
+| D02 | Status dan approval planning; perubahan target/tenggat/PIC setelah bergerak; partial cancellation; kebutuhan bundle/handoff dan kalender kapasitas | Produksi | EX02; target berubah setelah sebagian menjadi WIP, qty yang boleh dibatalkan | P02 #49, F02 #41 |
+| D03 | Arti rol/berat/lembar/setelan per lembar, komposisi model/ukuran, referensi PO; rumus output dan waste serta presisi setiap unit | Produksi + gudang bahan | EX02; cutting campuran ukuran, bahan pecahan, waste dan reversal dengan hasil per baris | P02 #49, I01 #53 |
+| D04 | Basis upah per pcs/lusin/jenis kerja; pembulatan pecahan lusin dan uang (skala, mode, tahap per baris/karyawan/periode); tanggal pemilih tarif; tarif hilang/nonaktif; perubahan di tengah periode | Payroll + produksi | EX03/EX04; 1, 11, 12, 13 pcs, tarif berganti, pembulatan per baris vs total. Angka ini hanya input uji sintetis, hasil belum ditetapkan | P01 #48, H01 #55, F02 #41 |
+| D05 | Realisasi mana layak dibayar, approval dan batas target; reject, missing, rework berulang dan siapa menanggung; koreksi sebelum/sesudah approval; employee nonaktif; satu sumber charge unik | Produksi + payroll | EX03; target/actual/payable berbeda, reject/rework, koreksi job sudah masuk payroll | P03 #52, H01 #55, I01 #53 |
+| D06 | Pengaruh hadir/cuti/absen/lembur ke upah; shift bila diperlukan; premi/transport/bonus/potongan, kelayakan dan tanggal efektif; kebutuhan komponen pajak/potongan wajib ditinjau pemilik | HR/payroll + accounting | EX04; absen/cuti/lembur, komponen positif/negatif, net rendah/negatif; formula dan tindakan eksplisit | H01 #55 |
+| D07 | Periode dan cutoff payroll, overlap, job terlambat, persetujuan, pembayaran parsial jika dipakai, koreksi setelah paid/posted, pembatalan dan slip; pisahkan sumber native dari snapshot | Payroll + finance/accounting | EX04; satu siklus penuh, overlap, unpaid job lama, partial pay, reversal setelah paid | H01 #55, A01 #46, X02 #61 |
+| D08 | Saldo awal/pencairan/jatuh tempo kasbon, aturan cicilan, batas potongan terhadap saldo dan net pay; pelunasan di luar payroll, cicilan terlewat, nonaktif/resign, reversal lintas payroll/kasbon | Payroll + finance | EX05; cicilan terakhir lebih kecil, net tidak cukup, pelunasan bersamaan, potongan dibalik | H02 #56, A01 #46 |
+| D09 | Kanal sales selain POS yang benar-benar dipakai; langkah order/reservasi/pengiriman/invoice/termin; aktor dan status tiap langkah; pisahkan ID sales order dari production order | Sales + gudang + finance | EX06; satu transaksi lengkap **setiap** kanal non-POS yang dikonfirmasi, termasuk koreksinya | S01 #57 |
+| D10 | Harga berlaku per unit/customer/kanal; otorisasi diskon, pajak yang disahkan, presisi/rounding total, draft/final invoice, nomor dokumen; harga terkunci pada titik apa | Sales + accounting | EX06; ganti harga saat draft terbuka, diskon di luar batas, stok kurang, finalisasi dua kali | S01 #57, F02 #41 |
+| D11 | Metode bayar, amount paid/change, partial payment/piutang, overpayment, retur sebagian, refund vs tukar, void sebelum/sesudah paid/shipped/posted; dampak stok/uang/jurnal dan approver | Sales + finance/accounting | EX06/EX07; uang/stok sebelum-sesudah setiap koreksi dan retry, alokasi dua pembayaran bersamaan | S02 #58, A01 #46 |
+| D12 | Parity PR/PO/receipt/return/close; invoice vs receipt; AP Settlement with PO/non-PO, jenis biaya non-PO, multi-PO bila dipakai, partial/overpayment/change, void dan reversal; approval vs pembayaran aktual | Purchasing + AP/finance/accounting | EX08; penerimaan/retur parsial, invoice mismatch, pengeluaran non-PO, approval tanpa kas keluar | B01 #50, B02 #54, A01 #46 |
+| D13 | Metode valuasi/COGS yang dipilih pemilik, komponen bahan/jasa/overhead, waste/reject/rework, WIP, transfer unit, pengakuan biaya vs pembayaran, alokasi dan rounding; cegah double count sewing/charge baru | Accounting + produksi | EX09; dua penerimaan berharga berbeda, job approved, QC, barang jadi, transfer, penjualan, retur/reversal | I01 #53, A01 #46 |
+| D14 | COA/akun kontrol, debit-kredit tiap sumber, timing pengakuan, presisi dan mata uang yang dibutuhkan; aturan posting/reversal, pajak/potongan dan pengecualian domain yang eksplisit | Accounting | EX10; posting pembelian, stok/COGS, sales/AR, payroll/kasbon, kas/bank, debit=kredit per jurnal | A01 #46, F02 #41 |
+| D15 | Periode buka/tutup, hak close/reopen, late adjustment, rekonsiliasi subledger, laporan keuangan yang wajib, saldo awal dan sign-off selisih | Accounting | EX10; transaksi bertanggal periode tutup, reversal lintas periode, trial balance/AR/AP aging/kas-bank | A02 #59, X02 #61 |
+| D16 | Katalog laporan wajib, format PDF/CSV/lainnya, filter tanggal/status/unit, dasar tanggal, kolom/total/nomor dokumen, pembaca dan ekspor; kebutuhan marketing/analitik/AI | Semua pemilik domain + manajemen | EX11; setiap format dan total dari sumber sama, data kosong, koreksi, pemisahan snapshot/native | R01 #60 |
+| D17 | Daftar role perusahaan dan matriks baca/catat/approve/pay/export tiap proses/unit; akses gaji; self-approval/delegasi, akun SSO dan audit perubahan hak | Operasi + seluruh pemilik domain | EX12; positif/negatif lintas akun/unit, payroll API/export, approver=pemohon, akun dicabut | O01 #45, F02 #41 |
+| D18 | Vendor/kanal dipertahankan atau dihentikan dengan alasan; sumber order/stok/retur/settlement; arah baca/tulis dan pemilik data per objek; interval/SLA, konflik, retry/deduplikasi/karantina/reconciliation | Sales kanal + operasi + finance | EX13; order sampai settlement, retur terlambat, pengiriman ulang payload, gangguan connector dan selisih | S01 #57, S02 #58, X01 #51 |
+| D19 | Inventaris export/arsip, retensi dan akses; cutoff/watermark per domain; replay histori **atau** saldo awal; job sudah dibayar/unpaid, saldo kasbon/AR/AP/kas/WIP, delta setelah snapshot | Operasi + accounting + pemilik domain | EX14; control totals qty/nilai/record/outstanding, dry-run ulang, histori dibayar tidak dibayar ulang | X01 #51, X02 #61, Q02 #63 |
+| D20 | Pengguna/volume nyata untuk uji beban, RPO/RTO, jadwal/retensi backup, alert dan pemilik insiden; go/no-go dan perlindungan transaksi baru saat rollback | Operasi + A0 + manajemen | EX15; restore terpisah, downtime, disk penuh, restart, transaksi setelah cutover | O02 #47, Q01 #62, Q02 #63 |
 
----
+Catatan keputusan yang disahkan harus memuat: `Dxx`, proses `Pxx`, jawaban/rumus
+dan opsi yang ditolak beserta alasan, scope unit/role, tanggal efektif, dokumen
+`EXxx` dan revisinya, input serta expected result, peran/nama approver yang boleh
+dipublikasikan, waktu dan referensi persetujuan. Revisi keputusan membuka ulang
+review fixture dan paket yang terpengaruh; tidak menghitung ulang histori diam-diam.
 
-## 4. Gerbang Freeze dan Matriks Sign-Off Resmi
+## Katalog dokumen dan calon fixture
 
-| Kriteria Gerbang Freeze | Status Saat Ini | Bukti Pemenuhan | Tindak Lanjut untuk Mencapai BUSINESS_ACCEPTED |
+**Semua EX01-EX15: MISSING_OWNER_APPROVAL.** Belum ada dokumen legacy yang diterima,
+disamarkan, atau disahkan pada paket ini. Tautan tes di bawah adalah contoh sintetis
+**teknis yang sudah ada**, bukan dokumen bisnis yang disetujui, bukan oracle aturan
+baru, dan bukan tanda acceptance F01 selesai. Tidak menambahkan angka gaji/pelanggan
+atau transaksi nyata untuk mengisi kekosongan bukti.
+
+| ID | Dokumen yang harus dikumpulkan | Proses | Calon fixture sintetis yang dapat dipakai ulang / batas |
 |---|---|---|---|
-| Seluruh 34 proses memiliki input, aktor, status, hasil, koreksi, laporan, dan PJ | LULUS | `docs/f01-process-register.md` | Konfirmasi tertulis penugasan peran dari manajemen |
-| Seluruh 20 keputusan (D01–D20) teridentifikasi lengkap dengan formula usulan | LULUS | Tabel Bagian 2 di atas & `docs/f01-owner-decisions.md` | Ketukan palu pilihan kebijakan dari Business Owner |
-| Bukti audit live read-only terindeks dan tersamarkan | LULUS | `docs/f01-legacy-evidence.md` (EV-F01-0001..0035) | Siap diaudit |
-| Kamus field legacy terpetakan dengan disposisi terarah | LULUS | `docs/f01-field-map.csv` (58 field) | Persetujuan penghapusan kolom yang diusulkan pensiun |
-| Seluruh kasus sintetis terverifikasi perhitungan desimal | LULUS | `docs/f01-legacy-cases.json` (24 kasus) | Pengesahan nilai `expected_business_result` oleh pemilik |
-| Handoff teknis ke paket downstream F02 terpetakan jelas | LULUS | `docs/f01-f02-handoff.md` | Issue #41 siap memulai perancangan kontrak data |
-| Sign-off resmi seluruh pemilik proses bisnis tercatat | MENUNGGU | Tabel sign-off di bawah masih PENDING | Penandatanganan dokumen `docs/f01-owner-decisions.md` |
+| EX01 | Master produk/bahan/unit/lokasi/pihak/employee beserta kamus kolom | P01-P03, P20 | [Master bahan](../tests/test_materials.py), [People](../tests/test_workforce.py); belum contoh struktur legacy |
+| EX02 | Planning, cutting campuran ukuran, bon bahan, label/handoff, koreksi | P04-P10 | [Cutting](../tests/test_cutting.py): `test_multi_size_output_and_rollback_when_one_size_is_short`; belum rumus rol/lembar/setelan |
+| EX03 | Template tarif, kartu job/approval/realisasi, reject/rework | P03, P11-P13 | [Sewing](../tests/test_sewing_jobs.py): `test_partial_jobs_capture_cost_outcome_turnaround_and_wip`; biaya total bukan rumus upah |
+| EX04 | Slip per employee, rekap satu periode, komponen, bukti bayar dan koreksi | P20-P23 | [Payroll](../tests/test_payroll_approvals.py): `test_decisions_roles_and_source_status_stays_immutable`; hanya approval agregat, belum slip/payroll native |
+| EX05 | Kasbon: saldo awal, pencairan, jadwal, cicilan, pelunasan dan reversal | P24 | Belum ada fixture ledger kasbon; pemilik menetapkan input dan saldo akhir sintetis |
+| EX06 | Daftar harga, struk POS dan dokumen setiap alur non-POS, payment/AR | P17-P18 | Belum ada fixture invoice/payment native; jangan memakai production order sebagai sales order |
+| EX07 | Retur/refund/void/tukar, settlement dan rekonsiliasi kanal | P15-P19 | [Retur](../tests/test_returns_adjustments.py): `test_partial_returns_restore_inspected_stock_with_lineage`; [margin](../tests/test_contribution_margin.py): `test_exact_partial_sales_margin_and_lineage`; belum refund uang native |
+| EX08 | PR/PO/receipt/retur/close, supplier invoice, AP Settlement with/non-PO | P06-P07, P25, P28 | [Supplier payment](../tests/test_supplier_payment_approvals.py): `test_request_requires_received_po_and_enters_unified_inbox`; hanya approval, belum pembayaran aktual |
+| EX09 | Kartu stok/modal/WIP/COGS dengan sumber harga dan biaya | P08, P14, P26 | [Biaya](../tests/test_production_cost.py): `test_exact_priced_material_waste_and_active_sewing_cost`; belum metode valuasi perusahaan |
+| EX10 | COA, jurnal, trial balance, AR/AP aging, kas/bank, closing dan laporan keuangan | P23, P27 | [Rekonsiliasi payroll](../tests/test_payroll_accounting_reconciliation.py): `test_reconciles_payment_and_posting_states`; metadata eksternal, bukan jurnal native |
+| EX11 | Slip, job, planning/cutting, kasbon, POS/payment, stok/modal, settlement, accounting dan laporan tambahan yang dipakai | P30, P34 dan semua proses domain | [Activity CSV](../tests/test_activity_export.py); belum persetujuan layout, filter dan control totals seluruh laporan |
+| EX12 | Daftar role, hak tindakan/unit, approval dan akses export/arsip | P29 | [Workforce approval](../tests/test_workforce_approvals.py): `test_roles_decisions_unified_inbox_and_attendance_remain_separate`; tiga role teknis belum matriks perusahaan |
+| EX13 | Daftar kanal, kontrak event/order/stok/retur/settlement, SLA dan pemilik data | P15-P19, P31 | [Sync](../tests/test_integration_sync.py), [order snapshot](../tests/test_jubelio_order_snapshots.py); belum connector/write-back |
+| EX14 | Export per domain, mapping ID, cutoff, saldo awal/delta/arsip, control totals | P32 | Belum fixture migrasi penuh; payload snapshot existing hanya contoh ingestion |
+| EX15 | Runbook backup/restore, cutover/rollback, target dan hasil latihan | P33 | [Backup](../tests/test_backup_download.py); belum bukti target RPO/RTO operasional |
 
-### Tabel Sign-Off Pemilik Proses Bisnis
+Alur pengumpulan dan persetujuan:
 
-| Peran Pemilik Bisnis | Cakupan Proses | Cakupan Keputusan | Status Persetujuan | Tanggal | Referensi Otorisasi |
-|---|---|---|---|---|---|
-| Kepala Produksi & QC | P03–P16 | D02, D03, D05, D13 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Kepala HR & Payroll | P20–P24 | D04, D06, D07, D08, D17 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Kepala Toko & Sales Kanal | P15–P19, P31 | D09, D10, D11, D18 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Kepala Pembelian & Purchasing | P06, P07, P25 | D12 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Kepala Keuangan & Akuntansi | P18, P19, P22–P28 | D07, D08, D11–D15, D19 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Operasi, Master Data & IT | P01, P02, P29–P34 | D01, D16, D17, D19, D20 | PENDING | [YYYY-MM-DD] | Menunggu pengesahan pemilik |
-| Koordinator Teknis Roadmap (A0) | Seluruh Paket F01 | Validasi Integritas & Kontrak F02 | REVIEW_READY | 2026-09-27 | F01-EXEC-20260927-1 |
+1. Pemilik proses menyediakan contoh di lokasi akses terbatas. A0 mencatat ID bukti,
+   peran pemilik dan ruang lingkup; jangan menaruh file mentah atau tautan ber-token
+   di repo/issue publik. Catat juga proses yang tidak terlihat oleh akun pemeriksa.
+2. Buat versi sintetis yang mempertahankan struktur, relasi ID, status, kasus tepi,
+   dan hubungan hitung. Ganti identitas, kontak, rekening, nominal dan referensi
+   sensitif secara konsisten. Simpan mapping ke sumber asli hanya di lokasi terbatas.
+3. Pemilik memeriksa bahwa struktur/aturan/kasus tetap representatif, menetapkan
+   hasil per baris dan total, serta menyetujui versi untuk PR/CI. Catat checksum
+   file yang disetujui, revisi Dxx, approver, waktu dan referensi approval aman.
+4. Baru tandai `APPROVED_SYNTHETIC`; tautkan file fixture dan tes paket penerima.
+   Tanpa approval tetap `MISSING_OWNER_APPROVAL`; data yang tidak berlaku harus
+   diberi keputusan eksplisit beserta alasan, bukan disembunyikan dari register.
+
+## Gerbang freeze dan sign-off
+
+| Pemeriksaan | Status saat ini | Bukti / tindak lanjut |
+|---|---|---|
+| Tiap proses memiliki input, aktor, status, hasil, koreksi, laporan, PJ | Tersusun untuk 34 proses cakupan roadmap | [Register P01-P34](f01-process-register.md); pemilik masih harus memvalidasi role, cakupan dan state target |
+| Matriks legacy ke One ke keputusan | Tersusun; parity belum diterima | Tiap Pxx mempunyai bukti One, Dxx dan paket penerima; bukti legacy belum tersedia |
+| Tidak menutup gap hanya karena akun audit tidak melihatnya | Diterapkan pada inventaris | Tidak ada gap berstatus selesai; proses tidak ditemukan tetap terbuka |
+| Ketidakpastian bisnis ditutup dan kontrak siap F02 | Belum terpenuhi | D01-D20 OPEN; aturan upah/valuasi/accounting/kanal tidak ditebak |
+| Contoh dokumen disamarkan dan disetujui | Belum terpenuhi | EX01-EX15 MISSING_OWNER_APPROVAL |
+| Reviewer lintas domain dan A0 menerima hasil | Menunggu | Catat review produksi/payroll, commerce/finance dan quality/operations pada PR; jangan menganggap merge sebagai approval bisnis |
+| Seluruh pemilik proses menyetujui freeze | Menunggu | Tabel sign-off di bawah belum disahkan |
+
+| Pemberi sign-off (peran, nama belum ditetapkan) | Lingkup | Status / waktu / referensi approval |
+|---|---|---|
+| Produksi + QC + gudang | P03-P16, D02-D05/D13 | PENDING / belum ada / belum ada |
+| HR/payroll | P20-P24, D04-D08/D17 | PENDING / belum ada / belum ada |
+| Sales/kanal + purchasing + marketing | P06-P07, P15-P19, P25/P28, D09-D12/D16/D18 | PENDING / belum ada / belum ada |
+| Finance/accounting | P18-P19, P22-P28, D07-D15/D19 | PENDING / belum ada / belum ada |
+| Operasi/master/akses/laporan | P01-P02, P29-P34, D01/D16-D20 | PENDING / belum ada / belum ada |
+| A0 + reviewer A1/A2/A3 | Kelengkapan register, bukti, kontrak penerima dan dependensi W0 | PENDING / belum ada / belum ada |
+
+Syarat freeze: cakupan dikonfirmasi semua role, Dxx disahkan dengan EXxx yang
+representatif (atau keputusan tidak berlaku beserta alasannya), hasil sintetis
+dapat dihitung ulang, dan sign-off tertaut ke revisi artefak. Perubahan setelah
+freeze harus mencatat dampak pada kontrak/fixture/paket. Sampai syarat ini terpenuhi,
+#40 tetap terbuka dan W0 belum lolos; F02 boleh inventaris read-only tetapi tidak
+mengklaim kontrak bisnis final. Paket berikutnya mengikuti dependensi penerimaan #39.
+
+## Handoff teknis
+
+- Branch: `docs/f01-business-process-register`, worktree khusus F01.
+- Commit dasar: `2bee57075b2e0826dfcd581691d37585e7dd1df2`.
+  Commit akhir artefak: commit pada PR yang menambahkan dokumen ini; SHA lengkap
+  dicatat pada body PR sesudah commit agar tidak membuat referensi diri yang berubah.
+- Perubahan: `README.md`, `docs/f01-process-register.md`,
+  `docs/f01-decisions-evidence.md`. Tidak mengubah runtime, kontrak API, schema,
+  migrasi atau versi aplikasi; tidak memerlukan nomor migrasi baru.
+- Bukti verifikasi dan perintah dicatat pada body PR dengan SHA yang diuji.
+  Pemeriksaan struktur/tautan dokumen tidak membuktikan aturan bisnis benar.
+  Tes existing menguji perilaku baseline, bukan penerimaan payroll/accounting baru.
+- Risiko utama: daftar role/proses belum divalidasi pemilik, belum ada dokumen
+  approved, dan snapshot/approval dapat disalahartikan sebagai transaksi native.
+  Dxx dan EXxx membuat keterbatasan tersebut terlihat bagi paket penerima.
+- Langkah berikutnya: A0 menunjuk pemilik dan reviewer, meminta EX01-EX15,
+  menyelesaikan D01-D20, memperbarui state/aktor/laporan register, lalu meminta
+  sign-off pada revisi yang sama. Tidak ada klaim reviewer telah menerima hasil.
+
+
+## Status bukti per keputusan — overlay audit permukaan
+
+`PRIOR_AUDIT_REPORTED` berarti issue #40 merangkum apa yang tampak di UI; sumber mentah dan record-level trace tidak tersedia. Lihat paket keputusan `docs/f01-owner-decisions.md` untuk masing-masing keputusan: legacy yang dilaporkan, unknown, proposal, alternatif, ilustrasi sintetis, dampak, dan pertanyaan. Tidak ada Dxx berstatus APPROVED.
+
+| Dxx | Bukti UI terdahulu yang relevan | Status aturan legacy | Bukti yang kurang |
+|---|---|---|---|
+| D01 | EV-F01-0008, EV-F01-0009, EV-F01-0012 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | BLOCKED_BY_FIELD_AND_TRANSACTION_EVIDENCE |
+| D02 | EV-F01-0011 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_LEGACY_TRACE |
+| D03 | EV-F01-0011 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_TRANSACTION_TRACE |
+| D04 | EV-F01-0003, EV-F01-0009, EV-F01-0010 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_SLIP_AND_HISTORY_TRACE |
+| D05 | EV-F01-0003 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_OWNER_AND_LEGACY_CASES |
+| D06 | EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_SLIP_TRACE |
+| D07 | EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_LINKED_SLIP_AND_PAYMENT_TRACE |
+| D08 | EV-F01-0004 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_LINKED_CASHBON_PAYROLL_TRACE |
+| D09 | EV-F01-0005, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_TRACE |
+| D10 | EV-F01-0005 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_TRANSACTION_TRACE |
+| D11 | EV-F01-0006 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_POS_PAYMENT_TRACE |
+| D12 | EV-F01-0007 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_AP_TRANSACTION_TRACE |
+| D13 | EV-F01-0013, EV-F01-0016 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_COST_AND_ANOMALY_TRACE |
+| D14 | EV-F01-0001, EV-F01-0017 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | OWNER_SCOPE_DECISION_POSSIBLE_WITH_EVIDENCE_CAVEAT |
+| D15 | EV-F01-0019, EV-F01-0002 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ACCOUNTING_WORKFLOW_EVIDENCE |
+| D16 | EV-F01-0014, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_REPORT_AND_DOWNLOAD_TRACE |
+| D17 | EV-F01-0012, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_ROLE_OWNER_AND_ACCESS_EVIDENCE |
+| D18 | EV-F01-0001, EV-F01-0015 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_CHANNEL_AND_VENDOR_TRACE |
+| D19 | EV-F01-0016, EV-F01-0017 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_EXPORT_AND_PROFILE |
+| D20 | EV-F01-0001, EV-F01-0018 | PRIOR_AUDIT_REPORTED / PROPOSED (bukan rule verified) | NEEDS_OPERATIONS_AND_UAT_EVIDENCE |
+
+### Koreksi periode akuntansi
+
+Klaim draf awal bahwa `/settings/periods` sudah diamati dihapus. Sumber audit dan daftar navigasi yang tersedia tidak mendukung klaim itu; status path **UNVERIFIED**. Periode payroll bukan bukti period-close akuntansi. Tidak menyimpulkan seluruh proses accounting tidak ada karena menu tidak tampak pada catatan audit.

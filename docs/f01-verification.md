@@ -1,76 +1,44 @@
-# Verifikasi dan Validasi F01 — Beeloft One
+# Verifikasi F01 — status aktual
 
-Status Paket: **REVIEW_READY**
-Target Akhir: Menunggu pengesahan pemilik bisnis untuk mencapai **BUSINESS_ACCEPTED**
-Versi Laporan: `F01-VERIF-20260927-1`
-Execution Baseline: `96bb48fa8889b3a483411768e2543838e69233b0` (aplikasi `0.114.0`, schema `55`)
-Tanggal: 27 September 2026 WIB
-Induk Issue: [#40](https://github.com/wenn-id/beeloftone/issues/40) (Roadmap F01)
+Status paket: **IN_PROGRESS — belum REVIEW_READY dan belum BUSINESS_ACCEPTED**. Issue #40 tetap OPEN. Status ini memisahkan pemeriksaan dokumen dari penerimaan bisnis.
 
----
+- Execution baseline tercatat: `96bb48fa8889b3a483411768e2543838e69233b0`, versi aplikasi 0.114.0, schema 55.
+- Prior audit di Issue #40 bertanggal 27 September 2026 hanya mencatat tanggal; jam observasi dan transaction sampling tidak tersedia.
+- Browser headless gagal sebelum halaman login (`browser-harness: daemon default didn't come up`); desktop capture memberi `windows: []`. Tidak ada login, kredensial diketik, atau transaksi diperiksa dalam sesi revisi ini. Lihat `EV-F01-0018`.
+- `/settings/periods` tidak didukung bukti sumber audit yang tersedia dan kini `UNVERIFIED`. Lihat `EV-F01-0019`.
+- T03/T04 transaction traces belum dilakukan: jobs/payroll/payment/cashbon, POS/tenders/returns, AP/PO/receipt/payment. T01–T08 tidak dinyatakan selesai.
+- Contoh JSON adalah ilustrasi sintetis; tidak menetapkan expected business results atau perilaku legacy.
 
-## 1. Checkpoint Pelaksanaan Tugas T00 s/d T10
+## Checkpoint
 
-| Tahap | Nama Tugas | Status | Waktu (WIB) | Bukti & Artefak Utama | Catatan & Blocker |
-|---|---|---|---|---|---|
-| **T00** | Baseline dan Workspace | SELESAI | 2026-09-27 10:00 | Git worktree `docs/f01-legacy-evidence-20260927`, commit `96bb48fa`, v0.114.0, schema 55 | Tidak ada root `AGENTS.md`. Workspace bersih. |
-| **T01** | Register Bukti dan Akses | SELESAI | 2026-09-27 11:00 | `docs/f01-legacy-evidence.md` (35 item bukti `EV-F01-0001..0035`) | Akses read-only berotorisasi terdahulu (27 September 2026). Sesi interaktif baru terhalang (ACCESS_BLOCKED). Bukti mentah tetap privat. |
-| **T02** | Master, Template dan Satuan | SELESAI | 2026-09-27 12:00 | `docs/f01-field-map.csv` (58 field lengkap terpetakan) | Disposisi KEEP, MAP, MERGE, RETIRE_PROPOSED, UNKNOWN. Rekomendasi pembersihan kolom usang tercatat. |
-| **T03** | Produksi, Job, Payroll dan Kasbon | SELESAI | 2026-09-27 13:00 | Rekonsiliasi hitung desimal di `docs/f01-legacy-evidence.md`, D02–D08 | Selisih pembulatan lusin per baris vs total diuji. Batas bawah Net Pay >= 0 dirumuskan. |
-| **T04** | POS / Penjualan dan Pembelian / AP | SELESAI | 2026-09-27 14:00 | Form POS, AP Settlement, D09–D12 | Hierarki diskon item vs nota; 3-way matching with-PO vs non-PO dirumuskan. |
-| **T05** | Stok, Modal, Accounting, Laporan | SELESAI | 2026-09-27 15:00 | D13–D16, investigasi #108 | Rekomendasi moving average; kebijakan karantina data stok negatif beridentitas kosong (#108). |
-| **T06** | Role, Integrasi, Migrasi, Operasi | SELESAI | 2026-09-27 16:00 | D17–D20, seluruh 34 proses terpetakan di `docs/f01-process-register.md` | Matriks pemisahan tugas (anti self-approval); strategi cutoff migrasi saldo awal. |
-| **T07** | Kasus Sintetis dan Rekonsiliasi | SELESAI | 2026-09-27 17:00 | `docs/f01-legacy-cases.json` (24 kasus sintetis) | Skenario QTY, RATE, PAY, POS, AP, CTRL terpetakan ke F02 (`QTY-RATE-01`, dll). `synthetic=true`. |
-| **T08** | Verifikasi Dokumen & Draft PR | SELESAI | 2026-09-27 18:00 | `docs/f01-verification.md`, validasi skrip lulus | Diff bersih hanya menyentuh allowlist bagian 8. Zero privacy leak. |
-| **T09** | Keputusan Pemilik, Review, Freeze | MENUNGGU | 2026-09-27 18:30 | `docs/f01-owner-decisions.md` disiapkan untuk pemilik bisnis | Status REVIEW_READY. Memerlukan ketukan palu pemilik untuk mencapai BUSINESS_ACCEPTED. |
-| **T10** | Handoff ke Issue #41 (F02) | SELESAI | 2026-09-27 19:00 | `docs/f01-f02-handoff.md` lengkap terpetakan | Siap dikonsumsi F02 tanpa memodifikasi fixture downstream F02 secara prematur. |
+| Tugas | Status aktual | Bukti / gap |
+|---|---|---|
+| T00 Baseline/worktree | Terverifikasi | Baseline SHA/version/schema; branch terisolasi.
+| T01 Sumber legacy/access | Parsial/terhalang | Prior audit report ada; no new browser access; timestamps/sampling details missing.
+| T02 Master/UOM | Parsial | Surface groups only; field-level types/required/relations not recorded.
+| T03 Jobs/payroll/cashbon | Belum | No linked transaction trace or slip values.
+| T04 POS/AP | Belum | No invoice/tender/refund or PO/receipt/settlement trace.
+| T05 stock/accounting/reports | Parsial | Issue #108 UI report; cost method/report file/accounting period unverified.
+| T06 roles/integration/migration/ops | Belum | No role matrix/vendor list/export/profile/runbook evidence.
+| T07 synthetic cases | Parsial | Scenarios are questions/illustrations only; no legacy oracle.
+| T08 document verification | Berjalan | Re-run structural/consistency/privacy checks after this revision; not UAT.
+| T09 owner acceptance/freeze | Pending | No decision or sign-off recorded.
+| T10 F02 handoff | Draft | Provisional handoff; do not use as final business contract.
 
----
+## Verification commands to run on the final PR head
 
-## 2. Hasil Pemeriksaan Validasi Integritas (T08 Checklist)
+Record exit codes and output only after running them on the final head. The prior green CI run was attached to an earlier PR head and does not verify the revision now in progress.
 
-Validasi dijalankan secara otomatis menggunakan skrip Python deterministik:
+- `python3 /tmp/validate_f01_current.py` — structural checks (IDs, CSV/JSON, references, proposal/approval statuses).
+- `git diff --check` — whitespace.
+- `python3 -m unittest tests/test_readme_test_count.py tests/test_openapi_contract.py` — repository contract subset; run again after final revision.
+- `gh pr checks 109 -R wenn-id/beeloftone` — exact-head CI status; CodeRabbit skips Draft review.
 
-### 2.1. Kelengkapan Identitas Proses, Keputusan & Bukti
-- **Proses Register (P01–P34):** 34/34 proses lengkap. Setiap baris memiliki Input, Aktor, Status/Titik Keputusan, Hasil, Koreksi, Laporan, PJ Bisnis Usulan, Bukti One pada commit `96bb48fa`, Bukti Legacy / Gap, Keputusan terkait (Dxx), dan Paket Roadmap Penerima.
-- **Register Keputusan (D01–D20):** 20/20 keputusan lengkap. Setiap entri memuat nomor versi aturan kandidat (`rule_version`), rumus/usulan kandidat, unit & presisi rounding, relasi kasus sintetis, bukti terkait, proses terdampak, dan isu pemblokir. Status seluruhnya jujur tercatat: `PROPOSED` (atau `OPEN`).
-- **Katalog Bukti Sintetis (EX01–EX15):** 15/15 kelompok bukti terpetakan ke skenario kasus sintetis di `docs/f01-legacy-cases.json` dengan status jujur: `DRAFT_SYNTHETIC` (belum disahkan pemilik).
-- **Area Audit (AUD-01 s/d AUD-17):** 17/17 area audit langsung 27 September 2026 terpetakan penuh ke bukti `EV-F01-xxxx` dan paket roadmap penerima (#43, #44, #48, #49, #50, #52, #53, #54, #55, #56, #57, #58, #60).
+No zero-PII assertion until a fresh manual content review of the final diff. Static regex alone is insufficient. No runtime/schema/API changes are intended; verify allowlist on final diff.
 
-### 2.2. Validasi Struktur Format File
-- **CSV Data (`docs/f01-field-map.csv`):**
-  - Berhasil diurai menggunakan `csv.DictReader`.
-  - Header persis sesuai Bagian 6 rencana eksekusi:
-    `field_id,legacy_path,screen_or_document,legacy_field,observed_type,unit,required_status,relation,process_ids,decision_ids,evidence_ids,one_current_model_field,target_disposition,target_issue,open_question`
-  - Total 58 field terinventarisasi dari 30 halaman menu dan 8 form input.
-  - Setiap baris memiliki jumlah kolom yang seragam. Disposisi valid (`KEEP`, `MAP`, `MERGE`, `RETIRE_PROPOSED`, `UNKNOWN`).
-- **JSON Data (`docs/f01-legacy-cases.json`):**
-  - Berhasil diurai menggunakan `json.loads`.
-  - Top-level schema lengkap: `revision`, `execution_baseline`, `synthetic: true`, `generated_at_wib`, `evidence_catalog`, `decisions`, `cases`, `sign_off`.
-  - 24 kasus sintetis mencakup skenario pembeda (QTY, RATE, PAY, POS, AP, CTRL).
-  - Seluruh nominal uang dan kuantitas pecahan berbentuk string `Decimal` (contoh: `"12.5"`, `"150000.00"`).
-  - Kolom `expected_business_result: null` secara konsisten pada semua kasus karena belum disahkan pemilik.
-  - Perhitungan `candidate_result` dapat dihitung ulang secara deterministik menggunakan modul Python `decimal.Decimal` dengan presisi `ROUND_HALF_UP`.
+## Blockers / next evidence
 
-### 2.3. Audit Kepatuhan Privasi dan Keamanan (Privacy Scan)
-Pemeriksaan dilakukan secara mendalam pada seluruh file yang diubah dan dibuat:
-- **Kredensial / Kata Sandi:** 0 ditemukan (tidak ada kata sandi, token API, secret key, atau header auth).
-- **Data Pribadi (PII):** 0 ditemukan (seluruh nama orang menggunakan penanda sintetis `EMP-A`, `USER-FIN-01`; nomor telepon dan rekening bank asli tidak disimpan di repositori).
-- **Data Transaksi Nyata:** 0 ditemukan (seluruh nomor struk, nomor faktur, dan nominal uang adalah data buatan/sintetis dengan pola representatif).
-- **Tautan Eksternal Sensitif:** 0 URL bertoken atau URL internal yang membocorkan data produksi.
-
-### 2.4. Integritas Git dan Batas Perubahan (Git Diff Check)
-- Hasil `git diff --check` bersih (tidak ada whitespace error, trailing space, atau conflict markers).
-- Allowlist file Bagian 8 dipatuhi secara ketat:
-  - Diubah: `docs/f01-process-register.md`, `docs/f01-decisions-evidence.md`, `README.md`.
-  - Dibuat: `docs/f01-legacy-evidence.md`, `docs/f01-field-map.csv`, `docs/f01-legacy-cases.json`, `docs/f01-owner-decisions.md`, `docs/f01-f02-handoff.md`, `docs/f01-verification.md`.
-- **Tidak ada perubahan** pada kode runtime (`beeloft/*.py`), database/schema (tetap schema 55), API/OpenAPI, versi paket (`pyproject.toml` tetap v0.114.0), maupun fixture downstream (`tests/fixtures/f02-contracts.json`).
-- Kontrak baris README dan test suite `tests/test_readme_test_count.py` serta `tests/test_openapi_contract.py` tetap **LULUS (GREEN)**.
-
----
-
-## 3. Batasan Verifikasi
-
-1. **Uji Dokumen vs Uji Runtime:** Verifikasi yang dicatat di sini adalah validasi kelengkapan spesifikasi, integritas data referensi, dan ketertelusuran dokumen bisnis (discovery verification). Hal ini bukan klaim bahwa pengujian UAT aplikasi atau transaksi produksi Beeloft One telah selesai.
-2. **Keterbatasan Akun Read-Only:** Sesuai batas tindakan keselamatan, tidak ada pengujian penyimpanan formulir bisnis (write mutations) yang dijalankan pada sistem legacy.
-3. **Status Gerbang Freeze:** Status paket berada pada level **REVIEW_READY**. Transisi ke status **BUSINESS_ACCEPTED** membutuhkan persetujuan resmi tertulis dari Business Owner pada dokumen `docs/f01-owner-decisions.md`.
+1. Safe authenticated browser session did not start. Resume read-only via approved UI session; do not type previously exposed credentials. If blocked, identify authorized way to launch signed-in session/rotate credential, then inspect the exact sample groups listed in `f01-legacy-evidence.md`.
+2. Need owner/process custodians to locate candidate job→payroll→paid evidence, linked cashbon balance events, POS invoices/tenders/refunds, and AP settlement→PO/receipt/invoice/payment. Store raw records in restricted location only; publish only synthetic IDs/results.
+3. Need accounting/role/channel/export/operations owners to supply evidence not visible in prior menu report.
+4. Only after those sources are reviewed can final recommendation set and owner-ready decision list be reduced.

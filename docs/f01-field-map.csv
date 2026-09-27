@@ -1,59 +1,17 @@
 field_id,legacy_path,screen_or_document,legacy_field,observed_type,unit,required_status,relation,process_ids,decision_ids,evidence_ids,one_current_model_field,target_disposition,target_issue,open_question
-FLD-SKU-001,/products/list,Product List,SKU,string,code,observed_required,products.sku,P01,D01,EV-F01-0019,ProductCreate.sku,KEEP,#43,none
-FLD-SKU-002,/products/list,Product List,Product Name,string,text,observed_required,products.name,P01,D01,EV-F01-0019,ProductCreate.name,KEEP,#43,none
-FLD-SKU-003,/products/colors,Colors,Color,string,text,observed_required,products.color,P01,D01,"EV-F01-0016, EV-F01-0019",ProductCreate.color,KEEP,#43,none
-FLD-SKU-004,/products/sizes,Sizes,Size,string,text,observed_required,products.size,P01,D01,"EV-F01-0015, EV-F01-0019",ProductCreate.size,KEEP,#43,none
-FLD-SKU-005,/products/category,Product Category,Category,string,text,observed_optional,product_categories.name,P01,D01,"EV-F01-0012, EV-F01-0019",none,MAP,#43,Klasifikasi kategori produk di One
-FLD-SKU-006,/products/sub-category,Product Sub Category,Sub Category,string,text,observed_optional,product_sub_categories.name,P01,D01,EV-F01-0013,none,MAP,#43,Subkategori dipertahankan atau digabung ke kategori
-FLD-SKU-007,/products/item-series,Item Series,Series Name,string,text,observed_optional,item_series.name,P01,D01,EV-F01-0017,none,MAP,#43,Penyimpanan seri model produk
-FLD-SKU-008,/products/type,Product Type,Product Type,string,text,observed_optional,product_types.name,P01,D01,EV-F01-0018,none,MERGE,#43,Penggabungan tipe produk ke kategori
-FLD-SKU-009,/products/uoms,UOMs,UOM Code,string,code,observed_required,uoms.code,P01,D01,EV-F01-0014,none,MAP,#43,Tabel master satuan UOM
-FLD-SKU-010,/products/uoms,UOMs,Range,string,text,observed_optional,uoms.range,P01,D01,EV-F01-0014,none,RETIRE_PROPOSED,#43,Arti bisnis field Range tidak jelas; usulan dihentikan
-FLD-SKU-011,/products/list,Product List,Selling Price,number,IDR,observed_optional,products.selling_price,P17,D10,EV-F01-0019,none,MAP,#57,Daftar harga retail per SKU
-FLD-MAT-001,/materials/list,Material List,Material Code,string,code,observed_required,materials.code,P01,D01,EV-F01-0006,MaterialCreate.code,KEEP,#43,none
-FLD-MAT-002,/materials/list,Material List,Material Name,string,text,observed_required,materials.name,P01,D01,EV-F01-0006,MaterialCreate.name,KEEP,#43,none
-FLD-MAT-003,/materials/list,Material List,Unit,string,uom,observed_required,materials.unit,P01,D01,EV-F01-0006,MaterialCreate.unit,KEEP,#43,none
-FLD-MAT-004,/materials/category,Material Category,Category,string,text,observed_optional,material_categories.name,P01,D01,EV-F01-0003,none,MAP,#43,Klasifikasi bahan baku
-FLD-MAT-005,/materials/sub-category,Material Sub Category,Sub Category,string,text,observed_optional,material_sub_categories.name,P01,D01,EV-F01-0004,none,MAP,#43,none
-FLD-MAT-006,/materials/type,Material Type,Sub Sub Category,string,text,observed_optional,material_types.name,P01,D01,EV-F01-0005,none,MERGE,#43,Sederhanakan tingkat klasifikasi
-FLD-PLN-001,/production/planning,Planning,Plan Code,string,code,observed_required,plans.code,P04,D02,EV-F01-0007,OrderCreate.reference,MAP,#49,none
-FLD-PLN-002,/production/planning,Planning,Target Qty Pcs,integer,pcs,observed_required,plans.target_pcs,P04,D02,EV-F01-0007,OrderCreate.lines[].quantity,KEEP,#49,none
-FLD-PLN-003,/production/planning,Planning,Deadline,date,YYYY-MM-DD,observed_required,plans.deadline,P04,D02,EV-F01-0007,OrderCreate.deadline,KEEP,#49,none
-FLD-PLN-004,/production/planning,Planning,PIC,string,text,observed_required,plans.pic,P04,D02,EV-F01-0007,OrderCreate.pic,MAP,"#44, #49",PIC diarahkan ke employee_id di M02
-FLD-CUT-001,/production/cutting,Cutting,Number of Rolls,integer,rol,observed_optional,cutting.rolls,P09,D03,EV-F01-0008,none,MAP,#49,Simpan jumlah rol kain di metadata cutting run
-FLD-CUT-002,/production/cutting,Cutting,Roll Weight,number,kg,observed_optional,cutting.weight_kg,P09,D03,EV-F01-0008,none,MAP,#49,Berat rol kain dalam kg
-FLD-CUT-003,/production/cutting,Cutting,Sheets (Lembar),integer,lembar,observed_required,cutting.sheets,P09,D03,EV-F01-0008,none,MAP,#49,Lembar gelaran kain
-FLD-CUT-004,/production/cutting,Cutting,Suits Per Sheet,integer,setelan/lembar,observed_required,cutting.suits_per_sheet,P09,D03,EV-F01-0008,none,MAP,#49,Rasio output pola per lembar
-FLD-CUT-005,/production/cutting,Cutting,Product Weight,number,gram,observed_optional,cutting.product_weight_gram,P09,D03,EV-F01-0008,none,MAP,#49,Berat pola produk dalam gram
-FLD-CUT-006,/production/cutting,Cutting,PO Reference,string,code,observed_optional,cutting.po_reference,"P08, P09",D03,EV-F01-0008,material_batches.purchase_order_id,MERGE,#49,PO diturunkan dari batch bahan yang di-issue
-FLD-JOB-001,/payroll/job,Job,Job Code,string,code,observed_required,jobs.code,P11,D05,EV-F01-0029,SewingJobCreate.reference,MAP,#52,none
-FLD-JOB-002,/payroll/job,Job,Employee,string,id,observed_required,jobs.employee_id,"P11, P20","D05, D06",EV-F01-0029,SewingJobCreate.assignee,MAP,#52,Migrasi dari assignee teks ke employee_id FK
-FLD-JOB-003,/payroll/job-type,Job Type,Rate Per Dozen,number,IDR/lusin,observed_required,job_types.rate_dozen,"P03, P11",D04,EV-F01-0027,none,MAP,"#48, #52",Tarif upah borongan per lusin
-FLD-JOB-004,/payroll/job,Job,Ready On Cutting,integer,pcs,observed_optional,jobs.ready_cutting,"P10, P11",D05,EV-F01-0029,none,MAP,"#49, #52",Saldo bundle cutting siap jahit
-FLD-JOB-005,/payroll/job,Job,Actual Realisasi Pcs,integer,pcs,observed_required,jobs.actual_pcs,P11,D05,EV-F01-0029,SewingJobComplete.completed_quantity,KEEP,#52,Pisahkan actual vs payable bila ada reject
-FLD-PAY-001,/payroll/payrolls,Payroll Slip,Slip Code,string,code,observed_required,payrolls.code,P22,D07,EV-F01-0032,none,MAP,#55,Nomor unik slip gaji per karyawan
-FLD-PAY-002,/payroll/payrolls,Payroll Slip,Realisasi Lusin,number,lusin,observed_required,payroll_lines.dozen_qty,P22,D04,EV-F01-0033,none,MAP,#55,Tampilan pecahan lusin (4 desimal) vs exact Decimal
-FLD-PAY-003,/payroll/payrolls,Payroll Slip,Job Amount,number,IDR,observed_required,payroll_lines.amount,P22,D04,EV-F01-0033,none,MAP,#55,Amount per baris pekerjaan
-FLD-PAY-004,/payroll/payrolls,Payroll Slip,Attendance Premium,number,IDR,observed_optional,payrolls.attendance_premium,P22,D06,EV-F01-0033,none,MAP,#55,Premi kehadiran
-FLD-PAY-005,/payroll/payrolls,Payroll Slip,Transport Allowance,number,IDR,observed_optional,payrolls.transport_allowance,P22,D06,EV-F01-0033,none,MAP,#55,Uang transport
-FLD-PAY-006,/payroll/payrolls,Payroll Slip,Bonus,number,IDR,observed_optional,payrolls.bonus,P22,D06,EV-F01-0033,none,MAP,#55,Bonus operasional/prestasi
-FLD-PAY-007,/payroll/payrolls,Payroll Slip,Cashbon Payment (Potongan),number,IDR,observed_optional,payrolls.cashbon_deduction,"P22, P24",D08,EV-F01-0033,none,MAP,"#55, #56",Potongan pelunasan kasbon
-FLD-PAY-008,/payroll/payrolls,Payroll Slip,Nett Pay,number,IDR,observed_required,payrolls.net_amount,P22,D06,EV-F01-0033,none,MAP,#55,Total take-home pay
-FLD-KAS-001,/payroll/cash-receipt,Cash Receipt,Receipt Code,string,code,observed_required,cash_receipts.code,P24,D08,EV-F01-0030,none,MAP,#56,Nomor pinjaman kasbon
-FLD-KAS-002,/payroll/cash-receipt,Cash Receipt,Disbursed Amount,number,IDR,observed_required,cash_receipts.amount,P24,D08,EV-F01-0030,none,MAP,#56,Nominal pencairan kasbon
-FLD-KAS-003,/payroll/cash-receipt,Cash Receipt,Balance / Sisa Saldo,number,IDR,observed_required,cash_receipts.balance,P24,D08,EV-F01-0030,none,MAP,#56,Saldo sisa pinjaman
-FLD-POS-001,/sales/pos,POS Invoice,Invoice Code,string,code,observed_required,pos_invoices.code,P17,"D09, D10",EV-F01-0021,none,MAP,#57,Nomor invoice POS
-FLD-POS-002,/sales/pos-template,POS Template,Business Unit,string,id,observed_required,pos_templates.business_unit_id,"P02, P17","D01, D09",EV-F01-0020,none,MAP,"#44, #57",Unit bisnis outlet POS
-FLD-POS-003,/sales/pos-template,POS Template,Storage,string,id,observed_required,pos_templates.storage_id,"P02, P17","D01, D09",EV-F01-0020,none,MAP,"#44, #57",Lokasi gudang default kasir
-FLD-POS-004,/sales/pos,POS Invoice,Customer Name,string,text,observed_optional,pos_invoices.customer_name,P17,D09,EV-F01-0021,none,MAP,#57,Pelanggan umum / terdaftar
-FLD-POS-005,/sales/pos,POS Invoice,Payment Method,string,code,observed_required,pos_invoices.payment_method,P18,D11,EV-F01-0021,none,MAP,#58,"Tunai, Transfer, QRIS, Kartu Debit"
-FLD-POS-006,/sales/pos,POS Invoice,Amount Paid,number,IDR,observed_required,pos_invoices.amount_paid,P18,D11,EV-F01-0021,none,MAP,#58,Jumlah uang yang dibayarkan
-FLD-POS-007,/sales/pos,POS Invoice,Change Amount,number,IDR,observed_required,pos_invoices.change_amount,P18,D11,EV-F01-0021,none,MAP,#58,Kembalian kasir
-FLD-STK-001,/stocks/stck-prdct,Stock Products,Quantity,integer,pcs,observed_required,stocks.quantity,P14,D13,EV-F01-0022,WarehouseMovementCreate.quantity,KEEP,#53,none
-FLD-STK-002,/stocks/stck-prdct,Stock Products,Capital (Harga Modal),number,IDR/pcs,observed_optional,stocks.capital,P26,D13,EV-F01-0022,none,MAP,#53,Metode pembaruan capital (FIFO vs average) perlu keputusan D13
-FLD-STK-003,/stocks/stck-prdct,Stock Products,Total Capital Amount,number,IDR,observed_optional,stocks.total_capital,P26,D13,EV-F01-0022,none,MAP,#53,Qty x Capital
-FLD-AP-001,/orders/ap-settlement,AP Settlement,Supplier,string,id,observed_required,ap_settlements.supplier_id,P25,D12,EV-F01-0024,SupplierCreate.code,MAP,#54,none
-FLD-AP-002,/orders/ap-settlement,AP Settlement,Supplier Document,string,code,observed_optional,ap_settlements.supplier_doc,P25,D12,EV-F01-0024,SupplierPaymentRequestCreate.invoice_reference,KEEP,#54,Nomor surat jalan/faktur tagihan supplier
-FLD-AP-003,/orders/ap-settlement,AP Settlement,Settlement Amount,number,IDR,observed_required,ap_settlements.amount,P25,D12,EV-F01-0024,SupplierPaymentRequestCreate.amount,KEEP,#54,Nilai pembayaran utang
-FLD-SET-001,/support/title-report,Title Reports,Report Title,string,text,observed_required,title_reports.title,P30,D16,EV-F01-0001,none,MAP,#60,Kop surat dokumen resmi
-FLD-SET-002,/support/title-report,Title Reports,Company Name,string,text,observed_required,title_reports.company_name,P30,D16,EV-F01-0001,none,MAP,#60,none
+FM-01,/products/list,Product List,"Product classification/series/color/size/status (reported group, not field list)",unknown,unknown,unknown,unknown,P01,D01,EV-F01-0008,UNVERIFIED,UNKNOWN,#40,Field-level source/sample required; no required/type/relationship behavior is established by the prior audit report.
+FM-02,/materials/list,Material List,Material classification/price/UOM/description (reported group),unknown,not recorded,unknown,unknown,P01-P02,"D01,D13",EV-F01-0008,UNVERIFIED,UNKNOWN,#43,Field-level source/sample required; no required/type/relationship behavior is established by the prior audit report.
+FM-03,/products/uoms,UOM,UOM / Range,unknown,not recorded,unknown,unknown,P01,D01,EV-F01-0009,UNVERIFIED,UNKNOWN,#43,What does Range mean? No required flag/type/precision is recorded.
+FM-04,/products/master-service-setting,Service setting/history,Service tariff and history area,unknown,not recorded,unknown,unknown,"P03,P11",D04,EV-F01-0010,UNVERIFIED,UNKNOWN,#48,Need actual historical values and effective-date behavior.
+FM-05,/production/planning,Planning,Code/date/target/status area,unknown,not recorded,unknown,unknown,P04,D02,EV-F01-0011,UNVERIFIED,UNKNOWN,#49,Field-level source/sample required; no required/type/relationship behavior is established by the prior audit report.
+FM-06,/production/cutting,Cutting,Roll/weight/sheet/setelan/gram/realization area,unknown,reported kg/gram labels; unit conversion unknown,unknown,unknown,P09,D03,EV-F01-0011,UNVERIFIED,UNKNOWN,#49,Need transaction detail and physical-to-stored units.
+FM-07,/payroll/job,Job,Employee/product/realization lusin/tariff/amount group,unknown,reported pcs/lusin terms; precision unknown,unknown,unknown,"P11,P22","D04,D05",EV-F01-0003,UNVERIFIED,UNKNOWN,#52,#55
+FM-08,/payroll/payrolls,Payroll detail,Employee gross/net and payment status group,unknown,currency not recorded,unknown,unknown,"P22,P23","D06,D07",EV-F01-0002,UNVERIFIED,UNKNOWN,#55,"Need selected slip, exact component labels, formula and payment evidence."
+FM-09,/payroll/cash-receipt,Cash receipt,Cashbon/due date/payment relation group,unknown,currency not recorded,unknown,unknown,P24,D08,EV-F01-0004,UNVERIFIED,UNKNOWN,#56,Need linked cashbon/payroll event history.
+FM-10,/sales/pos,POS,Customer/invoice/unit/storage/discount group,unknown,not recorded,unknown,unknown,P17,"D09,D10",EV-F01-0005,UNVERIFIED,UNKNOWN,#57,Need real invoice lines and amount basis.
+FM-11,/sales/pos,POS payment,Payment method/amount/change group,unknown,currency not recorded,unknown,unknown,P18,D11,EV-F01-0006,UNVERIFIED,UNKNOWN,#58,Need tender/refund/void records and proof of settlement.
+FM-12,/orders/ap-settlement,AP settlement,With/non-PO/supplier-document group,unknown,not recorded,unknown,unknown,P25,D12,EV-F01-0007,UNVERIFIED,UNKNOWN,#54,Need PO/receipt/invoice/payment chain.
+FM-13,/stocks/stck-prdct,Stock products,Quantity/Capital/Total group,unknown,unit and currency not recorded,unknown,unknown,"P14,P26",D13,EV-F01-0013,UNVERIFIED,UNKNOWN,#53,Need source movements and cost method.
+FM-14,/support/title-report,Title Reports,Report header/configuration area,unknown,not recorded,unknown,unknown,P30,D16,EV-F01-0014,UNVERIFIED,UNKNOWN,#60,Need download file and required report templates.
+FM-15,/dashboard,Dashboard,Sales/customer/product/user by-period metric group,unknown,period/timezone not recorded,unknown,unknown,"P30,P34",D16,EV-F01-0015,UNVERIFIED,UNKNOWN,#60,Need metric definition and transaction reconciliation.
+FM-16,/settings/periods,UNVERIFIED; unsupported prior claim,Accounting period route claim,unknown,unknown,unknown,unknown,P27,"D14,D15",EV-F01-0019,UNVERIFIED,UNKNOWN,#46,No supporting record in source audit; verify only through authorized visible navigation.
