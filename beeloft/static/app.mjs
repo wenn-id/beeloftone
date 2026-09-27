@@ -7791,7 +7791,7 @@ const CATALOG_TABS = [
   {kind: 'material_class', api: 'material-classes', title: 'Klasifikasi bahan'},
   {kind: 'bom_template', api: null, title: 'Template BOM'},
 ];
-let catalogTab = 'uoms';
+let catalogTab = 'uom';
 let catalogRowsCache = [];
 function showMasterCatalog() {
   activateWorkspace('master-catalog');

@@ -462,7 +462,13 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
   assert.ok((await page.locator('#dialog-content').textContent()).includes(
     'Kode, nama, dan satuan tidak dapat diubah setelah disimpan.'),
     'the immutability rule must stay visible');
-  assert.equal(await page.locator('#dialog-content .field').count(), 3);
+  // M01 adds optional catalog metadata alongside the three material identity fields.
+  for (const label of ['Klasifikasi', 'Deskripsi', 'Harga acuan (Rp)']) {
+    const input = page.getByLabel(label, {exact: true});
+    assert.equal(await input.count(), 1, `${label} must have its exact accessible name`);
+    assert.equal(await input.evaluate(node => node.required), false, `${label} stays optional`);
+  }
+  assert.equal(await page.locator('#dialog-content .field').count(), 6);
   await shot('master-bahan-form-1440-light');
   await escapeDialog();
 
