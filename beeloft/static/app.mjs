@@ -1960,8 +1960,8 @@ function classificationFields(catalog, current = {}, prefix = 'product') {
     + sel('subcategory_id', 'Subkategori', catalog.product_subcategories, 'category_id')
     + sel('type_id', 'Tipe produk', catalog.product_types, 'subcategory_id')
     + sel('series_id', 'Seri', catalog.product_series)
-    + sel('color_id', 'Warna', catalog.colors)
-    + sel('size_id', 'Ukuran', catalog.sizes)
+    + sel('color_id', 'Warna master', catalog.colors)
+    + sel('size_id', 'Ukuran master', catalog.sizes)
     + `<div class="field"><span class="field-label">Satuan</span><input type="text" value="PCS · Pieces" disabled aria-label="Satuan produk"><input type="hidden" name="uom_code" value="PCS"><p class="field-help">Produk dihitung dalam pcs; lusin hanya tampilan turunan eksak (12 pcs = 1 lusin).</p></div>`;
 }
 function wireClassificationCascade(form) {
