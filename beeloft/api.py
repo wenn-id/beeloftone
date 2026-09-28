@@ -5,6 +5,7 @@ import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -967,7 +968,8 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         plan_code, runs = store.cutting_runs_export(order_id)
         filename = f'beeloft-cutting-{plan_code}.csv'
         return Response(cutting_runs_csv(plan_code, runs), media_type="text/csv", headers={
-            "Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
+            "Content-Disposition": 'attachment; filename="beeloft-cutting.csv"; '
+                                   f"filename*=UTF-8''{quote(filename, safe='')}", "Cache-Control": "no-store"})
 
     @app.post('/api/cutting-runs/{run_id}/bundles', status_code=201, tags=['Bundling'])
     def create_bundle(run_id: str, body: BundleCreate, user: Actor, key: RequestKey):

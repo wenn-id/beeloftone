@@ -8,6 +8,8 @@ menghitung kuantitas layak bayar.
 import sqlite3
 from contextlib import closing
 from unittest import TestCase
+from unittest.mock import patch
+from urllib.parse import unquote
 
 import test_cutting as cutting_tests
 
@@ -156,9 +158,31 @@ class PlanningCuttingTest(TestCase):
 
     def test_decimal_places_limited_to_three(self):
         batch, order, issue, line = self.approved_order_with_cutting_setup()
-        self.cut(order, self.cut_body(issue, line, weight_kg='1.2345'), status=422)
-        self.cut(order, self.cut_body(issue, line,
-            output_params=[dict(line_id=line, product_weight_gram='1.2345')]), status=422)
+        from beeloft.models import CuttingRunCreate
+
+        def weights(value):
+            return dict(weight_kg=value, rolls=[dict(roll_no=1, weight_kg=value, sheets=1)],
+                        output_params=[dict(line_id=line, product_weight_gram=value,
+                                            material_used_gram=value)])
+
+        for value in ('garbage', '', '1.2.3', 'NaN', 'sNaN', 'Infinity', '-Infinity',
+                      '0', '-1', '1000000.001', '1.2345'):
+            with self.subTest(value=value):
+                result = self.cut(order, self.cut_body(issue, line, **weights(value)), status=422)
+                locations = {tuple(error['loc']) for error in result['detail']}
+                self.assertEqual(locations, {
+                    ('body', 'weight_kg'), ('body', 'rolls', 0, 'weight_kg'),
+                    ('body', 'output_params', 0, 'product_weight_gram'),
+                    ('body', 'output_params', 0, 'material_used_gram'),
+                })
+        for value, expected in ((None, None), ('0.001', '0.001'), ('1.2300', '1.230'),
+                                ('1000000', '1000000.000')):
+            with self.subTest(value=value):
+                parsed = CuttingRunCreate(**self.cut_body(issue, line, **weights(value)))
+                self.assertEqual(parsed.weight_kg, expected)
+                self.assertEqual(parsed.rolls[0].weight_kg, expected)
+                self.assertEqual(parsed.output_params[0].product_weight_gram, expected)
+                self.assertEqual(parsed.output_params[0].material_used_gram, expected)
 
     def test_output_param_line_must_match_run_output(self):
         batch, order, issue, line = self.approved_order_with_cutting_setup()
@@ -258,6 +282,20 @@ class PlanningCuttingTest(TestCase):
         corrected = self.client.get('/api/orders/'+order['id']+'/cutting-runs/export.csv').text
         self.assertIn('Dikoreksi', corrected)
 
+        for reference in ('PLAN-ASCII', 'Rencana-布-é', 'plan";filename="bad', 'plan\r\nX-Injected: yes',
+                          'plan/with\\slashes'):
+            with self.subTest(reference=reference):
+                special_order = self.order(reference=reference)
+                exported = self.client.get('/api/orders/'+special_order['id']+'/cutting-runs/export.csv')
+                self.assertEqual(exported.status_code, 200, exported.text)
+                disposition = exported.headers['Content-Disposition']
+                prefix = 'attachment; filename="beeloft-cutting.csv"; filename*=UTF-8\'\''
+                self.assertTrue(disposition.startswith(prefix), disposition)
+                self.assertTrue(disposition.isascii())
+                encoded = disposition[len(prefix):]
+                self.assertFalse(any(char in encoded for char in '\r\n";/\\'))
+                self.assertEqual(unquote(encoded), f'beeloft-cutting-{reference}.csv')
+
     # -- migrasi -------------------------------------------------------------------------
 
     def test_upgrade_from_56_backfills_approved_plans(self):
@@ -270,6 +308,22 @@ class PlanningCuttingTest(TestCase):
             db.execute('DROP TABLE production_plans')
             db.execute('PRAGMA user_version=56')
             db.commit()
+        connect = Store.connect
+
+        def fail_backfill(store):
+            db = connect(store)
+            db.set_authorizer(lambda action, table, *_:
+                              sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_INSERT
+                              and table == 'production_plans' else sqlite3.SQLITE_OK)
+            return db
+
+        with patch.object(Store, 'connect', fail_backfill):
+            with self.assertRaises(sqlite3.DatabaseError):
+                Store(self.path)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 57)
+            self.assertIsNone(db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='production_plans'").fetchone())
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)

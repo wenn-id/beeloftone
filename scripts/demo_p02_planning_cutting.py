@@ -4,8 +4,9 @@
 Membuat database SQLite segar lalu menjalankan alur P02 end-to-end lewat API
 Store, dan mencetak ringkasannya untuk bahan demo Senin 2026-09-28.
 
-Pemakaian:  python scripts/demo_p02_planning_cutting.py [path-db]
+Pemakaian:  python scripts/demo_p02_planning_cutting.py [path-db] [--replace]
 """
+import argparse
 import json
 import sys
 import uuid
@@ -17,8 +18,14 @@ sys.path.insert(0, str(REPO))
 from beeloft.store import Store  # noqa: E402
 from beeloft.store import DomainError  # noqa: E402
 
-DB = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "data" / "demo-p02.sqlite3"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("database", nargs="?", type=Path)
+parser.add_argument("--replace", action="store_true", help="Replace an existing caller-supplied database")
+args = parser.parse_args()
+DB = args.database if args.database is not None else REPO / "data" / "demo-p02.sqlite3"
 if DB.exists():
+    if args.database is not None and not args.replace:
+        parser.error(f"Database already exists: {DB}. Use --replace to reset it.")
     DB.unlink()
 DB.parent.mkdir(parents=True, exist_ok=True)
 
@@ -73,9 +80,10 @@ def main():
         store.create_cutting_run(order["id"], {"reference": "CUT-DITOLAK", "issue_id": issue["id"],
             "used": "1", "waste": "0.1", "reason": "Demo", "cut_date": "2026-09-28",
             "outputs": [{"line_id": line_m["id"], "quantity": 10}]}, ADMIN, key())
-        print("2. !!! gate bocor")
     except DomainError as exc:
         print("2. Cutting saat draft ditolak:", exc.message)
+    else:
+        raise RuntimeError("Cutting unexpectedly succeeded while the plan was draft (gate bocor).")
 
     # 5. approve rencana -> cutting dengan rol + komposisi
     approved = store.approve_plan(order["id"], {"revision": plan["revision"],

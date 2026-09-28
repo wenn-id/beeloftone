@@ -430,23 +430,24 @@ WHEN NEW.code<>OLD.code OR NEW.name<>OLD.name
 BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status aktif.'); END""")
 
             if version < 58:
-                db.executescript(Path(__file__).with_name('planning_cutting.sql').read_text(encoding='utf-8'))
-                # Database aplikasi normal selalu memiliki orders. Beberapa regression test
-                # sengaja membangun partial legacy schema untuk menguji migrasi domain lain;
-                # pada fixture itu P02 tetap membuat tabelnya tetapi tidak punya order untuk
-                # dibackfill.
-                has_orders = db.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='orders'"
-                ).fetchone()
-                if has_orders:
-                    db.execute("""INSERT INTO production_plans(
-                        order_id,note,status,revision,created_by,created_at)
-                        SELECT o.id,
-                               'Grandfathered: dibuat sebelum migrasi P02 (status planning belum ada).',
-                               'approved',0,o.created_by,o.created_at
-                        FROM orders o
-                        WHERE NOT EXISTS(
-                            SELECT 1 FROM production_plans p WHERE p.order_id=o.id)""")
+                with db:
+                    db.executescript(Path(__file__).with_name('planning_cutting.sql').read_text(encoding='utf-8'))
+                    # Database aplikasi normal selalu memiliki orders. Beberapa regression test
+                    # sengaja membangun partial legacy schema untuk menguji migrasi domain lain;
+                    # pada fixture itu P02 tetap membuat tabelnya tetapi tidak punya order untuk
+                    # dibackfill.
+                    has_orders = db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='orders'"
+                    ).fetchone()
+                    if has_orders:
+                        db.execute("""INSERT INTO production_plans(
+                            order_id,note,status,revision,created_by,created_at)
+                            SELECT o.id,
+                                   'Grandfathered: dibuat sebelum migrasi P02 (status planning belum ada).',
+                                   'approved',0,o.created_by,o.created_at
+                            FROM orders o
+                            WHERE NOT EXISTS(
+                                SELECT 1 FROM production_plans p WHERE p.order_id=o.id)""")
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)

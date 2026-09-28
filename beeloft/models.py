@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -1132,6 +1132,19 @@ class CuttingOutput(Input):
     quantity: Quantity
 
 
+def validate_cutting_weight(value, message):
+    if value is None:
+        return None
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        raise ValueError(message) from None
+    if not amount.is_finite() or not 0 < amount <= 1_000_000 \
+            or amount * 1000 != (amount * 1000).to_integral_value():
+        raise ValueError(message)
+    return format(amount, '.3f')
+
+
 class CuttingRollCreate(Input):
     # Detail satu rol: berat (kg) dan/atau lembar — minimal satu terisi.
     # Keduanya input manual; TIDAK ada konversi otomatis antar satuan.
@@ -1143,13 +1156,8 @@ class CuttingRollCreate(Input):
     @field_validator('weight_kg')
     @classmethod
     def validate_weight_kg(cls, value):
-        if value is None:
-            return None
-        amount = Decimal(value)
-        if not amount.is_finite() or not 0 < amount <= 1_000_000 \
-                or amount * 1000 != (amount * 1000).to_integral_value():
-            raise ValueError('Berat rol harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
-        return format(amount, '.3f')
+        return validate_cutting_weight(
+            value, 'Berat rol harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
 
     @model_validator(mode='after')
     def require_weight_or_sheets(self):
@@ -1170,13 +1178,8 @@ class CuttingOutputParamCreate(Input):
     @field_validator('product_weight_gram', 'material_used_gram')
     @classmethod
     def validate_gram(cls, value):
-        if value is None:
-            return None
-        amount = Decimal(value)
-        if not amount.is_finite() or not 0 < amount <= 1_000_000 \
-                or amount * 1000 != (amount * 1000).to_integral_value():
-            raise ValueError('Berat gram harus positif, maksimal 1.000.000 dengan tiga desimal.')
-        return format(amount, '.3f')
+        return validate_cutting_weight(
+            value, 'Berat gram harus positif, maksimal 1.000.000 dengan tiga desimal.')
 
 
 class CuttingRunCreate(MaterialConsumption):
@@ -1201,13 +1204,8 @@ class CuttingRunCreate(MaterialConsumption):
     @field_validator('weight_kg')
     @classmethod
     def validate_weight_kg(cls, value):
-        if value is None:
-            return None
-        amount = Decimal(value)
-        if not amount.is_finite() or not 0 < amount <= 1_000_000 \
-                or amount * 1000 != (amount * 1000).to_integral_value():
-            raise ValueError('Berat bahan harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
-        return format(amount, '.3f')
+        return validate_cutting_weight(
+            value, 'Berat bahan harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
 
     @field_validator('rolls')
     @classmethod

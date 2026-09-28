@@ -112,4 +112,4 @@ BEGIN SELECT RAISE(ABORT, 'Immutable cutting output param'); END;
 -- memiliki tabel orders, sementara database aplikasi nyata tetap dibackfill.
 
 PRAGMA user_version = 58;
-COMMIT;
+-- Store commits this transaction only after the backfill succeeds.
