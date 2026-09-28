@@ -456,6 +456,14 @@ class JubelioDemoManager:
         if not self.is_demo_database():
             raise DomainError(400, "Database ini bukan database demo. Mode Jubelio Demo hanya dapat diaktifkan pada database yang ditandai untuk demo.")
 
+        receipt_key = f"jubelio-demo-sync:{key}"
+        with closing(self.store.connect()) as db:
+            receipt = db.execute("SELECT actor_id, response FROM requests WHERE key=?", (receipt_key,)).fetchone()
+            if receipt:
+                if receipt["actor_id"] != actor["id"]:
+                    raise DomainError(403, "Idempotency-Key ini milik akun lain.")
+                return json.loads(receipt["response"])
+
         current = self.get_status()
         target_scenario = scenario if scenario is not None else max(1, current["current_scenario"])
 
@@ -534,7 +542,13 @@ class JubelioDemoManager:
                 }
             }
             self._release_lock(status=status, error=error_note, summary=summary, scenario=target_scenario)
-            return self.get_status()
+            final_status = self.get_status()
+            with self.store.transaction(write=True) as db:
+                db.execute("""
+                INSERT OR REPLACE INTO requests(key, actor_id, fingerprint, response, created_at)
+                VALUES(?, ?, 'demo-sync', ?, ?)
+                """, (receipt_key, actor["id"], json.dumps(final_status, ensure_ascii=False), now()))
+            return final_status
         except Exception as exc:
             self._release_lock(status="failed", error=str(exc))
             raise

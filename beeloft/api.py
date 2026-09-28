@@ -518,6 +518,26 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def jubelio_listing_summary(user: Actor):
         return store.jubelio_listing_summary()
 
+    @app.get('/api/integrations/jubelio/demo/status', tags=['Integrations'])
+    def jubelio_demo_status(user: Actor):
+        return store.jubelio_demo_status()
+
+    @app.post('/api/integrations/jubelio/demo/activate', status_code=200, tags=['Integrations'])
+    def jubelio_demo_activate(user: Actor, key: RequestKey):
+        return store.jubelio_demo_activate(user, key)
+
+    @app.post('/api/integrations/jubelio/demo/sync', status_code=200, tags=['Integrations'])
+    def jubelio_demo_sync(user: Actor, key: RequestKey):
+        return store.jubelio_demo_sync(user, key)
+
+    @app.post('/api/integrations/jubelio/demo/next-scenario', status_code=200, tags=['Integrations'])
+    def jubelio_demo_next_scenario(user: Actor, key: RequestKey):
+        return store.jubelio_demo_next_scenario(user, key)
+
+    @app.post('/api/integrations/jubelio/demo/reset', status_code=200, tags=['Integrations'])
+    def jubelio_demo_reset(user: Actor, key: RequestKey):
+        return store.jubelio_demo_reset(user, key)
+
     @app.post('/api/integrations/mekari/finance-snapshots', status_code=201, tags=['Integrations'])
     def import_mekari_finance_snapshot(body: MekariFinanceSnapshotImport, user: Actor, key: RequestKey):
         return store.import_mekari_finance_snapshot(body.model_dump(mode='json'),user,key)

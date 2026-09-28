@@ -1735,6 +1735,38 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         return {'snapshot':header,'summary':summary,'marketplaces':marketplaces,
             'listings':snapshot['listings'],'quarantine':snapshot['quarantine']}
 
+    def _guard_jubelio_demo_admin(self, actor):
+        with closing(self.connect()) as db:
+            current = db.execute("SELECT role FROM users WHERE id=? AND active=1", (actor["id"],)).fetchone()
+            if not current:
+                raise DomainError(401, "Akun nonaktif.")
+            if current["role"] != "admin":
+                raise DomainError(403, "Hanya admin yang dapat mengelola mode Jubelio Demo.")
+
+    def jubelio_demo_status(self):
+        from beeloft.jubelio_demo import JubelioDemoManager
+        return JubelioDemoManager(self).get_status()
+
+    def jubelio_demo_activate(self, actor, key):
+        self._guard_jubelio_demo_admin(actor)
+        from beeloft.jubelio_demo import JubelioDemoManager
+        return JubelioDemoManager(self).activate(actor, key)
+
+    def jubelio_demo_sync(self, actor, key, scenario=None):
+        self._guard_jubelio_demo_admin(actor)
+        from beeloft.jubelio_demo import JubelioDemoManager
+        return JubelioDemoManager(self).sync(actor, key, scenario)
+
+    def jubelio_demo_next_scenario(self, actor, key):
+        self._guard_jubelio_demo_admin(actor)
+        from beeloft.jubelio_demo import JubelioDemoManager
+        return JubelioDemoManager(self).next_scenario(actor, key)
+
+    def jubelio_demo_reset(self, actor, key):
+        self._guard_jubelio_demo_admin(actor)
+        from beeloft.jubelio_demo import JubelioDemoManager
+        return JubelioDemoManager(self).reset_demo(actor, key)
+
     @staticmethod
     def _mekari_finance_period(row):
         record=dict(row)
