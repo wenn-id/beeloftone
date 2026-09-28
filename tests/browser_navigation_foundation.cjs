@@ -31,6 +31,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'People', content: '#workforce-list .record-row'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Master SKU', content: '#product-list .record-row'},
     {name: 'Master katalog', nav: 'master-catalog', section: 'master-catalog-view', heading: 'Master katalog', content: '#master-catalog-list .record-row'},
+    {name: 'Master bisnis', nav: 'business-masters', section: 'masters-view', heading: 'Master bisnis', content: '#masters-search-form'},
     {name: 'Scan bundle', nav: 'scan-bundle', section: 'bundle-scan-view', heading: 'Scan bundle'},
     {name: 'Scan barang jadi', nav: 'scan-finished-goods', section: 'finished-goods-scan-view', heading: 'Scan barang jadi'},
     {name: 'Cadangan data', nav: 'backup', section: 'backup-view', heading: 'Cadangan data'},
