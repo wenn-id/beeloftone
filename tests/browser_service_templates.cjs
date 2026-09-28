@@ -7,13 +7,30 @@ const path=require('node:path');
 // preview tarif per tanggal. Tarif hilang dan tarif nonaktif harus memberi
 // pesan eksplisit, bukan nominal nol atau tarif terbaru secara diam-diam.
 module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work})=>{
+  // Menyimpan tarif menutup form lalu membuka kembali lembar tarif, jadi satu
+  // Escape belum tentu menyisakan layar tanpa dialog. Helper ini menutup dialog
+  // yang masih terbuka sebelum langkah berikutnya mengklik tombol di halaman.
+  const dialogText=async pattern=>{
+    await page.locator('#dialog').getByText(pattern).first().waitFor();
+  };
+  const closeModal=async()=>{
+    for(let attempt=0;attempt<6;attempt++){
+      const open=await page.locator('#dialog').evaluate(el=>el.open).catch(()=>false);
+      if(!open)return;
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+    }
+    await page.locator('#dialog').waitFor({state:'hidden'});
+  };
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
   await login(admin);
   await openSidebarDestination('Master katalog');
 
   // -- Kelompok jasa --------------------------------------------------------
   await page.getByRole('tab',{name:'Kelompok jasa',exact:true}).click();
-  await page.getByText(/Belum ada kelompok jasa/).waitFor();
+  // Data demo sudah berisi kelompok DEMO-KERJA, jadi yang diperiksa adalah
+  // baris tersebut, bukan empty state.
+  await page.locator('#master-catalog-list').getByText('DEMO-KERJA',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Tambah',exact:true}).click();
   await page.getByLabel('Kode kelompok',{exact:true}).fill('QA-JAHIT-GRUP');
   await page.getByLabel('Nama kelompok',{exact:true}).fill('QA Kelompok Jahit');
@@ -22,13 +39,15 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.locator('#master-catalog-list').getByText('QA-JAHIT-GRUP',{exact:true}).waitFor();
 
   // -- Jenis pekerjaan -----------------------------------------------------
+  const qaGroup=(await apiGet('/api/service-groups')).find(g=>g.code==='QA-JAHIT-GRUP');
+  assert.ok(qaGroup,'kelompok jasa QA tersimpan lewat UI');
   await page.getByRole('tab',{name:'Jenis pekerjaan',exact:true}).click();
-  await page.getByText(/Belum ada jenis pekerjaan/).waitFor();
+  await page.locator('#master-catalog-list').getByText('DEMO-JAHIT',{exact:true}).waitFor();
   for(const [code,name] of [['QA-JAHIT','QA Jahit'],['QA-LABEL','QA Pasang Label']]){
     await page.getByRole('button',{name:'Tambah',exact:true}).click();
     await page.getByLabel('Kode pekerjaan',{exact:true}).fill(code);
     await page.getByLabel('Nama pekerjaan',{exact:true}).fill(name);
-    await page.getByLabel('Kelompok jasa',{exact:true}).selectOption({label:/QA-JAHIT-GRUP/});
+    await page.getByLabel('Kelompok jasa',{exact:true}).selectOption(qaGroup.id);
     await page.getByLabel('Alasan pencatatan',{exact:true}).fill('CONTOH - jenis pekerjaan QA');
     await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
     await page.locator('#master-catalog-list').getByText(code,{exact:true}).waitFor();
@@ -40,12 +59,12 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
 
   // -- Tarif hilang memberi pesan eksplisit --------------------------------
   await page.getByRole('button',{name:'Tarif QA-JAHIT',exact:true}).click();
-  await page.getByText(/Belum ada tarif/).waitFor();
+  await dialogText(/Belum ada tarif/);
   await page.getByRole('button',{name:'Preview tarif per tanggal',exact:true}).click();
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-15');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText(/belum pernah dibuat/).waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/belum pernah dibuat/);
+  await closeModal();
 
   // -- Revisi tarif R1 dan R2 dengan tanggal berlaku -----------------------
   await page.getByRole('button',{name:'Tarif QA-JAHIT',exact:true}).click();
@@ -56,14 +75,14 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByLabel('Berakhir (opsional)',{exact:true}).fill('2026-09-16');
   await page.getByLabel('Alasan tarif baru',{exact:true}).fill('CONTOH - tarif R1');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/Revisi 1/).first().waitFor();
+  await dialogText(/Revisi 1/);
   await page.getByRole('button',{name:'Tambah revisi tarif',exact:true}).click();
   await page.getByLabel('Basis tarif',{exact:true}).selectOption('lusin');
   await page.getByLabel('Nominal (Rp)',{exact:true}).fill('144.00');
   await page.getByLabel('Mulai berlaku',{exact:true}).fill('2026-09-16');
   await page.getByLabel('Alasan tarif baru',{exact:true}).fill('CONTOH - tarif R2');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/Revisi 2/).first().waitFor();
+  await dialogText(/Revisi 2/);
 
   // Interval tumpang tindih ditolak server, bukan diterima diam-diam.
   await page.getByRole('button',{name:'Tambah revisi tarif',exact:true}).click();
@@ -72,8 +91,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByLabel('Mulai berlaku',{exact:true}).fill('2026-09-20');
   await page.getByLabel('Alasan tarif baru',{exact:true}).fill('CONTOH - overlap');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/tumpang tindih/).waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/tumpang tindih/);
+  await closeModal();
 
   // Tarif untuk pekerjaan kedua supaya resolve SKU lengkap.
   await page.getByRole('button',{name:'Tarif QA-LABEL',exact:true}).click();
@@ -83,8 +102,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByLabel('Mulai berlaku',{exact:true}).fill('2026-09-01');
   await page.getByLabel('Alasan tarif baru',{exact:true}).fill('CONTOH - tarif label');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/Revisi 1/).first().waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/Revisi 1/);
+  await closeModal();
 
   // -- Preview tarif tepat pada batas tanggal efektif ----------------------
   await page.getByRole('button',{name:'Tarif QA-JAHIT',exact:true}).click();
@@ -92,24 +111,24 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-15');
   await page.getByLabel('Jumlah pcs (opsional)',{exact:true}).fill('13');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText('QA-JAHIT#1',{exact:true}).waitFor();
+  await dialogText(/QA-JAHIT#1/);
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-16');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText('QA-JAHIT#2',{exact:true}).waitFor();
+  await dialogText(/QA-JAHIT#2/);
   // 13 pcs = 13/12 lusin; 13/12 x 144.00 = 156.00 tanpa float.
-  await page.getByText('Rp156.00',{exact:true}).waitFor();
-  await page.getByText('13/12',{exact:false}).first().waitFor();
+  await dialogText(/Rp156\.00/);
+  await dialogText(/13\/12/);
   const preview=await apiGet('/api/work-types/'+jahit.id+'/rate-preview?effective_date=2026-09-16&pcs=13');
   assert.equal(preview.wage_minor,15600);
   assert.equal(preview.lusin_exact,'13/12');
   assert.equal(preview.rate_revision,'QA-JAHIT#2');
   const artifacts=process.env.BEELOFT_QA_SCREENSHOTS || work;
   await page.screenshot({path:path.join(artifacts,'beeloft-p01-rate-preview.png'),fullPage:true});
-  await page.keyboard.press('Escape');
+  await closeModal();
 
   // -- Template jasa dengan beberapa pekerjaan -----------------------------
   await page.getByRole('tab',{name:'Template jasa',exact:true}).click();
-  await page.getByText(/Belum ada template jasa/).waitFor();
+  await page.locator('#master-catalog-list').getByText('DEMO-TPL-JASA',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Tambah',exact:true}).click();
   await page.getByLabel('Kode template',{exact:true}).fill('QA-TPL-JASA');
   await page.getByLabel('Nama template',{exact:true}).fill('QA Template Jasa');
@@ -126,25 +145,28 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
 
   // -- Penerapan template ke SKU -------------------------------------------
   const product=(await apiGet('/api/products'))[0];
-  await page.getByRole('button',{name:'Terapkan',exact:true}).first().click();
+  await page.locator('#master-catalog-list li.record-row')
+    .filter({hasText:'QA-TPL-JASA'})
+    .getByRole('button',{name:'Terapkan',exact:true}).click();
   await page.getByLabel('SKU tujuan',{exact:true}).selectOption(product.id);
   await page.getByLabel('Alasan penerapan template',{exact:true}).fill('CONTOH - penerapan template jasa');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/Revisi template 1/).waitFor();
-  await page.getByText(/QA-JAHIT, QA-LABEL/).waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/Revisi template 1/);
+  await dialogText(/QA-JAHIT/);
+  await dialogText(/QA-LABEL/);
+  await closeModal();
 
   // -- Riwayat penerapan dan preview tarif dari halaman SKU ----------------
   await openSidebarDestination('Master SKU');
   await page.getByRole('button',{name:'Jasa dan tarif '+product.sku,exact:true}).click();
-  await page.getByText('QA-TPL-JASA',{exact:false}).first().waitFor();
+  await dialogText(/QA-TPL-JASA/);
   await page.getByRole('button',{name:'Preview tarif per tanggal',exact:true}).click();
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-16');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText('QA-JAHIT#2',{exact:true}).waitFor();
-  await page.getByText('QA-LABEL#1',{exact:true}).waitFor();
+  await dialogText(/QA-JAHIT#2/);
+  await dialogText(/QA-LABEL#1/);
   await page.screenshot({path:path.join(artifacts,'beeloft-p01-sku-rates.png'),fullPage:true});
-  await page.keyboard.press('Escape');
+  await closeModal();
 
   // -- Tarif nonaktif: pesan eksplisit, snapshot lama tidak berubah --------
   const before=await apiGet('/api/work-types/'+jahit.id+'/rate-preview?effective_date=2026-09-16');
@@ -154,16 +176,16 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.getByRole('button',{name:'Nonaktifkan tarif',exact:true}).click();
   await page.getByLabel('Alasan penonaktifan',{exact:true}).fill('CONTOH - hentikan tarif');
   await page.getByRole('button',{name:'Simpan pencatatan',exact:true}).click();
-  await page.getByText(/Revisi 3/).first().waitFor();
+  await dialogText(/Revisi 3/);
   await page.getByRole('button',{name:'Preview tarif per tanggal',exact:true}).click();
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-16');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText(/nonaktif pada/).waitFor();
+  await dialogText(/nonaktif pada/);
   // Tanggal yang dicakup revisi lama tetap terbaca: histori tidak dihapus.
   await page.getByLabel('Tanggal pengerjaan',{exact:true}).fill('2026-09-15');
   await page.getByRole('button',{name:'Lihat tarif',exact:true}).click();
-  await page.getByText('QA-JAHIT#1',{exact:true}).waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/QA-JAHIT#1/);
+  await closeModal();
   const history=await apiGet('/api/work-types/'+jahit.id+'/rate-history');
   assert.equal(history.length,3,'revisi tarif tetap append-only');
   assert.equal(history[0].active,0);
@@ -172,8 +194,8 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   // -- Riwayat revisi template ---------------------------------------------
   await page.getByRole('tab',{name:'Template jasa',exact:true}).click();
   await page.getByRole('button',{name:'Riwayat QA-TPL-JASA',exact:true}).click();
-  await page.getByText(/Revisi 1/).first().waitFor();
-  await page.keyboard.press('Escape');
+  await dialogText(/Revisi 1/);
+  await closeModal();
 
   // -- Izin: viewer membaca, tidak menulis ---------------------------------
   await page.getByRole('button',{name:'Keluar',exact:true}).click();
@@ -183,10 +205,10 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   await page.locator('#master-catalog-list').getByText('QA-JAHIT',{exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Tambah',exact:true}).count(),0,'viewer tidak melihat tombol Tambah');
   await page.getByRole('button',{name:'Tarif QA-JAHIT',exact:true}).click();
-  await page.getByText(/Riwayat tarif/).waitFor();
+  await dialogText(/Riwayat tarif/);
   assert.equal(await page.getByRole('button',{name:'Tambah revisi tarif',exact:true}).count(),0,'viewer tidak dapat menambah tarif');
   await page.getByRole('button',{name:'Preview tarif per tanggal',exact:true}).waitFor();
-  await page.keyboard.press('Escape');
+  await closeModal();
 
   // -- Mobile dan 200% teks tidak meluber ----------------------------------
   await page.getByRole('button',{name:'Tarif QA-LABEL',exact:true}).click();
@@ -199,7 +221,7 @@ module.exports=async({page,login,openSidebarDestination,admin,viewer,apiGet,work
   assert.ok(await page.evaluate(()=>{const d=document.querySelector('dialog');return d.scrollWidth<=d.clientWidth;}),'Rate dialog 200% overflow');
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   await page.setViewportSize({width:1440,height:1000});
-  await page.keyboard.press('Escape');
+  await closeModal();
 
   console.log('P01 browser QA PASS: kelompok/jenis pekerjaan, tarif berversi, batas tanggal efektif, overlap ditolak, konversi pcs/lusin eksak, template banyak pekerjaan, penerapan SKU, riwayat, tarif nonaktif, izin viewer, mobile/200%.');
 };

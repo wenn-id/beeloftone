@@ -9054,7 +9054,3 @@ async function productServicePreviewDialog(productId) {
   $('sku-preview-run').onclick = run;
   await run();
 }
-
-async function serviceRateHistoryDialog(workTypeId) {
-  return workTypeRateDialog(workTypeId);
-}
