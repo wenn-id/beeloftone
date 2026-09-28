@@ -128,6 +128,7 @@
             <button id="activity" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-list"/></svg>Laporan aktivitas</button>
             <button id="audit-trail" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-history"/></svg>Audit trail</button>
             <button id="backup" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-database"/></svg>Cadangan data</button>
+            <button id="import" class="nav-item" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-inbox"/></svg>Impor data</button>
           </div>
           <div class="nav-group nav-group-tail">
             <p class="nav-section-label">Bisnis</p>
@@ -413,6 +414,37 @@
           </ul>
           <div class="field-actions backup-actions"><button id="download-backup" type="button" class="action-primary">Unduh cadangan database</button></div>
           <p id="backup-message" class="backup-message" role="status" hidden></p>
+        </div>
+      </section>
+      <section id="import-view" class="workspace-page" hidden>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">Administrasi · izin impor data</p><h1 class="workspace-title">Impor data</h1><p class="workspace-subtitle">Dry-run dulu tanpa mengubah data: validasi, preview, dan laporan reject. Apply adalah tindakan terpisah dan tidak pernah berjalan di database produksi.</p></div></div>
+        <div class="card">
+          <h2 class="workspace-section-title">1 · Sumber &amp; file CSV</h2>
+          <div class="form-grid">
+            <div class="field"><label class="field-label" for="import-adapter">Adapter</label><select id="import-adapter"></select><p class="field-help">Satu job = satu adapter (produk, bahan, satuan, unit usaha, dst.).</p></div>
+            <div class="field"><label class="field-label" for="import-strategy">Strategi histori</label><select id="import-strategy"><option value="active_only">active_only — hanya transaksi aktif</option><option value="replay_history">replay_history — replay histori eksplisit</option><option value="opening_balance">opening_balance — saldo awal pada cutoff</option></select><p class="field-help">Pilihan eksplisit; tidak ada fallback yang menghitung keduanya.</p></div>
+            <div class="field"><label class="field-label" for="import-system">Sistem sumber</label><input id="import-system" type="text" maxlength="64" placeholder="mis. backoffice-legacy"></div>
+            <div class="field"><label class="field-label" for="import-account">Akun sumber</label><input id="import-account" type="text" maxlength="64" placeholder="mis. PT-Contoh"></div>
+            <div class="field"><label class="field-label" for="import-file">File CSV</label><input id="import-file" type="file" accept=".csv,text/csv"></div>
+            <div class="field"><label class="field-label" for="import-auto-rev">Revisi otomatis</label><select id="import-auto-rev"><option value="0">Nonaktif — revisi payload ditahan (quarantine)</option><option value="1">Aktif — terapkan revisi berversi eksplisit</option></select></div>
+            <div class="field"><label class="field-label" for="import-column-map">Peta kolom (JSON, opsional)</label><textarea id="import-column-map" rows="3" spellcheck="false" placeholder='{"name": "nama_produk"}'></textarea><p class="field-help">{"kolom_kontrak": "nama_kolom_di_csv"}. Kosong = pakai nama kolom kontrak.</p></div>
+            <div class="field"><label class="field-label" for="import-id-map">Peta ID (JSON, opsional)</label><textarea id="import-id-map" rows="3" spellcheck="false" placeholder='{"product_categories": {"LEG-01": "id-internal"}}'></textarea><p class="field-help">{"tabel": {"id_sumber": "id_beeloft"}}. id_map selalu menang atas resolusi otomatis.</p></div>
+            <div class="field"><label class="field-label" for="import-reference-mode">Mode referensi (JSON, opsional)</label><textarea id="import-reference-mode" rows="2" spellcheck="false" placeholder='{"category_code": "name"}'></textarea><p class="field-help">{"kolom": "code"|"name"}. Default "code" (unik); "name" boleh ambigu lalu ditolak.</p></div>
+          </div>
+          <div class="field"><label class="field-label" for="import-csv">Isi CSV (atau tempel di sini)</label><textarea id="import-csv" rows="8" spellcheck="false" placeholder="source_id,source_revision,row_kind,code,name&#10;SRC-1,1,active,KAT-01,Kemeja"></textarea><p class="field-help">UTF-8 koma, boleh BOM. Maks 10.000 baris / 5 MB. Isi file tidak dicatat ke log.</p></div>
+          <div class="field-actions"><button id="import-dry-run" type="button" class="action-primary">Jalankan dry-run</button></div>
+          <p id="import-message" class="state" role="status" hidden></p>
+        </div>
+        <div class="card" id="import-preview-card" hidden>
+          <h2 class="workspace-section-title">2 · Hasil dry-run</h2>
+          <dl id="import-totals" class="metric-strip" aria-label="Control totals"></dl>
+          <div id="import-rejects"></div>
+          <div class="field-actions"><button id="import-apply" type="button" class="action-primary" hidden>Terapkan (apply) job ini</button></div>
+          <p id="import-apply-message" class="state" role="status" hidden></p>
+        </div>
+        <div class="card">
+          <h2 class="workspace-section-title">Job impor</h2>
+          <div id="import-jobs"></div>
         </div>
       </section>
       <section id="board-view" class="workspace-page">

@@ -32,22 +32,8 @@ class SupplierPaymentApprovalTest(TestCase):
                     due_date='2026-10-30', amount=amount,
                     reason='Invoice sesuai penerimaan bahan') | changes
 
-    def invoice(self, po, reference='INV-001', **options):
-        # Daftarkan invoice sebesar sisa penerimaan yang belum ditagih (#50).
-        fresh = self.detail(po)
-        line = fresh['lines'][0]
-        return self.post('/api/supplier-invoices', dict(
-            reference=reference, supplier_id=fresh['supplier']['id'],
-            invoice_date='2026-10-15', due_date='2026-10-30',
-            lines=[dict(purchase_order_id=fresh['id'], material_id=line['material_id'],
-                        quantity=line['received'], unit_price=line['unit_price'])],
-            reason='Tagihan uji'), **options)
-
     def request_payment(self, po, **options):
         body = self.payment_body(**options.pop('changes', {}))
-        if 'invoice_id' not in body and options.get('status', 201) == 201:
-            body['invoice_id'] = self.invoice(po, body['invoice_reference'],
-                                              key='inv-' + body['invoice_reference'])['id']
         return self.post('/api/purchase-orders/'+po['id']+'/payment-requests', body, **options)
 
     def decide_payment(self, request, decision='approved', **options):
@@ -63,8 +49,7 @@ class SupplierPaymentApprovalTest(TestCase):
     def test_request_requires_received_po_and_enters_unified_inbox(self):
         _, payload = self.setup_po()
         po = self.issue(payload)
-        # Tanpa identitas invoice (#50): ditolak model sebelum cek penerimaan.
-        self.request_payment(po, status=422)
+        self.request_payment(po, status=409)
         receipt = dict(material_id=po['lines'][0]['material_id'],reference='PAYMENT-RECEIPT',
             quantity='1',location='Rak',received_date='2026-10-15',reason='Bahan diterima')
         batch = self.receive(po, receipt)
@@ -91,32 +76,22 @@ class SupplierPaymentApprovalTest(TestCase):
 
     def test_amount_capacity_roles_cancellation_rejection_and_validation(self):
         po, _ = self.received_po()
-        invoice = self.invoice(po, 'INV-001', key='inv-INV-001')
-        self.request_payment(po, changes={'invoice_id': invoice['id']},
-                             api_key=self.viewer['api_key'], status=403)
+        self.request_payment(po, api_key=self.viewer['api_key'], status=403)
         pending = self.request_payment(po, api_key=self.operator['api_key'])
         other = self.app.state.store.provision_user('Operator pembayaran lain', 'operator')
         self.decide_payment(pending, api_key=self.operator['api_key'], status=403)
         self.decide_payment(pending, 'cancelled', api_key=other['api_key'], status=403)
         cancelled = self.decide_payment(pending, 'cancelled', api_key=self.operator['api_key'])
         self.assertEqual(cancelled['status'], 'cancelled')
-        rejected = self.request_payment(po, changes={'reference':'PAY-REJECT','amount':'20'})
+        rejected = self.request_payment(po, changes={'reference':'PAY-REJECT','invoice_reference':'INV-REJECT','amount':'20'})
         rejected = self.decide_payment(rejected, 'rejected')
         self.assertEqual(rejected['status'], 'rejected')
-        active = self.request_payment(po, changes={'reference':'PAY-ACTIVE','amount':'20'})
-        # Satu invoice hanya boleh punya satu request aktif (submitted/approved)
-        # per PO (#50): duplikat aktif ditolak walau masih di bawah kapasitas.
-        self.request_payment(po, changes={'reference':'PAY-OVER','amount':'6.23',
-                                          'invoice_id': invoice['id']}, status=409)
-        self.decide_payment(active, 'rejected')
-        # Setelah ditolak invoice bebas diajukan ulang, tapi kapasitas tagihan
-        # tetap dijaga: 26.23 melebihi total tagihan 26.22.
-        self.request_payment(po, changes={'reference':'PAY-HUGE','amount':'26.23',
-                                          'invoice_id': invoice['id']}, status=409)
-        full = self.request_payment(po, changes={'reference':'PAY-FULL','amount':'26.22',
-                                                 'invoice_id': invoice['id']})
+        active = self.request_payment(po, changes={'reference':'PAY-ACTIVE','invoice_reference':'INV-ACTIVE','amount':'20'})
+        self.request_payment(po, changes={'reference':'PAY-OVER','invoice_reference':'INV-OVER','amount':'6.23'}, status=409)
+        second = self.request_payment(po, changes={'reference':'PAY-BALANCE','invoice_reference':'INV-BALANCE','amount':'6.22'})
         self.assertEqual(self.client.get('/api/purchase-orders/'+po['id']).json()['payment_remaining'], '0.00')
-        self.decide_payment(full)
+        self.decide_payment(active)
+        self.decide_payment(second)
         for changes, status in [
             ({'amount':'0'},422),({'amount':'1.001'},422),({'amount':1},422),
             ({'amount':'1000000000000.01'},422),({'invoice_date':'2026-11-01'},422),
@@ -151,14 +126,12 @@ class SupplierPaymentApprovalTest(TestCase):
 
     def test_concurrent_amount_and_decisions_are_serialized(self):
         po, _ = self.received_po()
-        invoice = self.invoice(po, 'INV-RACE', key='inv-race')
         barrier = Barrier(2)
         def create(index):
             with TestClient(create_app(self.path)) as client:
                 barrier.wait(timeout=10)
                 return client.post('/api/purchase-orders/'+po['id']+'/payment-requests', json=self.payment_body(
-                    reference='PAY-RACE-'+str(index),amount='20',invoice_id=invoice['id'],
-                    invoice_reference='INV-RACE'),
+                    reference='PAY-RACE-'+str(index),amount='20',invoice_reference='INV-RACE-'+str(index)),
                     headers={'X-API-Key':self.admin['api_key'],'Idempotency-Key':'create-'+str(index)}).status_code
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(create,range(2))), [201,409])
@@ -200,5 +173,5 @@ class SupplierPaymentApprovalTest(TestCase):
             db.commit()
         Store(self.path); Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],62)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],63)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM supplier_payment_requests').fetchone()[0],0)

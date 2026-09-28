@@ -43,14 +43,14 @@ class BusinessMastersTest(test_production.ProductionTest):
 
     def test_migration_from_55_is_additive_and_idempotent(self):
         with closing(self._plain()) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 62)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 63)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
         # Membangun ulang Store pada DB yang sudah termigrasi tidak boleh mengubah
         # skema maupun user_version (jalur migrasi dijaga idempoten).
         Store(self.path)
         with closing(self._plain()) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 62)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 63)
             # Kolom additive yang dicek ulang tidak menduplikasi.
             cols = {row[1] for row in db.execute('PRAGMA table_info(suppliers)')}
             self.assertIn('active', cols)
@@ -66,7 +66,7 @@ class BusinessMastersTest(test_production.ProductionTest):
             db.commit()
         Store(self.path)
         with closing(self._plain()) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 62)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 63)
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
 
     # --- master dasar ----------------------------------------------------

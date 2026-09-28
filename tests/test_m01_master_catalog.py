@@ -37,7 +37,7 @@ class Migration56Test(unittest.TestCase):
 
     def test_fresh_db_reaches_schema_56_with_uom_seeds(self):
         store = self.fresh_store()
-        self.assertEqual(self.db_version(store), 62)
+        self.assertEqual(self.db_version(store), 63)
         with store.transaction() as db:
             codes = [r[0] for r in db.execute("SELECT code FROM uoms ORDER BY code")]
         self.assertEqual(codes, ["KG", "LSN", "M", "PCS"])
@@ -51,8 +51,7 @@ class Migration56Test(unittest.TestCase):
         # ada, sebagaimana pada DB skema-55 sungguhan; sisnya tetap minimal.
         raw = sqlite3.connect(path)
         raw.executescript("""
-            CREATE TABLE users(id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
-                role TEXT NOT NULL DEFAULT 'admin');
+            CREATE TABLE users(id TEXT PRIMARY KEY);
             CREATE TABLE products(id TEXT PRIMARY KEY, sku TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '',
                 created_by TEXT, created_at TEXT NOT NULL);
@@ -65,67 +64,13 @@ class Migration56Test(unittest.TestCase):
             CREATE TABLE workforce_employees(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE);
             CREATE TABLE workforce_employee_events(id TEXT PRIMARY KEY, employee_id TEXT NOT NULL);
             CREATE TABLE sewing_jobs(id TEXT PRIMARY KEY);
-            CREATE TABLE purchase_orders(id TEXT PRIMARY KEY, supplier_id TEXT, lines TEXT);
-            -- B01 (#50): ALTER TABLE ... RENAME pada migrasi 62 memaksa SQLite
-            -- memvalidasi ulang SEMUA trigger di schema; trigger P02
-            -- cutting_run_output_params_valid merujuk cutting_runs (dibuat
-            -- cutting.sql, migrasi lama < 55) sehingga tabel minimalnya
-            -- harus ada di DB sintetis ini.
-            CREATE TABLE cutting_runs(id TEXT PRIMARY KEY, movement_ids TEXT NOT NULL);
-            -- B01 (#50): migrasi 62 me-rebuild supplier_payment_requests, jadi
-            -- bentuk pre-B01-nya harus ada di DB minimal ini.
-            CREATE TABLE supplier_payment_requests(
-                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                id TEXT NOT NULL UNIQUE,
-                reference TEXT NOT NULL UNIQUE CHECK(length(trim(reference)) BETWEEN 1 AND 160),
-                purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id),
-                invoice_reference TEXT NOT NULL CHECK(length(trim(invoice_reference)) BETWEEN 1 AND 160),
-                invoice_date TEXT NOT NULL,
-                due_date TEXT NOT NULL,
-                amount_minor INTEGER NOT NULL CHECK(amount_minor BETWEEN 1 AND 100000000000000),
-                reason TEXT NOT NULL CHECK(length(trim(reason)) BETWEEN 1 AND 1000),
-                actor_id TEXT NOT NULL REFERENCES users(id),
-                created_at TEXT NOT NULL,
-                UNIQUE(purchase_order_id,invoice_reference),
-                CHECK(invoice_date<=due_date)
-            ) STRICT;
-            -- B01 (#50): trigger yang dibuat ulang migrasi 62 menempel pada
-            -- supplier_payment_request_events (dibuat supplier_payment_approvals.sql,
-            -- migrasi lama < 55); tabel minimalnya harus ada.
-            CREATE TABLE supplier_payment_request_events(
-                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id TEXT NOT NULL REFERENCES supplier_payment_requests(id),
-                status TEXT NOT NULL CHECK(status IN ('submitted','approved','rejected','cancelled')),
-                reason TEXT NOT NULL CHECK(length(trim(reason)) BETWEEN 1 AND 1000),
-                actor_id TEXT NOT NULL REFERENCES users(id),
-                created_at TEXT NOT NULL
-            ) STRICT;
-            -- B01 (#50) lanjutan: trigger yang dibuat ulang migrasi 62 merujuk
-            -- tabel/view lama lain (dibuat migrasi < 55). ALTER TABLE ... RENAME
-            -- pada migrasi 62 memaksa SQLite memvalidasi ulang seluruh trigger,
-            -- jadi bentuk minimalnya harus ada di DB sintetis ini.
-            CREATE TABLE purchase_order_approval_events(
-                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id TEXT NOT NULL, status TEXT NOT NULL);
-            CREATE TABLE purchase_order_cancellations(order_id TEXT PRIMARY KEY);
-            CREATE TABLE purchase_order_receipts(
-                purchase_order_id TEXT NOT NULL, batch_id TEXT NOT NULL);
-            CREATE TABLE material_batches(id TEXT PRIMARY KEY, material_id TEXT NOT NULL);
-            CREATE TABLE material_movements(id TEXT PRIMARY KEY, batch_id TEXT NOT NULL,
-                kind TEXT NOT NULL, reversal_of TEXT, quantity_milli INTEGER NOT NULL DEFAULT 0);
-            CREATE VIEW supplier_payment_po_received AS
-            SELECT p.id AS purchase_order_id,COALESCE(SUM(CAST((
-                COALESCE((SELECT SUM(m.quantity_milli) FROM purchase_order_receipts x
-                    JOIN material_batches b ON b.id=x.batch_id
-                    JOIN material_movements m ON m.batch_id=b.id AND m.kind='receipt'
-                    WHERE x.purchase_order_id=p.id
-                      AND b.material_id=json_extract(line.value,'$.material_id')
-                      AND NOT EXISTS(SELECT 1 FROM material_movements WHERE reversal_of=m.id)),0)
-                *CAST(ROUND(CAST(json_extract(line.value,'$.unit_price') AS NUMERIC)*100) AS INTEGER)+500
-                )/1000 AS INTEGER)),0) AS received_value_minor
-            FROM purchase_orders p,json_each(p.lines) line GROUP BY p.id;
+            CREATE TABLE purchase_orders(id TEXT PRIMARY KEY);
             CREATE TABLE positions(id TEXT PRIMARY KEY);
             CREATE TABLE business_units(id TEXT PRIMARY KEY);
+            -- cutting_runs ada di skema-55 asli (dibuat migrasi <5); trigger P02
+            -- cutting_run_output_params_valid merujuknya, dan RENAME TABLE pada
+            -- migrasi 61 memvalidasi semua trigger.
+            CREATE TABLE cutting_runs(id TEXT PRIMARY KEY, movement_ids TEXT NOT NULL DEFAULT '[]');
         """)
         raw.execute("PRAGMA user_version = 55")
         raw.execute(
@@ -141,7 +86,7 @@ class Migration56Test(unittest.TestCase):
         conn = upgraded.connect()
         self.addCleanup(conn.close)
         self.addCleanup(lambda: conn.execute("PRAGMA wal_checkpoint(TRUNCATE)"))
-        self.assertEqual(self.db_version(upgraded), 62)
+        self.assertEqual(self.db_version(upgraded), 63)
         with upgraded.transaction() as db:
             prod = db.execute("SELECT sku,name,color,size,uom_code,active FROM products WHERE id='p-legacy'").fetchone()
             mat = db.execute(

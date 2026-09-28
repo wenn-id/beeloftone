@@ -400,6 +400,7 @@ module.exports = async ({page, login, admin, viewer}) => {
   const first = fresh.find(sample => !sample.hidden);
   assert.ok(first.offset < .05, 'the new session starts settled on its own destination, with no flight from the old one');
   assert.equal(await page.locator('#audit-trail').isHidden(), true, 'and the admin-only destinations are gone');
+  assert.equal(await page.locator('#import').isHidden(), true, 'and the import destination is gone too');
   await arrived('board-home');
   await login(admin);
   await page.evaluate(() => { document.querySelector('.sidebar-nav').scrollTop = 0; });

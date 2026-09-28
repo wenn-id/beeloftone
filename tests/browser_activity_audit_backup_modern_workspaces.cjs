@@ -629,6 +629,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
     await role(key);
     assert.equal(await page.locator('#audit-trail').isHidden(), true, 'Audit trail is hidden from non-admin roles');
     assert.equal(await page.locator('#backup').isHidden(), true, 'Backup is hidden from non-admin roles');
+    assert.equal(await page.locator('#import').isHidden(), true, 'Import is hidden from non-admin roles');
     await page.locator('#backup').evaluate(button => button.click());
     assert.equal(await backupView.isHidden(), true, 'the activation check refuses a non-admin');
     for (const url of ['/api/audit-events', '/api/audit-events/' + auditEventId, '/api/backup'])

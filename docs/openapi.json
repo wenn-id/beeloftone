@@ -3,7 +3,7 @@
   "info": {
     "title": "Beeloft One · Production API",
     "description": "Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.",
-    "version": "0.120.0"
+    "version": "0.121.0"
   },
   "paths": {
     "/health": {
@@ -3667,6 +3667,293 @@
             "schema": {
               "type": "string",
               "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/adapters": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Adapters",
+        "operationId": "import_adapters_api_import_adapters_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/import/dry-run": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Dry Run",
+        "operationId": "import_dry_run_api_import_dry_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/import/jobs": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Jobs",
+        "operationId": "import_jobs_api_import_jobs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Job",
+        "operationId": "import_job_api_import_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/jobs/{job_id}/apply": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Job Apply",
+        "operationId": "import_job_apply_api_import_jobs__job_id__apply_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/jobs/{job_id}/resume": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import Job Resume",
+        "operationId": "import_job_resume_api_import_jobs__job_id__resume_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -25279,6 +25566,91 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImportDryRunRequest": {
+        "properties": {
+          "adapter": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Adapter"
+          },
+          "source_system": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System"
+          },
+          "source_account": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Account"
+          },
+          "strategy": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Strategy",
+            "default": "active_only"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename"
+          },
+          "csv_text": {
+            "type": "string",
+            "maxLength": 5243904,
+            "minLength": 1,
+            "title": "Csv Text"
+          },
+          "column_map": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Column Map"
+          },
+          "id_map": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Id Map"
+          },
+          "reference_mode": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Reference Mode"
+          },
+          "auto_apply_revisions": {
+            "type": "boolean",
+            "title": "Auto Apply Revisions",
+            "default": false
+          },
+          "watermark": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Watermark"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "adapter",
+          "source_system",
+          "source_account",
+          "filename",
+          "csv_text"
+        ],
+        "title": "ImportDryRunRequest",
+        "description": "Permintaan dry-run impor X01 (#51). Satu request = satu adapter,\nsatu sumber (system, account), satu strategi histori/opening balance."
       },
       "IntegrationSyncRunCreate": {
         "properties": {

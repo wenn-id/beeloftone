@@ -1,7 +1,9 @@
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
+import threading
 from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, localcontext, ROUND_CEILING, ROUND_HALF_UP
@@ -225,9 +227,14 @@ class Store:
     def __init__(self, path):
         self.path = Path(path).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Transaksi batch ambient (X01 #51): hanya diisi oleh importer selama
+        # apply; transaction() yang dipanggil di dalamnya bergabung ke koneksi
+        # yang sama supaya seluruh batch atomik. Thread-local agar request
+        # konkurensi tidak saling menimpa.
+        self._tx_local = threading.local()
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -514,6 +521,14 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 if violations:
                     raise RuntimeError(f"Schema 62 migration broke foreign keys: {violations[:5]}")
 
+            if version < 63:
+                # X01 (#51): kontrak impor dan dry-run importer. Tabel
+                # import_jobs/import_job_rows/import_job_events adalah METADATA
+                # JOB — bukan tabel domain — plus pelonggaran CHECK permission
+                # untuk izin baru 'import_data'. Perubahan data domain tetap
+                # hanya lewat fungsi service saat apply eksplisit.
+                db.executescript(Path(__file__).with_name('import_jobs.sql').read_text(encoding='utf-8'))
+
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         db.row_factory = sqlite3.Row
@@ -522,6 +537,14 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
 
     @contextmanager
     def transaction(self, write=False):
+        batch_db = getattr(self._tx_local, "batch_db", None)
+        if batch_db is not None:
+            # Di dalam batch impor (X01 #51): gabung ke transaksi batch yang
+            # sedang berjalan. Tidak commit/rollback sendiri; pemilik batch
+            # yang memutuskan. Ini yang membuat apply per-batch atomik walau
+            # setiap service domain membuka transaksinya sendiri via _write().
+            yield batch_db
+            return
         with closing(self.connect()) as db:
             # ponytail: SQLite serializes writers; move to PostgreSQL when lock waits limit throughput.
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
@@ -531,6 +554,23 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             except BaseException:
                 db.rollback()
                 raise
+
+    @contextmanager
+    def _import_batch(self):
+        """Satu transaksi tulis untuk seluruh apply batch impor (X01 #51).
+
+        Semua panggilan service domain di dalamnya bergabung ke koneksi yang
+        sama (lihat transaction()); commit hanya bila seluruh baris sukses,
+        rollback total bila satu baris pun gagal. Metadata job ikut rollback,
+        sehingga kegagalan tidak meninggalkan efek parsial domain maupun
+        metadata. Dipakai hanya oleh apply_import_job.
+        """
+        with self.transaction(write=True) as db:
+            self._tx_local.batch_db = db
+            try:
+                yield db
+            finally:
+                self._tx_local.batch_db = None
 
     def _user_access(self, db, user_id):
         """Izin, cakupan unit, dan kebijakan SoD pengguna dari server (O01 / #45).
@@ -11113,3 +11153,708 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             charge['rate_snapshot'] = None
             charge['final_amount_minor'] = None
         return charge
+    # --- X01: kontrak impor dan dry-run importer (issue #51) ------------------
+    #
+    # Batas atomicity yang dipilih: PER RECORD. Setiap baris di-apply lewat
+    # fungsi service domain (create_*/change_*) yang masing-masing atomik
+    # dalam transaksinya sendiri. Batch TIDAK atomik lintas baris; sebagai
+    # gantinya setiap baris punya idempotency key deterministik turunan
+    # identitas sumber (F02) dan job menyimpan checkpoint, sehingga apply
+    # yang gagal dapat di-resume tanpa melewatkan baris atau mengulang efek
+    # bisnis. Rollback otomatis hanya pada baris yang gagal (transaksinya
+    # sendiri); baris yang sudah ter-apply tidak dibatalkan diam-diam karena
+    # master bersifat append-only / event-sourced.
+    #
+    # Dry-run TIDAK menulis ke master/stok/jurnal/saldo. Satu-satunya tulisan
+    # dry-run adalah metadata job pada tabel import_* — dipisahkan jelas dari
+    # data domain.
+
+    #: Nama env untuk menandai database produksi (guard impor).
+    IMPORT_PRODUCTION_ENV = "BEELOFT_PRODUCTION"
+
+    def _import_guard_production(self):
+        """Tolak impor pada database produksi/backoffice."""
+        if os.environ.get(self.IMPORT_PRODUCTION_ENV) == "1":
+            raise DomainError(403, "Impor dilarang pada database produksi "
+                                   f"({self.IMPORT_PRODUCTION_ENV}=1). "
+                                   "Gunakan database lokal/tes untuk importer.")
+        if "prod" in self.path.stem.lower():
+            raise DomainError(403, "Impor dilarang pada database produksi "
+                                   f"(nama file '{self.path.name}').")
+
+    def _import_event(self, db, job_id, event, actor_id, detail=None):
+        db.execute('''INSERT INTO import_job_events(id,job_id,event,detail_json,actor_id,created_at)
+            VALUES(?,?,?,?,?,?)''', (str(uuid4()), job_id, event,
+            json.dumps(detail or {}, ensure_ascii=False), actor_id, now()))
+
+    # -- dry-run ------------------------------------------------------------
+
+    def import_dry_run(self, adapter_name, config, csv_text, filename, actor):
+        """Jalankan dry-run impor: parse + validasi + simpan metadata job.
+
+        Tidak mengubah master, stok, jurnal, atau saldo bisnis.
+        """
+        from beeloft import import_contracts as ic
+        from beeloft.permissions import can_access_unit
+        self._import_guard_production()
+        spec = ic.get_adapter(adapter_name)
+        cfg = ic.validate_job_config(config)
+        rows_raw = ic.parse_csv_text(csv_text, filename)
+        entity_type = spec["entity_type"]
+        system, account = cfg["source_system"], cfg["source_account"]
+
+        prepared = []
+        with self.transaction() as db:
+            for row_no, raw in enumerate(rows_raw, start=1):
+                result, errors = ic.validate_row(adapter_name, raw, row_no,
+                                                 cfg["column_map"])
+                identity = result["identity"]
+                fields = result["fields"]
+                disp, disp_reject = ic.classify_row_kind(cfg["strategy"],
+                                                        identity["row_kind"])
+                status, reason, detail = "ok", None, None
+                if errors:
+                    status, reason = "rejected", errors[0]["reason"]
+                    detail = json.dumps(errors, ensure_ascii=False)
+                elif disp == "archived":
+                    status = "archived"
+                    detail = json.dumps({"strategy": cfg["strategy"],
+                                         "row_kind": identity["row_kind"]},
+                                        ensure_ascii=False)
+                elif disp == "rejected":
+                    status, reason = "rejected", disp_reject["reason"]
+                    detail = json.dumps([disp_reject], ensure_ascii=False)
+                fingerprint = ic.payload_fingerprint(fields)
+                key = ic.canonical_key(system, account, entity_type,
+                                       identity["source_id"],
+                                       identity["source_line_id"])
+                idem_key = ic.derive_idempotency_key(
+                    system, account, entity_type, identity["source_id"],
+                    identity["source_line_id"])
+                resolved: dict[str, str] = {}
+                internal_id = None
+                if status == "ok":
+                    state, max_rev, prior_id = self._import_source_conflict(
+                        db, key, fingerprint)
+                    if state == "identical":
+                        status, internal_id = "mapped", prior_id
+                    elif state == "conflict":
+                        if identity["source_revision"] > max_rev:
+                            if cfg["auto_apply_revisions"]:
+                                internal_id = prior_id  # jalur update saat apply
+                            else:
+                                status, reason = "quarantined", "revision_bump_pending_review"
+                                detail = json.dumps({"max_revision": max_rev,
+                                                     "incoming_revision": identity["source_revision"]},
+                                                    ensure_ascii=False)
+                        else:
+                            status, reason = "rejected", "source_conflict"
+                            detail = json.dumps({"max_revision": max_rev}, ensure_ascii=False)
+                if status == "ok":
+                    try:
+                        resolved = self._import_resolve_all(
+                            db, spec, fields, cfg, actor)
+                        # Revision bump: kode milik entitas yang sedang
+                        # di-update (internal_id sudah terisi dari jalur
+                        # conflict) sehingga cek duplikat dilewati.
+                        if internal_id is None:
+                            self._import_check_duplicate_code(
+                                db, adapter_name, spec, fields, resolved)
+                    except ic.ImportContractError as exc:
+                        reason = exc.reason
+                        detail = json.dumps([ic.reject(exc.field, exc.reason,
+                                                       str(exc))],
+                                            ensure_ascii=False)
+                        status = "quarantined" if reason == "ambiguous_reference" \
+                            else "rejected"
+                    except DomainError as exc:
+                        # Scope unit: 403 dari can_access_unit.
+                        status, reason = "rejected", "unit_scope_denied"
+                        detail = json.dumps([ic.reject("", "unit_scope_denied",
+                                                       exc.message)],
+                                            ensure_ascii=False)
+                prepared.append({
+                    "row_no": row_no, "identity": identity, "fields": fields,
+                    "key": key, "fingerprint": fingerprint,
+                    "idem_key": idem_key, "status": status, "reason": reason,
+                    "detail": detail, "internal_id": internal_id,
+                })
+            # Duplikat identitas sumber dalam satu batch.
+            for dup in ic.check_batch_duplicates([
+                    {"row_no": p["row_no"], "key": p["key"],
+                     "fingerprint": p["fingerprint"]} for p in prepared
+                    if p["status"] in ("ok", "mapped")]):
+                target = next(p for p in prepared if p["row_no"] == dup["row_no"])
+                if dup["identical"]:
+                    target["status"] = "mapped"
+                    target["reason"], target["detail"] = None, json.dumps(
+                        {"duplicate_of": dup["duplicate_of"],
+                         "note": "duplikat identik dalam batch: didedup"},
+                        ensure_ascii=False)
+                else:
+                    target["status"] = "rejected"
+                    target["reason"] = "duplicate_in_batch"
+                    target["detail"] = json.dumps(
+                        [ic.reject("source_id", "duplicate_in_batch",
+                                   f"Duplikat identitas sumber baris {dup['duplicate_of']} "
+                                   "dengan payload berbeda.")], ensure_ascii=False)
+
+        totals = ic.control_totals([p["status"] for p in prepared])
+        job_id, job_ref, created = str(uuid4()), f"IMP-{uuid4().hex[:8].upper()}", now()
+        with self.transaction(write=True) as db:
+            db.execute('''INSERT INTO import_jobs(id,job_ref,adapter,strategy,status,
+                source_system,source_account,file_name,file_sha256,row_count,
+                control_totals_json,checkpoint_json,watermark_json,id_map_json,
+                reference_mode_json,auto_apply_revisions,created_by,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (job_id, job_ref, adapter_name, cfg["strategy"], "dry_run",
+                 system, account, filename,
+                 hashlib.sha256(csv_text.encode("utf-8")).hexdigest(),
+                 len(prepared), json.dumps(totals, ensure_ascii=False),
+                 json.dumps({"next_row": 1}, ensure_ascii=False),
+                 json.dumps(cfg.get("watermark") or {}, ensure_ascii=False),
+                 json.dumps(cfg["id_map"], ensure_ascii=False),
+                 json.dumps(cfg["reference_mode"], ensure_ascii=False),
+                 1 if cfg["auto_apply_revisions"] else 0,
+                 actor["id"], created))
+            for p in prepared:
+                ident = p["identity"]
+                db.execute('''INSERT INTO import_job_rows(job_id,row_no,system,account,
+                    entity_type,source_id,source_line_id,source_revision,row_kind,
+                    payload_json,payload_hash,status,reject_reason,reject_detail,
+                    internal_id,idempotency_key)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (job_id, p["row_no"], system, account, entity_type,
+                     ident["source_id"], ident["source_line_id"],
+                     ident["source_revision"], ident["row_kind"],
+                     json.dumps(p["fields"], ensure_ascii=False, default=str),
+                     p["fingerprint"], p["status"], p["reason"], p["detail"],
+                     p["internal_id"], p["idem_key"]))
+            self._import_event(db, job_id, "created", actor["id"],
+                               {"adapter": adapter_name, "file": filename})
+            self._import_event(db, job_id, "dry_run_completed", actor["id"],
+                               {"control_totals": totals,
+                                "contract_version": ic.IMPORT_CONTRACT_VERSION})
+        return self.import_job_detail(job_id, limit=200)
+
+    def _import_source_conflict(self, db, key, fingerprint, exclude_job_id=None):
+        """Cek identitas sumber terhadap baris job-job sebelumnya.
+
+        Kembalikan (state, max_revision, internal_id) dengan state salah satu
+        dari 'none' | 'identical' | 'conflict'. Baris job yang sedang berjalan
+        dikecualikan agar tidak cocok dengan dirinya sendiri.
+        """
+        system, account, entity_type, source_id, source_line_id = key
+        query = '''SELECT source_revision, payload_hash, status, internal_id
+            FROM import_job_rows
+            WHERE system=? AND account=? AND entity_type=? AND source_id=?
+              AND COALESCE(source_line_id,'')=COALESCE(?,'')'''
+        params: list = [system, account, entity_type, source_id, source_line_id]
+        if exclude_job_id:
+            query += " AND job_id<>?"
+            params.append(exclude_job_id)
+        rows = db.execute(query, params).fetchall()
+        # Hanya baris yang termaterialisasi (mapped/applied + internal_id)
+        # yang mengklaim identitas sumber. Baris dry-run-only (ok), gagal,
+        # atau ditolak tidak menghalangi upload ulang identitas yang sama.
+        materialized = [row for row in rows
+                        if row["status"] in ("mapped", "applied") and row["internal_id"]]
+        if not materialized:
+            return ("none", 0, None)
+        for row in materialized:
+            if row["payload_hash"] == fingerprint:
+                return ("identical", row["source_revision"], row["internal_id"])
+        max_rev = max(row["source_revision"] for row in materialized)
+        applied = [row for row in materialized if row["status"] == "applied"]
+        internal_id = (applied[-1]["internal_id"] if applied
+                       else materialized[-1]["internal_id"])
+        return ("conflict", max_rev, internal_id)
+
+    def _import_resolve_reference(self, db, ref, value, mode, id_map):
+        """Resolusi satu referensi kode -> id internal.
+
+        Mode 'code' (default): cocok persis case-insensitive pada kolom code
+        (unik di DB). Mode 'name': cocok pada nama; >1 hasil -> ambigu.
+        id_map eksplisit selalu menang.
+        """
+        from beeloft import import_contracts as ic
+        table = ref["table"]
+        mapped = (id_map.get(table) or {}).get(value)
+        if mapped:
+            hit = db.execute(f"SELECT id FROM {table} WHERE id=?", (mapped,)).fetchone()
+            if not hit:
+                raise ic.ImportContractError(
+                    "orphan_reference",
+                    f"id_map menunjuk '{mapped}' yang tidak ada di {table}.",
+                    field=table)
+            return hit["id"]
+        if mode == "name":
+            hits = self._import_lookup_by_name(db, table, value)
+        else:
+            hits = db.execute(
+                f"SELECT id FROM {table} WHERE code=? COLLATE NOCASE",
+                (value,)).fetchall()
+        if not hits:
+            raise ic.ImportContractError(
+                "orphan_reference",
+                f"{ref['label']} '{value}' tidak ditemukan.",
+                field=table)
+        if len(hits) > 1:
+            raise ic.ImportContractError(
+                "ambiguous_reference",
+                f"{ref['label']} '{value}' cocok dengan {len(hits)} record.",
+                field=table)
+        return hits[0]["id"]
+
+    def _import_lookup_by_name(self, db, table, value):
+        """Cari id berdasar nama (case-insensitive); tabel event-sourced di-join
+        ke revision terakhir."""
+        joins = {
+            "business_units": ("business_units", "business_unit_events", "unit_id"),
+            "storages": ("storages", "storage_events", "storage_id"),
+            "positions": ("positions", "position_events", "position_id"),
+            "customers": ("customers", "customer_events", "customer_id"),
+        }
+        if table in joins:
+            root, events, fk = joins[table]
+            return db.execute(
+                f"""SELECT r.id FROM {root} r JOIN {events} e ON e.{fk}=r.id
+                    WHERE e.sequence=(SELECT MAX(z.sequence) FROM {events} z
+                                      WHERE z.{fk}=r.id)
+                      AND e.name=? COLLATE NOCASE""", (value,)).fetchall()
+        return db.execute(f"SELECT id FROM {table} WHERE name=? COLLATE NOCASE",
+                          (value,)).fetchall()
+
+    def _import_resolve_all(self, db, spec, fields, cfg, actor):
+        """Resolusi seluruh referensi adapter; hormati scope unit."""
+        from beeloft import import_contracts as ic
+        from beeloft.permissions import can_access_unit
+        resolved: dict[str, str] = {}
+        for column, ref in spec["references"].items():
+            skip = ref.get("skip_when")
+            if skip:
+                skip_field, skip_value = next(iter(skip.items()))
+                if fields.get(skip_field) == skip_value:
+                    continue
+            value = fields.get(column)
+            if value is None:
+                continue
+            mode = cfg["reference_mode"].get(column, "code")
+            internal_id = self._import_resolve_reference(
+                db, ref, value, mode, cfg["id_map"])
+            if ref.get("unit_scoped") and not can_access_unit(actor, internal_id):
+                raise DomainError(403, "Pengguna tidak memiliki akses ke unit usaha "
+                                       f"'{value}'.")
+            resolved[ref["field"]] = internal_id
+        return resolved
+
+    def _import_code_lookup(self, adapter_name, spec):
+        """(tabel, kolom_kode, kolom_unit_opsional) untuk cek duplikat kode."""
+        service = spec["service"]
+        if service == "master":
+            table = self.MASTER_CATALOG[spec["master_kind"]]["table"]
+            return (table, "code", None)
+        return {
+            "business_unit": ("business_units", "code", None),
+            "storage": ("storages", "code", "business_unit_id"),
+            "position": ("positions", "code", None),
+            "employee": ("workforce_employees", "code", None),
+            "customer": ("customers", "code", None),
+            "supplier": ("suppliers", "code", None),
+            "product": ("products", "sku", None),
+            "material": ("materials", "code", None),
+        }[service]
+
+    def _import_check_duplicate_code(self, db, adapter_name, spec, fields, resolved):
+        """Tolak bila kode/SKU sudah dipakai record domain lain."""
+        from beeloft import import_contracts as ic
+        table, code_col, unit_col = self._import_code_lookup(adapter_name, spec)
+        code = fields.get("sku" if code_col == "sku" else "code")
+        if not code:
+            return
+        if unit_col:
+            unit_id = resolved.get(unit_col)
+            hit = db.execute(
+                f"SELECT 1 FROM {table} WHERE {code_col}=? COLLATE NOCASE "
+                f"AND {unit_col}=?", (code, unit_id)).fetchone()
+        else:
+            hit = db.execute(
+                f"SELECT 1 FROM {table} WHERE {code_col}=? COLLATE NOCASE",
+                (code,)).fetchone()
+        if hit:
+            raise ic.ImportContractError(
+                "duplicate_code",
+                f"Kode '{code}' sudah dipakai di {table}.", field=code_col)
+
+    # -- baca job -----------------------------------------------------------
+
+    def import_job_detail(self, job_id, limit=200):
+        """Ringkasan job + baris (terbatas) + event."""
+        with self.transaction() as db:
+            job = db.execute("SELECT * FROM import_jobs WHERE id=?", (job_id,)).fetchone()
+            if not job:
+                raise DomainError(404, "Job impor tidak ditemukan.")
+            job = dict(job)
+            for json_col in ("control_totals_json", "checkpoint_json",
+                             "watermark_json", "id_map_json",
+                             "reference_mode_json"):
+                job[json_col[:-5]] = json.loads(job.pop(json_col) or "{}")
+            rows = [dict(r) for r in db.execute(
+                """SELECT row_no, source_id, source_line_id, source_revision, row_kind,
+                          payload_json, status, reject_reason, reject_detail,
+                          internal_id, applied_at
+                   FROM import_job_rows WHERE job_id=? ORDER BY row_no LIMIT ?""",
+                (job_id, limit)).fetchall()]
+            for row in rows:
+                row["payload"] = json.loads(row.pop("payload_json"))
+                if row["reject_detail"]:
+                    try:
+                        row["reject_detail"] = json.loads(row["reject_detail"])
+                    except ValueError:
+                        pass
+            events = [dict(e) for e in db.execute(
+                """SELECT sequence, id, event, detail_json, actor_id, created_at
+                   FROM import_job_events WHERE job_id=? ORDER BY sequence""",
+                (job_id,)).fetchall()]
+            for event in events:
+                event["detail"] = json.loads(event.pop("detail_json") or "{}")
+            job["rows"], job["events"] = rows, events
+            return job
+
+    def import_jobs_list(self, limit=50):
+        with self.transaction() as db:
+            jobs = [dict(r) for r in db.execute(
+                """SELECT id, job_ref, adapter, strategy, status, source_system,
+                          source_account, file_name, row_count, control_totals_json,
+                          created_by, created_at, applied_at
+                   FROM import_jobs ORDER BY created_at DESC LIMIT ?""",
+                (limit,)).fetchall()]
+            for job in jobs:
+                job["control_totals"] = json.loads(job.pop("control_totals_json") or "{}")
+            return jobs
+
+    # -- apply --------------------------------------------------------------
+
+    def apply_import_job(self, job_id, actor, key):
+        """Apply eksplisit sebuah job dry-run — PER-BATCH ATOMIK (X01 #51).
+
+        Seluruh batch (semua baris + metadata job) berjalan dalam satu
+        transaksi tulis via _import_batch(): commit hanya bila semua baris
+        sukses; satu baris gagal -> rollback total tanpa efek parsial domain
+        maupun metadata. Tiap baris tetap dieksekusi lewat fungsi service
+        domain existing (bukan insert langsung): transaction() yang dibuka
+        _write() bergabung ke koneksi batch yang sama.
+        Idempotency: key apply dicatat dalam transaksi yang sama; replay key
+        yang sama setelah sukses mengembalikan hasil tersimpan tanpa efek.
+        Kegagalan batch dicatat sebagai event + status 'failed' dengan
+        checkpoint (baris yang gagal, untuk observability) pada transaksi
+        terpisah setelah rollback; resume = apply ulang seluruh batch dari
+        awal karena tidak ada efek parsial yang perlu dilanjutkan.
+        """
+        from beeloft import import_contracts as ic
+        self._import_guard_production()
+        ic.validate_idempotency_key(key)
+        # Fast path tanpa lock tulis: replay key yang sudah sukses.
+        with self.transaction() as db:
+            receipt = db.execute("SELECT response FROM requests WHERE key=?",
+                                 (key,)).fetchone()
+            if receipt:
+                return dict(json.loads(receipt["response"])) | {"idempotent_replay": True}
+            job = db.execute("SELECT * FROM import_jobs WHERE id=?", (job_id,)).fetchone()
+            if not job:
+                raise DomainError(404, "Job impor tidak ditemukan.")
+            job = dict(job)
+        if job["status"] == "applied":
+            with self.transaction() as db:
+                return self._import_replay_result(db, job)
+        if job["status"] not in ("dry_run", "ready", "failed"):
+            raise DomainError(409, f"Job berstatus '{job['status']}' tidak dapat di-apply.")
+        if job["apply_key"] and job["apply_key"] != key:
+            raise DomainError(409, "Idempotency-Key berbeda untuk apply job ini; "
+                                   "pakai key yang sama atau selesaikan apply yang berjalan.")
+        spec = ic.get_adapter(job["adapter"])
+        cfg = {
+            "strategy": job["strategy"],
+            "source_system": job["source_system"],
+            "source_account": job["source_account"],
+            "id_map": json.loads(job["id_map_json"] or "{}"),
+            "reference_mode": json.loads(job["reference_mode_json"] or "{}"),
+            "auto_apply_revisions": bool(job["auto_apply_revisions"]),
+        }
+        batch_started = False
+        failed_at = None
+        failure = None
+        try:
+            with self._import_batch() as db:
+                # Otoritatif di dalam lock tulis: cek ulang receipt & status
+                # untuk menutup race antar apply konkurensi.
+                receipt = db.execute("SELECT response FROM requests WHERE key=?",
+                                     (key,)).fetchone()
+                if receipt:
+                    return dict(json.loads(receipt["response"])) | {"idempotent_replay": True}
+                fresh = db.execute("SELECT * FROM import_jobs WHERE id=?",
+                                   (job_id,)).fetchone()
+                fresh = dict(fresh)
+                if fresh["status"] == "applied":
+                    return self._import_replay_result(db, fresh)
+                if fresh["status"] not in ("dry_run", "ready", "failed"):
+                    raise DomainError(409, f"Job berstatus '{fresh['status']}' "
+                                           "tidak dapat di-apply.")
+                resumed = fresh["status"] == "failed"
+                db.execute("UPDATE import_jobs SET status='applying', apply_key=?, "
+                           "applied_by=? WHERE id=?", (key, actor["id"], job_id))
+                self._import_event(db, job_id, "resumed" if resumed else "apply_started",
+                                   actor["id"], {"key": key})
+                batch_started = True
+                # Baris yang gagal pada percobaan apply sebelumnya dicoba lagi
+                # dari awal (rollback total = tidak ada efek parsial yang perlu
+                # dilanjutkan). Detail kegagalan lama tetap ada di event log.
+                db.execute("""UPDATE import_job_rows SET status='ok', reject_reason=NULL,
+                    reject_detail=NULL WHERE job_id=? AND status='failed'""", (job_id,))
+                rows = [dict(r) for r in db.execute(
+                    "SELECT * FROM import_job_rows WHERE job_id=? ORDER BY row_no",
+                    (job_id,)).fetchall()]
+                applied = 0
+                for row in rows:
+                    if row["status"] not in ("ok", "mapped"):
+                        continue
+                    failed_at = row["row_no"]
+                    internal_id = self._import_apply_row(db, job, cfg, spec, row, actor)
+                    db.execute("""UPDATE import_job_rows SET status='applied', internal_id=?,
+                        applied_at=? WHERE job_id=? AND row_no=?""",
+                        (internal_id, now(), job_id, row["row_no"]))
+                    failed_at = None
+                    applied += 1
+                quarantined = db.execute(
+                    "SELECT COUNT(*) FROM import_job_rows WHERE job_id=? AND status='quarantined'",
+                    (job_id,)).fetchone()[0]
+                final = "applied_partial" if quarantined else "applied"
+                db.execute("""UPDATE import_jobs SET status=?, applied_at=?,
+                    checkpoint_json=? WHERE id=?""",
+                    (final, now(), json.dumps({"next_row": None, "completed": True}), job_id))
+                self._import_event(db, job_id, "apply_completed", actor["id"],
+                                   {"applied": applied, "status": final})
+                result = {"job_id": job_id, "job_ref": job["job_ref"], "status": final,
+                          "applied": applied, "idempotent_replay": False}
+                db.execute("INSERT INTO requests(key,actor_id,fingerprint,response,created_at) "
+                           "VALUES(?,?,?,?,?)",
+                           (key, actor["id"], "import-apply:" + job_id,
+                            json.dumps(result), now()))
+                return result
+        except Exception as exc:  # noqa: BLE001 - rollback dulu, catat, lalu raise ulang
+            failure = exc
+        if batch_started:
+            # Rollback sudah terjadi di _import_batch. Catat kegagalan untuk
+            # observability pada transaksi terpisah (tidak ikut rollback).
+            # checkpoint_next_row = baris yang gagal; resume mengulang batch
+            # dari awal karena tidak ada efek parsial.
+            message = getattr(failure, "message", str(failure))
+            with self.transaction(write=True) as db:
+                if failed_at is not None:
+                    db.execute("""UPDATE import_job_rows SET status='failed',
+                        reject_reason='apply_failed', reject_detail=? WHERE job_id=? AND row_no=?""",
+                        (message, job_id, failed_at))
+                db.execute("UPDATE import_jobs SET status='failed', checkpoint_json=? WHERE id=?",
+                           (json.dumps({"next_row": failed_at}), job_id))
+                self._import_event(db, job_id, "apply_failed", actor["id"],
+                                   {"row_no": failed_at, "error": message[:500]})
+        raise failure
+
+    def _import_replay_result(self, db, job):
+        """Hasil apply ulang job yang sudah applied: verifikasi tanpa efek."""
+        counts = db.execute(
+            """SELECT status, COUNT(*) AS n FROM import_job_rows
+               WHERE job_id=? GROUP BY status""", (job["id"],)).fetchall()
+        by_status = {row["status"]: row["n"] for row in counts}
+        return {"job_id": job["id"], "job_ref": job["job_ref"], "status": "applied",
+                "applied": by_status.get("applied", 0),
+                "by_status": by_status, "idempotent_replay": True}
+
+    def _import_apply_row(self, db, job, cfg, spec, row, actor):
+        """Apply satu baris lewat service domain dalam transaksi batch.
+
+        `db` adalah koneksi batch milik _import_batch(); semua panggilan
+        service di bawah (via _write -> transaction()) bergabung ke transaksi
+        yang sama sehingga batch tetap atomik. Kembalikan internal id.
+        """
+        from beeloft import import_contracts as ic
+        from beeloft.permissions import can_access_unit
+        adapter = job["adapter"]
+        fields = json.loads(row["payload_json"])
+        resolved = self._import_resolve_all(db, spec, fields, cfg, actor)
+        key = ic.canonical_key(job["source_system"], job["source_account"],
+                               spec["entity_type"], row["source_id"],
+                               row["source_line_id"])
+        state, max_rev, prior_id = self._import_source_conflict(
+            db, key, row["payload_hash"], exclude_job_id=job["id"])
+        idem_key = row["idempotency_key"] or ic.derive_idempotency_key(
+            job["source_system"], job["source_account"], spec["entity_type"],
+            row["source_id"], row["source_line_id"])
+        if state == "identical" or row["status"] == "mapped":
+            return prior_id  # no-op idempoten
+        if (state == "conflict" and prior_id and row["source_revision"] > max_rev
+                and cfg["auto_apply_revisions"]):
+            # Jalur update memakai key revision-scoped: key create identitas
+            # yang sama sudah terpakai oleh _write() dengan fingerprint
+            # berbeda, sehingga key update harus namespace tersendiri agar
+            # idempoten tanpa 409.
+            update_key = ic.derive_idempotency_key(
+                job["source_system"], job["source_account"], spec["entity_type"],
+                row["source_id"], row["source_line_id"],
+                revision=row["source_revision"])
+            return self._import_update_entity(adapter, spec, prior_id, fields,
+                                             resolved, actor, update_key)
+        payload = self._import_create_payload(adapter, spec, fields, resolved)
+        service = spec["service"]
+        if service == "master":
+            result = self.create_master(spec["master_kind"], payload, actor, idem_key)
+        elif service == "business_unit":
+            result = self.create_business_unit(payload, actor, idem_key)
+        elif service == "storage":
+            result = self.create_storage(payload, actor, idem_key)
+        elif service == "position":
+            result = self.create_position(payload, actor, idem_key)
+        elif service == "employee":
+            result = self.create_employee(payload, actor, idem_key)
+        elif service == "customer":
+            result = self.create_customer(payload, actor, idem_key)
+        elif service == "supplier":
+            result = self.create_supplier(payload, actor, idem_key)
+        elif service == "product":
+            result = self.create_product(payload, actor, idem_key)
+        elif service == "material":
+            result = self.create_material(payload, actor, idem_key)
+        else:  # pragma: no cover - dijaga get_adapter
+            raise DomainError(422, f"Service '{service}' belum didukung importer.")
+        return result.get("id")
+
+    def _import_create_payload(self, adapter, spec, fields, resolved):
+        """Bangun payload service domain dari field kanonis + referensi."""
+        service = spec["service"]
+        if service == "master":
+            payload = {"code": fields["code"], "name": fields["name"]}
+            for column, ref in spec["references"].items():
+                if ref["field"] in resolved:
+                    payload[ref["field"]] = resolved[ref["field"]]
+            if spec["master_kind"] == "material_class":
+                payload["level"] = fields["level"]
+            for extra in ("sort_order", "range_text", "note"):
+                if fields.get(extra) is not None:
+                    payload[extra] = fields[extra]
+            return payload
+        if service == "business_unit":
+            return {"code": fields["code"], "name": fields["name"],
+                    "reason": fields["reason"]}
+        if service == "storage":
+            payload = {"code": fields["code"], "name": fields["name"],
+                       "business_unit_id": resolved["business_unit_id"],
+                       "reason": fields["reason"]}
+            if fields.get("kind"):
+                payload["kind"] = fields["kind"]
+            return payload
+        if service == "position":
+            return {"code": fields["code"], "name": fields["name"],
+                    "reason": fields["reason"]}
+        if service == "employee":
+            payload = {"code": fields["code"], "name": fields["name"],
+                       "department": fields["department"],
+                       "reason": fields["reason"]}
+            if resolved.get("position_id"):
+                payload["position_id"] = resolved["position_id"]
+            if resolved.get("business_unit_id"):
+                payload["business_unit_id"] = resolved["business_unit_id"]
+            return payload
+        if service == "customer":
+            return {"code": fields["code"], "name": fields["name"],
+                    "contact": fields.get("contact"),
+                    "address": fields.get("address"),
+                    "reason": fields["reason"]}
+        if service == "supplier":
+            return {"code": fields["code"], "name": fields["name"],
+                    "contact": fields.get("contact"),
+                    "address": fields.get("address"),
+                    "reason": fields["reason"]}
+        if service == "product":
+            payload = {"sku": fields["sku"], "name": fields["name"],
+                       "color": fields.get("color") or "",
+                       "size": fields.get("size") or "",
+                       "uom_code": "PCS"}
+            for column, ref in spec["references"].items():
+                if column == "uom_code":
+                    continue  # uom produk selalu PCS per kontrak M01
+                if ref["field"] in resolved:
+                    payload[ref["field"]] = resolved[ref["field"]]
+            return payload
+        if service == "material":
+            payload = {"code": fields["code"], "name": fields["name"],
+                       "unit": fields["unit"]}
+            if resolved.get("class_id"):
+                payload["class_id"] = resolved["class_id"]
+            if fields.get("description"):
+                payload["description"] = fields["description"]
+            if fields.get("reference_price") is not None:
+                minor = fields["reference_price"]
+                payload["reference_price"] = f"{minor // 100}.{minor % 100:02d}"
+            return payload
+        raise DomainError(422, f"Adapter '{adapter}' belum didukung apply.")  # pragma: no cover
+
+    def _import_update_entity(self, adapter, spec, internal_id, fields, resolved,
+                             actor, idem_key):
+        """Jalur update untuk revision bump eksplisit (auto_apply_revisions).
+
+        Hanya field yang memang mutable menurut kontrak domain masing-masing.
+        """
+        service = spec["service"]
+        reason = f"Revisi impor X01 ({spec['label']})"
+        if service == "master":
+            result = self.update_master(spec["master_kind"], internal_id,
+                                        {"name": fields["name"]}, actor, idem_key)
+            return result.get("id")
+        if service == "product":
+            result = self.update_product(
+                internal_id,
+                {"name": fields["name"], "color": fields.get("color") or "",
+                 "size": fields.get("size") or ""}, actor, idem_key)
+            return result.get("id")
+        if service == "material":
+            payload: dict = {}
+            if fields.get("description") is not None:
+                payload["description"] = fields["description"]
+            if fields.get("reference_price") is not None:
+                minor = fields["reference_price"]
+                payload["reference_price"] = f"{minor // 100}.{minor % 100:02d}"
+            if resolved.get("class_id"):
+                payload["class_id"] = resolved["class_id"]
+            if not payload:
+                raise DomainError(422, "Revisi bahan tanpa field mutable.")
+            result = self.update_material(internal_id, payload, actor, idem_key)
+            return result.get("id")
+        if service in ("business_unit", "storage", "customer", "position"):
+            current = {
+                "business_unit": self.business_unit,
+                "storage": self.storage,
+                "customer": self.customer,
+                "position": self.position,
+            }[service](internal_id)
+            changer = {
+                "business_unit": self.change_business_unit,
+                "storage": self.change_storage,
+                "customer": self.change_customer,
+                "position": self.change_position,
+            }[service]
+            result = changer(internal_id,
+                             {"expected_revision": current["revision"],
+                              "name": fields["name"], "reason": reason},
+                             actor, idem_key)
+            return result.get("id")
+        if service == "employee":
+            current = self.employee(internal_id)
+            result = self.change_employee(
+                internal_id,
+                {"expected_revision": current["revision"],
+                 "name": fields["name"], "department": fields["department"],
+                 "reason": reason}, actor, idem_key)
+            return result.get("id")
+        # Supplier: identitas immutable, change hanya toggle active.
+        raise DomainError(422, f"Revisi '{adapter}' tidak dapat di-apply otomatis; "
+                               "tinjau manual (identitas supplier immutable).")

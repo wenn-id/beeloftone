@@ -39,6 +39,8 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'Scan bundle', nav: 'scan-bundle', section: 'bundle-scan-view', heading: 'Scan bundle'},
     {name: 'Scan barang jadi', nav: 'scan-finished-goods', section: 'finished-goods-scan-view', heading: 'Scan barang jadi'},
     {name: 'Cadangan data', nav: 'backup', section: 'backup-view', heading: 'Cadangan data'},
+    // X01 (#51): halaman Impor data adalah destinasi sidebar untuk admin.
+    {name: 'Impor data', nav: 'import', section: 'import-view', heading: 'Impor data'},
     {name: 'WIP ageing', nav: 'wip-ageing-insights', section: 'analytics-view', heading: 'WIP ageing & sinyal hambatan', content: '#wip-ageing-form'},
     // Milestone D: Tanya Beeloft, Integrasi, dan Audit trail adalah halaman workspace.
     // riwayat investigasi dimuat terpisah dari permintaan tulisan, jadi tunggu riwayatnya
@@ -375,7 +377,7 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
       await page.evaluate(value => document.documentElement.style.fontSize = `${value}%`, scale);
       await setTheme(colorScheme);
       for (const destination of allDestinations) {
-        if (role !== 'admin' && ['audit-trail', 'backup'].includes(destination.nav)) {
+        if (role !== 'admin' && ['audit-trail', 'backup', 'import'].includes(destination.nav)) {
           assert.notEqual(await page.locator('#' + destination.nav).getAttribute('hidden'), null);
           continue;
         }

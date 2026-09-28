@@ -200,6 +200,7 @@ module.exports = async ({page, login, admin, viewer, work}) => {
   await aligned('board-home');
   assert.equal(await page.locator('#backup').isHidden(), true);
   assert.equal(await page.locator('#audit-trail').isHidden(), true);
+  assert.equal(await page.locator('#import').isHidden(), true);
   await login(admin);
 
   for (const [width, theme] of [[1440,'light'],[1440,'dark'],[390,'light']]) {

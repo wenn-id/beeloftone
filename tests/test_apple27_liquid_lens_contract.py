@@ -64,12 +64,12 @@ class LiquidLensContractTest(unittest.TestCase):
 
     def test_version_and_schema(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(), re.M).group(1)
-        self.assertEqual(version, '0.120.0')
+        self.assertEqual(version, '0.121.0')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft/api.py').read_text(encoding='utf-8'))
         self.assertEqual(json.loads((ROOT / 'docs/openapi.json').read_text(encoding='utf-8'))['info']['version'], version)
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 62)
+        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
 
 
 if __name__ == '__main__':

@@ -27,6 +27,7 @@ from beeloft.models import EmployeeJobCreate, EmployeeJobUpdate, JobRealizationC
 from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
                             PeriodDecision, PoReceiptJournalCreate)
 from beeloft.models import UserCreate, UserPermissionsSet, UserPresetSet, UserUnitsSet
+from beeloft.models import ImportDryRunRequest
 from beeloft.store import DomainError, Store
 from beeloft.permissions import require_permission, has_permission, check_self_approval
 from beeloft.brain import investigate
@@ -80,7 +81,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.120.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.121.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -580,6 +581,54 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/integrations/mekari/payroll-snapshots/{batch_id}', tags=['Integrations'])
     def mekari_payroll_snapshot(batch_id: str, user: Actor):
         return store.mekari_payroll_snapshot(batch_id)
+
+    # --- X01: kontrak impor dan dry-run importer (issue #51) -----------------
+    # Alur: POST /dry-run (validasi tanpa write domain) -> GET job (preview,
+    # reject report) -> POST /apply (aksi terpisah, izin import_data).
+    # Apply per-batch atomik: satu transaksi untuk seluruh batch; satu baris
+    # gagal -> rollback total. Resume mengulang batch dari awal.
+    # Apply tidak pernah berjalan pada database produksi (guard di store).
+
+    @app.get('/api/import/adapters', tags=['Import'])
+    def import_adapters(user: Actor):
+        require_permission(user, "import_data")
+        from beeloft import import_contracts as ic
+        return ic.adapter_catalog()
+
+    @app.post('/api/import/dry-run', status_code=201, tags=['Import'])
+    def import_dry_run(body: ImportDryRunRequest, user: Actor):
+        require_permission(user, "import_data")
+        data = body.model_dump(mode='json')
+        config = {"source_system": data["source_system"],
+                  "source_account": data["source_account"],
+                  "strategy": data["strategy"],
+                  "column_map": data["column_map"],
+                  "id_map": data["id_map"],
+                  "reference_mode": data["reference_mode"],
+                  "auto_apply_revisions": data["auto_apply_revisions"],
+                  "watermark": data["watermark"]}
+        return store.import_dry_run(data["adapter"], config, data["csv_text"],
+                                    data["filename"], user)
+
+    @app.get('/api/import/jobs', tags=['Import'])
+    def import_jobs(user: Actor, limit: Limit = 50):
+        require_permission(user, "import_data")
+        return store.import_jobs_list(limit)
+
+    @app.get('/api/import/jobs/{job_id}', tags=['Import'])
+    def import_job(job_id: str, user: Actor, limit: Limit = 200):
+        require_permission(user, "import_data")
+        return store.import_job_detail(job_id, limit)
+
+    @app.post('/api/import/jobs/{job_id}/apply', tags=['Import'])
+    def import_job_apply(job_id: str, user: Actor, key: RequestKey):
+        require_permission(user, "import_data")
+        return store.apply_import_job(job_id, user, key)
+
+    @app.post('/api/import/jobs/{job_id}/resume', tags=['Import'])
+    def import_job_resume(job_id: str, user: Actor, key: RequestKey):
+        require_permission(user, "import_data")
+        return store.apply_import_job(job_id, user, key)
 
     @app.get('/api/integrations/mekari/payroll-summary', tags=['Integrations'])
     def mekari_payroll_summary(user: Actor):

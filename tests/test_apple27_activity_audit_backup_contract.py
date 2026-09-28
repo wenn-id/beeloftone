@@ -51,7 +51,7 @@ ACTIVITY_EVENT = between('function activityEvent(', '\n// Errors stay inline')
 ACTIVITY_WIRING = between("$('activity').onclick", 'function saveDownload(')
 LOAD_AUDIT = between('async function loadAuditEvents(', 'async function auditEventDialog(')
 AUDIT_DIALOG = between('async function auditEventDialog(', '\n// Keluar dialog')
-BACKUP_JS = APP[APP.index("$('backup').onclick"):]
+BACKUP_JS = between("$('backup').onclick", "// -- X01 (#51) Importer")
 A66_MARKER = '#activity-view,#audit-view,#backup-view{max-width:1360px'
 # A6.7 appended its own block after this one; the A6.6 slice ends where it begins, so the checks
 # below keep meaning exactly what they meant when A6.6 was approved.
@@ -350,14 +350,14 @@ class GlobalTest(unittest.TestCase):
 
     def test_version_schema_and_routes(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.120.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.121.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 310, 'P03 (#52) adds 11 job paths after P01; B01 (#50) adds 2 invoice paths')
+        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 62)
+        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
 
     def test_documentation_exists(self):
         text = (ROOT / 'docs' / 'apple27-activity-audit-backup-modern-workspaces.md').read_text(encoding='utf-8')

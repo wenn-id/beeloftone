@@ -326,7 +326,7 @@ class PlanningCuttingTest(TestCase):
                 "SELECT 1 FROM sqlite_master WHERE name='production_plans'").fetchone())
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],62)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],63)
         plan = self.plan(order)
         self.assertEqual(plan['status'], 'approved')  # grandfathered: histori lama tidak rusak
         self.assertEqual(plan['revision'], 0)
