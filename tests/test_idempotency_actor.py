@@ -271,7 +271,7 @@ class RequestKeyMigrationTest(unittest.TestCase):
 
         with closing(sqlite3.connect(self.path, isolation_level=None)) as db:
             db.row_factory = sqlite3.Row
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 56)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 57)
             kept = db.execute('SELECT actor_id,response FROM requests '
                               'WHERE key=?', ('legacy-duplicate',)).fetchall()
             self.assertEqual(len(kept), 1)

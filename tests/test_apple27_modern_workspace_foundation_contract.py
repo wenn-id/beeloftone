@@ -126,7 +126,8 @@ MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-vi
                      'analytics-view', 'ai-view', 'integrations-view',
                      'activity-view', 'audit-view', 'backup-view',
                      'purchase-requests-view', 'marketing-budgets-view', 'approvals-view',
-                     'master-catalog-view')
+                     'master-catalog-view',          # M01 (#43): the master-catalog workspace
+                     'masters-view')                 # M02 (#44): the business-masters workspace
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -236,6 +237,16 @@ MIGRATED_RENDERERS = frozenset({
     'templateComponentRow', 'templateForm', 'productEditForm', 'materialEditForm',
     'applyTemplateForm', 'catalogRows', 'loadCatalogs', 'catalogSelectOptions',
     'classificationFields',
+
+    # ---- M02: Master bisnis (issue #44) ----
+    # The masters roster and the location-mapping roster, both record lists built from the same
+    # A6.0 shapes the A6.2 catalogs use; plus the field grammar the masters forms and the
+    # location-mapping form are composed from, and the revision history dialog.
+    'paintMasters', 'paintLocationMappings',
+    'loadMasters',                     # the roster's loading / empty / error states
+    'masterFormField',
+    'masterEditForm',                 # the create/change forms are formDialog() shells
+    'masterHistoryDialog',
 })
 
 
@@ -797,7 +808,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.115.0')
+        self.assertEqual(version, '0.116.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -807,7 +818,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 56, 'A6.0 is presentation only')
+        self.assertEqual(max(versions), 57, 'A6.0 is presentation only')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -821,7 +832,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 228)
+        self.assertEqual(len(contract['paths']), 254)
 
 
 if __name__ == '__main__':

@@ -378,6 +378,50 @@ endpoint,POST /api/production-change-requests/{request_id}/decisions,A1,P02,A3,b
 endpoint,GET /api/activity,A3,R01,A1/A2,beeloft/api.py#activity
 endpoint,GET /api/activity.csv,A3,R01,A1/A2,beeloft/api.py#export_activity
 endpoint,GET /api/backup,A3,O02,A0,beeloft/api.py#download_backup
+table,business_units,A2,M02,A1,beeloft/business_masters.sql
+table,business_unit_events,A2,M02,A1,beeloft/business_masters.sql
+table,storages,A2,M02,A1,beeloft/business_masters.sql
+table,storage_events,A2,M02,A1,beeloft/business_masters.sql
+table,customers,A2,M02,A1,beeloft/business_masters.sql
+table,customer_events,A2,M02,A1,beeloft/business_masters.sql
+table,positions,A2,M02,A1,beeloft/business_masters.sql
+table,position_events,A2,M02,A1,beeloft/business_masters.sql
+table,payment_methods,A2,M02,A1,beeloft/business_masters.sql
+table,payment_method_events,A2,M02,A1,beeloft/business_masters.sql
+table,workforce_employee_legacy_ids,A2,M02,A1,beeloft/business_masters.sql
+table,storage_location_mappings,A2,M02,A1,beeloft/business_masters.sql
+endpoint,GET /api/business-units,A2,M02,A1,beeloft/api.py#business_units
+endpoint,POST /api/business-units,A2,M02,A1,beeloft/api.py#create_business_unit
+endpoint,GET /api/business-units/{unit_id},A2,M02,A1,beeloft/api.py#business_unit
+endpoint,POST /api/business-units/{unit_id}/changes,A2,M02,A1,beeloft/api.py#change_business_unit
+endpoint,GET /api/business-units/{unit_id}/history,A2,M02,A1,beeloft/api.py#business_unit_history
+endpoint,GET /api/storages,A2,M02,A1,beeloft/api.py#storages
+endpoint,POST /api/storages,A2,M02,A1,beeloft/api.py#create_storage
+endpoint,GET /api/storages/{storage_id},A2,M02,A1,beeloft/api.py#storage
+endpoint,POST /api/storages/{storage_id}/changes,A2,M02,A1,beeloft/api.py#change_storage
+endpoint,GET /api/storages/{storage_id}/history,A2,M02,A1,beeloft/api.py#storage_history
+endpoint,GET /api/customers,A2,M02,A1,beeloft/api.py#customers
+endpoint,POST /api/customers,A2,M02,A1,beeloft/api.py#create_customer
+endpoint,GET /api/customers/{customer_id},A2,M02,A1,beeloft/api.py#customer
+endpoint,POST /api/customers/{customer_id}/changes,A2,M02,A1,beeloft/api.py#change_customer
+endpoint,GET /api/customers/{customer_id}/history,A2,M02,A1,beeloft/api.py#customer_history
+endpoint,GET /api/positions,A2,M02,A1,beeloft/api.py#positions
+endpoint,POST /api/positions,A2,M02,A1,beeloft/api.py#create_position
+endpoint,GET /api/positions/{position_id},A2,M02,A1,beeloft/api.py#position
+endpoint,POST /api/positions/{position_id}/changes,A2,M02,A1,beeloft/api.py#change_position
+endpoint,GET /api/positions/{position_id}/history,A2,M02,A1,beeloft/api.py#position_history
+endpoint,GET /api/payment-methods,A2,M02,A1,beeloft/api.py#payment_methods
+endpoint,POST /api/payment-methods,A2,M02,A1,beeloft/api.py#create_payment_method
+endpoint,GET /api/payment-methods/{payment_method_id},A2,M02,A1,beeloft/api.py#payment_method
+endpoint,POST /api/payment-methods/{payment_method_id}/changes,A2,M02,A1,beeloft/api.py#change_payment_method
+endpoint,GET /api/payment-methods/{payment_method_id}/history,A2,M02,A1,beeloft/api.py#payment_method_history
+endpoint,POST /api/suppliers/{supplier_id}/changes,A2,M02,A1,beeloft/api.py#change_supplier
+endpoint,GET /api/workforce/employees/{employee_id}/legacy-ids,A2,M02,A1,beeloft/api.py#employee_legacy_ids
+endpoint,POST /api/workforce/employees/{employee_id}/legacy-ids,A2,M02,A1,beeloft/api.py#create_employee_legacy_id
+endpoint,POST /api/storage-location-mappings/recompute,A2,M02,A1,beeloft/api.py#recompute_location_mappings
+endpoint,GET /api/storage-location-mappings,A2,M02,A1,beeloft/api.py#storage_location_mappings
+endpoint,POST /api/storage-location-mappings/{mapping_id}/mappings,A2,M02,A1,beeloft/api.py#map_storage_location
+endpoint,GET /api/storage-location-mappings/summary,A2,M02,A1,beeloft/api.py#location_mapping_summary
 endpoint,GET /api/catalog/{catalog},A1,M01,A2,beeloft/api.py#catalog_list
 endpoint,POST /api/catalog/{catalog},A1,M01,A2,beeloft/api.py#catalog_create
 endpoint,POST /api/catalog/{catalog}/{row_id}/changes,A1,M01,A2,beeloft/api.py#catalog_change
