@@ -53,6 +53,7 @@ they do not replace that page's primary roster, report, or queue.
 | Production order / purchasing / approvals: PRs for one order and one PR | `orderPurchaseRequestsDialog`, `purchaseRequestDialog` |
 | Purchasing: maintain supporting suppliers; select and review a PO | `suppliersDialog`, `purchaseOrdersDialog`, `purchaseOrderDialog` |
 | Purchasing / approvals: inspect incoming QC or one supplier payment request | `qualityIntakeDialog`, `supplierPaymentRequestDialog` |
+| Purchasing: supplier invoices for one PO and one invoice | `supplierInvoicesDialog`, `supplierInvoiceDialog` |
 | Materials: scan one batch, maintain material master, inspect batch/order history and batch lineage | `materialBatchScanDialog`, `materialMasterDialog`, `materialHistoryDialog`, `materialBatchTraceabilityDialog` |
 
 ## Shared infrastructure (not destinations)

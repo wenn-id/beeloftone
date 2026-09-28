@@ -230,6 +230,10 @@ MIGRATED_RENDERERS = frozenset({
     'qualityIntakeDialog', 'renderSupplierReturns', 'supplierPaymentRequestDialog',
     # The two approval details the Inbox opens, and the order-scoped "PR untuk order ini".
     'productionChangeRequestDialog', 'payrollApprovalRequestDialog', 'orderPurchaseRequestsDialog',
+    # ---- B01 (issue #50): supplier invoice sheets ----
+    # The invoice list, registration form and detail sheet extend the PO fulfilment workflow,
+    # so they speak the same A6.7/A6.8 request grammar instead of inventing a second one.
+    'supplierInvoicesDialog', 'supplierInvoiceForm', 'supplierInvoiceDialog',
     # Deliberately NOT here, and still failing this contract if they emit A6 markup: the legacy
     # FORMS of the fulfilment workflow (purchaseOrderForm, purchaseReceiptForm, qualityDecisionForm,
     # supplierPaymentForm, payrollApprovalForm) and every Produksi / warehouse / marketplace child
@@ -842,7 +846,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.119.0')
+        self.assertEqual(version, '0.120.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -852,7 +856,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 61, 'P03 adds schema 61 (P01/O01 have 60)')
+        self.assertEqual(max(versions), 62, 'B01 adds schema 62 (P03 reserves 61, P01 has 60)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -866,7 +870,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 308, 'P03 (#52) adds 11 employee-job paths after O01')
+        self.assertEqual(len(contract['paths']), 310, 'P03 (#52) adds 11 job paths after P01; B01 (#50) adds 2 invoice paths')
 
 
 if __name__ == '__main__':

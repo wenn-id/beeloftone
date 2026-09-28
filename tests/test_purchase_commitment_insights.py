@@ -25,6 +25,9 @@ class PurchaseCommitmentInsightsTest(TestCase):
     setup_receipt=payment_tests.SupplierPaymentApprovalTest.setup_receipt
     receive=payment_tests.SupplierPaymentApprovalTest.receive
     payment_body=payment_tests.SupplierPaymentApprovalTest.payment_body
+    # B01 (#50): request_payment otomatis mendaftarkan invoice; pinjam helper-nya.
+    detail=payment_tests.SupplierPaymentApprovalTest.detail
+    invoice=payment_tests.SupplierPaymentApprovalTest.invoice
     request_payment=payment_tests.SupplierPaymentApprovalTest.request_payment
 
     def test_partial_receipt_exposes_overdue_commitment_and_payment_position(self):
@@ -98,6 +101,6 @@ class PurchaseCommitmentInsightsTest(TestCase):
         self.assertEqual(Store(backup).purchase_commitment_insights('2026-10-20',7,status='all')
                          ['items'][0]['purchase_order_id'],po['id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],61)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],62)
         self.post('/api/purchase-orders/'+po['id']+'/close',{'reason':'Penerimaan selesai'})
         self.assertEqual(self.client.get(base+'&status=all').json()['total'],0)

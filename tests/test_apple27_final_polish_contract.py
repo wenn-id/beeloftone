@@ -438,7 +438,7 @@ class BudgetTest(unittest.TestCase):
         # The Inbox still makes one list request per load and never asks for the aggregate summary.
         self.assertNotIn('/api/approvals/summary', body('loadApprovals'))
         # Each migrated sheet loads exactly what it loaded before.
-        self.assertEqual(body('purchaseOrderDialog').count('api.get('), 2)
+        self.assertEqual(body('purchaseOrderDialog').count('api.get('), 3)  # B01 (#50): + tagihan supplier
         for name in ('qualityIntakeDialog', 'supplierPaymentRequestDialog', 'productionChangeRequestDialog',
                      'payrollApprovalRequestDialog', 'orderPurchaseRequestsDialog'):
             with self.subTest(sheet=name):
@@ -448,14 +448,14 @@ class BudgetTest(unittest.TestCase):
 class VersionTest(unittest.TestCase):
     def test_version_schema_and_contract(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.119.0', 'M02 (#44) menambah master bisnis di atas Apple-27')
+        self.assertEqual(version, '0.120.0', 'M02 (#44) menambah master bisnis di atas Apple-27')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 308, 'P03 (#52) adds 11 employee-job paths after O01')
+        self.assertEqual(len(contract['paths']), 310, 'P03 (#52) adds 11 job paths after P01; B01 (#50) adds 2 invoice paths')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 61)
+        self.assertEqual(max(versions), 62)
 
     def test_documentation(self):
         text = (ROOT / 'docs' / 'apple27-final-consistency-polish.md').read_text(encoding='utf-8')

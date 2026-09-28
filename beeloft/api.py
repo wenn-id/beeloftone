@@ -20,7 +20,7 @@ from beeloft.models import MasterCreate, MasterUpdate, UomCreate, UomUpdate, Pro
 from beeloft.models import BomTemplateCreate, BomTemplateUpdate, BomTemplateApply
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
-from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
+from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierInvoiceCreate, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
 from beeloft.models import ServiceGroupChange, ServiceGroupCreate, ServiceRateDeactivate, ServiceRateSave, ServiceTemplateApply, ServiceTemplateChange, ServiceTemplateCreate, WorkTypeChange, WorkTypeCreate
 from beeloft.models import EmployeeJobCreate, EmployeeJobUpdate, JobRealizationCreate, JobRealizationUpdate, RealizationReject, ChargeReverse
@@ -80,7 +80,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.119.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.120.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -986,24 +986,47 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def decide_purchase_order(order_id: str, body: PurchaseRequestDecision, user: Actor, key: RequestKey):
         return store.decide_purchase_order(order_id, body.model_dump(mode='json'), user, key)
 
+    @app.post('/api/supplier-invoices', status_code=201, tags=['Purchasing'])
+    def create_supplier_invoice(body: SupplierInvoiceCreate, user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.create_supplier_invoice(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/supplier-invoices', tags=['Purchasing'])
+    def supplier_invoices(user: Actor,
+                          supplier_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+                          purchase_order_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+                          q: Annotated[str, Query(max_length=160)] = '',
+                          limit: Limit = 100, offset: Offset = 0):
+        require_permission(user, "read_operational")
+        return store.supplier_invoices(supplier_id, purchase_order_id, q, limit, offset)
+
+    @app.get('/api/supplier-invoices/{invoice_id}', tags=['Purchasing'])
+    def supplier_invoice(invoice_id: str, user: Actor):
+        require_permission(user, "read_operational")
+        return store.supplier_invoice(invoice_id)
+
     @app.get('/api/purchase-orders/{order_id}/payment-requests', tags=['Supplier Payments'])
     def supplier_payment_requests(order_id: str, user: Actor, limit: Limit = 100,
                                   before: Before = None):
+        require_permission(user, "read_operational")
         return store.supplier_payment_requests(order_id, limit, before)
 
     @app.post('/api/purchase-orders/{order_id}/payment-requests', status_code=201, tags=['Supplier Payments'])
     def create_supplier_payment_request(order_id: str, body: SupplierPaymentRequestCreate,
                                         user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
         return store.create_supplier_payment_request(order_id, body.model_dump(mode='json'), user, key)
 
     @app.get('/api/supplier-payment-requests/{request_id}', tags=['Supplier Payments'])
     def supplier_payment_request(request_id: str, user: Actor):
+        require_permission(user, "read_operational")
         return store.supplier_payment_request(request_id)
 
     @app.post('/api/supplier-payment-requests/{request_id}/decisions', status_code=201,
               tags=['Supplier Payments','Approvals'])
     def decide_supplier_payment_request(request_id: str, body: PurchaseRequestDecision,
                                         user: Actor, key: RequestKey):
+        require_permission(user, "approve_transaction")
         return store.decide_supplier_payment_request(request_id, body.model_dump(mode='json'), user, key)
 
     @app.post('/api/purchase-orders/{order_id}/cancel', status_code=201, tags=['Purchasing'])

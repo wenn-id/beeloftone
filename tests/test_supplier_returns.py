@@ -125,7 +125,14 @@ class SupplierReturnTest(TestCase):
                          ['1.125','1.000','0.000','1.000','1.000','0.000','0.000'])
         self.assertEqual((closed['payment_received_value'], closed['payment_remaining']), ('13.88', '13.88'))
         payment_path = '/api/purchase-orders/'+po['id']+'/payment-requests'
-        payment = dict(reference='DEMO-PAY-QC', invoice_reference='DEMO-INV-QC',
+        invoice = self.post('/api/supplier-invoices', dict(
+            reference='INV-QC-001', supplier_id=po['supplier']['id'],
+            invoice_date='2026-10-16', due_date='2026-10-30',
+            lines=[dict(purchase_order_id=po['id'], material_id=po['lines'][0]['material_id'],
+                        quantity='1.125', unit_price=po['lines'][0]['unit_price'])],
+            reason='Tagihan penerimaan lolos QC'), key='inv-qc-partial')
+        payment = dict(reference='DEMO-PAY-QC', invoice_id=invoice['id'],
+                       invoice_reference=invoice['reference'],
                        invoice_date='2026-10-16', due_date='2026-10-30', amount='13.88', reason='Penerimaan lolos QC')
         self.post(payment_path, payment | {'amount':'13.89'}, status=409)
         self.assertEqual(self.client.get(payment_path).json(), [])

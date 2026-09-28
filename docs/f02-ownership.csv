@@ -116,6 +116,7 @@ table,sewing_jobs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/sewing.sql
 table,sizes,A1,M01,A2,beeloft/master_catalog.sql
 table,supplier_payment_request_events,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
 table,supplier_payment_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_payment_approvals.sql
+table,supplier_invoices,A2,B01,A1,beeloft/supplier_invoices.sql
 table,supplier_returns,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_returns.sql
 table,suppliers,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
 table,uoms,A1,M01,A2,beeloft/master_catalog.sql
@@ -252,6 +253,9 @@ endpoint,POST /api/purchase-orders/{order_id}/decisions,A2,B01/B02,A1/A3,beeloft
 endpoint,GET /api/purchase-orders/{order_id}/payment-requests,A2,B01/B02,A1/A3,beeloft/api.py#supplier_payment_requests
 endpoint,POST /api/purchase-orders/{order_id}/payment-requests,A2,B01/B02,A1/A3,beeloft/api.py#create_supplier_payment_request
 endpoint,GET /api/supplier-payment-requests/{request_id},A2,B02,A3,beeloft/api.py#supplier_payment_request
+endpoint,POST /api/supplier-invoices,A2,B01,A1,beeloft/api.py#create_supplier_invoice
+endpoint,GET /api/supplier-invoices,A2,B01,A1,beeloft/api.py#supplier_invoices
+endpoint,GET /api/supplier-invoices/{invoice_id},A2,B01,A1,beeloft/api.py#supplier_invoice
 endpoint,POST /api/supplier-payment-requests/{request_id}/decisions,A2,B02,A3,beeloft/api.py#decide_supplier_payment_request
 endpoint,POST /api/purchase-orders/{order_id}/cancel,A2,B01/B02,A1/A3,beeloft/api.py#cancel_purchase_order
 endpoint,POST /api/purchase-orders/{order_id}/close,A2,B01/B02,A1/A3,beeloft/api.py#close_purchase_order

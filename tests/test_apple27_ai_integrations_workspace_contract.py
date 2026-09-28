@@ -517,16 +517,16 @@ class ContainmentAndBudgetTest(unittest.TestCase):
 class VersionAndSchemaTest(unittest.TestCase):
     def test_the_version_is_aligned_everywhere(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.119.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.120.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 308, 'P03 (#52) adds 11 employee-job paths after O01')
+        self.assertEqual(len(contract['paths']), 310, 'P03 (#52) adds 11 job paths after P01; B01 (#50) adds 2 invoice paths')
 
     def test_the_schema_did_not_move(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 61)
+        self.assertEqual(max(versions), 62)
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory
