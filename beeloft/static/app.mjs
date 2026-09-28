@@ -1789,6 +1789,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       else if (path.endsWith('/plan/approve') || path.endsWith('/plan/close')) openDetail(result.order_id);
       else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
+      else if (path === '/api/supplier-invoices' || path.startsWith('/api/supplier-invoices/')) supplierInvoiceDialog(result.id);
       else if (path.includes('/payroll-periods/') || path.startsWith('/api/payroll-approval-requests/')) payrollApprovalRequestDialog(result.id);
       else if (path === '/api/marketing-budget-requests' || path.startsWith('/api/marketing-budget-requests/')) marketingBudgetRequestDialog(result.id);
       else if (path === '/api/ai/investigations' || /^\/api\/ai\/investigations\/[^/]+\/feedback$/.test(path)) {
@@ -3021,6 +3022,8 @@ document.addEventListener('click', event => {
     suppliers:suppliersDialog,'new-supplier':supplierForm,'purchase-orders':purchaseOrdersDialog,
     'new-purchase-order':()=>purchaseOrderForm(id),'purchase-order':()=>purchaseOrderDialog(id),
     'new-supplier-payment':()=>supplierPaymentForm(id),'supplier-payment-request':()=>supplierPaymentRequestDialog(id),
+    'supplier-invoices':()=>supplierInvoicesDialog(id || null),'new-supplier-invoice':()=>supplierInvoiceForm(id || null),
+    'supplier-invoice':()=>supplierInvoiceDialog(id),
     'marketing-budgets':()=>navigateFromDialog(showMarketingBudgets),'new-marketing-budget':marketingBudgetForm,
     'marketing-budget-request':()=>marketingBudgetRequestDialog(id),
     'receive-po':()=>purchaseReceiptForm(id),'qc-intake-form':()=>purchaseReceiptForm(id,true),
@@ -8494,9 +8497,10 @@ async function purchaseOrderDialog(id) {
   if(guardPending())return;
   const version=epoch;openDialog('Rincian PO',requestLoading('Memuat PO…'),'wide');const modal=dialogVersion;
   try{
-    const [p,payments]=await Promise.all([
+    const [p,payments,invoices]=await Promise.all([
       api.get('/api/purchase-orders/'+encodeURIComponent(id)),
-      api.get('/api/purchase-orders/'+encodeURIComponent(id)+'/payment-requests?limit=100')
+      api.get('/api/purchase-orders/'+encodeURIComponent(id)+'/payment-requests?limit=100'),
+      api.get('/api/supplier-invoices?purchase_order_id='+encodeURIComponent(id))
     ]);
     if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
     const approvalButtons=[];
@@ -8530,6 +8534,12 @@ async function purchaseOrderDialog(id) {
           secondary:`Invoice ${e(row.invoice_reference)} · jatuh tempo ${date(row.due_date)}`,
           chips:queueChip(approvalTone[row.status]||'neutral',approvalStatus[row.status]),
           aside:queueAmount(row.amount)+`<button type="button" class="action-secondary" data-action="supplier-payment-request" data-id="${e(row.id)}" aria-label="Rincian pembayaran ${e(row.reference)}">Rincian pembayaran</button>`})),'Belum ada pengajuan pembayaran.'))
+      + requestSection('Tagihan supplier',requestNote('Tagihan adalah dokumen dari pemasok, bukan persetujuan pembayaran. Pengajuan pembayaran menunjuk tagihan terdaftar.')
+        + (user.role!=='viewer'&&['issued','closed'].includes(p.status)&&p.fulfillment!=='pending'?`<div class="action-row"><button type="button" class="action-secondary" data-action="new-supplier-invoice" data-id="${e(p.id)}">Daftarkan tagihan supplier</button></div>`:'')
+        + requestRecords('Tagihan terdaftar',invoices.map(row=>requestRecord({primary:e(row.reference),
+          secondary:`${e(row.supplier.code)} · ${e(row.supplier.name)} · jatuh tempo ${date(row.due_date)}`,
+          chips:queueChip('info','Terdaftar'),
+          aside:queueAmount(row.total,'total tagihan')+`<button type="button" class="action-secondary" data-action="supplier-invoice" data-id="${e(row.id)}" aria-label="Rincian tagihan ${e(row.reference)}">Rincian tagihan</button>`})),'Belum ada tagihan terdaftar.'))
       + (approvalButtons.length||poCancellable?`<div class="action-row request-decisions">${approvalButtons.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-po-decision="${status}">${label}</button>`).join('')}`
         + (poCancellable?'<button type="button" class="action-destructive" id="po-cancel">Batalkan PO</button>':'')+'</div>':'')
       + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-request" data-id="${e(p.request_id)}">PR ${e(p.request_reference)}</button><button type="button" class="action-quiet" data-action="purchase-orders">Daftar PO</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
@@ -8553,23 +8563,33 @@ async function purchaseOrderDialog(id) {
 
 async function supplierPaymentForm(orderId) {
   if(guardPending())return;
-  const version=epoch;openDialog('Ajukan pembayaran supplier','<p class="state">Memuat PO…</p>');const modal=dialogVersion;
+  const version=epoch;openDialog('Ajukan pembayaran supplier',requestLoading('Memuat PO dan tagihan…'));const modal=dialogVersion;
   try{
-    const po=await api.get('/api/purchase-orders/'+encodeURIComponent(orderId));
+    const [po,invoices]=await Promise.all([
+      api.get('/api/purchase-orders/'+encodeURIComponent(orderId)),
+      api.get('/api/supplier-invoices?purchase_order_id='+encodeURIComponent(orderId))
+    ]);
     if(version!==epoch||modal!==dialogVersion||!$('dialog').open)return;
     if(!['issued','closed'].includes(po.status)||po.fulfillment==='pending'||po.payment_remaining==='0.00'){
       $('dialog-content').innerHTML='<p>PO belum mempunyai penerimaan aktif atau seluruh nilainya sudah diajukan.</p>';return;
     }
+    // B01 (#50): payment request wajib menunjuk invoice terdaftar — identitas
+    // (supplier, reference, tanggal) diambil dari tagihan, bukan diketik ulang.
+    if(!invoices.length){
+      $('dialog-content').innerHTML='<p class="form-info">Belum ada tagihan supplier terdaftar untuk PO ini. Daftarkan tagihan terlebih dahulu sebelum mengajukan pembayaran.</p>'
+        + `<div class="form-actions"><button type="button" data-action="cancel-form">Tutup</button><button type="button" class="primary" data-action="new-supplier-invoice" data-id="${e(orderId)}">Daftarkan tagihan supplier</button></div>`;
+      return;
+    }
     formDialog('Ajukan pembayaran supplier',
       field('reference','Referensi pengajuan','text','required maxlength="160"')+
-      field('invoice_reference','Referensi invoice supplier','text','required maxlength="160"')+
-      field('invoice_date','Tanggal invoice','date','required')+
-      field('due_date','Tanggal jatuh tempo','date','required')+
+      `<label class="full">Tagihan supplier<select name="invoice_id" required>${invoices.map(i=>option(i.id,`${i.reference} · ${rupiah(i.total)} · jatuh tempo ${date(i.due_date)}`)).join('')}</select></label>`+
       field('amount','Nominal pembayaran (Rp)','number',`required min="0.01" max="${e(po.payment_remaining)}" step="0.01"`)+materialReason,
-      form=>Object.fromEntries(new FormData(form)),
+      form=>{const inv=invoices.find(i=>i.id===form.querySelector('[name=invoice_id]').value);
+        return {...Object.fromEntries(new FormData(form)),invoice_reference:inv.reference,invoice_date:inv.invoice_date,due_date:inv.due_date};},
       '/api/purchase-orders/'+encodeURIComponent(orderId)+'/payment-requests',
-      `${po.reference} · ${po.supplier.name}\nSisa nilai yang dapat diajukan ${rupiah(po.payment_remaining)}. Pengajuan menunggu approval dan belum memindahkan dana.`);
-  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-supplier-payment" data-id="${e(orderId)}">Coba lagi</button>`;}
+      `${po.reference} · ${po.supplier.name}\nSisa nilai yang dapat diajukan ${rupiah(po.payment_remaining)}. Pengajuan menunjuk tagihan terdaftar dan menunggu approval; persetujuan tidak memindahkan dana.`);
+  }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Pengajuan pembayaran gagal dimuat.',error.message,
+    `<button type="button" data-action="new-supplier-payment" data-id="${e(orderId)}">Coba lagi</button>`);}
 }
 
 async function supplierPaymentRequestDialog(requestId) {
@@ -8591,7 +8611,7 @@ async function supplierPaymentRequestDialog(requestId) {
       + requestSection('Alasan pengajuan',`<p class="request-text">${e(row.reason)}</p><p class="data-meta">Diajukan ${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`)
       + requestNote('Persetujuan tidak menjalankan transfer bank.','shield')
       + (buttons.length?`<div class="action-row request-decisions">${buttons.map(([status,label])=>`<button type="button" class="${requestDecisionWeight[status]}" data-payment-decision="${status}">${label}</button>`).join('')}</div>`:'')
-      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button><button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="purchase-order" data-id="${e(row.purchase_order_id)}">Buka PO</button>`+(row.invoice?`<button type="button" class="action-quiet" data-action="supplier-invoice" data-id="${e(row.invoice.id)}">Tagihan ${e(row.invoice.reference)}</button>`:'')+`<button type="button" class="action-quiet" data-action="approvals">Inbox approval</button></div>`
       + requestSection('Riwayat keputusan',requestHistory(row.history,approvalStatus))
       + '</div>';
     $('dialog-content').querySelectorAll('[data-payment-decision]').forEach(button=>button.onclick=()=>{
@@ -8603,6 +8623,110 @@ async function supplierPaymentRequestDialog(requestId) {
     });
   }catch(error){if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('dialog-content').innerHTML=requestFail('Pengajuan pembayaran gagal dimuat.',error.message,
     `<button type="button" class="action-secondary" data-action="supplier-payment-request" data-id="${e(requestId)}">Coba lagi</button>`);}
+}
+
+// B01 (#50): daftar tagihan supplier. Dibuka dari rincian PO (filter PO) atau
+// langsung (seluruh tagihan). Tagihan terdaftar = dokumen dari pemasok; bukan
+// persetujuan pembayaran dan bukan kas keluar.
+async function supplierInvoicesDialog(poId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Tagihan supplier',requestLoading('Memuat tagihan…'));const modal=dialogVersion;
+  try{
+    const invoices=await api.get('/api/supplier-invoices'+(poId?'?purchase_order_id='+encodeURIComponent(poId):''));
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestNote('Tagihan supplier adalah dokumen tagihan dari pemasok. Pengajuan pembayaran menunjuk tagihan terdaftar; approval pembayaran bukan kas keluar.')
+      + (user.role!=='viewer'?`<div class="action-row"><button type="button" class="action-secondary" data-action="new-supplier-invoice" data-id="${e(poId||'')}">Daftarkan tagihan supplier</button></div>`:'')
+      + (invoices.length
+        ? `<ul class="record-list" aria-label="Tagihan supplier">${invoices.map(row=>queueRow({glyph:'file-text',
+          primary:`${e(row.reference)} · ${e(rupiah(row.total))}`,
+          secondary:`${e(row.supplier.code)} · ${e(row.supplier.name)} · invoice ${date(row.invoice_date)} · jatuh tempo ${date(row.due_date)}`,
+          chips:queueChip('info','Terdaftar'),
+          stamp:`${e(row.actor_name)} · ${purchaseStamp(row.created_at)}`,
+          aside:`<button type="button" class="action-secondary" data-action="supplier-invoice" data-id="${e(row.id)}" aria-label="Rincian tagihan ${e(row.reference)}">Rincian tagihan</button>`})).join('')}</ul>`
+        : `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada tagihan terdaftar.</p><p class="empty-state-copy">${user.role==='viewer'?'Tagihan baru didaftarkan dari rincian PO yang sudah menerima bahan.':'Daftarkan tagihan dari rincian PO yang sudah menerima bahan.'}</p></div>`)
+      + '</div>';
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Tagihan supplier gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="supplier-invoices" data-id="${e(poId||'')}">Coba lagi</button>`);}
+}
+
+// B01 (#50): form pendaftaran tagihan. Satu tagihan dialokasikan ke penerimaan
+// fisik PO (qty belum ditagih); harga satuan terkunci ke harga aktual baris PO.
+async function supplierInvoiceForm(poId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Daftarkan tagihan supplier',requestLoading('Memuat PO…'));const modal=dialogVersion;
+  try{
+    const [issued,closed]=await Promise.all([allRows('/api/purchase-orders',{status:'issued'}),allRows('/api/purchase-orders',{status:'closed'})]);
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    const pos=issued.concat(closed.filter(p=>!issued.some(q=>q.id===p.id))).filter(p=>p.fulfillment!=='pending');
+    if(!pos.length){$('dialog-content').innerHTML='<p>Belum ada PO aktif dengan penerimaan. Tagihan hanya dapat dialokasikan ke penerimaan fisik yang sudah tercatat.</p>';return;}
+    const preset=pos.find(p=>p.id===poId)||pos[0];
+    formDialog('Daftarkan tagihan supplier',
+      field('reference','Nomor tagihan pemasok','text','required maxlength="160"')+
+      `<label class="full">PO<select name="purchase_order_id" id="invoice-po" required>${pos.map(p=>option(p.id,`${p.reference} · ${p.supplier.code} · ${p.supplier.name}`)).join('')}</select></label>`+
+      field('invoice_date','Tanggal invoice','date','required')+
+      field('due_date','Tanggal jatuh tempo','date','required')+
+      '<div class="full" id="invoice-lines"><p class="state">Memuat bahan PO…</p></div>'+materialReason,
+      form=>{
+        const lines=[...form.querySelectorAll('[data-invoice-material]')].map(input=>({
+          purchase_order_id:form.querySelector('[name=purchase_order_id]').value,
+          material_id:input.dataset.invoiceMaterial,
+          quantity:input.value,
+          unit_price:input.dataset.invoicePrice
+        })).filter(l=>parseFloat(l.quantity||'0')>0);
+        return {...Object.fromEntries(new FormData(form)),lines};
+      },
+      '/api/supplier-invoices',
+      'Tagihan dialokasikan ke penerimaan fisik yang belum ditagih. Harga satuan harus sama dengan harga aktual baris PO; harga referensi master tidak dipakai. Tagihan yang tersimpan tidak dapat diubah atau dihapus.');
+    $('invoice-po').value=preset.id;
+    const loadLines=async ()=>{
+      const po=pos.find(p=>p.id===$('invoice-po').value), host=$('invoice-lines');
+      if(!po){host.innerHTML='<p>Pilih PO.</p>';return;}
+      host.innerHTML='<p class="state">Memuat bahan PO…</p>';
+      const invoices=await api.get('/api/supplier-invoices?purchase_order_id='+encodeURIComponent(po.id));
+      if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+      const invoiced={};
+      invoices.forEach(inv=>inv.allocations.forEach(a=>{if(a.purchase_order_id===po.id)invoiced[a.material_id]=(invoiced[a.material_id]||0)+parseFloat(a.quantity);}));
+      host.innerHTML=po.lines.map(l=>{
+        const remaining=Math.max(0,parseFloat(l.received)-(invoiced[l.material_id]||0));
+        return `<article class="material-event"><h3>${e(l.code)} · ${e(l.name)}</h3><p class="data-meta">Diterima ${e(materialQty(l.received,l.unit))} · belum ditagih ${e(materialQty(remaining.toFixed(3),l.unit))}</p><p class="data-meta">Harga PO ${e(rupiah(l.unit_price))}/${e(l.unit)} — harga invoice harus sama</p><label>Jumlah ditagih (${e(l.unit)})<input data-invoice-material="${e(l.material_id)}" data-invoice-price="${e(l.unit_price)}" type="number" min="0" max="${remaining.toFixed(3)}" step="${l.unit==='pcs'?'1':'0.001'}" value="${remaining.toFixed(3)}"></label></article>`;
+      }).join('')||'<p>PO ini tidak punya baris bahan.</p>';
+    };
+    $('invoice-po').onchange=()=>{loadLines().catch(err=>{if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('invoice-lines').innerHTML=`<p class="error">${e(err.message)}</p>`;});};
+    loadLines().catch(err=>{if(version===epoch&&modal===dialogVersion&&$('dialog').open)$('invoice-lines').innerHTML=`<p class="error">${e(err.message)}</p>`;});
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Form tagihan gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="new-supplier-invoice" data-id="${e(poId||'')}">Coba lagi</button>`);}
+}
+
+// B01 (#50): rincian tagihan — identitas, alokasi qty/nilai ke PO, pengajuan
+// pembayaran yang menunjuk tagihan ini. Tanpa status invoice: tagihan adalah
+// dokumen tercatat, bukan alur approval.
+async function supplierInvoiceDialog(invoiceId) {
+  if(guardPending())return;
+  const version=epoch;openDialog('Rincian tagihan supplier',requestLoading('Memuat tagihan…'));const modal=dialogVersion;
+  try{
+    const row=await api.get('/api/supplier-invoices/'+encodeURIComponent(invoiceId));
+    if(version!==epoch || modal!==dialogVersion || !$('dialog').open)return;
+    $('dialog-content').innerHTML='<div class="request-sheet">'
+      + requestIdentity(`${e(row.reference)} · ${e(rupiah(row.total))}`,`${e(row.supplier.code)} · ${e(row.supplier.name)}`,
+        queueChip('info','Tagihan terdaftar'))
+      + requestFacts([['Total tagihan',`<span class="request-amount">${e(rupiah(row.total))}</span>`],['Tanggal invoice',date(row.invoice_date)],['Jatuh tempo',date(row.due_date)],['Mata uang',e(row.currency)]])
+      + requestNote('Pengajuan pembayaran menunjuk tagihan ini. Approval pembayaran bukan kas keluar; settlement dicatat di luar scope #50.','shield')
+      + requestSection('Alokasi ke PO',requestRecords('Alokasi tagihan',row.allocations.map(a=>requestRecord({
+        primary:`${e(a.purchase_order_reference)} · ${e(a.material_code)} · ${e(a.material_name)}`,
+        secondary:`${e(materialQty(a.quantity,a.material_unit))} × ${e(rupiah(a.unit_price))}/${e(a.material_unit)}`,
+        details:requestQuantities([['Diterima',e(materialQty(a.received,a.material_unit))],['Sudah ditagih',e(materialQty(a.invoiced,a.material_unit))],['Belum ditagih',e(materialQty(a.uninvoiced,a.material_unit))]]),
+        aside:queueAmount(a.line_total,'nilai baris')+`<button type="button" class="action-secondary" data-action="purchase-order" data-id="${e(a.purchase_order_id)}" aria-label="Buka PO ${e(a.purchase_order_reference)}">Buka PO</button>`})),'Tidak ada alokasi.'))
+      + requestSection('Catatan tagihan',`<p class="request-text">${e(row.reason)}</p><p class="data-meta">${e(row.actor_name)} · ${purchaseStamp(row.created_at)}</p>`)
+      + requestSection('Pengajuan pembayaran',requestRecords('Pengajuan pembayaran',row.payment_requests.map(r=>requestRecord({
+        primary:e(r.reference),
+        secondary:e(rupiah(r.amount)),
+        chips:queueChip(approvalTone[r.status]||'neutral',approvalStatus[r.status]),
+        aside:`<button type="button" class="action-secondary" data-action="supplier-payment-request" data-id="${e(r.id)}" aria-label="Rincian pembayaran ${e(r.reference)}">Rincian pembayaran</button>`})),'Belum ada pengajuan pembayaran.'))
+      + `<div class="action-row request-navigation"><button type="button" class="action-quiet" data-action="supplier-invoices" data-id="">Daftar tagihan</button></div>`
+      + '</div>';
+  }catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=requestFail('Rincian tagihan gagal dimuat.',error.message,
+    `<button type="button" class="action-secondary" data-action="supplier-invoice" data-id="${e(invoiceId)}">Coba lagi</button>`);}
 }
 
 // `materialReason` tetap legacy dan tetap utuh: dialog anak Produksi (pengeluaran bahan ke order)

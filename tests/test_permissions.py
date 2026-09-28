@@ -77,7 +77,7 @@ class PermissionsCatalogTest(TestCase):
             app = create_app(Path(d) / "test.db")
             store: Store = app.state.store
             with store.transaction() as db:
-                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 61)
+                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 62)
                 for table in ("user_permissions", "user_business_units", "user_access_profiles", "user_access_events"):
                     self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone())
 

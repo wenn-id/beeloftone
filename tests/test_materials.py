@@ -122,7 +122,7 @@ class MaterialsTest(TestCase):
         self.assertEqual(self.detail(order), order)
         batch = self.post('/api/material-batches', self.receipt(self.material()))
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],61)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],62)
             for table in ['materials','material_batches','material_movements']:
                 for query in ['DELETE FROM '+table, 'UPDATE '+table+' SET id=id']:
                     # Migrasi 56 (issue #43): trigger materials_no_update diganti

@@ -36,14 +36,17 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await post('/api/purchase-orders/'+po.id+'/receipts',{material_id:material.id,
     reference:'PAYMENT-RECEIPT',location:'Rak pembayaran',received_date:'2026-12-02',
     quantity:'2',reason:'CONTOH bahan diterima'},'payment-receipt',operator);
+  // B01 (#50): payment request wajib menunjuk tagihan terdaftar — daftarkan dulu via API.
+  const invoice=await post('/api/supplier-invoices',{reference:'INV-<001>&',supplier_id:supplier.id,
+    invoice_date:'2026-12-02',due_date:'2026-12-16',reason:'CONTOH invoice cocok dengan penerimaan',
+    lines:[{purchase_order_id:po.id,material_id:material.id,quantity:'2',unit_price:'50'}]},
+    'payment-invoice',operator);
 
   await role(operator);await openPO();
   await page.getByText('Menunggu approval Rp0,00 · disetujui Rp0,00 · sisa Rp100,00',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Ajukan pembayaran supplier',exact:true}).click();
   await page.getByLabel('Referensi pengajuan',{exact:true}).fill('PAY-UI-001');
-  await page.getByLabel('Referensi invoice supplier',{exact:true}).fill('INV-<001>&');
-  await page.getByLabel('Tanggal invoice',{exact:true}).fill('2026-12-02');
-  await page.getByLabel('Tanggal jatuh tempo',{exact:true}).fill('2026-12-16');
+  await page.getByLabel('Tagihan supplier').selectOption(invoice.id);
   await page.getByLabel('Nominal pembayaran (Rp)',{exact:true}).fill('60');
   await page.getByLabel('Alasan / catatan',{exact:true}).fill('CONTOH invoice cocok dengan penerimaan');
   await page.setViewportSize({width:390,height:844});
@@ -63,7 +66,7 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.getByRole('heading',{name:'Approval pembayaran supplier',exact:true}).waitFor();
   await page.unroute('**/api/purchase-orders/*/payment-requests');
   await page.getByText('PAY-UI-001 · Menunggu keputusan',{exact:true}).waitFor();
-  await page.getByText('INV-<001>&',{exact:false}).waitFor();
+  await page.getByText('INV-<001>&',{exact:true}).first().waitFor();
   assert.equal(await page.getByRole('button',{name:'Setujui pembayaran',exact:true}).count(),0);
   const request=(await apiGet('/api/purchase-orders/'+po.id+'/payment-requests'))[0];
   assert.equal(request.amount,'60.00');
@@ -90,5 +93,5 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   await page.locator('#approval-status').selectOption('approved');
   await page.locator('#approval-kind').selectOption('supplier_payment');
   await page.getByRole('button',{name:'Rincian approval PAY-UI-001',exact:true}).waitFor();
-  console.log('Supplier payment approval browser QA PASS: received PO source, amount balance, lost-response retry, unified inbox, roles, approval audit, escaping, mobile/200%.');
+  console.log('Supplier payment approval browser QA PASS: received PO source, registered invoice selection, amount balance, lost-response retry, unified inbox, roles, approval audit, escaping, mobile/200%.');
 };

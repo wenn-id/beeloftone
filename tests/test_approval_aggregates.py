@@ -705,9 +705,16 @@ class NineKindFixture(ApprovalFixture):
         self.receive(po, dict(material_id=material['id'], reference='BATCH-' + po_reference,
             quantity='2', location='Rak A', received_date='2026-10-15',
             reason='Lolos pemeriksaan'))
+        invoice = self.post('/api/supplier-invoices', dict(
+            reference='INV-' + po_reference, supplier_id=po['supplier']['id'],
+            invoice_date='2026-10-15', due_date='2026-10-30',
+            lines=[dict(purchase_order_id=po['id'], material_id=material['id'],
+                        quantity='2', unit_price=po['lines'][0]['unit_price'])],
+            reason='Tagihan uji agregat'), key='inv-' + po_reference)
         payment = self.post('/api/purchase-orders/' + po['id'] + '/payment-requests',
-            dict(reference='PAY-' + po_reference, invoice_reference='INV-' + po_reference,
-                 invoice_date='2026-10-15', due_date='2026-10-30', amount=amount,
+            dict(reference='PAY-' + po_reference, invoice_id=invoice['id'],
+                 invoice_reference=invoice['reference'], invoice_date='2026-10-15',
+                 due_date='2026-10-30', amount=amount,
                  reason='Invoice sesuai penerimaan bahan'))
         self.record('supplier_payment', None, PENDING, amount=Decimal(payment['amount']))
         return payment

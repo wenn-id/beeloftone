@@ -1557,6 +1557,7 @@ class PurchaseOrderCreate(ReversalCreate):
 
 class SupplierPaymentRequestCreate(ReversalCreate):
     reference: Text
+    invoice_id: Text
     invoice_reference: Text
     invoice_date: date
     due_date: date
@@ -1569,6 +1570,56 @@ class SupplierPaymentRequestCreate(ReversalCreate):
         if not 0 < amount <= 1_000_000_000_000:
             raise ValueError('Nominal pembayaran harus positif dan maksimal Rp1.000.000.000.000.')
         return format(amount, '.2f')
+
+    @model_validator(mode='after')
+    def valid_dates(self):
+        if self.invoice_date > self.due_date:
+            raise ValueError('Tanggal jatuh tempo tidak boleh sebelum tanggal invoice.')
+        return self
+
+
+class SupplierInvoiceLine(Input):
+    # B01 (#50): satu baris alokasi tagihan ke baris PO. Harga wajib sama
+    # dengan harga aktual baris PO (divalidasi server); bukan harga master.
+    purchase_order_id: Text
+    material_id: Text
+    quantity: MaterialAmount
+    unit_price: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,10}(\.[0-9]{1,2})?$", max_length=13)]
+
+    @field_validator('quantity')
+    @classmethod
+    def normalize_quantity(cls, value):
+        quantity = Decimal(value)
+        if not 0 < quantity <= 1_000_000:
+            raise ValueError('Jumlah harus lebih dari nol dan maksimal 1.000.000 satuan.')
+        return format(quantity, '.3f')
+
+    @field_validator('unit_price')
+    @classmethod
+    def normalize_price(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000:
+            raise ValueError('Harga satuan harus positif dan maksimal Rp1.000.000.000.')
+        return format(amount, '.2f')
+
+
+class SupplierInvoiceCreate(ReversalCreate):
+    # B01 (#50) fondasi minimal: identitas global (supplier_id, reference),
+    # tanggal invoice/jatuh tempo, dan alokasi ke PO. Bukan scope #50:
+    # credit note, multi-mata uang, posting AP otomatis, settlement/kas/bank.
+    reference: Text
+    supplier_id: Text
+    invoice_date: date
+    due_date: date
+    lines: Annotated[list[SupplierInvoiceLine], Field(min_length=1, max_length=100)]
+
+    @field_validator('lines')
+    @classmethod
+    def unique_lines(cls, lines):
+        keys = [(line.purchase_order_id, line.material_id) for line in lines]
+        if len(set(keys)) != len(keys):
+            raise ValueError('Satu bahan pada satu PO hanya boleh dialokasikan satu baris per tagihan.')
+        return lines
 
     @model_validator(mode='after')
     def valid_dates(self):

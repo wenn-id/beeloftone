@@ -369,10 +369,15 @@ class EmployeeJobTest(test_production.ProductionTest):
                      self.prod_op, 'approve-' + uuid4().hex)
         self.assertEqual(e.status, 403, e.message)
 
-    # -- 12. upgrade schema 60 -> 61 --------------------------------------
+    # -- 12. upgrade schema 60 -> 62 --------------------------------------
 
     def test_upgrade_60_to_61(self):
-        """Drop tabel p03_*, set version=60, reopen Store -> version 61."""
+        """Drop tabel p03_*, set version=60, reopen Store -> version 62.
+
+        Sejak B01 (#50) mendarat di atas P03 (#52), migrasi berjalan
+        60 -> 61 (P03) -> 62 (B01, supplier invoices). Nama test
+        dipertahankan agar riwayat P03 tetap terbaca.
+        """
         with self.store.transaction(write=True) as db:
             for table in ('p03_service_charges', 'p03_job_realizations',
                           'p03_jobs'):
@@ -388,7 +393,7 @@ class EmployeeJobTest(test_production.ProductionTest):
             tables = {row[0] for row in db.execute(
                 "SELECT name FROM sqlite_schema WHERE type='table' "
                 "AND name LIKE 'p03_%'")}
-        self.assertEqual(version, 61)
+        self.assertEqual(version, 62)
         self.assertIn('p03_jobs', tables)
         self.assertIn('p03_job_realizations', tables)
         self.assertIn('p03_service_charges', tables)
@@ -415,7 +420,7 @@ class EmployeeJobTest(test_production.ProductionTest):
             self.assertEqual(self.charge_row(charge['id']), expected_charge)
             self.assertEqual(self.charge_count(job['id'], realization['id']), 1)
             with store2.transaction() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 61)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 62)
                 self.assertEqual([tuple(row) for row in db.execute(
                     "SELECT type,name,sql FROM sqlite_schema "
                     "WHERE tbl_name IN ('p03_jobs','p03_job_realizations',"

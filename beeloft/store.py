@@ -227,7 +227,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -499,6 +499,20 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 # sumber nilai tunggal untuk payroll (#55) dan costing (#53).
                 # Tidak menyentuh pencatatan produksi (sewing_jobs) maupun stok.
                 db.executescript(Path(__file__).with_name('employee_jobs.sql').read_text(encoding='utf-8'))
+            if version < 62:
+                # B01 (#50): entitas tagihan supplier + invoice_id pada payment
+                # request. Rebuild supplier_payment_requests memakai DROP
+                # sehingga FK harus dimatikan sementara DI LUAR transaksi
+                # (PRAGMA foreign_keys no-op di dalam transaksi), lalu
+                # dinyalakan lagi dan diperiksa integritasnya.
+                db.execute("PRAGMA foreign_keys=OFF")
+                try:
+                    db.executescript(Path(__file__).with_name('supplier_invoices.sql').read_text(encoding='utf-8'))
+                finally:
+                    db.execute("PRAGMA foreign_keys=ON")
+                violations = db.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise RuntimeError(f"Schema 62 migration broke foreign keys: {violations[:5]}")
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -549,6 +563,21 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         """
         from beeloft.permissions import check_self_approval
         check_self_approval(dict(actor) | self._user_access(db, actor['id']), creator_id)
+
+    def _require_unit_access(self, db, actor, unit_id, message=None):
+        """Unit scope O01 (#45) untuk mutasi purchasing.
+
+        Pengguna all_units=1 (default seluruh akun existing/provisioning) tidak
+        terpengaruh; hanya akun yang cakupannya dibatasi eksplisit yang dicek.
+        """
+        from beeloft.permissions import can_access_unit
+        if not can_access_unit(dict(actor) | self._user_access(db, actor['id']), unit_id):
+            raise DomainError(403, message or 'Pengguna tidak memiliki akses ke unit usaha PO ini.')
+
+    def _require_intake_unit_access(self, db, actor, intake):
+        unit = db.execute('SELECT business_unit_id FROM purchase_orders WHERE id=?',
+                          (intake['purchase_order_id'],)).fetchone()
+        self._require_unit_access(db, actor, unit['business_unit_id'] if unit else None)
 
     def _record_access_event(self, db, user_id, action, target_type, target_value,
                              before_value, after_value, actor_id, reason):
@@ -7050,6 +7079,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if payload.get('business_unit_id'):
                 self._require_active_master(db, 'business-unit', payload['business_unit_id'],
                                             'Unit usaha')
+                self._require_unit_access(db, actor, payload['business_unit_id'],
+                                          'Pengguna tidak memiliki akses ke unit usaha PO ini.')
             prices = {line['material_id']:line['unit_price'] for line in payload['prices']}
             if set(prices) != {line['material_id'] for line in pr['lines']}:
                 raise DomainError(422, 'Isi harga tepat satu kali untuk seluruh bahan PR. Jumlah bahan mengikuti PR.')
@@ -7078,6 +7109,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def decide_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
             role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
             if role != 'admin' and not (payload['status']=='cancelled' and po['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan PO; pembuat boleh membatalkan pengajuannya.')
@@ -7095,6 +7127,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def cancel_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO belum disetujui atau sudah final.')
             if any(l['return_pending']!='0.000' for l in po['lines']):
@@ -7109,6 +7142,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def close_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO belum disetujui atau sudah final.')
             if po['fulfillment'] == 'pending':
@@ -7123,6 +7157,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def receive_purchase_order(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO harus disetujui dan aktif sebelum penerimaan.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']), None)
@@ -7147,6 +7182,11 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         record['supplier'] = json.loads(record['supplier'])
         record['amount'] = format(Decimal(record.pop('amount_minor'))/100,'.2f')
         record['currency'] = 'IDR'
+        invoice_id = record.pop('invoice_id')
+        # B01 (#50): tautan identitas invoice; baris legacy (invoice_id NULL)
+        # tidak difabrikasi menjadi invoice.
+        record['invoice'] = ({'id': invoice_id, 'reference': record['invoice_reference']}
+                             if invoice_id else None)
         record['history'] = [dict(event) for event in db.execute("""SELECT e.*,u.name AS actor_name
             FROM supplier_payment_request_events e JOIN users u ON u.id=e.actor_id
             WHERE e.request_id=? ORDER BY e.sequence DESC""", (request_id,))]
@@ -7172,13 +7212,52 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             po = self._purchase_order(db, order_id)
             if po['status'] not in ('issued','closed') or po['fulfillment']=='pending':
                 raise DomainError(409, 'Pembayaran hanya dapat diajukan untuk PO approved yang sudah memiliki penerimaan.')
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
+            # B01 (#50): payment request wajib menunjuk invoice terdaftar.
+            # Identitas (supplier, reference, tanggal) harus cocok; invoice
+            # harus mengalokasikan PO ini. Trigger DB menegakkan hal yang sama.
+            invoice = db.execute('''SELECT id,reference,supplier_id,invoice_date,due_date
+                FROM supplier_invoices WHERE id=?''', (payload.get('invoice_id'),)).fetchone()
+            if not invoice:
+                raise DomainError(404, 'Tagihan supplier tidak ditemukan. Daftarkan tagihan '
+                                      'terlebih dahulu sebelum mengajukan pembayaran.')
+            if invoice['supplier_id'] != po['supplier']['id']:
+                raise DomainError(422,
+                    f"Tagihan {invoice['reference']} milik pemasok lain, tidak dapat dipakai "
+                    f"untuk PO {po['reference']}.")
+            if invoice['reference'] != payload['invoice_reference']:
+                raise DomainError(422,
+                    'Nomor invoice pada pembayaran harus sama dengan nomor tagihan terdaftar.')
+            if (invoice['invoice_date'], invoice['due_date']) != (payload['invoice_date'], payload['due_date']):
+                raise DomainError(422,
+                    'Tanggal invoice/jatuh tempo pembayaran harus sama dengan tagihan terdaftar.')
+            if not self._invoice_po_allocation_value(db, invoice['id'], order_id):
+                raise DomainError(422,
+                    f"Tagihan {invoice['reference']} tidak mengalokasikan PO {po['reference']}.")
+            # Duplikat AKTIF ditolak; yang ditolak/dibatalkan boleh diajukan ulang
+            # (UNIQUE komposit level tabel dicabut pada schema 62).
+            dup = db.execute('''SELECT 1 FROM supplier_payment_requests r
+                WHERE r.purchase_order_id=? AND r.invoice_reference=?
+                AND (SELECT status FROM supplier_payment_request_events e WHERE e.request_id=r.id
+                     ORDER BY e.sequence DESC LIMIT 1) IN ('submitted','approved')''',
+                (order_id, payload['invoice_reference'])).fetchone()
+            if dup:
+                raise DomainError(409,
+                    f"Tagihan {payload['invoice_reference']} sudah memiliki permintaan pembayaran "
+                    'aktif untuk PO ini.')
             amount_minor = int(Decimal(payload['amount'])*100)
             if amount_minor > int(Decimal(po['payment_remaining'])*100):
                 raise DomainError(409, 'Nominal pembayaran melebihi sisa nilai PO yang belum diajukan.')
+            invoice_remaining = (self._invoice_po_allocation_value(db, invoice['id'], order_id)
+                                 - self._invoice_requested_minor(db, invoice['id'], order_id))
+            if amount_minor > invoice_remaining:
+                raise DomainError(409,
+                    f"Nominal pembayaran melebihi sisa nilai tagihan {invoice['reference']} "
+                    f"untuk PO ini ({format(Decimal(invoice_remaining)/100,'.2f')}).")
             request_id, timestamp = str(uuid4()), now()
-            db.execute("""INSERT INTO supplier_payment_requests(id,reference,purchase_order_id,invoice_reference,
-                invoice_date,due_date,amount_minor,reason,actor_id,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""", (request_id,payload['reference'],order_id,
+            db.execute("""INSERT INTO supplier_payment_requests(id,reference,purchase_order_id,invoice_id,
+                invoice_reference,invoice_date,due_date,amount_minor,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (request_id,payload['reference'],order_id,invoice['id'],
                 payload['invoice_reference'],payload['invoice_date'],payload['due_date'],amount_minor,
                 payload['reason'],actor['id'],timestamp))
             db.execute("""INSERT INTO supplier_payment_request_events(request_id,status,reason,actor_id,created_at)
@@ -7189,6 +7268,9 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def decide_supplier_payment_request(self, request_id, payload, actor, key):
         def perform(db):
             request = self._supplier_payment_request(db, request_id)
+            unit = db.execute('SELECT business_unit_id FROM purchase_orders WHERE id=?',
+                              (request['purchase_order_id'],)).fetchone()
+            self._require_unit_access(db, actor, unit['business_unit_id'] if unit else None)
             role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
             if role!='admin' and not (payload['status']=='cancelled' and request['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan pembayaran; pemohon boleh membatalkan pengajuannya.')
@@ -7202,6 +7284,185 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 VALUES(?,?,?,?,?)""", (request_id,payload['status'],payload['reason'],actor['id'],now()))
             return self._supplier_payment_request(db, request_id)
         return self._write(actor, ('admin','operator'), key, 'supplier-payment-decision:'+request_id, payload, perform)
+
+    # ---- B01 (#50): tagihan supplier (supplier invoice) ----
+    #
+    # Fondasi minimal: identitas global (supplier_id, reference), snapshot
+    # pemasok, tanggal invoice/jatuh tempo, dan alokasi qty/nilai ke baris PO
+    # berdasar penerimaan fisik yang belum direversal. Harga alokasi wajib sama
+    # dengan harga aktual baris PO (terkunci saat PO diterbitkan).
+    #
+    # BUKAN scope #50: credit note/reversal invoice, cicilan multi-request di
+    # luar batas nilai alokasi, multi-mata uang, posting jurnal AP otomatis,
+    # settlement/kas/bank, dan alokasi pembayaran aktual. Itu #54/#59.
+
+    @staticmethod
+    def _invoice_line_total(quantity_milli, unit_price_minor):
+        # Konsisten dengan supplier_payment_po_received:
+        # (qty_milli * price_minor + 500) // 1000, half-up ke minor.
+        return (quantity_milli * unit_price_minor + 500) // 1000
+
+    def _po_received_milli(self, db, purchase_order_id, material_id):
+        row = db.execute('''SELECT COALESCE(SUM(m.quantity_milli),0)
+            FROM purchase_order_receipts x
+            JOIN material_batches b ON b.id=x.batch_id
+            JOIN material_movements m ON m.batch_id=b.id AND m.kind='receipt'
+            WHERE x.purchase_order_id=? AND b.material_id=?
+            AND NOT EXISTS(SELECT 1 FROM material_movements WHERE reversal_of=m.id)''',
+            (purchase_order_id, material_id)).fetchone()
+        return row[0]
+
+    def _po_invoiced_milli(self, db, purchase_order_id, material_id):
+        total = 0
+        for (allocations,) in db.execute('SELECT allocations FROM supplier_invoices'):
+            for line in json.loads(allocations):
+                if (line['purchase_order_id'] == purchase_order_id
+                        and line['material_id'] == material_id):
+                    total += line['quantity_milli']
+        return total
+
+    def _invoice_po_allocation_value(self, db, invoice_id, purchase_order_id):
+        """Nilai alokasi satu invoice untuk satu PO (minor)."""
+        row = db.execute('SELECT allocations FROM supplier_invoices WHERE id=?', (invoice_id,)).fetchone()
+        if not row:
+            return 0
+        return sum(self._invoice_line_total(line['quantity_milli'], line['unit_price_minor'])
+                   for line in json.loads(row['allocations'])
+                   if line['purchase_order_id'] == purchase_order_id)
+
+    def _invoice_requested_minor(self, db, invoice_id, purchase_order_id):
+        row = db.execute('''SELECT COALESCE(SUM(r.amount_minor),0) FROM supplier_payment_requests r
+            WHERE r.invoice_id=? AND r.purchase_order_id=?
+            AND (SELECT status FROM supplier_payment_request_events e WHERE e.request_id=r.id
+                 ORDER BY e.sequence DESC LIMIT 1) IN ('submitted','approved')''',
+            (invoice_id, purchase_order_id)).fetchone()
+        return row[0]
+
+    def create_supplier_invoice(self, payload, actor, key):
+        def perform(db):
+            supplier = db.execute('SELECT id,code,name,contact,address,active FROM suppliers WHERE id=?',
+                                  (payload['supplier_id'],)).fetchone()
+            if not supplier:
+                raise DomainError(404, 'Pemasok tidak ditemukan.')
+            if not supplier['active']:
+                raise DomainError(422, f'Pemasok {supplier["code"]} nonaktif; tagihan baru ditolak. '
+                                      'Aktifkan kembali pemasok atau pilih pemasok lain. Histori tidak dihapus.')
+            seen = set()
+            lines, total_minor = [], 0
+            for entry in payload['lines']:
+                po = self._purchase_order(db, entry['purchase_order_id'])
+                if po['supplier']['id'] != supplier['id']:
+                    raise DomainError(422,
+                        f"Tagihan pemasok {supplier['code']} tidak dapat memakai PO {po['reference']} "
+                        f"milik pemasok {po['supplier']['code']}.")
+                if po['status'] not in ('issued', 'closed'):
+                    raise DomainError(409,
+                        f"PO {po['reference']} berstatus {po['status']}; hanya PO disetujui/aktif atau "
+                        'ditutup yang dapat ditagih.')
+                self._require_unit_access(db, actor, po.get('business_unit_id'))
+                po_line = next((l for l in po['lines'] if l['material_id'] == entry['material_id']), None)
+                if not po_line:
+                    raise DomainError(422,
+                        f"Bahan tidak tercantum pada PO {po['reference']}.")
+                price_minor = int(Decimal(po_line['unit_price']) * 100)
+                if int(Decimal(entry['unit_price']) * 100) != price_minor:
+                    raise DomainError(422,
+                        f"Harga invoice ({entry['unit_price']}) harus sama dengan harga aktual "
+                        f"PO {po['reference']} ({po_line['unit_price']}). Harga referensi master "
+                        'bukan harga aktual transaksi.')
+                quantity_milli = int(Decimal(entry['quantity']) * 1000)
+                dup_key = (po['id'], entry['material_id'])
+                if dup_key in seen:
+                    raise DomainError(422, 'Satu bahan pada satu PO hanya boleh dialokasikan satu baris per tagihan.')
+                seen.add(dup_key)
+                received = self._po_received_milli(db, po['id'], entry['material_id'])
+                invoiced = self._po_invoiced_milli(db, po['id'], entry['material_id'])
+                if quantity_milli > received - invoiced:
+                    raise DomainError(409,
+                        f"Alokasi {entry['quantity']} melebihi sisa penerimaan PO {po['reference']} "
+                        f"yang belum ditagih ({self._material_decimal(received - invoiced)}).")
+                line_total = self._invoice_line_total(quantity_milli, price_minor)
+                if line_total < 1:
+                    raise DomainError(422, 'Nilai tiap baris setelah pembulatan harus minimal Rp0,01.')
+                total_minor += line_total
+                lines.append({'purchase_order_id': po['id'], 'material_id': entry['material_id'],
+                              'quantity_milli': quantity_milli, 'unit_price_minor': price_minor,
+                              'line_total_minor': line_total})
+            if total_minor < 1:
+                raise DomainError(422, 'Total tagihan harus positif.')
+            invoice_id, timestamp = str(uuid4()), now()
+            try:
+                db.execute('''INSERT INTO supplier_invoices(id,reference,supplier_id,supplier,invoice_date,
+                    due_date,total_minor,allocations,reason,actor_id,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                    (invoice_id, payload['reference'], supplier['id'], json.dumps(dict(supplier)),
+                     payload['invoice_date'], payload['due_date'], total_minor, json.dumps(lines),
+                     payload['reason'], actor['id'], timestamp))
+            except sqlite3.IntegrityError as exc:
+                if 'supplier_invoices.supplier_id' in str(exc) or 'UNIQUE' in str(exc):
+                    raise DomainError(409,
+                        f"Nomor tagihan {payload['reference']} sudah terdaftar untuk pemasok "
+                        f"{supplier['code']}. Gunakan nomor unik per pemasok.")
+                raise
+            return self._supplier_invoice(db, invoice_id)
+        return self._write(actor, ('admin', 'operator'), key, 'supplier-invoice', payload, perform)
+
+    def _supplier_invoice(self, db, invoice_id):
+        row = db.execute('''SELECT i.*,u.name AS actor_name FROM supplier_invoices i
+            JOIN users u ON u.id=i.actor_id WHERE i.id=?''', (invoice_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Tagihan supplier tidak ditemukan.')
+        record = dict(row)
+        record['supplier'] = json.loads(record['supplier'])
+        total_minor = record.pop('total_minor')
+        record['total'] = format(Decimal(total_minor) / 100, '.2f')
+        record['currency'] = 'IDR'
+        allocations = []
+        for line in json.loads(record.pop('allocations')):
+            po = self._purchase_order(db, line['purchase_order_id'])
+            material = db.execute('SELECT code,name,unit FROM materials WHERE id=?',
+                                  (line['material_id'],)).fetchone()
+            received = self._po_received_milli(db, po['id'], line['material_id'])
+            invoiced = self._po_invoiced_milli(db, po['id'], line['material_id'])
+            allocations.append({
+                'purchase_order_id': po['id'],
+                'purchase_order_reference': po['reference'],
+                'material_id': line['material_id'],
+                'material_code': material['code'] if material else None,
+                'material_name': material['name'] if material else None,
+                'material_unit': material['unit'] if material else None,
+                'quantity': self._material_decimal(line['quantity_milli']),
+                'unit_price': format(Decimal(line['unit_price_minor']) / 100, '.2f'),
+                'line_total': format(Decimal(line['line_total_minor']) / 100, '.2f'),
+                'received': self._material_decimal(received),
+                'invoiced': self._material_decimal(invoiced),
+                'uninvoiced': self._material_decimal(received - invoiced),
+            })
+        record['allocations'] = allocations
+        record['payment_requests'] = [
+            {'id': r['id'], 'reference': r['reference'],
+             'amount': format(Decimal(r['amount_minor']) / 100, '.2f'),
+             'status': db.execute('''SELECT status FROM supplier_payment_request_events
+                 WHERE request_id=? ORDER BY sequence DESC LIMIT 1''', (r['id'],)).fetchone()[0]}
+            for r in db.execute('''SELECT id,reference,amount_minor FROM supplier_payment_requests
+                WHERE invoice_id=? ORDER BY sequence DESC''', (invoice_id,))]
+        return record
+
+    def supplier_invoice(self, invoice_id):
+        with self.transaction() as db:
+            return self._supplier_invoice(db, invoice_id)
+
+    def supplier_invoices(self, supplier_id=None, purchase_order_id=None, query='', limit=100, offset=0):
+        with self.transaction() as db:
+            ids = db.execute('''SELECT i.id FROM supplier_invoices i
+                WHERE (? IS NULL OR i.supplier_id=?)
+                AND (? IS NULL OR EXISTS(SELECT 1 FROM json_each(i.allocations) a
+                    WHERE json_extract(a.value,'$.purchase_order_id')=?))
+                AND (?='' OR i.reference LIKE '%'||?||'%')
+                ORDER BY i.sequence DESC LIMIT ? OFFSET ?''',
+                (supplier_id, supplier_id, purchase_order_id, purchase_order_id,
+                 query, query, limit, offset)).fetchall()
+            return [self._supplier_invoice(db, row[0]) for row in ids]
 
     def _marketing_budget_request(self, db, request_id):
         row = db.execute("""SELECT r.*,u.name AS actor_name FROM marketing_budget_requests r
@@ -7306,6 +7567,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def return_supplier(self, intake_id, payload, actor, key):
         def perform(db):
             intake = self._quality_intake(db, intake_id)
+            self._require_intake_unit_access(db, actor, intake)
             if intake['cancellation'] or intake['po_closed']:
                 raise DomainError(409, 'Kedatangan dibatalkan atau PO sudah ditutup.')
             quantity = self._material_amount(payload['quantity'],intake['unit'])
@@ -7327,6 +7589,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if original['reversal_of'] or db.execute('SELECT 1 FROM supplier_returns WHERE reversal_of=?',(return_id,)).fetchone():
                 raise DomainError(409, 'Retur sudah dikoreksi atau merupakan koreksi.')
             intake = self._quality_intake(db,original['intake_id'])
+            self._require_intake_unit_access(db, actor, intake)
             if intake['po_closed'] or intake['po_cancelled']:
                 raise DomainError(409, 'PO sudah ditutup atau dibatalkan; catatan retur sudah final.')
             db.execute('''INSERT INTO supplier_returns(id,intake_id,quantity_milli,reversal_of,reason,actor_id,created_at)
@@ -7338,6 +7601,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
     def create_quality_intake(self, order_id, payload, actor, key):
         def perform(db):
             po = self._purchase_order(db, order_id)
+            self._require_unit_access(db, actor, po.get('business_unit_id'))
             if po['status'] != 'issued':
                 raise DomainError(409, 'PO harus disetujui dan aktif sebelum QC bahan masuk.')
             line = next((l for l in po['lines'] if l['material_id']==payload['material_id']),None)
