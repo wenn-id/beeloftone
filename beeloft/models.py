@@ -200,6 +200,26 @@ class MaterialClassUpdate(MasterUpdate):
 class UserCreate(Input):
     name: Text
     role: Role
+    preset: str | None = Field(default=None, max_length=80)
+    permissions: list[str] | None = None
+    business_units: list[str] | None = None
+    all_units: bool | None = None
+
+
+class UserPermissionsSet(Input):
+    permissions: list[str]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class UserPresetSet(Input):
+    preset: str = Field(min_length=1, max_length=80)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class UserUnitsSet(Input):
+    business_unit_ids: list[str] = Field(default_factory=list)
+    all_units: bool = False
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class BrowserSessionLogin(Input):
@@ -216,6 +236,7 @@ class OrderCreate(Input):
     title: Text
     owner_id: Text
     due_date: date
+    business_unit_id: Text | None = None
     lines: list[OrderLine] = Field(min_length=1, max_length=100)
     # P02 (issue #49): metadata rencana cutting; plan dibuat otomatis berstatus
     # draft saat order dibuat. Kode rencana = reference order (lihat mapping).
