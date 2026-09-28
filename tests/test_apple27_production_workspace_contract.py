@@ -796,7 +796,7 @@ class VersionAndBackendTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 58, 'A6.1 is presentation only')
+        self.assertEqual(max(versions), 59, 'A01 adds schema 59 (P02 has 58)')
 
     def test_no_backend_route_was_added_or_changed(self):
         from tempfile import TemporaryDirectory
@@ -807,7 +807,7 @@ class VersionAndBackendTest(unittest.TestCase):
             live = create_app(Path(folder) / 'contract.sqlite3').openapi()
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
-        self.assertEqual(len(contract['paths']), 258, 'A6.1 adds no endpoint')
+        self.assertEqual(len(contract['paths']), 272, 'A01 adds 14 finance endpoints (P02 has 4)')
         # The board still reads the same endpoint, and the renderers invented no field.
         self.assertIn("api.get('/api/production-board?' + query)", APP)
 

@@ -452,10 +452,10 @@ class VersionTest(unittest.TestCase):
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 258, 'M02 (#44) menambah endpoint master bisnis')
+        self.assertEqual(len(contract['paths']), 272, 'M02 (#44) menambah endpoint master bisnis')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 58)
+        self.assertEqual(max(versions), 59)
 
     def test_documentation(self):
         text = (ROOT / 'docs' / 'apple27-final-consistency-polish.md').read_text(encoding='utf-8')

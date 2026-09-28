@@ -419,6 +419,7 @@ const workspaceDestinations={
   'purchase-requests':'purchase-requests-view',
   'marketing-budgets':'marketing-budgets-view',
   'business-masters':'masters-view',
+  'finance':'finance-view',
   'scan-bundle':'bundle-scan-view',
   'scan-finished-goods':'finished-goods-scan-view',
   'backup':'backup-view'
@@ -445,6 +446,7 @@ const workspaceSections=[
   {id:'purchase-requests-view',view:'purchase-requests',invalidate(){purchaseRequestsRequest++;}},
   {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}},
   {id:'masters-view',view:'masters',invalidate(){mastersRequest++;}},
+  {id:'finance-view',view:'finance',invalidate(){financeRequest++;}},
   {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
   {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
@@ -1743,6 +1745,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (view === 'purchase-requests') reloadPurchaseRequests();
       if (view === 'marketing-budgets') reloadMarketingBudgets();
       if (view === 'masters') loadMasters();
+      if (view === 'finance') loadFinance();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -2385,6 +2388,263 @@ function mapLocationForm(mappingId) {
     `/api/storage-location-mappings/${encodeURIComponent(mappingId)}/mappings`,
     `Teks asli "${row.raw_text}" tidak berubah. Hanya identitas storage yang ditautkan.`);
 }
+
+// ---------------------------------------------------------------------------
+// Keuangan (A01): COA, periode akuntansi, jurnal, dan neraca saldo.
+// Jurnal tidak dapat diubah/dihapus; koreksi hanya lewat reversal bertaut.
+// ---------------------------------------------------------------------------
+let financeRequest = 0, financeTab = 'coa', financeCache = [];
+const FINANCE_TABS = {coa:'COA', periods:'Periode', journals:'Jurnal', trial:'Neraca saldo'};
+const ACCOUNT_TYPES = {asset:'Aset', liability:'Kewajiban', equity:'Ekuitas', revenue:'Pendapatan', expense:'Beban'};
+
+function showFinance() {
+  activateWorkspace('finance');
+  $('finance-new').hidden = user.role !== 'admin';
+  loadFinance();
+}
+function financeMoney(minor) {
+  return 'Rp' + new Intl.NumberFormat('id-ID').format(minor / 100);
+}
+async function loadFinance() {
+  const request = ++financeRequest;
+  const host = $('finance-list');
+  if (!markRefreshing('finance-list')) { pageState('finance-message', 'loading', 'Memuat data keuangan…'); host.replaceChildren(); }
+  try {
+    let rows = [];
+    if (financeTab === 'coa') {
+      const result = await api.get('/api/coa-accounts?status=all&limit=500');
+      rows = result.items;
+    } else if (financeTab === 'periods') {
+      const result = await api.get('/api/accounting-periods?status=all&limit=500');
+      rows = result.items;
+    } else if (financeTab === 'journals') {
+      const result = await api.get('/api/journals?limit=500');
+      rows = result.items;
+    } else if (financeTab === 'trial') {
+      const periods = (await api.get('/api/accounting-periods?status=all&limit=500')).items;
+      const open = periods.find(p => p.status === 'open') || periods[0];
+      financeCache = periods;
+      rows = open ? [(await api.get(`/api/trial-balance?period_id=${encodeURIComponent(open.id)}`))] : [];
+    }
+    if (request !== financeRequest || view !== 'finance') return;
+    settleRefreshing('finance-list');
+    financeCache = rows;
+    paintFinance();
+  } catch (error) {
+    if (request !== financeRequest || view !== 'finance') return;
+    settleRefreshing('finance-list');
+    pageState('finance-message', 'error', 'Gagal memuat', error.message);
+  }
+}
+function paintFinance() {
+  $('finance-heading').textContent = FINANCE_TABS[financeTab];
+  $('finance-count').textContent = financeTab === 'trial' ? '' : `${financeCache.length} baris`;
+  $('finance-note').hidden = financeTab === 'trial';
+  const host = $('finance-list');
+  pageState('finance-message', '');
+  if (!financeCache.length) {
+    host.innerHTML = `<p class="state">Belum ada data.</p>` +
+      (user.role === 'admin' && financeTab === 'coa'
+        ? `<p><button type="button" class="primary" id="finance-seed">Seed 13 akun COA demo (sintetis)</button></p>` : '');
+    const seedButton = $('finance-seed');
+    if (seedButton) seedButton.onclick = seedDemoCoa;
+    return;
+  }
+  if (financeTab === 'coa') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(a => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(a.code)} · ${e(a.name)}</h3>
+        <p class="record-meta">${e(ACCOUNT_TYPES[a.type] || a.type)} · ${a.active ? 'Aktif' : 'Nonaktif'}</p></div>
+        <div class="record-actions">${user.role === 'admin' ? (a.active
+          ? `<button type="button" data-finance="deactivate-account" data-id="${e(a.id)}">Nonaktifkan</button>`
+          : `<button type="button" data-finance="activate-account" data-id="${e(a.id)}">Aktifkan</button>`) : ''}</div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'periods') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(p => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(p.code)}</h3>
+        <p class="record-meta">${e(p.start_date)} s.d. ${e(p.end_date)} · ${p.status === 'open' ? 'Terbuka' : 'Tertutup'} · revisi ${p.revision}</p></div>
+        <div class="record-actions">${user.role === 'admin' ? (p.status === 'open'
+          ? `<button type="button" data-finance="close-period" data-id="${e(p.id)}" data-rev="${p.revision}">Tutup</button>`
+          : `<button type="button" data-finance="open-period" data-id="${e(p.id)}" data-rev="${p.revision}">Buka kembali</button>`) : ''}</div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'journals') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(j => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(j.code)}</h3>
+        <p class="record-meta">${e(j.journal_date)} · ${e(j.period_code)} · ${e(j.description)}</p>
+        <p class="record-meta">D ${financeMoney(j.total_debit_minor)} · K ${financeMoney(j.total_credit_minor)}${j.reversal_of ? ` · reversal dari ${e(j.reversal_of)}` : ''}${j.reversed_by_id ? ' · sudah di-reversal' : ''}</p></div>
+        <div class="record-actions">
+          <button type="button" data-finance="journal-detail" data-id="${e(j.id)}">Rincian</button>
+          ${user.role === 'admin' && !j.reversed_by_id && !j.reversal_of ? `<button type="button" data-finance="journal-reverse" data-id="${e(j.id)}">Reversal</button>` : ''}
+        </div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'trial') {
+    const tb = financeCache[0];
+    host.innerHTML = `
+      <p class="record-meta">Total debit ${financeMoney(tb.total_debit_minor)} · Total kredit ${financeMoney(tb.total_credit_minor)} ·
+      <strong>${tb.balanced ? 'Seimbang' : 'TIDAK SEIMBANG'}</strong></p>
+      <div class="record-list">${tb.items.filter(i => i.debit_minor || i.credit_minor).map(i => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(i.code)} · ${e(i.name)}</h3>
+        <p class="record-meta">${e(ACCOUNT_TYPES[i.type] || i.type)}</p></div>
+        <div class="record-amounts"><span>D ${financeMoney(i.debit_minor)}</span><span>K ${financeMoney(i.credit_minor)}</span></div>
+      </article>`).join('') || '<p class="state">Belum ada mutasi pada periode ini.</p>'}</div>`;
+  }
+  host.querySelectorAll('[data-finance]').forEach(button => {
+    button.onclick = () => financeAction(button.dataset.finance, button.dataset);
+  });
+}
+async function financeAction(action, dataset) {
+  if (action === 'deactivate-account' || action === 'activate-account') {
+    const active = action === 'activate-account';
+    openDialog(active ? 'Aktifkan akun' : 'Nonaktifkan akun',
+      `<p>Akun ${active ? 'dapat' : 'tidak dapat'} dipakai untuk jurnal baru. Histori tetap terbaca.</p>
+       <div class="form-actions"><button type="button" data-action="cancel-form">Batal</button>
+       <button type="button" class="primary" id="finance-confirm">Ya, lanjutkan</button></div>`, 'compact');
+    $('finance-confirm').onclick = async () => {
+      try {
+        await api.save(api.transaction(`/api/coa-accounts/${encodeURIComponent(dataset.id)}/${active ? 'activate' : 'deactivate'}`, {}));
+        closeDialog(); notify('Status akun diperbarui.'); loadFinance();
+      } catch (error) { notify(error.message); }
+    };
+  } else if (action === 'close-period' || action === 'open-period') {
+    const closing = action === 'close-period';
+    formDialog(closing ? 'Tutup periode' : 'Buka kembali periode',
+      `<label class="field"><span class="field-label">Alasan</span>
+        <input name="reason" maxlength="1000" required placeholder="Alasan ${closing ? 'penutupan' : 'pembukaan kembali'}"></label>`,
+      form => ({reason: new FormData(form).get('reason'), expected_revision: Number(dataset.rev)}),
+      `/api/accounting-periods/${encodeURIComponent(dataset.id)}/${closing ? 'close' : 'reopen'}`,
+      closing ? 'Posting ke periode tertutup akan ditolak.' : 'Pembukaan kembali tercatat di audit.');
+  } else if (action === 'journal-detail') {
+    const journal = await api.get(`/api/journals/${encodeURIComponent(dataset.id)}`);
+    openDialog(`Jurnal ${journal.code}`,
+      `<p class="record-meta">${e(journal.journal_date)} · ${e(journal.period_code)}</p>
+       <p>${e(journal.description)}</p>
+       <p class="record-meta">Sumber: ${e(journal.source_system)}/${e(journal.source_account)}/${e(journal.source_entity_type)}/${e(journal.source_id)} · Kebijakan: ${e(journal.policy_ref)}</p>
+       ${journal.reversal_of ? `<p class="record-meta">Reversal dari ${e(journal.reversal_of)}</p>` : ''}
+       <table class="data-table"><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead><tbody>
+       ${journal.lines.map(l => `<tr><td>${e(l.account_code)} · ${e(l.account_name)}</td><td>${financeMoney(l.debit_minor)}</td><td>${financeMoney(l.credit_minor)}</td></tr>`).join('')}
+       </tbody></table>`, 'standard');
+  } else if (action === 'journal-reverse') {
+    const periods = (await api.get('/api/accounting-periods?status=open&limit=500')).items;
+    if (!periods.length) { notify('Tidak ada periode terbuka untuk reversal.'); return; }
+    formDialog('Reversal jurnal',
+      `<label class="field"><span class="field-label">Periode reversal (terbuka)</span>
+        <select name="period_id">${periods.map(p => `<option value="${e(p.id)}">${e(p.code)}</option>`).join('')}</select></label>
+       <label class="field"><span class="field-label">Tanggal jurnal</span><input name="journal_date" type="date" required></label>
+       <label class="field"><span class="field-label">Alasan reversal</span><input name="reason" maxlength="1000" required></label>`,
+      form => { const data = new FormData(form); return {period_id: data.get('period_id'), journal_date: data.get('journal_date'), reason: data.get('reason')}; },
+      `/api/journals/${encodeURIComponent(dataset.id)}/reverse`,
+      'Reversal membuat jurnal baru yang menautkan jurnal asal; jurnal asal tidak diubah.');
+  }
+}
+function financeForm() {
+  if (financeTab === 'coa') {
+    formDialog('Tambah akun COA',
+      `<label class="field"><span class="field-label">Kode akun</span><input name="code" maxlength="20" required></label>
+       <label class="field"><span class="field-label">Nama akun</span><input name="name" maxlength="160" required></label>
+       <label class="field"><span class="field-label">Jenis</span><select name="type">
+       ${Object.entries(ACCOUNT_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>`,
+      form => { const data = new FormData(form); return {code: data.get('code'), name: data.get('name'), type: data.get('type')}; },
+      '/api/coa-accounts', 'Kode akun stabil dan tidak dapat diubah setelah dibuat.');
+  } else if (financeTab === 'periods') {
+    formDialog('Tambah periode akuntansi',
+      `<label class="field"><span class="field-label">Kode periode</span><input name="code" maxlength="20" required placeholder="2026-10"></label>
+       <label class="field"><span class="field-label">Tanggal mulai</span><input name="start_date" type="date" required></label>
+       <label class="field"><span class="field-label">Tanggal akhir</span><input name="end_date" type="date" required></label>`,
+      form => { const data = new FormData(form); return {code: data.get('code'), start_date: data.get('start_date'), end_date: data.get('end_date')}; },
+      '/api/accounting-periods', 'Periode tidak boleh tumpang tindih.');
+  } else if (financeTab === 'journals') {
+    journalForm();
+  }
+}
+async function journalForm() {
+  const [periods, accounts] = await Promise.all([
+    api.get('/api/accounting-periods?status=open&limit=500'),
+    api.get('/api/coa-accounts?status=active&limit=500'),
+  ]);
+  if (!periods.items.length) { notify('Buat periode terbuka terlebih dahulu.'); return; }
+  const accountOptions = accounts.items.map(a => `<option value="${e(a.code)}">${e(a.code)} · ${e(a.name)}</option>`).join('');
+  const lineRow = (index) => `
+    <div class="journal-line" data-line="${index}">
+      <label class="field"><span class="field-label">Akun</span><select name="account_code">${accountOptions}</select></label>
+      <label class="field"><span class="field-label">Debit</span><input name="debit" inputmode="decimal" placeholder="0.00" value="0"></label>
+      <label class="field"><span class="field-label">Kredit</span><input name="credit" inputmode="decimal" placeholder="0.00" value="0"></label>
+    </div>`;
+  openDialog('Posting jurnal',
+    `<form id="journal-form">
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Periode</span><select name="period_id">
+          ${periods.items.map(p => `<option value="${e(p.id)}">${e(p.code)}</option>`).join('')}</select></label>
+        <label class="field"><span class="field-label">Tanggal jurnal</span><input name="journal_date" type="date" required></label>
+        <label class="field"><span class="field-label">Deskripsi</span><input name="description" maxlength="1000" required></label>
+        <label class="field"><span class="field-label">ID sumber</span><input name="source_id" maxlength="160" required placeholder="EVT-..."></label>
+      </div>
+      <div id="journal-lines">${lineRow(0)}${lineRow(1)}</div>
+      <div class="form-actions"><button type="button" id="journal-add-line">Tambah baris</button></div>
+      <p class="error" id="journal-error" role="alert" hidden></p>
+      <div class="form-actions"><button type="button" data-action="cancel-form">Batal</button>
+      <button class="primary" type="submit" id="journal-save">Posting jurnal</button></div>
+    </form>`, 'standard');
+  let lineCount = 2;
+  $('journal-add-line').onclick = () => {
+    $('journal-lines').insertAdjacentHTML('beforeend', lineRow(lineCount++));
+  };
+  $('journal-form').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const lines = [...form.querySelectorAll('.journal-line')].map(row => ({
+      account_code: row.querySelector('[name=account_code]').value,
+      debit: row.querySelector('[name=debit]').value.trim() || '0',
+      credit: row.querySelector('[name=credit]').value.trim() || '0',
+    }));
+    const payload = {
+      period_id: data.get('period_id'), journal_date: data.get('journal_date'),
+      description: data.get('description'), policy_ref: 'DEMO-POST-20260928-1',
+      source: {system: 'beeloft', account: 'manual', entity_type: 'manual_journal', id: data.get('source_id')},
+      lines,
+    };
+    message('journal-error', '');
+    $('journal-save').disabled = true;
+    try {
+      await api.save(api.transaction('/api/journals', payload));
+      closeDialog(); notify('Jurnal terposting.'); loadFinance();
+    } catch (error) {
+      message('journal-error', error.message); $('journal-save').disabled = false;
+    }
+  };
+}
+async function seedDemoCoa() {
+  if (guardPending()) return;
+  openDialog('Seed COA demo', '<p class="state">Membuat 13 akun sintetis demo…</p>', 'compact');
+  try {
+    const result = await api.save(api.transaction('/api/coa-accounts/seed-demo', {}));
+    closeDialog();
+    notify(`COA demo: ${result.created.length} dibuat, ${result.skipped.length} sudah ada.`);
+    loadFinance();
+  } catch (error) {
+    if ($('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p>`;
+  }
+}
+$('finance').onclick = showFinance;
+$('finance-back').onclick = showBoard;
+$('finance-refresh').onclick = loadFinance;
+$('finance-new').onclick = financeForm;
+document.querySelectorAll('[data-finance-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    financeTab = button.dataset.financeTab;
+    document.querySelectorAll('[data-finance-tab]').forEach(tab =>
+      tab.setAttribute('aria-selected', String(tab === button)));
+    $('finance-new').hidden = user.role !== 'admin' || financeTab === 'trial';
+    $('finance-new').textContent = financeTab === 'coa' ? 'Tambah akun / seed demo'
+      : financeTab === 'periods' ? 'Tambah periode'
+      : financeTab === 'journals' ? 'Posting jurnal' : 'Tambah';
+    if (view === 'finance') loadFinance(); else showFinance();
+  });
+});
+
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;

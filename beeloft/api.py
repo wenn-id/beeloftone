@@ -22,6 +22,8 @@ from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
+from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
+                            PeriodDecision, PoReceiptJournalCreate)
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
@@ -1778,5 +1780,89 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/storage-location-mappings/summary', tags=['Business Masters'])
     def location_mapping_summary(user: Actor):
         return store.location_mapping_summary()
+
+    # ------------------------------------------------------------------
+    # A01 (#46): Ledger keuangan dan kontrak posting.
+    # Seluruh mutasi (tulis) hanya untuk admin; baca untuk semua peran login.
+    # ------------------------------------------------------------------
+    @app.get('/api/coa-accounts', tags=['Finance'])
+    def coa_accounts(user: Actor, status: Literal['all', 'active', 'inactive'] = 'all',
+                     type: Literal['all', 'asset', 'liability', 'equity', 'revenue',
+                                   'expense'] = 'all',
+                     q: Annotated[str, Query(max_length=160)] = '',
+                     limit: Limit = 100, offset: Offset = 0):
+        return store.coa_accounts(status, '' if type == 'all' else type, q, limit, offset)
+
+    @app.post('/api/coa-accounts', status_code=201, tags=['Finance'])
+    def create_coa_account(body: CoaAccountCreate, user: Actor, key: RequestKey):
+        return store.create_account(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/coa-accounts/seed-demo', status_code=201, tags=['Finance'])
+    def seed_demo_coa(user: Actor, key: RequestKey):
+        return store.seed_demo_coa(user, key)
+
+    @app.get('/api/coa-accounts/{account_id}', tags=['Finance'])
+    def coa_account(account_id: str, user: Actor):
+        return store.coa_account(account_id)
+
+    @app.post('/api/coa-accounts/{account_id}/deactivate', status_code=200, tags=['Finance'])
+    def deactivate_coa_account(account_id: str, user: Actor, key: RequestKey):
+        return store.set_account_active(account_id, False, user, key)
+
+    @app.post('/api/coa-accounts/{account_id}/activate', status_code=200, tags=['Finance'])
+    def activate_coa_account(account_id: str, user: Actor, key: RequestKey):
+        return store.set_account_active(account_id, True, user, key)
+
+    @app.get('/api/accounting-periods', tags=['Finance'])
+    def accounting_periods(user: Actor, status: Literal['all', 'open', 'closed'] = 'all',
+                           limit: Limit = 100, offset: Offset = 0):
+        return store.accounting_periods(status, limit, offset)
+
+    @app.post('/api/accounting-periods', status_code=201, tags=['Finance'])
+    def create_accounting_period(body: AccountingPeriodCreate, user: Actor, key: RequestKey):
+        return store.create_period(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/accounting-periods/{period_id}', tags=['Finance'])
+    def accounting_period(period_id: str, user: Actor):
+        return store.accounting_period(period_id)
+
+    @app.post('/api/accounting-periods/{period_id}/close', status_code=200, tags=['Finance'])
+    def close_accounting_period(period_id: str, body: PeriodDecision, user: Actor, key: RequestKey):
+        return store.close_period(period_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/accounting-periods/{period_id}/reopen', status_code=200, tags=['Finance'])
+    def reopen_accounting_period(period_id: str, body: PeriodDecision, user: Actor, key: RequestKey):
+        return store.reopen_period(period_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/journals', tags=['Finance'])
+    def journals(user: Actor, period_id: Annotated[str, Query(max_length=160)] = '',
+                 account_code: Annotated[str, Query(max_length=20)] = '',
+                 q: Annotated[str, Query(max_length=160)] = '',
+                 limit: Limit = 100, offset: Offset = 0):
+        return store.journals(period_id, account_code, q, limit, offset)
+
+    @app.post('/api/journals', status_code=201, tags=['Finance'])
+    def post_journal(body: JournalCreate, user: Actor, key: RequestKey):
+        return store.post_journal(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/journals/{journal_id}', tags=['Finance'])
+    def journal(journal_id: str, user: Actor):
+        return store.journal(journal_id)
+
+    @app.post('/api/journals/{journal_id}/reverse', status_code=201, tags=['Finance'])
+    def reverse_journal(journal_id: str, body: JournalReverse, user: Actor, key: RequestKey):
+        return store.reverse_journal(journal_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/receipt-journal', status_code=201,
+              tags=['Finance'])
+    def post_po_receipt_journal(order_id: str, body: PoReceiptJournalCreate,
+                                user: Actor, key: RequestKey):
+        return store.post_po_receipt_journal(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/trial-balance', tags=['Finance'])
+    def trial_balance(user: Actor,
+                      period_id: Annotated[str, Query(max_length=160)] = '',
+                      business_unit_id: Annotated[str, Query(max_length=160)] = ''):
+        return store.trial_balance(period_id, business_unit_id)
 
     return app

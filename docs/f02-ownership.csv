@@ -439,3 +439,24 @@ endpoint,POST /api/bom-templates/{template_id}/changes,A1,M01,A2,beeloft/api.py#
 endpoint,POST /api/bom-templates/{template_id}/apply,A1,M01,A2,beeloft/api.py#apply_bom_template
 endpoint,POST /api/products/{product_id}/changes,A1,M01,A2,beeloft/api.py#change_product
 endpoint,POST /api/materials/{material_id}/changes,A1,M01,A2,beeloft/api.py#change_material
+table,coa_accounts,A1,A01,A0,beeloft/financial_ledger.sql
+table,accounting_periods,A1,A01,A0,beeloft/financial_ledger.sql
+table,journals,A1,A01,A0,beeloft/financial_ledger.sql
+table,journal_lines,A1,A01,A0,beeloft/financial_ledger.sql
+endpoint,GET /api/coa-accounts,A1,A01,A0,beeloft/api.py#list_coa_accounts
+endpoint,POST /api/coa-accounts,A1,A01,A0,beeloft/api.py#create_coa_account
+endpoint,POST /api/coa-accounts/seed-demo,A1,A01,A0,beeloft/api.py#seed_demo_coa
+endpoint,GET /api/coa-accounts/{account_id},A1,A01,A0,beeloft/api.py#get_coa_account
+endpoint,POST /api/coa-accounts/{account_id}/deactivate,A1,A01,A0,beeloft/api.py#deactivate_coa_account
+endpoint,POST /api/coa-accounts/{account_id}/activate,A1,A01,A0,beeloft/api.py#activate_coa_account
+endpoint,GET /api/accounting-periods,A1,A01,A0,beeloft/api.py#list_accounting_periods
+endpoint,POST /api/accounting-periods,A1,A01,A0,beeloft/api.py#create_accounting_period
+endpoint,GET /api/accounting-periods/{period_id},A1,A01,A0,beeloft/api.py#get_accounting_period
+endpoint,POST /api/accounting-periods/{period_id}/close,A1,A01,A0,beeloft/api.py#close_accounting_period
+endpoint,POST /api/accounting-periods/{period_id}/reopen,A1,A01,A0,beeloft/api.py#reopen_accounting_period
+endpoint,GET /api/journals,A1,A01,A0,beeloft/api.py#list_journals
+endpoint,POST /api/journals,A1,A01,A0,beeloft/api.py#post_journal
+endpoint,GET /api/journals/{journal_id},A1,A01,A0,beeloft/api.py#get_journal
+endpoint,POST /api/journals/{journal_id}/reverse,A1,A01,A0,beeloft/api.py#reverse_journal
+endpoint,POST /api/purchase-orders/{order_id}/receipt-journal,A1,A01,A0,beeloft/api.py#post_po_receipt_journal
+endpoint,GET /api/trial-balance,A1,A01,A0,beeloft/api.py#get_trial_balance

@@ -131,6 +131,7 @@
           <div class="nav-group nav-group-tail">
             <p class="nav-section-label">Bisnis</p>
             <button id="business-masters" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-building"/></svg>Master bisnis</button>
+            <button id="finance" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-wallet"/></svg>Keuangan</button>
             <button id="purchase-requests" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-cart"/></svg>Permintaan pembelian</button>
             <button id="marketing-budgets" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-megaphone"/></svg>Budget marketing</button>
           </div>
@@ -250,6 +251,20 @@
         </section>
       </section>
 
+      <section id="finance-view" class="workspace-page" hidden>
+        <button id="finance-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Keuangan</h1><p class="workspace-subtitle">Buku besar keuangan native: COA, periode akuntansi, jurnal, dan neraca saldo. COA demo bersifat sintetis, bukan kebijakan resmi.</p></div><div class="workspace-actions"><button id="finance-refresh" type="button" class="action-secondary">Muat ulang</button><button id="finance-new" class="action-primary" type="button" hidden>Tambah</button></div></div>
+        <div id="finance-tabs" class="command-bar filter-row" role="tablist" aria-label="Area keuangan">
+          <button type="button" class="filter-chip" role="tab" data-finance-tab="coa" aria-selected="true">COA</button>
+          <button type="button" class="filter-chip" role="tab" data-finance-tab="periods" aria-selected="false">Periode</button>
+          <button type="button" class="filter-chip" role="tab" data-finance-tab="journals" aria-selected="false">Jurnal</button>
+          <button type="button" class="filter-chip" role="tab" data-finance-tab="trial" aria-selected="false">Neraca saldo</button>
+        </div>
+        <p id="finance-note" class="info-panel"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-info"/></svg><span>Jurnal yang sudah tercatat tidak dapat diubah atau dihapus; koreksi hanya melalui reversal bertaut. Posting ke periode tertutup ditolak.</span></p>
+        <div class="workspace-subhead"><h2 id="finance-heading" class="workspace-section-title">COA</h2><span id="finance-count" class="workspace-meta"></span></div>
+        <p id="finance-message" class="state" role="status" hidden></p>
+        <div id="finance-list" class="list-host"></div>
+      </section>
       <section id="master-catalog-view" class="workspace-page" hidden>
         <button id="master-catalog-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
         <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Master katalog</h1><p class="workspace-subtitle">Satuan, klasifikasi produk dan bahan, warna, ukuran, serta template BOM.</p></div><div class="workspace-actions"><button id="master-catalog-refresh" type="button" class="action-secondary">Muat ulang</button><button id="new-catalog-row" class="action-primary" type="button" hidden>Tambah</button></div></div>

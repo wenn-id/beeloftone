@@ -1,118 +1,97 @@
-# A01: kesiapan ledger keuangan dan kontrak posting
+# A01: ledger keuangan dan kontrak posting (#46)
 
-Persiapan [#46](https://github.com/wenn-id/beeloftone/issues/46), diperiksa pada
-22 September 2026, commit `4f24ea0ec307ffff419659cf2ea5d22b1dc0e72c`,
-v0.97.0/schema 55. **BLOCKED_F02/M02: belum implementasi atau business accepted.**
+Implementasi [#46](https://github.com/wenn-id/beeloftone/issues/46), diperbarui
+28 September 2026. F02 [#41](https://github.com/wenn-id/beeloftone/issues/41),
+M01 [#43](https://github.com/wenn-id/beeloftone/issues/43) dan M02
+[#44](https://github.com/wenn-id/beeloftone/issues/44) sudah merged; skema 57.
+Dokumen readiness sebelumnya (22 Sep 2026, schema 55) sudah kedaluwarsa.
 
-[F02](f02-shared-contracts.md) masih DRAFT dan [M02](m02-master-readiness.md) baru
-pemetaan gap tanpa master organisasi native. #41/#44 masih terbuka. Issue #46
-mensyaratkan penerimaan dependensi dan spesifikasi pemilik accounting; keputusan
-[D13–D15](f01-decisions-evidence.md) masih OPEN. Dokumen ini tidak menetapkan COA,
-metode biaya, pajak, timing pengakuan atau aturan periode, dan tidak menutup #46.
+**Status:** kontrak posting native A01 diimplementasikan pada skema 59 dengan
+aturan demo sintetis. D14 memilih arah akuntansi native lengkap bertahap, tetapi
+detail COA, costing, timing pengakuan, pajak, dan periode **belum business
+accepted** — mapping di `beeloft/posting_rules.py` berlabel `DEMO_ASSUMPTION`
+dengan policy ref `DEMO-POST-20260928-1` dan bukan kebijakan resmi perusahaan.
+Jangan presentasikan akun/mapping demo sebagai kebijakan akuntansi Beeloft.
 
-## Baseline dan sumber yang perlu dihubungkan
+## Yang dibangun
 
-Belum ada master akun, periode pembukuan buka/tutup, journal header/lines native,
-registry sumber posting atau trial balance pada schema 55. Inventaris persisten
-ada di [F02 ownership](f02-ownership.csv). Tabel bernama payroll posting adalah
-snapshot eksternal, bukan buku besar Beeloft.
+- **Migrasi 59** (`beeloft/financial_ledger.sql`): `coa_accounts`,
+  `accounting_periods`, `journals`, `journal_lines`. Uang integer minor;
+  trigger melarang UPDATE/DELETE jurnal dan lines, dan hanya mengizinkan
+  perubahan status aktif pada COA.
+- **Posting atomik** (`Store.post_journal`): satu `BEGIN IMMEDIATE`, seimbang
+  eksak debit=kredit, akun harus ada dan aktif, nilai Decimal→minor dengan
+  presisi 2 desimal eksplisit, tanggal di dalam periode, periode harus open
+  (dicek dalam transaksi yang sama — race post-vs-close ditolak).
+- **Sumber sekali** (`source identity`): unique key
+  `(source_system, source_account, source_entity_type, source_id)`.
+  Replay identik (isi sama, key berbeda) mengembalikan jurnal yang sama;
+  payload berbeda untuk sumber sama → 409 konflik. Revision sumber adalah
+  metadata, bukan kunci — satu event ekonomi tepat satu jurnal.
+- **Reversal bertaut**: `Store.reverse_journal` membuat jurnal baru dengan
+  `reversal_of` ke kode jurnal asal; jurnal asal immutable (trigger + API
+  menolak edit). Double reversal dan reversal-of-reversal ditolak 409.
+  Reversal memakai periode terbuka yang dipilih eksplisit — tidak ada
+  pembukaan periode otomatis, dan reversal ke periode tertutup ditolak.
+- **Close/reopen periode**: `close_period`/`reopen_period` memakai
+  `expected_revision` (optimistic guard) dan alasan wajib; dicatat di audit.
+- **Trial balance** (`Store.trial_balance`, `GET /api/trial-balance`):
+  dihitung dari lines jurnal native dalam scope periode (dan unit opsional),
+  termasuk reversal; total debit=kredit.
+- **API**: `GET/POST /api/coa-accounts` (+ seed demo, activate/deactivate),
+  `GET/POST /api/accounting-periods` (+ close/reopen),
+  `GET/POST /api/journals` (+ detail, reverse),
+  `POST /api/purchase-orders/{id}/receipt-journal`,
+  `GET /api/trial-balance`. Semua tulis hanya role `admin`; baca butuh
+  autentikasi. Ownership tabel+endpoint: `docs/f02-ownership.csv`.
+- **UI**: workspace **Keuangan** dengan tab COA, Periode, Jurnal, Neraca saldo;
+  jurnal immutable; seed COA demo berlabel sintetis.
+- **Tes**: `tests/test_a01_financial_ledger.py` — 33 tes (+12 subtes):
+  migrasi 59 & upgrade 58→59, COA, periode (overlap, revision guard, close/
+  reopen), posting seimbang/tidak seimbang/akun invalid/nonaktif/tanggal di
+  luar periode, replay sumber identik, konflik sumber, idempotency key,
+  penolakan periode tertutup, konkurensi 8 thread satu sumber, reversal
+  (tautan, double, of-reversal, periode tertutup), immutability trigger,
+  izin role, semua builder posting rules seimbang, adapt PO receipt, dan
+  endpoint HTTP end-to-end.
 
-| Domain | Bukti existing | Gap sebelum posting native |
-|---|---|---|
-| Stok/COGS | Ledger bahan/barang jadi dan reversal fisik; `Store.production_cost` menghitung pemakaian + waste dengan harga PO per batch dan biaya total sewing aktif ([test_production_cost.py](../tests/test_production_cost.py)) | Belum akun WIP/persediaan/COGS, valuasi perusahaan atau jurnal. D13 menentukan komponen/metode; D14 memilih event pengakuan dan akun. Harga/biaya tidak lengkap menghasilkan coverage gap, bukan biaya nol |
-| Payroll/kasbon | Approval payroll terpisah dari snapshot status payment/accounting; sewing cost merupakan input total job, bukan charge upah per employee ([test_payroll_accounting_reconciliation.py](../tests/test_payroll_accounting_reconciliation.py)) | Belum payroll/charge/kasbon native. P03/H01/H02 harus memakai sumber charge yang sama dengan costing; jangan menjumlah charge baru dan sewing cost lama untuk jasa sama |
-| Sales/AR | Settlement marketplace menyimpan nominal komponen dan FK shipment, dengan reversal tersendiri; margin memakai lineage sampai produksi ([marketplace_sale_settlements.sql](../beeloft/marketplace_sale_settlements.sql), [test_contribution_margin.py](../tests/test_contribution_margin.py)) | Belum invoice/AR/payment native atau jurnal sales. Settlement operasional tidak otomatis bukti mutasi bank; D09–D11/D14 menetapkan sumber/timing yang sah |
-| Pembelian/AP | PO mengunci harga/supplier; penerimaan, retur dan approval pembayaran berjejak ([test_purchase_orders.py](../tests/test_purchase_orders.py), [test_supplier_payment_approvals.py](../tests/test_supplier_payment_approvals.py)) | Approval supplier bukan pembayaran aktual. Pemilik menetapkan basis receipt/invoice, AP settlement with/non-PO dan event pengakuan; bukan otomatis posting kas ketika approved |
-| Kas/bank | Nominal keuangan dan payment status dibaca dari snapshot Mekari; belum ledger kas/bank native | Metode bayar, akun, alokasi, bukti transaksi, partial/overpayment dan reversal mengikuti D11/D12/D14 serta master M02 |
+## Batas yang tetap dijaga
 
-Sumber implementasi: [store.py](../beeloft/store.py), terutama `production_cost`,
-`create_marketplace_sale_settlement`, `reverse_marketplace_sale_settlement`,
-`create_supplier_payment_request` dan `decide_supplier_payment_request`.
-Tabel di atas memetakan bukti yang tersedia; bukan daftar event posting yang
-telah disetujui.
+- Ledger kuantitas/operasional existing (`balances`/`movements`) tidak diubah;
+  tidak menduplikasi stok, biaya tenaga kerja, atau snapshot Mekari.
+- Snapshot Mekari payroll (`MekariPayrollAccounting`) tetap bukti eksternal,
+  bukan jurnal native; rekonsiliasi `posting_unbalanced` dipertahankan.
+- Approval supplier/snapshot bukan bukti pembayaran; adapter
+  `post_po_receipt_journal` hanya memposting penerimaan barang (material
+  receipt) dari PO terkunci — bukan pembayaran AP, bukan payroll, bukan POS.
+- #59 (laporan keuangan) di luar scope; yang ada hanya trial balance per
+  periode.
+- Izin memakai role server existing sampai #45 merged; endpoint keuangan tidak
+  tanpa autentikasi/otorisasi.
+- #49 tetap lewat PR #116; #110 diabaikan; PR #46 tetap **draft/open**, tanpa
+  auto-merge.
 
-## Batas snapshot dan ledger native
+## Acceptance yang sudah terpenuhi oleh tes
 
-`MekariPayrollAccounting` menyimpan reference, tanggal, status dan total debit/
-kredit ([models.py](../beeloft/models.py), [payroll_accounting.sql](../beeloft/payroll_accounting.sql)).
-Total yang berbeda sengaja diterima dan ditandai `posting_unbalanced` oleh
-rekonsiliasi. Pertahankan bukti selisih tersebut; jangan menambahkan validasi
-jurnal native pada importer snapshot atau mengubah snapshot menjadi jurnal.
+1. **Seimbang dan tepat**: akun valid/aktif, presisi 2 desimal, tolak tidak
+   seimbang; rollback tidak menyisakan jurnal separuh jadi.
+2. **Sumber sekali**: key sama, key berbeda, dan 8 thread bersamaan → tepat
+   satu jurnal; payload berbeda → 409.
+3. **Atomik**: trigger + transaksi tunggal; replay setelah rollback aman.
+4. **Reversal/locking**: reversal bertaut, histori dipertahankan; posting ke
+   periode tertutup ditolak; race post-vs-close dicek dalam transaksi sama.
+5. **Trial balance**: dari lines native dalam scope, termasuk reversal;
+   debit=kredit; saldo akun kembali nol setelah reversal penuh.
+6. **Kompatibilitas dan akses**: upgrade 58→59, fresh DB 59, ledger existing
+   utuh, endpoint HTTP, izin admin-only, UI tanpa console error (browser test).
 
-Nomor jurnal eksternal atau `status=posted` bukan bukti jurnal native Beeloft.
-Snapshot tidak menyediakan baris akun untuk trial balance. Jangan membuat akun
-penyeimbang, mengarang baris debit/kredit atau menyimpulkan distribusi per unit.
-Posting seimbang juga belum membuktikan akun, pajak, tanggal atau nilainya benar.
+## Yang masih menunggu business acceptance
 
-`Store._write` sudah menyatukan mutasi, audit dan receipt idempotency dalam write
-transaction, dengan pemeriksaan aktor/role terkini. Ini fondasi yang dapat dipakai
-ulang, tetapi uniqueness HTTP key belum menjamin satu sumber ekonomi sekali
-diposting jika dikirim dengan key berbeda. F02 mengusulkan identitas sumber dan
-revision event; kontrak keunikan bisnisnya masih perlu diterima.
-
-## Isian spesifikasi pemilik accounting
-
-Gunakan [register F01](f01-decisions-evidence.md), tanpa membuat daftar keputusan
-baru yang bersaing. Setiap jawaban memuat approver, scope unit, tanggal efektif,
-revisi dan referensi contoh EX09/EX10 yang telah disamarkan/disahkan.
-
-| Keputusan | Isian yang membuka implementasi |
-|---|---|
-| D13 | Metode valuasi dan komponen biaya, waste/reject/rework/overhead, WIP, alokasi COGS serta sumber charge yang tidak dihitung ganda |
-| D14 | COA dan akun kontrol; per event domain: kapan diakui, akun debit/kredit, sumber nilai, unit/currency, presisi, mode/tahap pembulatan, pajak/potongan; contoh input dan jurnal expected |
-| D15 | Periode, posting date/cutoff, locking, late entry, reversal lintas periode, reopen/close dan aturan koreksi. Jangan otomatis memindahkan tanggal ke periode terbuka |
-| D01/D17, M02/O01 | Unit dan pihak valid, identitas aktor, hak post/reverse/close/read/export serta pemisahan tugas; role admin existing bukan pengesahan hak accounting perusahaan |
-| D18/D19 bila migrasi sumber dipakai | Namespace/authority/cutoff, opening balance atau replay histori untuk scope sama, deduplikasi snapshot/native, mapping sumber dan control totals |
-| F02 / A0 | Kontrak producer-to-journal diterima lintas domain; fungsi/file bersama dan nomor migrasi dikoordinasikan dari HEAD terbaru. Nomor belum dipesan |
-
-Pengecualian pembukuan untuk suatu modul harus disetujui secara eksplisit sesuai
-#46. Belum adanya producer native bukan alasan membuat jurnal tebakan atau
-mengurangi target penggantian backoffice. A01 menyediakan kontrak bersama lebih
-awal; finalisasi lintas subledger dan closing A02 menunggu producer tersedia.
-
-## Acceptance setelah kontrak diterima
-
-1. **Seimbang dan tepat.** Uji akun valid/aktif, unit/currency, nilai Decimal dan
-   presisi yang disahkan; tolak overflow serta debit/kredit tidak seimbang.
-   Cocokkan baris jurnal dengan contoh pemilik, bukan hanya total yang sama.
-2. **Sumber sekali.** Kirim event sumber sama dengan key sama, key berbeda dan
-   dua penulis bersamaan; tepat satu efek posting. Payload/revision berbeda
-   mengikuti kontrak koreksi, bukan jurnal kedua diam-diam. ID sama lintas
-   namespace tidak berbenturan; snapshot pasangan tidak menambah efek ekonomi.
-3. **Atomik.** Suntik kegagalan setelah header, sebagian lines, audit dan receipt;
-   tidak ada transaksi separuh jadi. Buktikan producer dan posting dalam boundary
-   atomik yang disepakati F02. Retry setelah rollback menghasilkan satu jurnal.
-4. **Reversal/locking.** Reversal menunjuk jurnal asal dan mempertahankan histori;
-   uji ulang/concurrent reversal sesuai batas yang disahkan. Tolak posting ke
-   periode terkunci. Race post-vs-close diperiksa di write transaction yang sama;
-   tanggal reversal lintas periode mengikuti D15, bukan fallback runtime.
-5. **Trial balance.** Hitung dari lines jurnal native posted dalam scope akun,
-   unit, currency dan periode yang benar, termasuk reversal dan opening balance
-   yang disahkan. Uji saldo pembuka + mutasi = penutup, total debit = kredit,
-   serta drill-down ke sumber; jangan menyusun laporan dari agregat snapshot.
-6. **Kompatibilitas dan akses.** Pertahankan ledger/snapshot existing dan seluruh
-   ID/FK. Uji DB baru, upgrade schema 55, rerun, FK/integrity, control totals dan
-   backup/restore sintetis. Uji API/UI/error state dan hak server lintas akun/unit;
-   invoice, payroll atau payment baru tidak diklaim sudah ada oleh paket ini.
-
-## Bukti baseline dan handoff
-
-Dari root repo, PowerShell:
-
-```powershell
-$env:PYTHONPATH = 'tests'
-python -m unittest test_f02_contracts test_payroll_accounting_reconciliation test_payroll_payment_reconciliation test_production_cost test_contribution_margin test_purchase_orders test_supplier_payment_approvals test_marketplace_shipping test_audit_trail -v
-```
-
-Eksekusi 22 September 2026 dengan Python 3.12.13: **37 tes lulus** dalam
-118.335 detik; `uv pip check` dan pemeriksaan 14 tautan lokal juga lulus.
-Commit akhir dicatat di PR. Tes ini membuktikan perilaku
-existing dan pemisahan snapshot/approval/biaya; bukan acceptance posting atomik,
-periode terkunci atau trial balance native. Browser suite tidak dijalankan karena
-tidak ada perubahan UI.
-
-Branch `docs/a01-ledger-readiness`; file berubah dokumen ini dan tautan README.
-Runtime/API/schema, versi v0.97.0/schema 55 serta dependency tetap. Pemilik A2,
-reviewer A1 untuk charge/payroll/stok, A3 untuk namespace/audit dan A0 untuk kontrak/
-migrasi. Review serta sign-off accounting masih pending; #46 tetap terbuka dan
-PR tetap draft sampai dependensi diterima, implementasi dan acceptance selesai.
+D13 (metode valuasi, komponen biaya, waste/reject/rework/overhead, WIP,
+alokasi COGS), D14 detail (COA resmi, per event: kapan diakui, akun
+debit/kredit, sumber nilai, pajak/potongan, pembulatan), D15 (cutoff, late
+entry, reversal lintas periode, reopen), D01/D17 (hak post/reverse/close
+akuntansi dan pemisahan tugas), D18/D19 (migrasi/opening balance). Adapter
+producer native (PO receipt dari event DB, payroll, sales, kasbon) belum
+terhubung ke event domain nyata — `adapt_po_receipt` memakai data sintetis
+demo sampai producer tersedia.

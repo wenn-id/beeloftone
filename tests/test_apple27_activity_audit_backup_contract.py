@@ -354,10 +354,10 @@ class GlobalTest(unittest.TestCase):
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 258, 'A6.6 is presentation only')
+        self.assertEqual(len(contract['paths']), 272, 'A6.6 is presentation only')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 58)
+        self.assertEqual(max(versions), 59)
 
     def test_documentation_exists(self):
         text = (ROOT / 'docs' / 'apple27-activity-audit-backup-modern-workspaces.md').read_text(encoding='utf-8')
