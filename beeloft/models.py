@@ -1757,3 +1757,78 @@ class BomTemplateApply(Input):
     product_id: Text
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
+
+
+# ---------------------------------------------------------------------------
+# A01 (#46): Ledger keuangan dan kontrak posting
+# ---------------------------------------------------------------------------
+
+AccountType = Literal["asset", "liability", "equity", "revenue", "expense"]
+MoneyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
+                                             max_length=18, pattern=r"^[0-9]{1,15}(\.[0-9]{1,2})?$")]
+DateText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=10,
+                                            pattern=r"^\d{4}-\d{2}-\d{2}$")]
+
+
+class CoaAccountCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    type: AccountType
+
+
+class AccountingPeriodCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+    start_date: DateText
+    end_date: DateText
+
+
+class PeriodDecision(Input):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    expected_revision: Annotated[int, Field(strict=True, ge=1)] | None = None
+
+
+class JournalSource(Input):
+    system: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+    account: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+    entity_type: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+    id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    line_id: Annotated[str, StringConstraints(strip_whitespace=True, max_length=160)] = ""
+    revision: Annotated[int, Field(strict=True, ge=1)] = 1
+
+
+class JournalLineCreate(Input):
+    account_code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
+                                                  max_length=20)] | None = None
+    account_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
+                                                max_length=160)] | None = None
+    debit: MoneyText = "0"
+    credit: MoneyText = "0"
+    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""
+
+    @model_validator(mode="after")
+    def account_ref(self):
+        if not (self.account_code or self.account_id):
+            raise ValueError("account_code atau account_id wajib diisi.")
+        return self
+
+
+class JournalCreate(Input):
+    period_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    journal_date: DateText
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    business_unit_id: Annotated[str, StringConstraints(strip_whitespace=True, max_length=160)] | None = None
+    policy_ref: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+    source: JournalSource
+    lines: list[JournalLineCreate] = Field(min_length=2, max_length=200)
+
+
+class JournalReverse(Input):
+    period_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    journal_date: DateText
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class PoReceiptJournalCreate(Input):
+    period_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    journal_date: DateText
+    receipts: list[dict] = Field(min_length=1, max_length=200)

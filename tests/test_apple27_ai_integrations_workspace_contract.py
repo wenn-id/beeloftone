@@ -521,12 +521,12 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 258, 'A6.5 is presentation only')
+        self.assertEqual(len(contract['paths']), 272, 'A6.5 is presentation only')
 
     def test_the_schema_did_not_move(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 58)
+        self.assertEqual(max(versions), 59)
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory
