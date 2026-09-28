@@ -107,13 +107,9 @@ BEGIN SELECT RAISE(ABORT, 'Immutable cutting output param'); END;
 CREATE TRIGGER IF NOT EXISTS cutting_run_output_params_no_delete BEFORE DELETE ON cutting_run_output_params
 BEGIN SELECT RAISE(ABORT, 'Immutable cutting output param'); END;
 
--- Backfill: order yang sudah ada sebelum P02 dianggap grandfathered approved
--- (mereka dibuat tanpa konsep status planning). Order baru mulai dari draft.
-INSERT INTO production_plans(order_id, note, status, revision, created_by, created_at)
-SELECT o.id,
-       'Grandfathered: dibuat sebelum migrasi P02 (status planning belum ada).',
-       'approved', 0, o.created_by, o.created_at
-FROM orders o WHERE NOT EXISTS(SELECT 1 FROM production_plans p WHERE p.order_id = o.id);
+-- Backfill order lama dijalankan dari Store setelah tabel dibuat. Ini menjaga
+-- migrasi tetap dapat diuji pada synthetic partial-schema yang sengaja tidak
+-- memiliki tabel orders, sementara database aplikasi nyata tetap dibackfill.
 
 PRAGMA user_version = 58;
 COMMIT;
