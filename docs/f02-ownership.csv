@@ -460,3 +460,17 @@ endpoint,GET /api/journals/{journal_id},A1,A01,A0,beeloft/api.py#get_journal
 endpoint,POST /api/journals/{journal_id}/reverse,A1,A01,A0,beeloft/api.py#reverse_journal
 endpoint,POST /api/purchase-orders/{order_id}/receipt-journal,A1,A01,A0,beeloft/api.py#post_po_receipt_journal
 endpoint,GET /api/trial-balance,A1,A01,A0,beeloft/api.py#get_trial_balance
+table,user_permissions,A3,O01,A0,beeloft/permissions.sql
+table,user_business_units,A3,O01,A0,beeloft/permissions.sql
+table,user_access_profiles,A3,O01,A0,beeloft/permissions.sql
+table,user_access_events,A3,O01,A0,beeloft/permissions.sql
+endpoint,GET /api/permissions,A3,O01,A0,beeloft/api.py#permissions_catalog
+endpoint,GET /api/presets,A3,O01,A0,beeloft/api.py#access_presets
+endpoint,GET /api/me/access,A3,O01,A0,beeloft/api.py#my_access
+endpoint,POST /api/users,A3,O01,A0,beeloft/api.py#create_user
+endpoint,GET /api/users/{user_id},A3,O01,A0,beeloft/api.py#user_access
+endpoint,PUT /api/users/{user_id}/permissions,A3,O01,A0,beeloft/api.py#replace_user_permissions
+endpoint,PUT /api/users/{user_id}/preset,A3,O01,A0,beeloft/api.py#apply_user_preset
+endpoint,PUT /api/users/{user_id}/units,A3,O01,A0,beeloft/api.py#replace_user_units
+endpoint,GET /api/users/{user_id}/access-events,A3,O01,A0,beeloft/api.py#user_access_events
+endpoint,POST /api/users/{user_id}/disable,A3,O01,A0,beeloft/api.py#disable_user

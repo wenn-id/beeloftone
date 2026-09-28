@@ -69,7 +69,7 @@ class LiquidLensContractTest(unittest.TestCase):
         self.assertEqual(json.loads((ROOT / 'docs/openapi.json').read_text(encoding='utf-8'))['info']['version'], version)
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 59)
+        self.assertEqual(max(versions), 60)
 
 
 if __name__ == '__main__':
