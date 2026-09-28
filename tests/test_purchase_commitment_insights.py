@@ -25,6 +25,9 @@ class PurchaseCommitmentInsightsTest(TestCase):
     setup_receipt=payment_tests.SupplierPaymentApprovalTest.setup_receipt
     receive=payment_tests.SupplierPaymentApprovalTest.receive
     payment_body=payment_tests.SupplierPaymentApprovalTest.payment_body
+    # B01 (#50): request_payment otomatis mendaftarkan invoice; pinjam helper-nya.
+    detail=payment_tests.SupplierPaymentApprovalTest.detail
+    invoice=payment_tests.SupplierPaymentApprovalTest.invoice
     request_payment=payment_tests.SupplierPaymentApprovalTest.request_payment
 
     def test_partial_receipt_exposes_overdue_commitment_and_payment_position(self):

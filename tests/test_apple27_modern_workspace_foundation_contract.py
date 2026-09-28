@@ -282,6 +282,10 @@ MIGRATED_RENDERERS = frozenset({
     'workTypeRateDialog', 'serviceRateForm', 'deactivateServiceRateForm',
     'serviceRatePreviewDialog', 'serviceTemplateHistoryDialog', 'applyServiceTemplateForm',
     'productServiceDialog', 'productServicePreviewDialog',
+    # ---- B01: Supplier invoices (issue #50) ----
+    # The supplier invoice list, detail, and form — built from the A6.0 shapes
+    # the A6.2 catalogs use. One invoice = one active payment request.
+    'supplierInvoicesDialog', 'supplierInvoiceDialog', 'supplierInvoiceForm',
     # ---- X01: Impor data (issue #51) ----
     # The import workspace: adapter/strategy form, dry-run control totals,
     # reject table, and job list — built from the A6.0 shapes the A6.2

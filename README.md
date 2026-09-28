@@ -142,4 +142,4 @@ Versi diumumkan di tiga tempat dan harus dinaikkan bersama: `version` di `pyproj
 `tests/test_openapi_contract.py` mengikat ketiganya ke satu nilai, karena menaikkan hanya
 versi paket pernah lolos tanpa terdeteksi dan membuat kontrak API tertinggal satu minor.
 
-Suite Python berisi 1394 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 1410 test yang memakai database sementara serta API/CLI sungguhan; mencakup

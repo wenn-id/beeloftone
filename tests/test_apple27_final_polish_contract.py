@@ -438,7 +438,8 @@ class BudgetTest(unittest.TestCase):
         # The Inbox still makes one list request per load and never asks for the aggregate summary.
         self.assertNotIn('/api/approvals/summary', body('loadApprovals'))
         # Each migrated sheet loads exactly what it loaded before.
-        self.assertEqual(body('purchaseOrderDialog').count('api.get('), 2)
+        # B01 (#50) adds supplier-invoices fetch to purchaseOrderDialog (2 -> 3).
+        self.assertEqual(body('purchaseOrderDialog').count('api.get('), 3)
         for name in ('qualityIntakeDialog', 'supplierPaymentRequestDialog', 'productionChangeRequestDialog',
                      'payrollApprovalRequestDialog', 'orderPurchaseRequestsDialog'):
             with self.subTest(sheet=name):
