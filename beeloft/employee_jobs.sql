@@ -8,7 +8,7 @@
 -- remaining = target_qty_pcs - SUM(realisasi approved) - SUM(adjustments),
 -- selalu derived, bukan kolom bebas.
 
-CREATE TABLE p03_jobs (
+CREATE TABLE IF NOT EXISTS p03_jobs (
     id TEXT PRIMARY KEY,
     employee_id TEXT NOT NULL REFERENCES workforce_employees(id),
     sku TEXT NOT NULL,
@@ -25,11 +25,11 @@ CREATE TABLE p03_jobs (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
-CREATE INDEX p03_jobs_employee ON p03_jobs(employee_id, work_date);
-CREATE INDEX p03_jobs_bundle ON p03_jobs(bundle_id) WHERE bundle_id IS NOT NULL;
-CREATE INDEX p03_jobs_unit ON p03_jobs(unit_id) WHERE unit_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS p03_jobs_employee ON p03_jobs(employee_id, work_date);
+CREATE INDEX IF NOT EXISTS p03_jobs_bundle ON p03_jobs(bundle_id) WHERE bundle_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS p03_jobs_unit ON p03_jobs(unit_id) WHERE unit_id IS NOT NULL;
 
-CREATE TABLE p03_job_realizations (
+CREATE TABLE IF NOT EXISTS p03_job_realizations (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL REFERENCES p03_jobs(id),
     qty_pcs INTEGER NOT NULL CHECK (qty_pcs > 0),
@@ -45,13 +45,13 @@ CREATE TABLE p03_job_realizations (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
-CREATE INDEX p03_realizations_job ON p03_job_realizations(job_id, status);
+CREATE INDEX IF NOT EXISTS p03_realizations_job ON p03_job_realizations(job_id, status);
 
 -- Charge jasa: immutable setelah dibuat. payable_qty_pcs boleh negatif
 -- pada charge reversal (reversal_of_charge_id terisi) agar agregat
 -- per realisasi kembali nol. Koreksi hanya via reversal bertaut
 -- (p03_service_charges baru dengan reversal_of_charge_id terisi).
-CREATE TABLE p03_service_charges (
+CREATE TABLE IF NOT EXISTS p03_service_charges (
     id TEXT PRIMARY KEY,
     source_namespace TEXT NOT NULL,
     source_id TEXT NOT NULL,
@@ -74,22 +74,22 @@ CREATE TABLE p03_service_charges (
     UNIQUE (source_namespace, source_id, source_line_id)
 ) STRICT;
 
-CREATE INDEX p03_charges_employee ON p03_service_charges(employee_id, approved_at);
-CREATE INDEX p03_charges_job ON p03_service_charges(job_id);
+CREATE INDEX IF NOT EXISTS p03_charges_employee ON p03_service_charges(employee_id, approved_at);
+CREATE INDEX IF NOT EXISTS p03_charges_job ON p03_service_charges(job_id);
 
 -- Guardrail imutabilitas: charge tidak boleh diubah/dihapus langsung.
-CREATE TRIGGER p03_charge_no_update BEFORE UPDATE ON p03_service_charges
+CREATE TRIGGER IF NOT EXISTS p03_charge_no_update BEFORE UPDATE ON p03_service_charges
 BEGIN
     SELECT RAISE(ABORT, 'Service charge immutable; gunakan reversal bertaut.');
 END;
 
-CREATE TRIGGER p03_charge_no_delete BEFORE DELETE ON p03_service_charges
+CREATE TRIGGER IF NOT EXISTS p03_charge_no_delete BEFORE DELETE ON p03_service_charges
 BEGIN
     SELECT RAISE(ABORT, 'Service charge tidak boleh dihapus.');
 END;
 
 -- Realisasi yang sudah approved/rejected tidak boleh diubah langsung.
-CREATE TRIGGER p03_realization_locked_update BEFORE UPDATE ON p03_job_realizations
+CREATE TRIGGER IF NOT EXISTS p03_realization_locked_update BEFORE UPDATE ON p03_job_realizations
 WHEN OLD.status IN ('approved','rejected')
 BEGIN
     SELECT RAISE(ABORT, 'Realisasi yang sudah final tidak dapat diubah; gunakan reversal.');

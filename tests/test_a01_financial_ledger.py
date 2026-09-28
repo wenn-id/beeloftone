@@ -51,7 +51,7 @@ class A01MigrationTest(unittest.TestCase):
             store = make_store(directory)
             with store.transaction() as db:
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                self.assertEqual(version, 60)
+                self.assertEqual(version, 61)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 for expected in ('coa_accounts', 'accounting_periods',

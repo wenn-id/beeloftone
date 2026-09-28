@@ -393,6 +393,47 @@ class EmployeeJobTest(test_production.ProductionTest):
         self.assertIn('p03_job_realizations', tables)
         self.assertIn('p03_service_charges', tables)
 
+        # Older migration tests rewind user_version while retaining P03 data.
+        # Replaying migration 61 must preserve records and their SQL guards.
+        job = self.job()
+        realization = self.realization(job['id'], 12)
+        self.submit(job['id'], realization['id'])
+        charge = self.approve(job['id'], realization['id'])
+        expected_job = store2.get_employee_job(job['id'], self.admin)
+        expected_charge = self.charge_row(charge['id'])
+        with store2.transaction() as db:
+            expected_schema = [tuple(row) for row in db.execute(
+                "SELECT type,name,sql FROM sqlite_schema "
+                "WHERE tbl_name IN ('p03_jobs','p03_job_realizations',"
+                "'p03_service_charges') ORDER BY type,name")]
+        for _ in range(2):
+            with store2.transaction(write=True) as db:
+                db.execute('PRAGMA user_version=60')
+            store2 = Store(self.path)
+            Store(self.path)  # Opening the current version is also harmless.
+            self.assertEqual(store2.get_employee_job(job['id'], self.admin), expected_job)
+            self.assertEqual(self.charge_row(charge['id']), expected_charge)
+            self.assertEqual(self.charge_count(job['id'], realization['id']), 1)
+            with store2.transaction() as db:
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 61)
+                self.assertEqual([tuple(row) for row in db.execute(
+                    "SELECT type,name,sql FROM sqlite_schema "
+                    "WHERE tbl_name IN ('p03_jobs','p03_job_realizations',"
+                    "'p03_service_charges') ORDER BY type,name")], expected_schema)
+                self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
+            for sql, row_id, message in (
+                ('UPDATE p03_service_charges SET final_amount_minor=0 WHERE id=?',
+                 charge['id'], 'immutable'),
+                ('DELETE FROM p03_service_charges WHERE id=?',
+                 charge['id'], 'tidak boleh dihapus'),
+                ("UPDATE p03_job_realizations SET status='draft' WHERE id=?",
+                 realization['id'], 'sudah final'),
+            ):
+                with self.subTest(sql=sql):
+                    with self.assertRaisesRegex(sqlite3.IntegrityError, message):
+                        with store2.transaction(write=True) as db:
+                            db.execute(sql, (row_id,))
+
     # -- 13. alur lengkap --------------------------------------------------
 
     def test_full_flow_demo(self):
