@@ -46,12 +46,11 @@ def journal_payload(period_id, source_id='EVT-1', amount='1000.00', description=
 
 
 class A01MigrationTest(unittest.TestCase):
-    def test_fresh_db_is_schema_59_with_ledger_tables(self):
+    def test_fresh_db_is_current_schema_with_ledger_tables(self):
         with tempfile.TemporaryDirectory() as directory:
             store = make_store(directory)
             with store.transaction() as db:
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                # Database aplikasi baru berada pada schema 60 setelah migrasi O01 (#45)
                 self.assertEqual(version, 60)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
@@ -59,7 +58,7 @@ class A01MigrationTest(unittest.TestCase):
                                  'journals', 'journal_lines'):
                     self.assertIn(expected, tables)
 
-    def test_upgrade_58_to_59(self):
+    def test_upgrade_58_to_60(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'upgrade.sqlite3'
             store = Store(path)

@@ -259,6 +259,14 @@ MIGRATED_RENDERERS = frozenset({
     'financeAction',
     'financeForm',
     'journalForm',
+    # ---- P01: Master jasa, template jasa, tarif upah berversi (issue #48) ----
+    # The service masters and their versioned-rate workflow: the group / work-type / template
+    # forms, the rate sheets and their previews, the template history, and the product-service
+    # sheet, all built from the A6.0 shapes the A6.2 catalogs use.
+    'serviceGroupForm', 'workTypeForm', 'serviceComponentRow', 'serviceTemplateForm',
+    'workTypeRateDialog', 'serviceRateForm', 'deactivateServiceRateForm',
+    'serviceRatePreviewDialog', 'serviceTemplateHistoryDialog', 'applyServiceTemplateForm',
+    'productServiceDialog', 'productServicePreviewDialog',
 })
 
 
@@ -820,7 +828,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.117.0')
+        self.assertEqual(version, '0.118.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -830,7 +838,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 60, 'O01 adds schema 60 (A01 has 59)')
+        self.assertEqual(max(versions), 60, 'A01 adds schema 60 (P02 has 58)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -844,7 +852,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 281, 'endpoints')
+        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
 
 
 if __name__ == '__main__':

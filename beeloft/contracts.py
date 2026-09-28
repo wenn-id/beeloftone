@@ -220,6 +220,24 @@ def divround(numer: int, denom: int, mode: str = "HALF_UP") -> int:
     return quotient + (1 if 2 * remainder >= denom else 0)  # HALF_UP
 
 
+def minor_fraction_to_money(value: Fraction, mode: str = "HALF_UP") -> str:
+    """Tampilkan pecahan satuan minor (mis. tarif per pcs hasil konversi eksak
+    ``Fraction(minor_lusin, 12)``) sebagai string uang 2 desimal.
+
+    Khusus **DISPLAY**: pembulatan eksplisit ke presisi simpan dengan mode
+    tercatat. Nilai authoritative tetap ``Fraction`` asli (``rate_per_pcs_exact``)
+    atau integer minor pada basis perhitungan (``rate_per_lusin_minor``); hasil
+    fungsi ini TIDAK boleh dipakai untuk perhitungan uang.
+    """
+    if not isinstance(value, Fraction):
+        raise ValueError(f"nilai harus Fraction, diterima: {value!r}")
+    if mode not in _ROUNDING_MODES:
+        raise ValueError(f"mode pembulatan tidak dikenal: {mode!r}")
+    minor = Decimal(value.numerator) / Decimal(value.denominator)
+    rounded_minor = minor.to_integral_value(rounding=_ROUNDING_MODES[mode])
+    return format(rounded_minor / MINOR_PER_UNIT, '.2f')
+
+
 # ---------------------------------------------------------------------------
 # Kebijakan kalkulasi berversi (pemisah invariant vs pilihan bisnis)
 # ---------------------------------------------------------------------------

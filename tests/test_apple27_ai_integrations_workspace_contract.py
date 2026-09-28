@@ -517,11 +517,11 @@ class ContainmentAndBudgetTest(unittest.TestCase):
 class VersionAndSchemaTest(unittest.TestCase):
     def test_the_version_is_aligned_everywhere(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.117.0', 'A6.7 is the visible workspace milestone')
+        self.assertEqual(version, '0.118.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 281, 'A6.5 is presentation only')
+        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
 
     def test_the_schema_did_not_move(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')

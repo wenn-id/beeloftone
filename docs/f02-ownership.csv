@@ -119,6 +119,10 @@ table,supplier_payment_requests,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/su
 table,supplier_returns,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/supplier_returns.sql
 table,suppliers,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/purchase_orders.sql
 table,uoms,A1,M01,A2,beeloft/master_catalog.sql
+table,user_access_events,A3,O01,A0,beeloft/permissions.sql
+table,user_access_profiles,A3,O01,A0,beeloft/permissions.sql
+table,user_business_units,A3,O01,A0,beeloft/permissions.sql
+table,user_permissions,A3,O01,A0,beeloft/permissions.sql
 table,users,A3,O01/O02/X01/R01,A0,beeloft/schema.sql
 table,warehouse_movement_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
 table,warehouse_movements,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/warehouse_movements.sql
@@ -137,6 +141,16 @@ endpoint,GET /api/sso/callback,A3,O01,A0,beeloft/api.py#sso_callback
 endpoint,POST /api/session/logout,A3,O01,A0,beeloft/api.py#close_session
 endpoint,GET /api/me,A3,O01,A0,beeloft/api.py#me
 endpoint,GET /api/users,A3,O01,A0,beeloft/api.py#users
+endpoint,GET /api/me/access,A3,O01,A0,beeloft/api.py#my_access
+endpoint,POST /api/users,A3,O01,A0,beeloft/api.py#create_user
+endpoint,GET /api/permissions,A3,O01,A0,beeloft/api.py#permissions_catalog
+endpoint,GET /api/presets,A3,O01,A0,beeloft/api.py#access_presets
+endpoint,GET /api/users/{user_id},A3,O01,A0,beeloft/api.py#user_access
+endpoint,PUT /api/users/{user_id}/permissions,A3,O01,A0,beeloft/api.py#replace_user_permissions
+endpoint,PUT /api/users/{user_id}/preset,A3,O01,A0,beeloft/api.py#apply_user_preset
+endpoint,PUT /api/users/{user_id}/units,A3,O01,A0,beeloft/api.py#replace_user_units
+endpoint,GET /api/users/{user_id}/access-events,A3,O01,A0,beeloft/api.py#user_access_events
+endpoint,POST /api/users/{user_id}/disable,A3,O01,A0,beeloft/api.py#disable_user
 endpoint,GET /api/command-center,A3,R01,A1/A2,beeloft/api.py#command_center
 endpoint,GET /api/audit-events,A3,O02,A0,beeloft/api.py#audit_events
 endpoint,GET /api/audit-events/{event_id},A3,O02,A0,beeloft/api.py#audit_event
@@ -460,17 +474,31 @@ endpoint,GET /api/journals/{journal_id},A1,A01,A0,beeloft/api.py#get_journal
 endpoint,POST /api/journals/{journal_id}/reverse,A1,A01,A0,beeloft/api.py#reverse_journal
 endpoint,POST /api/purchase-orders/{order_id}/receipt-journal,A1,A01,A0,beeloft/api.py#post_po_receipt_journal
 endpoint,GET /api/trial-balance,A1,A01,A0,beeloft/api.py#get_trial_balance
-table,user_permissions,A3,O01,A0,beeloft/permissions.sql
-table,user_business_units,A3,O01,A0,beeloft/permissions.sql
-table,user_access_profiles,A3,O01,A0,beeloft/permissions.sql
-table,user_access_events,A3,O01,A0,beeloft/permissions.sql
-endpoint,GET /api/permissions,A3,O01,A0,beeloft/api.py#permissions_catalog
-endpoint,GET /api/presets,A3,O01,A0,beeloft/api.py#access_presets
-endpoint,GET /api/me/access,A3,O01,A0,beeloft/api.py#my_access
-endpoint,POST /api/users,A3,O01,A0,beeloft/api.py#create_user
-endpoint,GET /api/users/{user_id},A3,O01,A0,beeloft/api.py#user_access
-endpoint,PUT /api/users/{user_id}/permissions,A3,O01,A0,beeloft/api.py#replace_user_permissions
-endpoint,PUT /api/users/{user_id}/preset,A3,O01,A0,beeloft/api.py#apply_user_preset
-endpoint,PUT /api/users/{user_id}/units,A3,O01,A0,beeloft/api.py#replace_user_units
-endpoint,GET /api/users/{user_id}/access-events,A3,O01,A0,beeloft/api.py#user_access_events
-endpoint,POST /api/users/{user_id}/disable,A3,O01,A0,beeloft/api.py#disable_user
+table,service_group_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_groups,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_rate_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_rates,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_template_applications,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_template_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_templates,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_work_type_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+table,service_work_types,A1,P01/P03/H01,A2,beeloft/service_templates.sql
+endpoint,GET /api/products/{product_id}/service-rates,A1,P01,A2,beeloft/api.py#product_service_rates
+endpoint,GET /api/products/{product_id}/service-template,A1,P01,A2,beeloft/api.py#product_service_template
+endpoint,GET /api/products/{product_id}/service-template-history,A1,P01,A2,beeloft/api.py#product_service_template_history
+endpoint,GET /api/service-groups,A1,P01,A2,beeloft/api.py#service_groups
+endpoint,GET /api/service-rates,A1,P01,A2,beeloft/api.py#service_rates
+endpoint,GET /api/service-templates,A1,P01,A2,beeloft/api.py#service_templates
+endpoint,GET /api/service-templates/{template_id}/history,A1,P01,A2,beeloft/api.py#service_template_history
+endpoint,GET /api/work-types,A1,P01,A2,beeloft/api.py#work_types
+endpoint,GET /api/work-types/{work_type_id}/rate-history,A1,P01,A2,beeloft/api.py#service_rate_history
+endpoint,GET /api/work-types/{work_type_id}/rate-preview,A1,P01,A2,beeloft/api.py#service_rate_preview
+endpoint,POST /api/service-groups,A1,P01,A2,beeloft/api.py#create_service_group
+endpoint,POST /api/service-groups/{group_id}/changes,A1,P01,A2,beeloft/api.py#change_service_group
+endpoint,POST /api/service-templates,A1,P01,A2,beeloft/api.py#create_service_template
+endpoint,POST /api/service-templates/{template_id}/apply,A1,P01,A2,beeloft/api.py#apply_service_template
+endpoint,POST /api/service-templates/{template_id}/changes,A1,P01,A2,beeloft/api.py#change_service_template
+endpoint,POST /api/work-types,A1,P01,A2,beeloft/api.py#create_work_type
+endpoint,POST /api/work-types/{work_type_id}/changes,A1,P01,A2,beeloft/api.py#change_work_type
+endpoint,POST /api/work-types/{work_type_id}/rates,A1,P01,A2,beeloft/api.py#save_service_rate
+endpoint,POST /api/work-types/{work_type_id}/rates/deactivate,A1,P01,A2,beeloft/api.py#deactivate_service_rate

@@ -400,6 +400,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_purchase_commitment_insights.cjs');
   await runModule('./browser_wip_ageing_insights.cjs');
   await runModule('./browser_production_capacity.cjs');
+  await runModule('./browser_service_templates.cjs');
   await runModule('./browser_workforce.cjs');
   await runModule('./browser_supplier_payments.cjs');
   await runModule('./browser_marketing_budgets.cjs');

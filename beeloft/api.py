@@ -22,6 +22,7 @@ from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
+from beeloft.models import ServiceGroupChange, ServiceGroupCreate, ServiceRateDeactivate, ServiceRateSave, ServiceTemplateApply, ServiceTemplateChange, ServiceTemplateCreate, WorkTypeChange, WorkTypeCreate
 from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
                             PeriodDecision, PoReceiptJournalCreate)
 from beeloft.models import UserCreate, UserPermissionsSet, UserPresetSet, UserUnitsSet
@@ -78,7 +79,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.117.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.118.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -702,6 +703,104 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.post('/api/bom-templates/{template_id}/apply', tags=['Master Catalog'])
     def apply_bom_template(template_id: str, body: BomTemplateApply, user: Actor, key: RequestKey):
         return store.apply_bom_template(template_id, body.model_dump(mode='json'), user, key)
+
+    # P01 (#48): master jasa, template jasa berversi dan tarif upah berversi.
+    # Kontrak resolver/snapshot untuk P03/H01/I01: docs/p01-rate-resolver.md.
+    @app.get('/api/service-groups', tags=['Service Templates'])
+    def service_groups(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                       q: Annotated[str, Query(max_length=160)] = '',
+                       status: Literal['all','active','inactive'] = 'all'):
+        return store.service_groups(q, status, limit, offset)
+
+    @app.post('/api/service-groups', status_code=201, tags=['Service Templates'])
+    def create_service_group(body: ServiceGroupCreate, user: Actor, key: RequestKey):
+        return store.create_service_group(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/service-groups/{group_id}/changes', tags=['Service Templates'])
+    def change_service_group(group_id: str, body: ServiceGroupChange, user: Actor, key: RequestKey):
+        return store.change_service_group(group_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/work-types', tags=['Service Templates'])
+    def work_types(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                   q: Annotated[str, Query(max_length=160)] = '',
+                   status: Literal['all','active','inactive'] = 'all'):
+        return store.service_work_types(q, status, limit, offset)
+
+    @app.post('/api/work-types', status_code=201, tags=['Service Templates'])
+    def create_work_type(body: WorkTypeCreate, user: Actor, key: RequestKey):
+        return store.create_work_type(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/work-types/{work_type_id}/changes', tags=['Service Templates'])
+    def change_work_type(work_type_id: str, body: WorkTypeChange, user: Actor, key: RequestKey):
+        return store.change_work_type(work_type_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/service-templates', tags=['Service Templates'])
+    def service_templates(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                          q: Annotated[str, Query(max_length=160)] = '',
+                          status: Literal['all','active','inactive'] = 'all'):
+        return store.service_templates(q, status, limit, offset)
+
+    @app.post('/api/service-templates', status_code=201, tags=['Service Templates'])
+    def create_service_template(body: ServiceTemplateCreate, user: Actor, key: RequestKey):
+        return store.create_service_template(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/service-templates/{template_id}/changes', tags=['Service Templates'])
+    def change_service_template(template_id: str, body: ServiceTemplateChange, user: Actor, key: RequestKey):
+        return store.change_service_template(template_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/service-templates/{template_id}/history', tags=['Service Templates'])
+    def service_template_history(template_id: str, user: Actor, limit: Limit = 10,
+                                 before: Annotated[int, Query(ge=1, le=SQLITE_MAX_INTEGER)] | None = None):
+        return store.service_template_history(template_id, before, limit)
+
+    @app.post('/api/service-templates/{template_id}/apply', status_code=201, tags=['Service Templates'])
+    def apply_service_template(template_id: str, body: ServiceTemplateApply, user: Actor, key: RequestKey):
+        return store.apply_service_template(template_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/service-rates', tags=['Service Templates'])
+    def service_rates(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                      q: Annotated[str, Query(max_length=160)] = '',
+                      status: Literal['all','active','inactive'] = 'all'):
+        return store.service_rates(q, status, limit, offset)
+
+    @app.get('/api/work-types/{work_type_id}/rate-history', tags=['Service Templates'])
+    def service_rate_history(work_type_id: str, user: Actor, limit: Limit = 10,
+                             before: Annotated[int, Query(ge=1, le=SQLITE_MAX_INTEGER)] | None = None):
+        return store.service_rate_history(work_type_id, before, limit)
+
+    @app.post('/api/work-types/{work_type_id}/rates', status_code=201, tags=['Service Templates'])
+    def save_service_rate(work_type_id: str, body: ServiceRateSave, user: Actor, key: RequestKey):
+        return store.save_service_rate(work_type_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/work-types/{work_type_id}/rates/deactivate', tags=['Service Templates'])
+    def deactivate_service_rate(work_type_id: str, body: ServiceRateDeactivate, user: Actor, key: RequestKey):
+        return store.deactivate_service_rate(work_type_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/work-types/{work_type_id}/rate-preview', tags=['Service Templates'])
+    def service_rate_preview(work_type_id: str, user: Actor,
+                             effective_date: Annotated[date, Query()],
+                             pcs: Annotated[int, Query(ge=1, le=1_000_000_000)] | None = None):
+        """Resolver tarif pada tanggal acuan. Bila `pcs` diisi, sertakan preview
+        upah memakai aritmatika eksak kontrak F02. Tidak membuat charge."""
+        if pcs is None:
+            return store.snapshot_service_rate(work_type_id, effective_date.isoformat())
+        return store.preview_service_wage(work_type_id, pcs, effective_date.isoformat())
+
+    @app.get('/api/products/{product_id}/service-template', tags=['Service Templates'])
+    def product_service_template(product_id: str, user: Actor):
+        return store.product_service_application(product_id)
+
+    @app.get('/api/products/{product_id}/service-template-history', tags=['Service Templates'])
+    def product_service_template_history(product_id: str, user: Actor, limit: Limit = 10,
+                                         before: Annotated[int, Query(ge=1, le=SQLITE_MAX_INTEGER)] | None = None):
+        return store.service_template_applications(product_id, before, limit)
+
+    @app.get('/api/products/{product_id}/service-rates', tags=['Service Templates'])
+    def product_service_rates(product_id: str, user: Actor,
+                              effective_date: Annotated[date, Query()]):
+        """Tarif seluruh komponen pekerjaan SKU pada tanggal acuan. Gagal
+        seluruhnya bila ada tarif hilang/nonaktif/tumpang tindih."""
+        return store.resolve_product_services(product_id, effective_date.isoformat())
 
     @app.get('/api/work-centers', tags=['Production Capacity'])
     def work_centers(user: Actor, status: Literal['all','active','inactive'] = 'all'):

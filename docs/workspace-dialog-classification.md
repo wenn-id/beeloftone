@@ -16,6 +16,9 @@ they do not replace that page's primary roster, report, or queue.
 | Master bisnis: riwayat revisi satu master (unit, lokasi, pelanggan, jabatan, metode pembayaran) | `masterHistoryDialog` |
 | Master SKU: mapping and mapping history for one SKU | `productMappingDialog`, `productMappingHistoryDialog` |
 | Master SKU / order: BOM and revision history for one SKU | `bomDialog`, `bomHistoryDialog` |
+| Master katalog: template jasa dan riwayat revisi | `serviceTemplateHistoryDialog` |
+| Master katalog: tarif jenis pekerjaan, riwayat revisi dan preview tanggal efektif | `workTypeRateDialog`, `serviceRatePreviewDialog` |
+| Master SKU: penerapan template jasa dan preview tarif per tanggal | `productServiceDialog`, `productServicePreviewDialog` |
 | Production order: changes and approval history | `orderChangesDialog`, `productionChangeRequestsDialog`, `productionChangeRequestDialog` |
 | Production order: material requirements, reservations, usage and cost | `requirementsDialog`, `reservationsDialog`, `consumptionDialog`, `productionCostDialog`, `contributionMarginDialog` |
 | Production order: cutting records and one run | `cuttingRunsDialog`, `cuttingRunDialog` |
