@@ -259,6 +259,14 @@ MIGRATED_RENDERERS = frozenset({
     'financeAction',
     'financeForm',
     'journalForm',
+    # ---- P01: Master jasa, template jasa, tarif upah berversi (issue #48) ----
+    # The service masters and their versioned-rate workflow: the group / work-type / template
+    # forms, the rate sheets and their previews, the template history, and the product-service
+    # sheet, all built from the A6.0 shapes the A6.2 catalogs use.
+    'serviceGroupForm', 'workTypeForm', 'serviceComponentRow', 'serviceTemplateForm',
+    'workTypeRateDialog', 'serviceRateForm', 'deactivateServiceRateForm',
+    'serviceRatePreviewDialog', 'serviceTemplateHistoryDialog', 'applyServiceTemplateForm',
+    'productServiceDialog', 'productServicePreviewDialog',
 })
 
 

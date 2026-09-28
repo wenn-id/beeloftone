@@ -46,19 +46,19 @@ def journal_payload(period_id, source_id='EVT-1', amount='1000.00', description=
 
 
 class A01MigrationTest(unittest.TestCase):
-    def test_fresh_db_is_schema_59_with_ledger_tables(self):
+    def test_fresh_db_is_current_schema_with_ledger_tables(self):
         with tempfile.TemporaryDirectory() as directory:
             store = make_store(directory)
             with store.transaction() as db:
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                self.assertEqual(version, 59)
+                self.assertEqual(version, 60)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 for expected in ('coa_accounts', 'accounting_periods',
                                  'journals', 'journal_lines'):
                     self.assertIn(expected, tables)
 
-    def test_upgrade_58_to_59(self):
+    def test_upgrade_58_to_60(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'upgrade.sqlite3'
             store = Store(path)
@@ -66,7 +66,7 @@ class A01MigrationTest(unittest.TestCase):
                 db.execute('PRAGMA user_version=58')
             store2 = Store(path)
             with store2.transaction() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 59)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 60)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 self.assertIn('journals', tables)
