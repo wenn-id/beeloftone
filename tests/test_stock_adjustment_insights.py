@@ -16,6 +16,7 @@ class StockAdjustmentInsightsTest(TestCase):
     setup_stock=adjustment_tests.ReturnsAdjustmentsTest.setup_stock
     prepare=adjustment_tests.ReturnsAdjustmentsTest.prepare
     cut=adjustment_tests.ReturnsAdjustmentsTest.cut
+    approve_cutting_plan=adjustment_tests.ReturnsAdjustmentsTest.approve_cutting_plan
     create_bundle=adjustment_tests.ReturnsAdjustmentsTest.create_bundle
     setup_bundle=adjustment_tests.ReturnsAdjustmentsTest.setup_bundle
     create_job=adjustment_tests.ReturnsAdjustmentsTest.create_job
@@ -101,4 +102,4 @@ class StockAdjustmentInsightsTest(TestCase):
         self.assertEqual(Store(backup).stock_adjustment_insights('2026-10-05',7,
             classification='all')['items'][0]['id'],normal['id'])
         with closing(sqlite3.connect(backup)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)

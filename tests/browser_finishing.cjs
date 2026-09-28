@@ -19,8 +19,10 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const batch=await post('/api/material-batches',{material_id:material.id,reference:'FIN-BATCH',supplier:'CONTOH pemasok',
     location:'Rak F',received_date:'2026-09-11',quantity:'5',reason:'CONTOH bahan'},'fin-batch');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'3',reason:'CONTOH bahan finishing'},'fin-issue');
-  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'FIN-CUT',issue_id:issue.id,used:'2',waste:'0.25',
-    reason:'CONTOH cutting finishing',outputs:[{line_id:line.id,quantity:20}]},'fin-cut');
+    const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana'},'fin-plan-approve');
+const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'FIN-CUT',issue_id:issue.id,used:'2',waste:'0.25',
+    reason:'CONTOH cutting finishing',cut_date:'2026-09-27',outputs:[{line_id:line.id,quantity:20}]},'fin-cut');
   const bundle=await post('/api/cutting-runs/'+run.id+'/bundles',{reference:'FIN-BDL',output_movement_id:run.outputs[0].id,
     quantity:20,reason:'CONTOH bundle finishing'},'fin-bundle');
   const job=await post('/api/bundles/'+bundle.id+'/sewing-jobs',{reference:'FIN-SEW',assignment_type:'internal',assignee:'Line Finishing <A>',

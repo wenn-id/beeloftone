@@ -33,8 +33,12 @@ class ProductionCostTest(TestCase):
                   quantity=20, reason='Mulai cutting biaya'))
         issue = self.post('/api/material-issues', dict(batch_id=batch['id'], order_id=order['id'],
                           quantity='2.125', reason='Bahan untuk costing'))
+        plan = self.client.get('/api/orders/'+order['id']+'/plan').json()
+        self.post('/api/orders/'+order['id']+'/plan/approve',
+                  dict(revision=plan['revision'], reason='Setuju untuk tes'))
         run = self.post('/api/orders/'+order['id']+'/cutting-runs', dict(reference='COST-CUT',
             issue_id=issue['id'], used='2', waste='0.125', reason='Pemakaian aktual costing',
+            cut_date='2026-09-27',
             outputs=[dict(line_id=line['id'], quantity=20)]))
         bundle = self.post('/api/cutting-runs/'+run['id']+'/bundles', dict(reference='COST-BUNDLE',
             output_movement_id=run['outputs'][0]['id'], quantity=20, reason='Bundle costing'))

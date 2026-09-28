@@ -24,7 +24,19 @@ class CuttingTest(TestCase):
         return batch,order,other,dict(reference='CUT-001',issue_id=issue['id'],used='2.125',waste='0.375',
                                     reason='Potongan selesai',outputs=[dict(line_id=line,quantity=20)])
 
+    def approve_cutting_plan(self, order):
+        # P02 (issue #49): hasil cutting hanya untuk rencana yang disetujui.
+        plan=self.client.get('/api/orders/'+order['id']+'/plan')
+        self.assertEqual(plan.status_code,200,plan.text)
+        plan=plan.json()
+        if plan['status']=='draft':
+            self.post('/api/orders/'+order['id']+'/plan/approve',
+                      dict(revision=plan['revision'],reason='Setuju untuk tes'))
+        return plan
+
     def cut(self, order, body, **options):
+        body=dict(body,cut_date='2026-09-27')
+        self.approve_cutting_plan(order)
         return self.post('/api/orders/'+order['id']+'/cutting-runs',body,**options)
 
     def reverse_cut(self, run, **options):
@@ -137,6 +149,8 @@ class CuttingTest(TestCase):
 
     def test_race_cannot_overconsume_or_overdraw_cutting(self):
         _,order,_,body=self.prepare()
+        body=dict(body,cut_date='2026-09-27')
+        self.approve_cutting_plan(order)
         barrier=Barrier(2)
         def save(i):
             barrier.wait(timeout=10)

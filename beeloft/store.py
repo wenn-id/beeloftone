@@ -221,7 +221,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -428,6 +428,26 @@ WHEN NEW.code<>OLD.code OR NEW.name<>OLD.name
     OR NEW.reason<>OLD.reason OR NEW.actor_id<>OLD.actor_id
     OR NEW.created_at<>OLD.created_at
 BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status aktif.'); END""")
+
+            if version < 58:
+                with db:
+                    db.executescript(Path(__file__).with_name('planning_cutting.sql').read_text(encoding='utf-8'))
+                    # Database aplikasi normal selalu memiliki orders. Beberapa regression test
+                    # sengaja membangun partial legacy schema untuk menguji migrasi domain lain;
+                    # pada fixture itu P02 tetap membuat tabelnya tetapi tidak punya order untuk
+                    # dibackfill.
+                    has_orders = db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='orders'"
+                    ).fetchone()
+                    if has_orders:
+                        db.execute("""INSERT INTO production_plans(
+                            order_id,note,status,revision,created_by,created_at)
+                            SELECT o.id,
+                                   'Grandfathered: dibuat sebelum migrasi P02 (status planning belum ada).',
+                                   'approved',0,o.created_by,o.created_at
+                            FROM orders o
+                            WHERE NOT EXISTS(
+                                SELECT 1 FROM production_plans p WHERE p.order_id=o.id)""")
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -687,7 +707,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         if isinstance(result,dict):
             subject_id=str(result.get('id') or '')
             subject_reference=str(result.get('reference') or result.get('bundle_reference')
-                                  or result.get('sku') or result.get('code') or '')
+                                  or result.get('sku') or result.get('code') or result.get('plan_code') or '')
         if not subject_id and ':' in operation:
             subject_id=operation.split(':',1)[1]
         changes=json.dumps(audit_value(payload),ensure_ascii=False,separators=(',',':'),default=str)
@@ -3087,6 +3107,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             FROM movements m JOIN order_lines l ON l.id=m.line_id JOIN products p ON p.id=l.product_id
             WHERE m.id IN (SELECT value FROM json_each(?)) ORDER BY p.sku''',(record.pop('movement_ids'),))]
         record['total_output']=sum(row['quantity'] for row in record['outputs'])
+        record['detail']=self._cutting_run_detail(db,run_id,record)
         if include_bundles:
             record['bundles']=[self._bundle(db,row['id']) for row in db.execute(
                 'SELECT id FROM bundles WHERE cutting_run_id=? ORDER BY sequence DESC',(run_id,))]
@@ -3108,6 +3129,79 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         record['reversal']=dict(reversal) if reversal else None
         return record
 
+    def _cutting_run_detail(self, db, run_id, record):
+        # P02 (issue #49): parameter operasional + estimasi berlabel + rekonsiliasi.
+        # Run lama (sebelum migrasi 57) tidak punya detail -> None, tetap terbaca.
+        row = db.execute("SELECT * FROM cutting_run_details WHERE run_id=?", (run_id,)).fetchone()
+        if not row:
+            return None
+        detail = dict(row)
+        detail["weight_kg"] = (self._decimal3_from_milli(detail.pop("weight_kg_milli"))
+                               if detail["weight_kg_milli"] is not None else None)
+        detail["rolls"] = []
+        for item in db.execute("SELECT * FROM cutting_run_rolls WHERE run_id=? ORDER BY roll_no", (run_id,)):
+            roll = dict(item)
+            roll["weight_kg"] = (self._decimal3_from_milli(roll.pop("weight_kg_milli"))
+                                 if roll["weight_kg_milli"] is not None else None)
+            detail["rolls"].append(roll)
+        detail["roll_count"] = len(detail["rolls"])
+        detail["total_sheets"] = sum(roll["sheets"] for roll in detail["rolls"] if roll["sheets"])
+        detail["sheets_complete"] = bool(detail["rolls"]) and all(
+            roll["sheets"] is not None for roll in detail["rolls"])
+        weights = [roll["weight_kg"] for roll in detail["rolls"] if roll["weight_kg"] is not None]
+        detail["total_roll_weight_kg"] = format(sum(Decimal(w) for w in weights), ".3f") if weights else None
+        detail["roll_weight_complete"] = bool(detail["rolls"]) and all(
+            roll["weight_kg"] is not None for roll in detail["rolls"])
+        if detail["po_reference"]:
+            po = db.execute("""SELECT p.id, p.reference,
+                EXISTS(SELECT 1 FROM purchase_order_cancellations c WHERE c.order_id=p.id) AS cancelled
+                FROM purchase_orders p WHERE p.reference=? COLLATE NOCASE""", (detail["po_reference"],)).fetchone()
+            detail["purchase_order"] = ({"id": po["id"], "reference": po["reference"],
+                                         "cancelled": bool(po["cancelled"])} if po else None)
+        else:
+            detail["purchase_order"] = None
+        # Rekonsiliasi bahan tingkat issue: issued = used + waste + unreported.
+        # Angka run (used/waste) adalah SATU event di dalamnya; tidak dijumlah
+        # ganda dengan snapshot.
+        detail["material_issue"] = self._issue_consumption(db, record["issue_id"])
+        params = {item["movement_id"]: dict(item) for item in db.execute(
+            "SELECT * FROM cutting_run_output_params WHERE run_id=?", (run_id,))}
+        for output in record["outputs"]:
+            line = db.execute("SELECT quantity FROM order_lines WHERE id=?", (output["line_id"],)).fetchone()
+            realized = self._line_realized(db, output["line_id"])
+            output["target_quantity"] = line["quantity"]
+            output["line_realized_quantity"] = realized
+            output["line_remaining_target"] = line["quantity"] - realized
+            output["estimate_policy_ref"] = detail["calculation_policy_ref"]
+            param = params.get(output["id"])
+            if not param:
+                output["setelan_per_lembar"] = output["product_weight_gram"] = None
+                output["material_used_gram"] = output["estimated_output_pcs"] = None
+                output["estimated_material_gram"] = output["estimate_basis"] = None
+                continue
+            output["setelan_per_lembar"] = param["setelan_per_lembar"]
+            output["product_weight_gram"] = (self._decimal3_from_milli(param["product_weight_gram_milli"])
+                if param["product_weight_gram_milli"] is not None else None)
+            output["material_used_gram"] = (self._decimal3_from_milli(param["material_used_gram_milli"])
+                if param["material_used_gram_milli"] is not None else None)
+            # ESTIMASI berlabel asumsi (D03 PROPOSED): lembar x setelan per
+            # lembar. Bukan angka aktual, bukan konsumsi, bukan waste.
+            if param["setelan_per_lembar"] and detail["sheets_complete"]:
+                estimated = detail["total_sheets"] * param["setelan_per_lembar"]
+                output["estimated_output_pcs"] = estimated
+                output["estimate_basis"] = (
+                    f"estimasi: {detail['total_sheets']} lembar x {param['setelan_per_lembar']} "
+                    f"setelan/lembar [{detail['calculation_policy_ref']}]")
+                if param["product_weight_gram_milli"]:
+                    output["estimated_material_gram"] = format(
+                        Decimal(estimated) * Decimal(param["product_weight_gram_milli"]) / 1000, ".3f")
+                else:
+                    output["estimated_material_gram"] = None
+            else:
+                output["estimated_output_pcs"] = output["estimated_material_gram"] = None
+                output["estimate_basis"] = None
+        return detail
+
     def cutting_run(self, run_id):
         with self.transaction() as db:
             return self._cutting_run(db,run_id)
@@ -3119,6 +3213,14 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             ids=db.execute('''SELECT id FROM cutting_runs WHERE order_id=? AND (? IS NULL OR sequence<?)
                 ORDER BY sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
             return [self._cutting_run(db,row[0],False) for row in ids]
+
+    def cutting_runs_export(self, order_id):
+        with self.transaction() as db:
+            order = self._order(db, order_id)
+            ids = db.execute("SELECT id FROM cutting_runs WHERE order_id=? ORDER BY sequence",
+                             (order_id,)).fetchall()
+            runs = [self._cutting_run(db, row[0], False) for row in ids]
+            return order["reference"], runs
 
     def _bundle(self, db, bundle_id):
         row=db.execute('''SELECT b.*,r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
@@ -6438,9 +6540,37 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             return self._finished_goods_stock_count(db,count_id)
         return self._write(actor,('admin',),key,'finished-goods-stock-count-reverse:'+count_id,payload,perform)
 
+    @staticmethod
+    def _milli_from_decimal3(value):
+        # String desimal ternormalisasi '.3f' (validasi di models.py) -> integer
+        # milli. Tidak ada float pada jalur ini.
+        return int(Decimal(value) * 1000)
+
+    @staticmethod
+    def _decimal3_from_milli(milli):
+        return format(Decimal(milli) / 1000, '.3f')
+
+    def _resolve_cutting_po(self, db, po_reference):
+        # Referensi PO opsional; bila diisi harus merujuk PO yang ada dan aktif.
+        # Validasi di store (bukan trigger) agar pesan 404/422 eksplisit.
+        if not po_reference:
+            return None
+        row = db.execute("""SELECT p.id, p.reference,
+            EXISTS(SELECT 1 FROM purchase_order_cancellations c WHERE c.order_id=p.id) AS cancelled
+            FROM purchase_orders p WHERE p.reference=? COLLATE NOCASE""", (po_reference,)).fetchone()
+        if not row:
+            raise DomainError(404, f"PO {po_reference!r} tidak ditemukan.")
+        if row["cancelled"]:
+            raise DomainError(422, f"PO {row['reference']} sudah dibatalkan; pilih PO yang masih aktif.")
+        return row["reference"]
+
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):
             order=self._order(db,order_id)
+            plan=self._plan_row(db,order_id)
+            if plan["status"]!="approved":
+                raise DomainError(422,"Rencana cutting belum disetujui "
+                                     f"(status: {plan['status']}). Setujui rencana sebelum mencatat hasil cutting.")
             issue=self._issue_consumption(db,payload['issue_id'])
             if issue['order_id']!=order_id:
                 raise DomainError(422,'Pengeluaran bahan harus berasal dari order hasil cutting ini.')
@@ -6454,6 +6584,26 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             db.execute('''INSERT INTO cutting_runs(id,reference,order_id,consumption_id,movement_ids,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?,?,?,?)''',(run_id,payload['reference'],order_id,consumption['id'],json.dumps(outputs),
                                           payload['reason'],actor['id'],now()))
+            # P02: parameter operasional dicatat atomik bersama run (satu
+            # transaksi _write). Bukan stok kedua: angka aktual tetap lewat
+            # consumption + movements di atas.
+            po_reference=self._resolve_cutting_po(db,payload.get('po_reference'))
+            db.execute('''INSERT INTO cutting_run_details(run_id,cut_date,po_reference,weight_kg_milli,created_at)
+                VALUES(?,?,?,?,?)''',(run_id,payload['cut_date'],po_reference,
+                self._milli_from_decimal3(payload['weight_kg']) if payload.get('weight_kg') else None,now()))
+            for roll in payload.get('rolls') or []:
+                db.execute('''INSERT INTO cutting_run_rolls(id,run_id,roll_no,weight_kg_milli,sheets,note,created_at)
+                    VALUES(?,?,?,?,?,?,?)''',(str(uuid4()),run_id,roll['roll_no'],
+                    self._milli_from_decimal3(roll['weight_kg']) if roll.get('weight_kg') else None,
+                    roll.get('sheets'),(roll.get('note') or '').strip(),now()))
+            movement_by_line={row['line_id']:movement_id for row,movement_id in zip(payload['outputs'],outputs)}
+            for param in payload.get('output_params') or []:
+                db.execute('''INSERT INTO cutting_run_output_params
+                    (run_id,movement_id,setelan_per_lembar,product_weight_gram_milli,material_used_gram_milli)
+                    VALUES(?,?,?,?,?)''',(run_id,movement_by_line[param['line_id']],
+                    param.get('setelan_per_lembar'),
+                    self._milli_from_decimal3(param['product_weight_gram']) if param.get('product_weight_gram') else None,
+                    self._milli_from_decimal3(param['material_used_gram']) if param.get('material_used_gram') else None))
             return self._cutting_run(db,run_id)
         return self._write(actor,('admin','operator'),key,'cutting-run:'+order_id,payload,perform)
 
@@ -7132,6 +7282,12 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             db.execute("INSERT INTO order_lines VALUES(?,?,?,?)", (line, record["id"], item["product_id"], item["quantity"]))
             db.executemany("INSERT INTO balances VALUES(?,?,?)", [
                 (line, stage, item["quantity"] if stage == "planned" else 0) for stage in STAGES])
+        # P02 (issue #49): setiap order membawa satu rencana cutting. Kode rencana
+        # = reference order; status awal draft; approval lewat approve_plan.
+        db.execute("""INSERT INTO production_plans(order_id, note, start_date, status, revision, created_by, created_at)
+            VALUES(?, ?, ?, 'draft', 0, ?, ?)""",
+            (record["id"], (payload.get("plan_note") or "").strip() or "",
+             payload.get("plan_start_date"), actor["id"], now()))
         return self._order(db, record["id"])
 
     def create_order(self, payload, actor, key):
@@ -7198,6 +7354,104 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 JOIN users a ON a.id=c.actor_id JOIN users old ON old.id=c.old_owner_id
                 JOIN users new ON new.id=c.new_owner_id WHERE c.order_id=? AND (? IS NULL OR c.sequence<?)
                 ORDER BY c.sequence DESC LIMIT ?""", (order_id, before, before, limit))]
+
+    # ------------------------------------------------------------------
+    # P02: production plans (rencana cutting) — issue #49
+    #
+    # Satu order = satu rencana. Kode rencana = reference order (lihat
+    # mapping FM-05). Target = order_lines.quantity (immutable); realisasi =
+    # movements cutting->sewing net (dihitung, tidak disimpan); kuantitas
+    # layak bayar BUKAN domain P02 dan tidak dihitung di sini.
+    # DEMO_ASSUMPTION (D02 PROPOSED): hasil cutting hanya untuk rencana
+    # berstatus approved; approval single-step oleh admin.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _line_realized(db, line_id):
+        # Realisasi = arus bersih cutting->sewing. Koreksi run cutting membuat
+        # movement penyeimbang sewing->cutting; keduanya dihitung sekali
+        # (movement aslinya TIDAK ditandai reversal_of, jadi tidak boleh
+        # difilter — yang benar adalah netting).
+        row = db.execute("""SELECT COALESCE(SUM(CASE
+                WHEN from_stage='cutting' AND to_stage='sewing' THEN quantity
+                WHEN from_stage='sewing' AND to_stage='cutting' THEN -quantity
+                ELSE 0 END),0) FROM movements WHERE line_id=?""", (line_id,)).fetchone()
+        return row[0]
+
+    def _plan_row(self, db, order_id):
+        row = db.execute("SELECT * FROM production_plans WHERE order_id=?", (order_id,)).fetchone()
+        if not row:
+            # Order selalu dibuat bersama rencana (lihat _create_order dan
+            # backfill migrasi 57); baris hilang = data tidak konsisten.
+            self._order(db, order_id)
+            raise DomainError(500, "Rencana cutting order ini tidak ditemukan.")
+        return row
+
+    def _plan(self, db, order_id):
+        order = self._order(db, order_id)
+        row = self._plan_row(db, order_id)
+        plan = dict(row)
+        plan["plan_code"] = order["reference"]
+        plan["order_title"] = order["title"]
+        if plan["approved_by"]:
+            approver = db.execute("SELECT name FROM users WHERE id=?", (plan["approved_by"],)).fetchone()
+            plan["approver_name"] = approver["name"] if approver else None
+        else:
+            plan["approver_name"] = None
+        plan["lines"] = []
+        for line in order["lines"]:
+            realized = self._line_realized(db, line["id"])
+            plan["lines"].append({
+                "line_id": line["id"], "product_id": line["product_id"], "sku": line["sku"],
+                "name": line["name"], "color": line["color"], "size": line["size"],
+                "target_quantity": line["quantity"],
+                "realized_quantity": realized,
+                "remaining_target": line["quantity"] - realized,
+            })
+        plan["target_quantity"] = order["target_quantity"]
+        plan["realized_quantity"] = sum(item["realized_quantity"] for item in plan["lines"])
+        plan["remaining_target"] = sum(item["remaining_target"] for item in plan["lines"])
+        plan["cutting_runs"] = [dict(run) for run in db.execute(
+            "SELECT id,reference,created_at FROM cutting_runs WHERE order_id=? ORDER BY sequence DESC",
+            (order_id,))]
+        plan["history"] = [self._audit_event(event) for event in db.execute(
+            """SELECT * FROM audit_events WHERE subject_id=? AND operation LIKE 'plan-%'
+               ORDER BY sequence DESC""", (order_id,))]
+        return plan
+
+    def plan(self, order_id):
+        with self.transaction() as db:
+            return self._plan(db, order_id)
+
+    def _plan_transition(self, db, order_id, payload, actor, to_status, operation):
+        row = self._plan_row(db, order_id)
+        if row["status"] == "closed":
+            raise DomainError(409, "Rencana sudah ditutup; tidak dapat diubah lagi.")
+        if to_status == "approved" and row["status"] != "draft":
+            raise DomainError(409, "Rencana hanya dapat disetujui dari status draft.")
+        if payload["revision"] != row["revision"]:
+            raise DomainError(409, "Revisi rencana sudah berubah. Muat ulang rencana sebelum melanjutkan.")
+        if to_status == "approved":
+            updated = db.execute("""UPDATE production_plans SET status='approved', revision=revision+1,
+                approved_by=?, approved_at=? WHERE order_id=? AND revision=? AND status='draft'""",
+                (actor["id"], now(), order_id, row["revision"]))
+        else:
+            updated = db.execute("""UPDATE production_plans SET status='closed', revision=revision+1,
+                closed_reason=? WHERE order_id=? AND revision=? AND status IN ('draft','approved')""",
+                (payload["reason"], order_id, row["revision"]))
+        if updated.rowcount != 1:
+            # Guard atomik: perubahan bersamaan pada revisi yang sama hanya
+            # dimenangkan satu penulis (BEGIN IMMEDIATE + predicate revision).
+            raise DomainError(409, "Rencana berubah saat diproses. Muat ulang rencana sebelum melanjutkan.")
+        return self._plan(db, order_id)
+
+    def approve_plan(self, order_id, payload, actor, key):
+        return self._write(actor, ("admin",), key, "plan-approve:" + order_id, payload,
+                           lambda db: self._plan_transition(db, order_id, payload, actor, "approved", "approve"))
+
+    def close_plan(self, order_id, payload, actor, key):
+        return self._write(actor, ("admin",), key, "plan-close:" + order_id, payload,
+                           lambda db: self._plan_transition(db, order_id, payload, actor, "closed", "close"))
 
     def _production_change_request(self, db, request_id):
         row = db.execute("""SELECT r.*,o.reference AS order_reference,o.title AS order_title,

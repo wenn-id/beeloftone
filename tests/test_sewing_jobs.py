@@ -20,6 +20,7 @@ class SewingJobTest(TestCase):
     setup_stock = bundle_tests.BundleTest.setup_stock
     prepare = bundle_tests.BundleTest.prepare
     cut = bundle_tests.BundleTest.cut
+    approve_cutting_plan=bundle_tests.BundleTest.approve_cutting_plan
     create_bundle = bundle_tests.BundleTest.create_bundle
 
     def setup_bundle(self):
@@ -238,7 +239,7 @@ class SewingJobTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
         self.assertEqual(self.client.get('/api/orders/'+order['id']+'/sewing-jobs').json(), [])
         current = self.client.get('/api/bundles/'+bundle['id']).json()
         self.assertEqual((current['sewing_allocated_quantity'], current['sewing_unassigned_quantity']), (0, 20))

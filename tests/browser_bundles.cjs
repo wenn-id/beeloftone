@@ -20,8 +20,10 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
     supplier:'CONTOH pemasok',location:'Rak B',received_date:'2026-09-11',quantity:'5',reason:'CONTOH bahan'},'bundle-batch');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'3',
     reason:'CONTOH bahan cutting bundle'},'bundle-issue');
-  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'BND-CUT',issue_id:issue.id,
-    used:'2',waste:'0.25',reason:'CONTOH hasil cutting untuk bundle',outputs:[{line_id:line.id,quantity:20}]},'bundle-cut');
+    const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana'},'bnd-plan-approve');
+const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'BND-CUT',issue_id:issue.id,
+    used:'2',waste:'0.25',reason:'CONTOH hasil cutting untuk bundle',cut_date:'2026-09-27',outputs:[{line_id:line.id,quantity:20}]},'bundle-cut');
   async function role(key){
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Keluar',exact:true}).click();

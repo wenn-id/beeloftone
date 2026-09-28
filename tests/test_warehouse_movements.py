@@ -20,6 +20,7 @@ class WarehouseMovementsTest(TestCase):
     setup_stock = finished_tests.FinishedGoodsTest.setup_stock
     prepare = finished_tests.FinishedGoodsTest.prepare
     cut = finished_tests.FinishedGoodsTest.cut
+    approve_cutting_plan=finished_tests.FinishedGoodsTest.approve_cutting_plan
     create_bundle = finished_tests.FinishedGoodsTest.create_bundle
     setup_bundle = finished_tests.FinishedGoodsTest.setup_bundle
     create_job = finished_tests.FinishedGoodsTest.create_job
@@ -167,7 +168,7 @@ class WarehouseMovementsTest(TestCase):
             db.execute('PRAGMA user_version=47');db.commit()
         Store(partial)
         with closing(sqlite3.connect(partial)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
             self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' "
                                             "AND name='warehouse_movement_scan_valid'").fetchone())
         with self.app.state.store.transaction(write=True) as db:
@@ -206,6 +207,6 @@ class WarehouseMovementsTest(TestCase):
             db.execute('PRAGMA user_version=18');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM warehouse_movements').fetchone()[0],0)
             self.assertIn('scanned_code',{row[1] for row in db.execute('PRAGMA table_info(warehouse_movements)')})

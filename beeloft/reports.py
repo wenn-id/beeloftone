@@ -14,6 +14,42 @@ def csv_cell(value):
     return value
 
 
+def cutting_runs_csv(plan_code, runs):
+    """Ekspor detail hasil cutting P02 (issue #49): parameter operasional,
+    satuan, referensi, estimasi berlabel, dan status koreksi per baris output.
+    Estimasi TIDAK menggantikan angka aktual; kolomnya terpisah."""
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    writer.writerow(['Kode rencana', 'Referensi cutting', 'Tanggal cutting', 'Status koreksi',
+                     'Referensi PO', 'Kode bahan', 'Satuan bahan', 'Bahan terpakai', 'Waste bahan',
+                     'Jumlah rol', 'Total lembar (semua rol)', 'Berat rol total (kg)',
+                     'Berat bahan terukur (kg)', 'SKU', 'Ukuran', 'Warna', 'Target pcs',
+                     'Hasil aktual pcs (run ini)', 'Realisasi lini pcs', 'Sisa target pcs',
+                     'Setelan per lembar', 'Estimasi pcs', 'Dasar estimasi',
+                     'Berat produk (gram)', 'Pemakaian bahan aktual (gram)',
+                     'Estimasi bahan (gram)', 'Pencatat', 'Waktu catat', 'Referensi kebijakan'])
+    for run in runs:
+        detail = run.get('detail') or {}
+        rolls = detail.get('rolls') or []
+        reversal = 'Dikoreksi' if run.get('reversal') else 'Aktif'
+        for line in run['outputs']:
+            writer.writerow(map(csv_cell, [
+                plan_code, run['reference'], detail.get('cut_date') or '', reversal,
+                detail.get('po_reference') or '', run.get('code'), run.get('unit'),
+                run.get('used'), run.get('waste'),
+                detail.get('roll_count') or '', detail.get('total_sheets') or '',
+                detail.get('total_roll_weight_kg') or '', detail.get('weight_kg') or '',
+                line.get('sku'), line.get('size'), line.get('color'),
+                line.get('target_quantity'), line['quantity'],
+                line.get('line_realized_quantity'), line.get('line_remaining_target'),
+                line.get('setelan_per_lembar') or '', line.get('estimated_output_pcs') or '',
+                line.get('estimate_basis') or '', line.get('product_weight_gram') or '',
+                line.get('material_used_gram') or '', line.get('estimated_material_gram') or '',
+                run.get('actor_name'), run.get('created_at'),
+                line.get('estimate_policy_ref') or detail.get('calculation_policy_ref') or '']))
+    return '\ufeff' + output.getvalue()
+
+
 def activity_csv(items):
     output = io.StringIO(newline='')
     writer = csv.writer(output)

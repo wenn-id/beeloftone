@@ -21,6 +21,7 @@ class FinishedGoodsTest(TestCase):
     setup_stock = qc_tests.FinalQcTest.setup_stock
     prepare = qc_tests.FinalQcTest.prepare
     cut = qc_tests.FinalQcTest.cut
+    approve_cutting_plan=qc_tests.FinalQcTest.approve_cutting_plan
     create_bundle = qc_tests.FinalQcTest.create_bundle
     setup_bundle = qc_tests.FinalQcTest.setup_bundle
     create_job = qc_tests.FinalQcTest.create_job
@@ -219,7 +220,7 @@ class FinishedGoodsTest(TestCase):
             db.execute('PRAGMA user_version=17');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
             columns={row[1] for row in db.execute('PRAGMA table_info(final_qc_records)')}
             self.assertTrue({'defect_type','responsible_source','disposition'}<=columns)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_receipts').fetchone()[0],0)

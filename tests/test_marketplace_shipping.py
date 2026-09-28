@@ -20,6 +20,7 @@ class MarketplaceShippingTest(TestCase):
     setup_stock = packing_tests.MarketplacePackingTest.setup_stock
     prepare = packing_tests.MarketplacePackingTest.prepare
     cut = packing_tests.MarketplacePackingTest.cut
+    approve_cutting_plan=packing_tests.MarketplacePackingTest.approve_cutting_plan
     create_bundle = packing_tests.MarketplacePackingTest.create_bundle
     setup_bundle = packing_tests.MarketplacePackingTest.setup_bundle
     create_job = packing_tests.MarketplacePackingTest.create_job
@@ -172,5 +173,5 @@ class MarketplaceShippingTest(TestCase):
             db.execute('PRAGMA user_version=22');db.commit()
         Store(fresh_path)
         with closing(sqlite3.connect(fresh_path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM marketplace_shipments').fetchone()[0],0)

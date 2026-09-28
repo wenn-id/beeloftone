@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -217,6 +217,10 @@ class OrderCreate(Input):
     owner_id: Text
     due_date: date
     lines: list[OrderLine] = Field(min_length=1, max_length=100)
+    # P02 (issue #49): metadata rencana cutting; plan dibuat otomatis berstatus
+    # draft saat order dibuat. Kode rencana = reference order (lihat mapping).
+    plan_note: str = Field(default="", max_length=1000)
+    plan_start_date: date | None = None
 
     @field_validator("lines")
     @classmethod
@@ -1128,9 +1132,67 @@ class CuttingOutput(Input):
     quantity: Quantity
 
 
+def validate_cutting_weight(value, message):
+    if value is None:
+        return None
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        raise ValueError(message) from None
+    if not amount.is_finite() or not 0 < amount <= 1_000_000 \
+            or amount * 1000 != (amount * 1000).to_integral_value():
+        raise ValueError(message)
+    return format(amount, '.3f')
+
+
+class CuttingRollCreate(Input):
+    # Detail satu rol: berat (kg) dan/atau lembar — minimal satu terisi.
+    # Keduanya input manual; TIDAK ada konversi otomatis antar satuan.
+    roll_no: Annotated[int, Field(strict=True, gt=0, le=1000)]
+    weight_kg: str | None = Field(default=None, max_length=20)
+    sheets: Annotated[int, Field(strict=True, gt=0)] | None = None
+    note: str = Field(default="", max_length=500)
+
+    @field_validator('weight_kg')
+    @classmethod
+    def validate_weight_kg(cls, value):
+        return validate_cutting_weight(
+            value, 'Berat rol harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
+
+    @model_validator(mode='after')
+    def require_weight_or_sheets(self):
+        if self.weight_kg is None and self.sheets is None:
+            raise ValueError('Isi berat rol (kg) atau jumlah lembar rol.')
+        return self
+
+
+class CuttingOutputParamCreate(Input):
+    # Parameter operasional per baris output.
+    # setelan_per_lembar: DEMO_ASSUMPTION — jumlah potongan (pcs) per lembar,
+    # input manual; dipakai hanya untuk ESTIMASI, bukan angka aktual.
+    line_id: Text
+    setelan_per_lembar: Annotated[int, Field(strict=True, gt=0)] | None = None
+    product_weight_gram: str | None = Field(default=None, max_length=20)
+    material_used_gram: str | None = Field(default=None, max_length=20)
+
+    @field_validator('product_weight_gram', 'material_used_gram')
+    @classmethod
+    def validate_gram(cls, value):
+        return validate_cutting_weight(
+            value, 'Berat gram harus positif, maksimal 1.000.000 dengan tiga desimal.')
+
+
 class CuttingRunCreate(MaterialConsumption):
     reference: Text
     outputs: list[CuttingOutput] = Field(min_length=1, max_length=100)
+    # P02 (issue #49): parameter operasional cutting. cut_date wajib (input
+    # manual); sisanya opsional. Estimasi (lembar x setelan) dihitung di
+    # detail dan SELALU berlabel asumsi — bukan pengganti angka aktual.
+    cut_date: date
+    po_reference: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)] | None = None
+    weight_kg: str | None = Field(default=None, max_length=20)
+    rolls: list[CuttingRollCreate] = Field(default_factory=list, max_length=200)
+    output_params: list[CuttingOutputParamCreate] = Field(default_factory=list, max_length=100)
 
     @field_validator('outputs')
     @classmethod
@@ -1139,11 +1201,46 @@ class CuttingRunCreate(MaterialConsumption):
             raise ValueError('Gabungkan hasil untuk SKU yang sama menjadi satu baris.')
         return sorted(outputs, key=lambda row: row.line_id)
 
+    @field_validator('weight_kg')
+    @classmethod
+    def validate_weight_kg(cls, value):
+        return validate_cutting_weight(
+            value, 'Berat bahan harus positif, maksimal 1.000.000 kg dengan tiga desimal.')
+
+    @field_validator('rolls')
+    @classmethod
+    def unique_roll_numbers(cls, rolls):
+        numbers = [row.roll_no for row in rolls]
+        if len(set(numbers)) != len(numbers):
+            raise ValueError('Nomor rol tidak boleh duplikat dalam satu hasil cutting.')
+        return sorted(rolls, key=lambda row: row.roll_no)
+
+    @field_validator('output_params')
+    @classmethod
+    def unique_param_lines(cls, params):
+        if len({row.line_id for row in params}) != len(params):
+            raise ValueError('Parameter output tiap SKU cukup satu baris.')
+        return sorted(params, key=lambda row: row.line_id)
+
     @model_validator(mode='after')
     def require_used_material(self):
-        if Decimal(self.used)<=0:
+        if Decimal(self.used) <= 0:
             raise ValueError('Hasil cutting memerlukan bahan terpakai lebih dari nol.')
         return self
+
+    @model_validator(mode='after')
+    def params_match_outputs(self):
+        line_ids = {row.line_id for row in self.outputs}
+        for param in self.output_params:
+            if param.line_id not in line_ids:
+                raise ValueError('Parameter output harus merujuk SKU pada hasil cutting ini.')
+        return self
+
+
+class PlanDecision(Input):
+    # Keputusan approval/closure rencana: revision guard + alasan wajib.
+    revision: Annotated[int, Field(strict=True, ge=0)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class BundleCreate(Input):
