@@ -129,7 +129,8 @@ MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-vi
                      'master-catalog-view',          # M01 (#43): the master-catalog workspace
                      'masters-view',                # M02 (#44): the business-masters workspace
                      'finance-view',                 # A01 (#46): the finance workspace
-                     'jobs-view')                    # P03 (#52): the employee-jobs workspace
+                     'jobs-view',                    # P03 (#52): the employee-jobs workspace
+                     'import-view')                  # X01 (#51): the import workspace
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -230,10 +231,6 @@ MIGRATED_RENDERERS = frozenset({
     'qualityIntakeDialog', 'renderSupplierReturns', 'supplierPaymentRequestDialog',
     # The two approval details the Inbox opens, and the order-scoped "PR untuk order ini".
     'productionChangeRequestDialog', 'payrollApprovalRequestDialog', 'orderPurchaseRequestsDialog',
-    # ---- B01 (issue #50): supplier invoice sheets ----
-    # The invoice list, registration form and detail sheet extend the PO fulfilment workflow,
-    # so they speak the same A6.7/A6.8 request grammar instead of inventing a second one.
-    'supplierInvoicesDialog', 'supplierInvoiceForm', 'supplierInvoiceDialog',
     # Deliberately NOT here, and still failing this contract if they emit A6 markup: the legacy
     # FORMS of the fulfilment workflow (purchaseOrderForm, purchaseReceiptForm, qualityDecisionForm,
     # supplierPaymentForm, payrollApprovalForm) and every Produksi / warehouse / marketplace child
@@ -285,6 +282,16 @@ MIGRATED_RENDERERS = frozenset({
     'workTypeRateDialog', 'serviceRateForm', 'deactivateServiceRateForm',
     'serviceRatePreviewDialog', 'serviceTemplateHistoryDialog', 'applyServiceTemplateForm',
     'productServiceDialog', 'productServicePreviewDialog',
+    # ---- B01: Supplier invoices (issue #50) ----
+    # The supplier invoice list, detail, and form — built from the A6.0 shapes
+    # the A6.2 catalogs use. One invoice = one active payment request.
+    'supplierInvoicesDialog', 'supplierInvoiceDialog', 'supplierInvoiceForm',
+    # ---- X01: Impor data (issue #51) ----
+    # The import workspace: adapter/strategy form, dry-run control totals,
+    # reject table, and job list — built from the A6.0 shapes the A6.2
+    # catalogs use. Dry-run never writes domain data; apply is explicit.
+    'importCatalog', 'importTotalsHtml', 'importRejectsHtml',
+    'importLoadJobs', 'importRenderPreview',
 })
 
 
@@ -846,7 +853,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.120.0')
+        self.assertEqual(version, '0.121.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -856,7 +863,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 62, 'B01 adds schema 62 (P03 reserves 61, P01 has 60)')
+        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -870,7 +877,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 310, 'P03 (#52) adds 11 job paths after P01; B01 (#50) adds 2 invoice paths')
+        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
 
 
 if __name__ == '__main__':

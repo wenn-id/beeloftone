@@ -33,6 +33,7 @@ const DESTINATIONS = [
   {nav: 'activity', label: 'Laporan aktivitas', section: 'activity-view'},
   {nav: 'audit-trail', label: 'Audit trail', section: 'audit-view'},
   {nav: 'backup', label: 'Cadangan data', section: 'backup-view'},
+  {nav: 'import', label: 'Impor data', section: 'import-view'},
   {nav: 'purchase-requests', label: 'Permintaan pembelian', section: 'purchase-requests-view'},
   {nav: 'marketing-budgets', label: 'Budget marketing', section: 'marketing-budgets-view'},
   {nav: 'finance', label: 'Keuangan', section: 'finance-view'},

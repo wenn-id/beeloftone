@@ -522,3 +522,12 @@ endpoint,POST /api/service-charges/{charge_id}/reverse,A1,P03,A2,beeloft/api.py#
 endpoint,GET /api/service-charges,A1,P03/P05/P03B,A2,beeloft/api.py#list_service_charges
 endpoint,GET /api/service-charges/{charge_id},A1,P03/P05/P03B,A2,beeloft/api.py#get_service_charge
 endpoint,GET /api/service-charges/by-source,A1,P03/P05/P03B,A2,beeloft/api.py#find_charge_by_source
+table,import_jobs,A1,X01,A0,beeloft/import_jobs.sql
+table,import_job_rows,A1,X01,A0,beeloft/import_jobs.sql
+table,import_job_events,A1,X01,A0,beeloft/import_jobs.sql
+endpoint,GET /api/import/adapters,A1,X01,A0,beeloft/api.py#import_adapters
+endpoint,POST /api/import/dry-run,A1,X01,A0,beeloft/api.py#import_dry_run
+endpoint,GET /api/import/jobs,A1,X01,A0,beeloft/api.py#import_jobs
+endpoint,GET /api/import/jobs/{job_id},A1,X01,A0,beeloft/api.py#import_job
+endpoint,POST /api/import/jobs/{job_id}/apply,A1,X01,A0,beeloft/api.py#import_job_apply
+endpoint,POST /api/import/jobs/{job_id}/resume,A1,X01,A0,beeloft/api.py#import_job_resume

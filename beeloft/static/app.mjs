@@ -74,7 +74,7 @@ let auditRendered = null, workforceRendered = null;
 // menjawab pertanyaan itu. Dipakai untuk memilih antara "muat ulang dengan data" dan pemuatan
 // pertama, termasuk setelah muat ulang yang gagal — keadaan itu tidak menyisakan laporan.
 let commandCenterReport = false, integrationsReport = false;
-let scanRequest = 0, backupRequest = 0;
+let scanRequest = 0, backupRequest = 0, importRequest = 0;
 
 // Perubahan warna global hanya dianimasikan saat operator memang menekan tombolnya. Pemuatan
 // pertama dan pemulihan sesi memasang tema tanpa kelas ini, jadi tidak ada sapuan warna yang
@@ -423,7 +423,8 @@ const workspaceDestinations={
   'jobs':'jobs-view',
   'scan-bundle':'bundle-scan-view',
   'scan-finished-goods':'finished-goods-scan-view',
-  'backup':'backup-view'
+  'backup':'backup-view',
+  'import':'import-view'
 };
 // Seluruh section di dalam workspace-main, termasuk section internal seperti
 // rincian order yang berbagi satu item sidebar dengan papan produksi.
@@ -451,7 +452,8 @@ const workspaceSections=[
   {id:'jobs-view',view:'jobs',invalidate(){jobsRequest++;}},
   {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
-  {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
+  {id:'backup-view',view:'backup',invalidate(){backupRequest++;}},
+  {id:'import-view',view:'import',invalidate(){importRequest++;}}
 ];
 // Gerak masuk adalah lapisan presentasi saja: saat helper ini dipanggil, section sudah
 // terlihat, view sudah aktif, dan pemanggil sudah memulai request datanya. Yang dikerjakan di
@@ -767,6 +769,7 @@ function clearWorkspace() {
   }
   message('backup-message','');
   $('backup').hidden = true;
+  $('import').hidden = true;
   $('audit-trail').hidden = true;
   // Penyembunyian berbasis izin milik akun sebelumnya tidak boleh tertinggal untuk akun berikutnya.
   $('activity-export').hidden = false;
@@ -883,7 +886,7 @@ function enterWorkspace(me,workflow) {
   $('login-view').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
   workspaceChrome.session(me);
   $('menu-toggle').hidden=false;
-  $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
+  $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';$('import').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
   applyUserAccess(me);
 }
@@ -897,6 +900,9 @@ async function applyUserAccess(me) {
   user.business_units = access.business_units; user.all_units = access.all_units;
   const allowed = name => access.permissions.includes(name);
   if (!allowed('manage_access')) { $('audit-trail').hidden = true; $('backup').hidden = true; }
+  // Impor data mengikuti pola backup/audit-trail: tombol nav hanya untuk role admin
+  // (diatur di login), izin import_data di sini hanya bisa menyembunyikan, tidak membuka.
+  if (!allowed('import_data')) $('import').hidden = true;
   if (!allowed('create_transaction')) $('new-order').hidden = true;
   if (!allowed('export_data')) $('activity-export').hidden = true;
 }
@@ -9405,6 +9411,130 @@ $('backup').onclick = () => {
       message('backup-message','Unduhan dimulai. Periksa daftar unduhan browser untuk memastikan file sudah tersimpan.');
     } catch (error) { if (current()) fail(error,'backup-message'); }
     finally { if (current()) { button.disabled = false; button.textContent = 'Unduh cadangan database'; } }
+  };
+};
+// -- X01 (#51) Importer: upload -> mapping -> dry-run -> preview/reject -> apply
+// Dry-run tidak mengubah data domain; apply adalah tindakan terpisah dengan
+// izin server import_data. Isi file tidak pernah dicatat ke log klien.
+let importAdaptersCache = null;
+let importCurrentJob = null;
+
+async function importCatalog() {
+  if (importAdaptersCache) return importAdaptersCache;
+  importAdaptersCache = await api.get('/api/import/adapters');
+  return importAdaptersCache;
+}
+
+function importTotalsHtml(totals) {
+  const cells = [['Total baris', totals.total], ['Akan dibuat', totals.will_create],
+    ['Dipetakan', totals.will_map], ['Ditolak', totals.rejected],
+    ['Karantina', totals.quarantined], ['Arsip', totals.archived],
+    ['Teraplikasi', totals.applied || 0], ['Gagal', totals.failed || 0]];
+  return cells.map(([label, value]) => `<div><dt>${e(label)}</dt><dd>${e(String(value ?? 0))}</dd></div>`).join('');
+}
+
+function importRejectsHtml(job) {
+  const bad = (job.rows || []).filter(r => r.status === 'rejected' || r.status === 'quarantined' || r.status === 'failed');
+  if (!bad.length) return '<p class="state">Tidak ada baris ditolak.</p>';
+  const items = bad.slice(0, 200).map(r => {
+    const detail = Array.isArray(r.reject_detail) ? r.reject_detail.map(d => `${e(d.field || '')}: ${e(d.message)}${d.fix ? ` — ${e(d.fix)}` : ''}`).join('<br>') : e(String(r.reject_detail || ''));
+    return `<tr><td>${e(String(r.row_no))}</td><td>${e(r.source_id || '')}</td><td>${e(r.status)}</td><td>${e(r.reject_reason || '')}</td><td>${detail}</td></tr>`;
+  }).join('');
+  return `<div class="table-scroll"><table class="data-table"><thead><tr><th>Baris</th><th>source_id</th><th>Status</th><th>Alasan</th><th>Detail &amp; perbaikan</th></tr></thead><tbody>${items}</tbody></table></div>`;
+}
+
+async function importLoadJobs() {
+  const jobs = await api.get('/api/import/jobs?limit=20');
+  $('import-jobs').innerHTML = jobs.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Job</th><th>Adapter</th><th>Strategi</th><th>Status</th><th>Baris</th><th>Dibuat</th></tr></thead><tbody>${
+    jobs.map(j => `<tr><td><button type="button" class="action-quiet" data-job="${e(j.id)}">${e(j.job_ref)}</button></td><td>${e(j.adapter)}</td><td>${e(j.strategy)}</td><td>${e(j.status)}</td><td>${e(String(j.row_count))}</td><td>${e(j.created_at || '')}</td></tr>`).join('')
+  }</tbody></table></div>` : '<p class="state">Belum ada job impor.</p>';
+  $('import-jobs').querySelectorAll('[data-job]').forEach(btn => {
+    btn.onclick = async () => {
+      try { importCurrentJob = await api.get(`/api/import/jobs/${encodeURIComponent(btn.dataset.job)}?limit=200`); importRenderPreview(importCurrentJob); }
+      catch (error) { fail(error, 'import-message'); }
+    };
+  });
+}
+
+function importRenderPreview(job) {
+  importCurrentJob = job;
+  $('import-preview-card').hidden = false;
+  $('import-totals').innerHTML = importTotalsHtml(job.control_totals || {});
+  $('import-rejects').innerHTML = importRejectsHtml(job);
+  const canApply = ['dry_run', 'ready', 'failed'].includes(job.status);
+  $('import-apply').hidden = !canApply;
+  $('import-apply').textContent = job.status === 'failed' ? 'Lanjutkan (resume) apply' : 'Terapkan (apply) job ini';
+  message('import-apply-message', '');
+}
+
+$('import').onclick = () => {
+  activateWorkspace('import');
+  const version = epoch, request = ++importRequest;
+  const current = () => version === epoch && request === importRequest && view === 'import';
+  message('import-message', ''); $('import-preview-card').hidden = true; importCurrentJob = null;
+  const readCsv = () => new Promise((resolve, reject) => {
+    const file = $('import-file').files[0];
+    const pasted = $('import-csv').value;
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { reject(new Error('File melebihi 5 MB.')); return; }
+      const reader = new FileReader();
+      reader.onload = () => resolve({text: String(reader.result || ''), name: file.name});
+      reader.onerror = () => reject(new Error('File tidak dapat dibaca.'));
+      reader.readAsText(file, 'utf-8');
+    } else if (pasted.trim()) resolve({text: pasted, name: 'pasted.csv'});
+    else reject(new Error('Pilih file CSV atau tempel isinya.'));
+  });
+  importCatalog().then(catalog => {
+    if (!current()) return;
+    $('import-adapter').innerHTML = catalog.supported.map(a => `<option value="${e(a.name)}">${e(a.label)}</option>`).join('');
+  }).catch(error => { if (current()) fail(error, 'import-message'); });
+  importLoadJobs().catch(error => { if (current()) fail(error, 'import-message'); });
+  $('import-dry-run').onclick = async () => {
+    const button = $('import-dry-run'); if (!current() || button.disabled) return;
+    button.disabled = true; message('import-message', ''); $('import-preview-card').hidden = true;
+    try {
+      const {text, name} = await readCsv();
+      const parseMapping = (id, label) => {
+        const raw = $(id).value.trim();
+        if (!raw) return {};
+        let parsed;
+        try { parsed = JSON.parse(raw); }
+        catch (err) { throw new Error(`${label} bukan JSON valid.`); }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+          throw new Error(`${label} harus berupa objek JSON.`);
+        return parsed;
+      };
+      const body = {adapter: $('import-adapter').value, source_system: $('import-system').value.trim(),
+        source_account: $('import-account').value.trim(), strategy: $('import-strategy').value,
+        filename: name, csv_text: text, auto_apply_revisions: $('import-auto-rev').value === '1',
+        column_map: parseMapping('import-column-map', 'Peta kolom'),
+        id_map: parseMapping('import-id-map', 'Peta ID'),
+        reference_mode: parseMapping('import-reference-mode', 'Mode referensi')};
+      if (!body.source_system || !body.source_account) throw new Error('Sistem sumber dan akun sumber wajib diisi.');
+      const job = await api.post('/api/import/dry-run', body);
+      if (!current()) return;
+      importRenderPreview(job);
+      message('import-message', `Dry-run selesai: ${job.job_ref}. Tidak ada data domain yang berubah.`);
+      importLoadJobs().catch(() => {});
+    } catch (error) { if (current()) fail(error, 'import-message'); }
+    finally { if (current()) button.disabled = false; }
+  };
+  $('import-apply').onclick = async () => {
+    const button = $('import-apply'); if (!current() || button.disabled || !importCurrentJob) return;
+    if (!confirm(`Terapkan job ${importCurrentJob.job_ref}? Baris valid akan dibuat lewat service domain. Aksi ini tercatat.`)) return;
+    button.disabled = true; message('import-apply-message', '');
+    try {
+      const transaction = api.transaction(`/api/import/jobs/${encodeURIComponent(importCurrentJob.id)}/apply`, {});
+      const result = await api.save(transaction);
+      if (!current()) return;
+      importCurrentJob = await api.get(`/api/import/jobs/${encodeURIComponent(importCurrentJob.id)}?limit=200`);
+      importRenderPreview(importCurrentJob);
+      message('import-apply-message', result.idempotent_replay
+        ? 'Job sudah pernah di-apply: tidak ada efek ganda (idempoten).'
+        : `Apply selesai: ${result.applied} baris teraplikasi, status ${result.status}.`);
+      importLoadJobs().catch(() => {});
+    } catch (error) { if (current()) fail(error, 'import-apply-message'); }
+    finally { if (current()) button.disabled = false; }
   };
 };
 // -- P01 (#48) Master jasa, template jasa dan tarif upah berversi ------------

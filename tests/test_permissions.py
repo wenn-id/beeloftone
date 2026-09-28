@@ -19,11 +19,11 @@ from beeloft.permissions import (
 
 
 class PermissionsCatalogTest(TestCase):
-    def test_nine_permissions_are_explicit(self):
+    def test_ten_permissions_are_explicit(self):
         self.assertEqual(set(PERMISSIONS), {
             "read_operational", "create_transaction", "approve_transaction",
             "record_payment", "post_ledger", "export_data", "view_salary",
-            "view_margin_profit", "manage_access",
+            "view_margin_profit", "manage_access", "import_data",
         })
 
     def test_existing_role_mapping_preserves_compatibility_without_preset(self):
@@ -77,7 +77,7 @@ class PermissionsCatalogTest(TestCase):
             app = create_app(Path(d) / "test.db")
             store: Store = app.state.store
             with store.transaction() as db:
-                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 62)
+                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 63)
                 for table in ("user_permissions", "user_business_units", "user_access_profiles", "user_access_events"):
                     self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone())
 
@@ -95,7 +95,8 @@ class PermissionFilteredUiTest(TestCase):
     def test_entry_points_hide_without_the_matching_permission(self):
         for gate in ("if (!allowed('manage_access')) { $('audit-trail').hidden = true; $('backup').hidden = true; }",
                      "if (!allowed('create_transaction')) $('new-order').hidden = true;",
-                     "if (!allowed('export_data')) $('activity-export').hidden = true;"):
+                     "if (!allowed('export_data')) $('activity-export').hidden = true;",
+                     "if (!allowed('import_data')) $('import').hidden = true;"):
             with self.subTest(gate=gate[:48]):
                 self.assertIn(gate, self.APP)
 

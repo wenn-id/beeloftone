@@ -2090,3 +2090,17 @@ class RealizationReject(Input):
 
 class ChargeReverse(Input):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+class ImportDryRunRequest(Input):
+    """Permintaan dry-run impor X01 (#51). Satu request = satu adapter,
+    satu sumber (system, account), satu strategi histori/opening balance."""
+    adapter: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    source_system: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    source_account: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+    strategy: str = Field(default="active_only", max_length=32)
+    filename: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+    csv_text: str = Field(min_length=1, max_length=5 * 1024 * 1024 + 1024)
+    column_map: dict[str, str] = Field(default_factory=dict)
+    id_map: dict[str, dict[str, str]] = Field(default_factory=dict)
+    reference_mode: dict[str, str] = Field(default_factory=dict)
+    auto_apply_revisions: bool = False
+    watermark: dict = Field(default_factory=dict)

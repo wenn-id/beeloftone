@@ -14,6 +14,7 @@ PERMISSIONS: tuple[str, ...] = (
     "view_salary",
     "view_margin_profit",
     "manage_access",
+    "import_data",
 )
 
 # Fallback untuk akun yang belum punya baris izin granular sama sekali (mis. dibuat lewat
@@ -142,6 +143,7 @@ def require_permission(actor: Mapping[str, Any] | None, permission: str, message
             "manage_access": "Pengguna tidak memiliki izin untuk mengelola akses pengguna.",
             "create_transaction": "Pengguna tidak memiliki izin untuk membuat atau mengubah transaksi.",
             "read_operational": "Pengguna tidak memiliki izin untuk membaca data operasional.",
+            "import_data": "Pengguna tidak memiliki izin untuk mengimpor data.",
         }
         err_msg = message or default_messages.get(permission, f"Pengguna tidak memiliki izin '{permission}'.")
         raise DomainError(403, err_msg)

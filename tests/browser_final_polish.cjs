@@ -40,10 +40,10 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, work}) =>
     ['scan-finished-goods', 'finished-goods-scan-view', 'Scan barang jadi'], ['wip-ageing-insights', 'analytics-view', 'Analitik'],
     ['ai-brain', 'ai-view', 'Tanya Beeloft'], ['integrations', 'integrations-view', 'Integrasi'],
     ['activity', 'activity-view', 'Aktivitas'], ['audit-trail', 'audit-view', 'Audit trail'],
-    ['backup', 'backup-view', 'Cadangan data'], ['purchase-requests', 'purchase-requests-view', 'Permintaan pembelian'],
+    ['backup', 'backup-view', 'Cadangan data'], ['import', 'import-view', 'Impor data'], ['purchase-requests', 'purchase-requests-view', 'Permintaan pembelian'],
     ['marketing-budgets', 'marketing-budgets-view', 'Budget marketing'], ['approvals', 'approvals-view', 'Inbox approval'],
   ];
-  const ADMIN_ONLY = new Set(['audit-trail', 'backup']);
+  const ADMIN_ONLY = new Set(['audit-trail', 'backup', 'import']);
 
   const dialog = page.locator('#dialog');
   const settle = async () => {

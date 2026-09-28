@@ -415,7 +415,7 @@ class SupplierInvoiceTest(TestCase):
 
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as raw:
-            self.assertEqual(raw.execute('PRAGMA user_version').fetchone()[0], 62)
+            self.assertEqual(raw.execute('PRAGMA user_version').fetchone()[0], 63)
             row = raw.execute('SELECT invoice_id,invoice_reference FROM '
                               'supplier_payment_requests WHERE id=?', (legacy_id,)).fetchone()
             self.assertEqual(row, (None, 'INV-LEGACY'))
