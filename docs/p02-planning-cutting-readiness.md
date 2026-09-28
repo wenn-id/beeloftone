@@ -121,3 +121,59 @@ Reviewer yang diperlukan: A1 produksi, A2 bahan/PO/stok, A3 ekspor/QA/izin,
 A0 kontrak/migrasi serta pemilik produksi/gudang. Review/sign-off **PENDING**;
 PR draft dan #49 tetap terbuka sampai dependensi diterima, implementasi parity
 selesai dan acceptance disahkan. Merge persiapan ini bukan penyelesaian P02.
+
+## Implementasi #49 (27 September 2026)
+
+Branch `feat/p02-planning-cutting-49`. Schema **58**. Status: draft → approved → closed; cutting hanya
+untuk rencana approved; approval satu langkah oleh admin dengan revision guard.
+Kode rencana = referensi order (1:1 dengan order).
+
+### Field mapping: manual vs dihitung
+
+| Field | Sumber | Keterangan |
+|---|---|---|
+| `plan_code` | dihitung | = `orders.reference` |
+| `plan.note`, `plan.start_date` | manual (opsional) | form order |
+| `plan.status` / `revision` / `approved_by` | dihitung | transisi approve/close via API admin |
+| target per SKU | dihitung | snapshot `order_lines.quantity` |
+| realisasi per SKU | dihitung | arus bersih movement cutting→sewing (netto koreksi) |
+| sisa target | dihitung | target − realisasi |
+| `cut_date` | manual (wajib) | tanggal cutting |
+| `po_reference` | manual (opsional) | bila diisi, divalidasi ke `purchase_orders` (bukan cancelled) |
+| `weight_kg` | manual (opsional) | berat total, maks 3 desimal |
+| `rolls[].roll_no/weight_kg/sheets/note` | manual (opsional) | nomor rol unik per run; tiap baris wajib berat atau lembar |
+| `output_params[].setelan_per_lembar` | manual (opsional) | pcs per lembar (integer ≥ 1) |
+| `output_params[].product_weight_gram` | manual (opsional) | berat produk per pcs, gram, maks 3 desimal |
+| `output_params[].material_used_gram` | manual (opsional) | pemakaian aktual bahan per SKU, gram, maks 3 desimal |
+| estimasi pcs per SKU | dihitung | total lembar × setelan/lembar; **estimasi berlabel**, bukan aktual |
+| `estimate_basis` | dihitung | `policy_ref="DEMO-20260928-1"` + rumus |
+| output aktual (pcs) | manual (wajib) | input eksplisit; tercatat ke ledger existing tepat sekali |
+| used/waste bahan | manual (wajib) | input eksplisit via issue, maks 3 desimal |
+
+Qty layak bayar **tidak** dibuat; P02 tidak menghitung payroll/upah.
+
+### Asumsi demo & batas produksi
+
+- Aturan demo ditandai `DEMO_ASSUMPTION`, dibungkus `ContractPolicy`
+  `DEMO-20260928-1`; lihat tabel DA-01..DA-09 di
+  [f02-shared-contracts.md](f02-shared-contracts.md#asumsi-demo-sementara-demo_assumption).
+- Estimasi berat produk tidak menjadi konsumsi/waste otomatis.
+- Tidak ada konversi kg↔meter.
+- Over-output (melebihi saldo cutting) ditolak; concurrent request aman via
+  idempotency-key + guard saldo atomik.
+- Reversal run cutting: ditolak bila ada bundle aktif atau output sudah
+  terkoreksi terpisah; bila lolos, koreksi konsumsi + seluruh output atomik dan
+  realisasi rencana kembali turun (netto).
+- Run lama (pra-58) tetap terbaca tanpa parameter baru; tidak ada default
+  operasional tebakan.
+- PO bersifat opsional; batch manual tanpa PO tetap didukung.
+- Order lama di-backfill sebagai rencana `approved` (grandfathered); order baru
+  mulai dari `draft`.
+
+### Bukti
+
+- `tests/test_planning_cutting.py`: 20 tes (lifecycle rencana, gate cutting,
+  parameter, estimasi, target/realisasi/sisa, idempotency, over-output,
+  reversal, PO, CSV, migrasi 57→58).
+- `GET /api/orders/{id}/plan`, `POST .../plan/approve|close`,
+  `GET /api/orders/{id}/cutting-runs/export.csv`.

@@ -1,4 +1,4 @@
-// M6 consistency and performance cleanup: every one of the 27 primary destinations measured at
+// M6 consistency and performance cleanup: every one of the 28 primary destinations measured at
 // every responsive width for document overflow and leftover motion state, the refresh and
 // replacement grammar propagated to the remaining list pages, and the reduced-motion path
 // confirmed across the patterns M1-M5 introduced. Assertions measure settled state and lifecycle
@@ -34,6 +34,7 @@ const DESTINATIONS = [
   {nav: 'backup', label: 'Cadangan data', section: 'backup-view'},
   {nav: 'purchase-requests', label: 'Permintaan pembelian', section: 'purchase-requests-view'},
   {nav: 'marketing-budgets', label: 'Budget marketing', section: 'marketing-budgets-view'},
+  {nav: 'finance', label: 'Keuangan', section: 'finance-view'},
   {nav: 'approvals', label: 'Inbox approval', section: 'approvals-view'},
 ];
 // 1440, 1024, 768, 390 and 320 are the specification's regression widths; 320 is measured again
@@ -170,7 +171,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
       // style — over *every* stop of that gradient, keeping whichever stop gives the worst result.
       // That is deliberately more pessimistic than the real rendering. The authoritative
       // pixel-level measurement lives in browser_functional_glass.cjs; this stays a cheap
-      // cross-check that covers all 27 destinations in both palettes.
+      // cross-check that covers all 28 destinations in both palettes.
       const material = await page.evaluate(nav => {
         const root = getComputedStyle(document.documentElement);
         const color = token => {
@@ -622,7 +623,7 @@ module.exports = async ({page, login, admin, apiGet, apiPost}) => {
   await page.evaluate(() => {document.documentElement.style.fontSize = '';});
   await page.setViewportSize({width: 1440, height: 1000});
 
-  console.log('Consistency browser QA PASS: all 27 destinations hold their layout and leave no motion '
+  console.log('Consistency browser QA PASS: all 28 destinations hold their layout and leave no motion '
     + 'state at 1440/1024/768/390/320 and at 320 with 200% text, the refresh and replacement grammar '
     + 'reaches the remaining list pages, and reduced motion keeps every state signal without movement.');
 };

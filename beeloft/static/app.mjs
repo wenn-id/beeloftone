@@ -419,6 +419,7 @@ const workspaceDestinations={
   'purchase-requests':'purchase-requests-view',
   'marketing-budgets':'marketing-budgets-view',
   'business-masters':'masters-view',
+  'finance':'finance-view',
   'scan-bundle':'bundle-scan-view',
   'scan-finished-goods':'finished-goods-scan-view',
   'backup':'backup-view'
@@ -445,6 +446,7 @@ const workspaceSections=[
   {id:'purchase-requests-view',view:'purchase-requests',invalidate(){purchaseRequestsRequest++;}},
   {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}},
   {id:'masters-view',view:'masters',invalidate(){mastersRequest++;}},
+  {id:'finance-view',view:'finance',invalidate(){financeRequest++;}},
   {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
   {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
@@ -1317,10 +1319,10 @@ async function openDetail(id) {
   const version = epoch, request = ++detailRequest;
   pageState('detail-message', 'loading', 'Memuat order dan riwayat…'); $('detail-content').hidden = true;
   try {
-    const [order, movements, blockers] = await Promise.all([api.get('/api/orders/' + encodeURIComponent(id)), api.get(`/api/orders/${encodeURIComponent(id)}/movements?limit=100`), api.get(`/api/orders/${encodeURIComponent(id)}/issues?limit=100`)]);
+    const [order, movements, blockers, plan] = await Promise.all([api.get('/api/orders/' + encodeURIComponent(id)), api.get(`/api/orders/${encodeURIComponent(id)}/movements?limit=100`), api.get(`/api/orders/${encodeURIComponent(id)}/issues?limit=100`), api.get(`/api/orders/${encodeURIComponent(id)}/plan`)]);
     if (version !== epoch || request !== detailRequest || view !== 'detail') return;
     selected = order; issues = blockers; issuesMore = blockers.length === 100; history = movements; historyOffset = movements.length;
-    pageState('detail-message', ''); $('detail-content').hidden = false; renderDetail(movements.length === 100);
+    pageState('detail-message', ''); $('detail-content').hidden = false; renderDetail(movements.length === 100, plan);
   } catch (error) {
     if (version === epoch && request === detailRequest) {
       if (error.status === 401) fail(error, 'detail-message');
@@ -1328,7 +1330,7 @@ async function openDetail(id) {
     }
   }
 }
-function renderDetail(more) {
+function renderDetail(more, plan) {
   const o = selected;
   const admin = user.role === 'admin', writer = user.role !== 'viewer';
   // Satu pembentuk saldo untuk ketiga tempat yang menampilkannya: posisi order, pengecualian, dan
@@ -1403,6 +1405,7 @@ function renderDetail(more) {
   // pertama; sekarang ia mendukung alur kerja alih-alih membuka halaman.
   $('detail-content').innerHTML = `<div class="workspace-heading"><div class="workspace-heading-copy"><p class="workspace-eyebrow">${e(o.reference)}</p><h1 class="workspace-title">${e(o.title)}</h1></div><div class="workspace-actions"><button class="action-secondary" data-action="refresh-detail">Muat ulang order</button></div></div>
     <dl class="detail-grid"><div class="detail-field"><dt>Penanggung jawab</dt><dd>${e(o.owner_name)}</dd></div><div class="detail-field"><dt>Target selesai</dt><dd>${date(o.due_date)}</dd></div><div class="detail-field"><dt>Target produksi</dt><dd>${n(o.target_quantity)} <small class="metric-unit">pcs</small></dd></div><div class="detail-field"><dt>Status</dt><dd>${statusHTML(o)}</dd></div></dl>
+    ${planSection(plan, admin)}
     <section aria-labelledby="stage-balance-heading"><div class="workspace-subhead"><h2 id="stage-balance-heading" class="workspace-section-title">Posisi barang sekarang</h2><span class="workspace-meta">Jumlah seluruh posisi: ${n(Object.values(o.totals).reduce((a,b) => a+b,0))} pcs</span></div>
       <div class="utility-panel"><dl class="detail-grid detail-grid-compact">${stages.map(stage => balance(labels[stage], o.totals[stage])).join('')}</dl></div>
       <div class="utility-panel"><p class="utility-panel-title">Saldo pengecualian</p><dl class="detail-grid detail-grid-compact">${balance('Rework', o.totals.rework)}${balance('Reject', o.totals.reject)}</dl></div>
@@ -1418,6 +1421,56 @@ function renderDetail(more) {
       <ol id="history-list" class="timeline"></ol><div class="action-row"><button id="more-history" class="action-quiet" data-action="more-history" ${more ? '' : 'hidden'}>Muat riwayat berikutnya</button></div></section>`;
   renderHistory(); renderIssues();
 }
+// P02 (issue #49): rencana cutting. Kode rencana = referensi order; target = jumlah
+// order (immutable); realisasi = hasil cutting tercatat lewat ledger (dihitung,
+// bukan stok kedua). Aturan sementara demo: hasil cutting hanya untuk rencana
+// berstatus disetujui (single-step oleh admin).
+function planSection(plan, admin) {
+  if (!plan) return '';
+  const statusLabel = {draft:'Draft', approved:'Disetujui', closed:'Ditutup'}[plan.status] || plan.status;
+  const lines = plan.lines.map(l => `<div class="detail-field"><dt>${e(l.sku)}${l.color || l.size ? ' · ' + e([l.color, l.size].filter(Boolean).join(' / ')) : ''}</dt><dd>target ${n(l.target_quantity)} · terealisasi ${n(l.realized_quantity)} · sisa ${n(l.remaining_target)} <small class="metric-unit">pcs</small></dd></div>`).join('');
+  const actions = [];
+  if (admin && plan.status === 'draft') actions.push('<button class="action-secondary" data-action="approve-plan">Setujui rencana</button>');
+  if (admin && plan.status !== 'closed') actions.push('<button class="action-secondary" data-action="close-plan">Tutup rencana</button>');
+  actions.push('<button class="action-secondary" data-action="export-cutting">Unduh CSV cutting</button>');
+  return `<section aria-labelledby="plan-heading"><div class="workspace-subhead"><h2 id="plan-heading" class="workspace-section-title">Rencana cutting</h2><span class="workspace-meta" style="overflow-wrap:anywhere">Kode rencana ${e(plan.plan_code)} · ${e(statusLabel)}</span></div>
+    <div class="utility-panel"><dl class="detail-grid detail-grid-compact">
+      <div class="detail-field"><dt>Status</dt><dd>${e(statusLabel)}</dd></div>
+      ${plan.start_date ? `<div class="detail-field"><dt>Tanggal mulai</dt><dd>${date(plan.start_date)}</dd></div>` : ''}
+      ${plan.note ? `<div class="detail-field"><dt>Catatan</dt><dd>${e(plan.note)}</dd></div>` : ''}
+      ${plan.approver_name ? `<div class="detail-field"><dt>Disetujui oleh</dt><dd>${e(plan.approver_name)} · ${purchaseStamp(plan.approved_at)}</dd></div>` : ''}
+      <div class="detail-field"><dt>Target / terealisasi / sisa</dt><dd>${n(plan.target_quantity)} / ${n(plan.realized_quantity)} / ${n(plan.remaining_target)} <small class="metric-unit">pcs</small></dd></div>
+      ${lines}
+    </dl>
+    <p class="info-panel">${svgIcon('info','icon-sm')}<span>Target rencana tidak bisa diubah setelah order dibuat; angka terealisasi dihitung dari hasil cutting yang tercatat, bukan stok kedua.${plan.status === 'draft' ? ' Hasil cutting baru bisa dicatat setelah rencana disetujui admin.' : ''}</span></p>
+    <div class="action-row">${actions.join('')}</div></div></section>`;
+}
+
+async function planDecisionForm(orderId, mode) {
+  if (guardPending()) return;
+  const version = epoch;
+  try {
+    const plan = await api.get('/api/orders/' + encodeURIComponent(orderId) + '/plan');
+    if (version !== epoch) return;
+    const isApprove = mode === 'approve';
+    formDialog(isApprove ? 'Setujui rencana cutting' : 'Tutup rencana cutting',
+      `<p class="full hint">${isApprove ? 'Persetujuan satu langkah oleh admin (aturan sementara demo). Setelah disetujui, hasil cutting boleh dicatat.' : 'Rencana yang ditutup tidak bisa dibuka lagi; hasil cutting baru tidak bisa dicatat.'} Revisi saat ini #${plan.revision}.</p>`
+      + field('reason', isApprove ? 'Alasan persetujuan' : 'Alasan penutupan', 'text', 'required maxlength="160"'),
+      form => ({revision: plan.revision, reason: new FormData(form).get('reason')}),
+      '/api/orders/' + encodeURIComponent(orderId) + '/plan/' + mode,
+      `${plan.plan_code}\n${isApprove ? 'Persetujuan' : 'Penutupan'} rencana cutting.`);
+  } catch (error) { notify(error.message); }
+}
+
+async function exportCuttingCsv(orderId, planCode) {
+  if (guardPending() || !orderId) return;
+  try {
+    const blob = await api.download('/api/orders/' + encodeURIComponent(orderId) + '/cutting-runs/export.csv');
+    saveDownload(blob, `beeloft-cutting-${planCode || orderId}.csv`);
+    notify('CSV cutting siap diunduh. Estimasi berlabel dan terpisah dari angka aktual.');
+  } catch (error) { notify(error.message); }
+}
+
 function renderHistory() {
   const reversed = new Set(history.map(item => item.reversal_of).filter(Boolean));
   $('history-list').innerHTML = history.length ? history.map(item => {
@@ -1692,6 +1745,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (view === 'purchase-requests') reloadPurchaseRequests();
       if (view === 'marketing-budgets') reloadMarketingBudgets();
       if (view === 'masters') loadMasters();
+      if (view === 'finance') loadFinance();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -1713,6 +1767,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         await openDetail(result.order_id);
         if(version===epoch)cuttingRunDialog(result.id);
       }
+      else if (path.endsWith('/plan/approve') || path.endsWith('/plan/close')) openDetail(result.order_id);
       else if (path.endsWith('/change-requests') || path.startsWith('/api/production-change-requests/')) productionChangeRequestDialog(result.id);
       else if (path.endsWith('/payment-requests') || path.startsWith('/api/supplier-payment-requests/')) supplierPaymentRequestDialog(result.id);
       else if (path.includes('/payroll-periods/') || path.startsWith('/api/payroll-approval-requests/')) payrollApprovalRequestDialog(result.id);
@@ -2083,6 +2138,8 @@ async function orderForm() {
       + '<div class="field"><label class="field-label" for="order-name">Nama order</label><input id="order-name" name="title" type="text" required maxlength="160"></div>'
       + `<div class="field"><label class="field-label" for="order-owner">Penanggung jawab</label><select id="order-owner" name="owner_id" required>${users.filter(u => u.active && u.role !== 'viewer').map(u => option(u.id,u.name)).join('')}</select></div>`
       + '<div class="field"><label class="field-label" for="order-due-date">Target selesai</label><input id="order-due-date" name="due_date" type="date" required></div>'
+      + '<div class="field"><label class="field-label" for="order-plan-start">Tanggal mulai rencana</label><input id="order-plan-start" name="plan_start_date" type="date"><span class="field-help">Opsional. Rencana cutting memakai kode referensi order ini.</span></div>'
+      + '<div class="field"><label class="field-label" for="order-plan-note">Catatan rencana cutting</label><input id="order-plan-note" name="plan_note" type="text" maxlength="160" placeholder="Opsional"></div>'
       + '<div class="full field-wide"><h3 class="workspace-section-title">Produk yang dikerjakan</h3>'
       + '<p class="field-help">Satu baris per SKU, dan setiap SKU cukup satu baris. Maksimal 100 baris.</p>'
       + '<div id="order-lines"></div>'
@@ -2090,7 +2147,7 @@ async function orderForm() {
         const data = new FormData(form);
         const lines = [...form.querySelectorAll('.line-input')].map(row => ({product_id:row.querySelector('select').value, quantity:Number(row.querySelector('input').value)}));
         if (new Set(lines.map(line => line.product_id)).size !== lines.length) throw new Error('SKU yang sama cukup satu baris. Gabungkan jumlahnya.');
-        return {reference:data.get('reference').trim(),title:data.get('title').trim(),owner_id:data.get('owner_id'),due_date:data.get('due_date'),lines};
+        return {reference:data.get('reference').trim(),title:data.get('title').trim(),owner_id:data.get('owner_id'),due_date:data.get('due_date'),plan_note:(data.get('plan_note')||'').trim(),plan_start_date:data.get('plan_start_date')||null,lines};
       }, '/api/orders');
     function addLine() {
       const count = $('order-lines').children.length;
@@ -2346,6 +2403,263 @@ function mapLocationForm(mappingId) {
     `/api/storage-location-mappings/${encodeURIComponent(mappingId)}/mappings`,
     `Teks asli "${row.raw_text}" tidak berubah. Hanya identitas storage yang ditautkan.`);
 }
+
+// ---------------------------------------------------------------------------
+// Keuangan (A01): COA, periode akuntansi, jurnal, dan neraca saldo.
+// Jurnal tidak dapat diubah/dihapus; koreksi hanya lewat reversal bertaut.
+// ---------------------------------------------------------------------------
+let financeRequest = 0, financeTab = 'coa', financeCache = [];
+const FINANCE_TABS = {coa:'COA', periods:'Periode', journals:'Jurnal', trial:'Neraca saldo'};
+const ACCOUNT_TYPES = {asset:'Aset', liability:'Kewajiban', equity:'Ekuitas', revenue:'Pendapatan', expense:'Beban'};
+
+function showFinance() {
+  activateWorkspace('finance');
+  $('finance-new').hidden = user.role !== 'admin';
+  loadFinance();
+}
+function financeMoney(minor) {
+  return 'Rp' + new Intl.NumberFormat('id-ID').format(minor / 100);
+}
+async function loadFinance() {
+  const request = ++financeRequest;
+  const host = $('finance-list');
+  if (!markRefreshing('finance-list')) { pageState('finance-message', 'loading', 'Memuat data keuangan…'); host.replaceChildren(); }
+  try {
+    let rows = [];
+    if (financeTab === 'coa') {
+      const result = await api.get('/api/coa-accounts?status=all&limit=500');
+      rows = result.items;
+    } else if (financeTab === 'periods') {
+      const result = await api.get('/api/accounting-periods?status=all&limit=500');
+      rows = result.items;
+    } else if (financeTab === 'journals') {
+      const result = await api.get('/api/journals?limit=500');
+      rows = result.items;
+    } else if (financeTab === 'trial') {
+      const periods = (await api.get('/api/accounting-periods?status=all&limit=500')).items;
+      const open = periods.find(p => p.status === 'open') || periods[0];
+      financeCache = periods;
+      rows = open ? [(await api.get(`/api/trial-balance?period_id=${encodeURIComponent(open.id)}`))] : [];
+    }
+    if (request !== financeRequest || view !== 'finance') return;
+    settleRefreshing('finance-list');
+    financeCache = rows;
+    paintFinance();
+  } catch (error) {
+    if (request !== financeRequest || view !== 'finance') return;
+    settleRefreshing('finance-list');
+    pageState('finance-message', 'error', 'Gagal memuat', error.message);
+  }
+}
+function paintFinance() {
+  $('finance-heading').textContent = FINANCE_TABS[financeTab];
+  $('finance-count').textContent = financeTab === 'trial' ? '' : `${financeCache.length} baris`;
+  $('finance-note').hidden = financeTab === 'trial';
+  const host = $('finance-list');
+  pageState('finance-message', '');
+  if (!financeCache.length) {
+    host.innerHTML = `<p class="state">Belum ada data.</p>` +
+      (user.role === 'admin' && financeTab === 'coa'
+        ? `<p><button type="button" class="primary" id="finance-seed">Seed 13 akun COA demo (sintetis)</button></p>` : '');
+    const seedButton = $('finance-seed');
+    if (seedButton) seedButton.onclick = seedDemoCoa;
+    return;
+  }
+  if (financeTab === 'coa') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(a => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(a.code)} · ${e(a.name)}</h3>
+        <p class="record-meta">${e(ACCOUNT_TYPES[a.type] || a.type)} · ${a.active ? 'Aktif' : 'Nonaktif'}</p></div>
+        <div class="record-actions">${user.role === 'admin' ? (a.active
+          ? `<button type="button" data-finance="deactivate-account" data-id="${e(a.id)}">Nonaktifkan</button>`
+          : `<button type="button" data-finance="activate-account" data-id="${e(a.id)}">Aktifkan</button>`) : ''}</div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'periods') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(p => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(p.code)}</h3>
+        <p class="record-meta">${e(p.start_date)} s.d. ${e(p.end_date)} · ${p.status === 'open' ? 'Terbuka' : 'Tertutup'} · revisi ${p.revision}</p></div>
+        <div class="record-actions">${user.role === 'admin' ? (p.status === 'open'
+          ? `<button type="button" data-finance="close-period" data-id="${e(p.id)}" data-rev="${p.revision}">Tutup</button>`
+          : `<button type="button" data-finance="open-period" data-id="${e(p.id)}" data-rev="${p.revision}">Buka kembali</button>`) : ''}</div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'journals') {
+    host.innerHTML = `<div class="record-list">${financeCache.map(j => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(j.code)}</h3>
+        <p class="record-meta">${e(j.journal_date)} · ${e(j.period_code)} · ${e(j.description)}</p>
+        <p class="record-meta">D ${financeMoney(j.total_debit_minor)} · K ${financeMoney(j.total_credit_minor)}${j.reversal_of ? ` · reversal dari ${e(j.reversal_of)}` : ''}${j.reversed_by_id ? ' · sudah di-reversal' : ''}</p></div>
+        <div class="record-actions">
+          <button type="button" data-finance="journal-detail" data-id="${e(j.id)}">Rincian</button>
+          ${user.role === 'admin' && !j.reversed_by_id && !j.reversal_of ? `<button type="button" data-finance="journal-reverse" data-id="${e(j.id)}">Reversal</button>` : ''}
+        </div>
+      </article>`).join('')}</div>`;
+  } else if (financeTab === 'trial') {
+    const tb = financeCache[0];
+    host.innerHTML = `
+      <p class="record-meta">Total debit ${financeMoney(tb.total_debit_minor)} · Total kredit ${financeMoney(tb.total_credit_minor)} ·
+      <strong>${tb.balanced ? 'Seimbang' : 'TIDAK SEIMBANG'}</strong></p>
+      <div class="record-list">${tb.items.filter(i => i.debit_minor || i.credit_minor).map(i => `
+      <article class="record-card">
+        <div class="record-main"><h3 class="record-title">${e(i.code)} · ${e(i.name)}</h3>
+        <p class="record-meta">${e(ACCOUNT_TYPES[i.type] || i.type)}</p></div>
+        <div class="record-amounts"><span>D ${financeMoney(i.debit_minor)}</span><span>K ${financeMoney(i.credit_minor)}</span></div>
+      </article>`).join('') || '<p class="state">Belum ada mutasi pada periode ini.</p>'}</div>`;
+  }
+  host.querySelectorAll('[data-finance]').forEach(button => {
+    button.onclick = () => financeAction(button.dataset.finance, button.dataset);
+  });
+}
+async function financeAction(action, dataset) {
+  if (action === 'deactivate-account' || action === 'activate-account') {
+    const active = action === 'activate-account';
+    openDialog(active ? 'Aktifkan akun' : 'Nonaktifkan akun',
+      `<p>Akun ${active ? 'dapat' : 'tidak dapat'} dipakai untuk jurnal baru. Histori tetap terbaca.</p>
+       <div class="form-actions"><button type="button" data-action="cancel-form">Batal</button>
+       <button type="button" class="primary" id="finance-confirm">Ya, lanjutkan</button></div>`, 'compact');
+    $('finance-confirm').onclick = async () => {
+      try {
+        await api.save(api.transaction(`/api/coa-accounts/${encodeURIComponent(dataset.id)}/${active ? 'activate' : 'deactivate'}`, {}));
+        closeDialog(); notify('Status akun diperbarui.'); loadFinance();
+      } catch (error) { notify(error.message); }
+    };
+  } else if (action === 'close-period' || action === 'open-period') {
+    const closing = action === 'close-period';
+    formDialog(closing ? 'Tutup periode' : 'Buka kembali periode',
+      `<label class="field"><span class="field-label">Alasan</span>
+        <input name="reason" maxlength="1000" required placeholder="Alasan ${closing ? 'penutupan' : 'pembukaan kembali'}"></label>`,
+      form => ({reason: new FormData(form).get('reason'), expected_revision: Number(dataset.rev)}),
+      `/api/accounting-periods/${encodeURIComponent(dataset.id)}/${closing ? 'close' : 'reopen'}`,
+      closing ? 'Posting ke periode tertutup akan ditolak.' : 'Pembukaan kembali tercatat di audit.');
+  } else if (action === 'journal-detail') {
+    const journal = await api.get(`/api/journals/${encodeURIComponent(dataset.id)}`);
+    openDialog(`Jurnal ${journal.code}`,
+      `<p class="record-meta">${e(journal.journal_date)} · ${e(journal.period_code)}</p>
+       <p>${e(journal.description)}</p>
+       <p class="record-meta">Sumber: ${e(journal.source_system)}/${e(journal.source_account)}/${e(journal.source_entity_type)}/${e(journal.source_id)} · Kebijakan: ${e(journal.policy_ref)}</p>
+       ${journal.reversal_of ? `<p class="record-meta">Reversal dari ${e(journal.reversal_of)}</p>` : ''}
+       <table class="data-table"><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead><tbody>
+       ${journal.lines.map(l => `<tr><td>${e(l.account_code)} · ${e(l.account_name)}</td><td>${financeMoney(l.debit_minor)}</td><td>${financeMoney(l.credit_minor)}</td></tr>`).join('')}
+       </tbody></table>`, 'standard');
+  } else if (action === 'journal-reverse') {
+    const periods = (await api.get('/api/accounting-periods?status=open&limit=500')).items;
+    if (!periods.length) { notify('Tidak ada periode terbuka untuk reversal.'); return; }
+    formDialog('Reversal jurnal',
+      `<label class="field"><span class="field-label">Periode reversal (terbuka)</span>
+        <select name="period_id">${periods.map(p => `<option value="${e(p.id)}">${e(p.code)}</option>`).join('')}</select></label>
+       <label class="field"><span class="field-label">Tanggal jurnal</span><input name="journal_date" type="date" required></label>
+       <label class="field"><span class="field-label">Alasan reversal</span><input name="reason" maxlength="1000" required></label>`,
+      form => { const data = new FormData(form); return {period_id: data.get('period_id'), journal_date: data.get('journal_date'), reason: data.get('reason')}; },
+      `/api/journals/${encodeURIComponent(dataset.id)}/reverse`,
+      'Reversal membuat jurnal baru yang menautkan jurnal asal; jurnal asal tidak diubah.');
+  }
+}
+function financeForm() {
+  if (financeTab === 'coa') {
+    formDialog('Tambah akun COA',
+      `<label class="field"><span class="field-label">Kode akun</span><input name="code" maxlength="20" required></label>
+       <label class="field"><span class="field-label">Nama akun</span><input name="name" maxlength="160" required></label>
+       <label class="field"><span class="field-label">Jenis</span><select name="type">
+       ${Object.entries(ACCOUNT_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>`,
+      form => { const data = new FormData(form); return {code: data.get('code'), name: data.get('name'), type: data.get('type')}; },
+      '/api/coa-accounts', 'Kode akun stabil dan tidak dapat diubah setelah dibuat.');
+  } else if (financeTab === 'periods') {
+    formDialog('Tambah periode akuntansi',
+      `<label class="field"><span class="field-label">Kode periode</span><input name="code" maxlength="20" required placeholder="2026-10"></label>
+       <label class="field"><span class="field-label">Tanggal mulai</span><input name="start_date" type="date" required></label>
+       <label class="field"><span class="field-label">Tanggal akhir</span><input name="end_date" type="date" required></label>`,
+      form => { const data = new FormData(form); return {code: data.get('code'), start_date: data.get('start_date'), end_date: data.get('end_date')}; },
+      '/api/accounting-periods', 'Periode tidak boleh tumpang tindih.');
+  } else if (financeTab === 'journals') {
+    journalForm();
+  }
+}
+async function journalForm() {
+  const [periods, accounts] = await Promise.all([
+    api.get('/api/accounting-periods?status=open&limit=500'),
+    api.get('/api/coa-accounts?status=active&limit=500'),
+  ]);
+  if (!periods.items.length) { notify('Buat periode terbuka terlebih dahulu.'); return; }
+  const accountOptions = accounts.items.map(a => `<option value="${e(a.code)}">${e(a.code)} · ${e(a.name)}</option>`).join('');
+  const lineRow = (index) => `
+    <div class="journal-line" data-line="${index}">
+      <label class="field"><span class="field-label">Akun</span><select name="account_code">${accountOptions}</select></label>
+      <label class="field"><span class="field-label">Debit</span><input name="debit" inputmode="decimal" placeholder="0.00" value="0"></label>
+      <label class="field"><span class="field-label">Kredit</span><input name="credit" inputmode="decimal" placeholder="0.00" value="0"></label>
+    </div>`;
+  openDialog('Posting jurnal',
+    `<form id="journal-form">
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Periode</span><select name="period_id">
+          ${periods.items.map(p => `<option value="${e(p.id)}">${e(p.code)}</option>`).join('')}</select></label>
+        <label class="field"><span class="field-label">Tanggal jurnal</span><input name="journal_date" type="date" required></label>
+        <label class="field"><span class="field-label">Deskripsi</span><input name="description" maxlength="1000" required></label>
+        <label class="field"><span class="field-label">ID sumber</span><input name="source_id" maxlength="160" required placeholder="EVT-..."></label>
+      </div>
+      <div id="journal-lines">${lineRow(0)}${lineRow(1)}</div>
+      <div class="form-actions"><button type="button" id="journal-add-line">Tambah baris</button></div>
+      <p class="error" id="journal-error" role="alert" hidden></p>
+      <div class="form-actions"><button type="button" data-action="cancel-form">Batal</button>
+      <button class="primary" type="submit" id="journal-save">Posting jurnal</button></div>
+    </form>`, 'standard');
+  let lineCount = 2;
+  $('journal-add-line').onclick = () => {
+    $('journal-lines').insertAdjacentHTML('beforeend', lineRow(lineCount++));
+  };
+  $('journal-form').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const lines = [...form.querySelectorAll('.journal-line')].map(row => ({
+      account_code: row.querySelector('[name=account_code]').value,
+      debit: row.querySelector('[name=debit]').value.trim() || '0',
+      credit: row.querySelector('[name=credit]').value.trim() || '0',
+    }));
+    const payload = {
+      period_id: data.get('period_id'), journal_date: data.get('journal_date'),
+      description: data.get('description'), policy_ref: 'DEMO-POST-20260928-1',
+      source: {system: 'beeloft', account: 'manual', entity_type: 'manual_journal', id: data.get('source_id')},
+      lines,
+    };
+    message('journal-error', '');
+    $('journal-save').disabled = true;
+    try {
+      await api.save(api.transaction('/api/journals', payload));
+      closeDialog(); notify('Jurnal terposting.'); loadFinance();
+    } catch (error) {
+      message('journal-error', error.message); $('journal-save').disabled = false;
+    }
+  };
+}
+async function seedDemoCoa() {
+  if (guardPending()) return;
+  openDialog('Seed COA demo', '<p class="state">Membuat 13 akun sintetis demo…</p>', 'compact');
+  try {
+    const result = await api.save(api.transaction('/api/coa-accounts/seed-demo', {}));
+    closeDialog();
+    notify(`COA demo: ${result.created.length} dibuat, ${result.skipped.length} sudah ada.`);
+    loadFinance();
+  } catch (error) {
+    if ($('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p>`;
+  }
+}
+$('finance').onclick = showFinance;
+$('finance-back').onclick = showBoard;
+$('finance-refresh').onclick = loadFinance;
+$('finance-new').onclick = financeForm;
+document.querySelectorAll('[data-finance-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    financeTab = button.dataset.financeTab;
+    document.querySelectorAll('[data-finance-tab]').forEach(tab =>
+      tab.setAttribute('aria-selected', String(tab === button)));
+    $('finance-new').hidden = user.role !== 'admin' || financeTab === 'trial';
+    $('finance-new').textContent = financeTab === 'coa' ? 'Tambah akun / seed demo'
+      : financeTab === 'periods' ? 'Tambah periode'
+      : financeTab === 'journals' ? 'Posting jurnal' : 'Tambah';
+    if (view === 'finance') loadFinance(); else showFinance();
+  });
+});
+
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;
@@ -2390,6 +2704,8 @@ document.addEventListener('click', event => {
     'product-service-apply':()=>applyServiceTemplateForm(null,id,false),
     'product-service-preview':()=>productServicePreviewDialog(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
+    'approve-plan':()=>planDecisionForm(selected?.id,'approve'),'close-plan':()=>planDecisionForm(selected?.id,'close'),
+    'export-cutting':()=>exportCuttingCsv(selected?.id,selected?.reference),
     bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':()=>navigateFromDialog(()=>showScanner('bundle')),
     'bundle-handoffs':()=>bundleHandoffsDialog(id),'new-bundle-handoff':()=>bundleHandoffForm(id),
     'accept-bundle-handoff':()=>acceptBundleHandoffForm(id),'cancel-bundle-handoff':()=>cancelBundleHandoffForm(id),
@@ -2897,7 +3213,9 @@ async function cuttingRunsDialog(orderId) {
     if(!current())return;
     $('dialog-content').innerHTML=`<p class="form-info">${e(order.reference)}</p><p class="hint">Hubungkan pemakaian satu pengeluaran bahan dengan hasil potongan per SKU. Hasil yang dicatat berpindah dari cutting ke sewing.</p>
       ${user.role!=='viewer'?`<button data-action="new-cutting" data-id="${e(orderId)}">Catat hasil cutting</button>`:''}
+      <button id="cutting-export">Unduh CSV cutting</button>
       <div id="cutting-list"></div><p id="cutting-error" class="error" role="alert" hidden></p><button id="cutting-more">Muat hasil sebelumnya</button>`;
+    $('cutting-export').onclick=()=>exportCuttingCsv(orderId, order.reference);
     let before=null;
     const load=async()=>{
       const button=$('cutting-more');button.disabled=true;message('cutting-error','');
@@ -2923,26 +3241,79 @@ async function cuttingForm(orderId) {
     const issues=rows.filter(i=>!i.reversed_by && Number(i.unreported)>0),lines=order.lines.filter(l=>l.balances.cutting>0);
     if(!issues.length || !lines.length){$('dialog-content').innerHTML='<p>Siapkan pengeluaran bahan yang belum dilaporkan pemakaiannya dan pcs di tahap cutting terlebih dahulu.</p>';return;}
     formDialog('Catat hasil cutting',field('reference','Referensi hasil cutting','text','required maxlength="160"')+
+      field('cut_date','Tanggal cutting','date','required')+
+      field('po_reference','Referensi PO (opsional)','text','maxlength="160" placeholder="Kosongkan bila tanpa PO"')+
+      field('weight_kg','Berat bahan terukur (kg, opsional)','number','min="0" step="0.001"')+
       `<div class="full"><label for="cutting-issue">Pengeluaran bahan</label><select id="cutting-issue" name="issue_id">${issues.map(i=>option(i.issue_id,`${i.batch_reference} · ${i.code} · belum dilaporkan ${materialQty(i.unreported,i.unit)} · ${purchaseStamp(i.created_at)} · ${i.issue_id}`)).join('')}</select></div>`+
       field('used','Bahan terpakai untuk hasil ini','number','required id="cutting-used"')+
       field('waste','Waste cutting','number','required id="cutting-waste" value="0"')+
-      '<p class="full hint">Isi hasil tiap SKU yang siap masuk sewing. Biarkan nol untuk SKU yang belum selesai.</p>'+
-      lines.map(l=>field('output-'+l.id,`Hasil ${e(l.sku)} (pcs)`,'number',`required min="0" max="${l.balances.cutting}" step="1" value="0"`)).join('')+materialReason,
+      '<div class="full"><h3>Rol kain (opsional)</h3><p class="hint">Satu baris per rol. Nomor rol unik; setiap baris wajib diisi berat (kg) dan/atau jumlah lembar.</p><div id="cutting-rolls"></div><p><button type="button" id="add-roll">Tambah rol</button></p></div>'+
+      '<p class="full hint">Isi hasil tiap SKU yang siap masuk sewing. Biarkan nol untuk SKU yang belum selesai. Komposisi di bawah hanya untuk estimasi — bukan angka aktual.</p>'+
+      lines.map(l=>field('output-'+l.id,`Hasil ${e(l.sku)} (pcs)`,'number',`required min="0" max="${l.balances.cutting}" step="1" value="0"`)
+        +`<div class="full"><p class="hint">Komposisi ${e(l.sku)} (opsional):</p></div>`
+        +field('setelan-'+l.id,'Setelan per lembar','number','min="1" step="1" placeholder="cth 3"')
+        +field('pw-'+l.id,'Berat produk (gram)','number','min="0" step="0.001"')
+        +field('mu-'+l.id,'Pemakaian bahan aktual (gram)','number','min="0" step="0.001"')).join('')+materialReason,
       form=>{
         const data=new FormData(form),outputs=lines.map(l=>({line_id:l.id,quantity:Number(data.get('output-'+l.id))})).filter(l=>l.quantity>0);
         if(!outputs.length)throw new Error('Isi setidaknya satu SKU dengan jumlah hasil lebih dari nol.');
         const issue=issues.find(i=>i.issue_id===data.get('issue_id'));
         const milli=value=>Math.round(Number(value)*1000);
         if(milli(data.get('used'))+milli(data.get('waste'))>milli(issue.unreported))throw new Error('Bahan terpakai + waste melebihi jumlah yang belum dilaporkan.');
-        return {reference:data.get('reference'),issue_id:issue.issue_id,used:data.get('used'),waste:data.get('waste'),reason:data.get('reason'),outputs};
+        const rolls=[...form.querySelectorAll('.roll-input')].map(row=>{
+          const no=row.querySelector('[data-roll="no"]').value,weight=row.querySelector('[data-roll="weight"]').value,
+                sheets=row.querySelector('[data-roll="sheets"]').value,note=row.querySelector('[data-roll="note"]').value.trim();
+          return {roll_no:Number(no),weight_kg:weight===''||weight==null?null:weight,sheets:sheets===''||sheets==null?null:Number(sheets),note:note||null};
+        }).filter(r=>r.roll_no>0);
+        if(new Set(rolls.map(r=>r.roll_no)).size!==rolls.length)throw new Error('Nomor rol harus unik.');
+        for(const r of rolls)if(r.weight_kg==null&&r.sheets==null)throw new Error('Setiap baris rol wajib diisi berat (kg) atau jumlah lembar.');
+        const output_params=outputs.map(o=>{
+          const setelan=data.get('setelan-'+o.line_id),pw=data.get('pw-'+o.line_id),mu=data.get('mu-'+o.line_id);
+          if(!setelan&&!pw&&!mu)return null;
+          if(setelan&&(!Number.isInteger(Number(setelan))||Number(setelan)<1))throw new Error('Setelan per lembar harus bilangan bulat minimal 1.');
+          return {line_id:o.line_id,setelan_per_lembar:setelan?Number(setelan):null,product_weight_gram:pw||null,material_used_gram:mu||null};
+        }).filter(Boolean);
+        return {reference:data.get('reference'),issue_id:issue.issue_id,used:data.get('used'),waste:data.get('waste'),
+          reason:data.get('reason'),cut_date:data.get('cut_date'),
+          po_reference:(data.get('po_reference')||'').trim()||null,
+          weight_kg:data.get('weight_kg')||null,rolls,output_params,outputs};
       },'/api/orders/'+encodeURIComponent(orderId)+'/cutting-runs',
-      `${order.reference}\nSimpan sekali untuk mencatat bahan terpakai, waste, dan perpindahan pcs cutting ke sewing. Gunakan hanya untuk hasil yang belum dicatat sebagai pemakaian maupun perpindahan terpisah. Stok rak sudah dipotong saat bahan dikeluarkan.`);
+      `${order.reference}\nSimpan sekali untuk mencatat bahan terpakai, waste, dan perpindahan pcs cutting ke sewing. Gunakan hanya untuk hasil yang belum dicatat sebagai pemakaian maupun perpindahan terpisah. Stok rak sudah dipotong saat bahan dikeluarkan. Rencana harus sudah disetujui admin.`);
+    const today=new Date(),todayStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+    const cutDateInput=document.querySelector('input[name="cut_date"]');if(cutDateInput)cutDateInput.value=todayStr;
+    let rollSeq=0;
+    $('add-roll').onclick=()=>{
+      const row=document.createElement('div');row.className='roll-input';
+      row.innerHTML=`<label>Nomor rol <input data-roll="no" type="number" required min="1" step="1" value="${++rollSeq}"></label>`
+        +`<label>Berat (kg) <input data-roll="weight" type="number" min="0" step="0.001"></label>`
+        +`<label>Lembar <input data-roll="sheets" type="number" min="0" step="1"></label>`
+        +`<label>Catatan <input data-roll="note" type="text" maxlength="160"></label>`
+        +' <button type="button" aria-label="Hapus baris rol">Hapus</button>';
+      row.querySelector('button').onclick=()=>row.remove();
+      $('cutting-rolls').append(row);
+    };
     const update=()=>{
       const issue=issues.find(i=>i.issue_id===$('cutting-issue').value),step=issue.unit==='pcs'?'1':'0.001';
       for(const name of ['used','waste']){const input=$('cutting-'+name);input.min=name==='used'?step:'0';input.step=step;input.max=issue.unreported;}
     };
     $('cutting-issue').onchange=update;update();
   } catch(error){if(version===epoch && modal===dialogVersion && $('dialog').open)$('dialog-content').innerHTML=`<p class="error">${e(error.message)}</p><button data-action="new-cutting" data-id="${e(orderId)}">Coba lagi</button>`;}
+}
+
+// P02 (issue #49): parameter operasional + rekonsiliasi bahan per run cutting.
+// Sengaja tanpa primitif A6: workflow cutting belum dimigrasi (kontrak A6.0).
+function cuttingDetailHtml(d) {
+  const m = d.material_issue || {};
+  const rows = [];
+  rows.push(['Tanggal cutting', d.cut_date ? date(d.cut_date) : '—']);
+  if (d.po_reference) rows.push(['Referensi PO', e(d.po_reference) + (d.purchase_order ? (d.purchase_order.cancelled ? ' (dibatalkan)' : '') : '')]);
+  if (d.weight_kg) rows.push(['Berat bahan terukur', e(d.weight_kg) + ' kg']);
+  if (d.roll_count) rows.push(['Rol kain', d.roll_count + ' rol' + (d.total_roll_weight_kg ? ' · ' + e(d.total_roll_weight_kg) + ' kg' : '') + (d.sheets_complete ? ' · ' + n(d.total_sheets) + ' lembar' : '')]);
+  for (const r of d.rolls) rows.push(['Rol ' + r.roll_no, (r.weight_kg != null ? e(r.weight_kg) + ' kg' : '') + (r.weight_kg != null && r.sheets != null ? ' · ' : '') + (r.sheets != null ? n(r.sheets) + ' lembar' : '') + (r.note ? ' · ' + e(r.note) : '')]);
+  return `<div style="border:1px solid #d4d4d4;border-radius:8px;padding:12px;margin:12px 0"><p><strong>Parameter operasional</strong></p>
+    <table>${rows.map(r => `<tr><td style="padding:2px 12px 2px 0;color:#666">${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>
+    ${m.issued != null ? `<p class="hint">Rekonsiliasi bahan (tingkat pengeluaran): dikeluarkan ${e(materialQty(m.issued, m.unit))} = terpakai ${e(materialQty(m.used, m.unit))} + waste ${e(materialQty(m.waste, m.unit))} + belum dilaporkan ${e(materialQty(m.unreported, m.unit))}.</p>` : ''}
+    <p class="hint">Ref kebijakan: ${e(d.calculation_policy_ref || '—')}</p></div>`;
 }
 
 async function cuttingRunDialog(id) {
@@ -2954,7 +3325,8 @@ async function cuttingRunDialog(id) {
     $('dialog-content').innerHTML=`<p class="form-info">${e(run.reference)} · ${e(run.order_reference)}</p><h3>${n(run.total_output)} pcs hasil cutting</h3>
       <p>${e(run.batch_reference)} · ${e(run.code)}</p><p>Bahan terpakai ${e(materialQty(run.used,run.unit))} · waste ${e(materialQty(run.waste,run.unit))}</p>
       <p class="reason">${e(run.reason)}</p><p class="hint">${e(run.actor_name)} · ${purchaseStamp(run.created_at)}</p>
-      ${run.outputs.map(o=>`<article class="material-event"><strong>${e(o.sku)} · ${e(o.size)} · ${e(o.color)}</strong><p>${n(o.quantity)} pcs hasil · ${n(o.bundled_quantity)} sudah dibundel · ${n(o.unbundled_quantity)} belum dibundel${run.reversal?' · cutting sudah dikoreksi':''}</p>${user.role!=='viewer' && !run.reversal && o.unbundled_quantity>0?`<button data-action="new-bundle" data-id="${e(run.id)}" data-output="${e(o.id)}">Buat bundle</button>`:''}</article>`).join('')}
+      ${run.detail ? cuttingDetailHtml(run.detail) : '<p class="hint">Hasil cutting lama: tanpa parameter operasional.</p>'}
+      ${run.outputs.map(o=>`<article class="material-event"><strong>${e(o.sku)} · ${e(o.size)} · ${e(o.color)}</strong><p>${n(o.quantity)} pcs hasil (run ini)${o.target_quantity!=null?` · target ${n(o.target_quantity)} · terealisasi lini ${n(o.line_realized_quantity)} · sisa target ${n(o.line_remaining_target)}`:''} · ${n(o.bundled_quantity)} sudah dibundel · ${n(o.unbundled_quantity)} belum dibundel${run.reversal?' · cutting sudah dikoreksi':''}</p>${o.estimate_basis?`<p class="hint">Estimasi (bukan aktual): ${n(o.estimated_output_pcs)} pcs — ${e(o.estimate_basis)}</p>`:''}${o.setelan_per_lembar||o.product_weight_gram||o.material_used_gram?`<p>${o.setelan_per_lembar?`Setelan ${n(o.setelan_per_lembar)}/lembar · `:''}${o.product_weight_gram?`berat produk ${e(o.product_weight_gram)} g · `:''}${o.material_used_gram?`pemakaian aktual ${e(o.material_used_gram)} g`:''}${o.estimated_material_gram?` · estimasi bahan ${e(o.estimated_material_gram)} g`:''}</p>`:''}${user.role!=='viewer' && !run.reversal && o.unbundled_quantity>0?`<button data-action="new-bundle" data-id="${e(run.id)}" data-output="${e(o.id)}">Buat bundle</button>`:''}</article>`).join('')}
       ${run.bundles.length?`<h3>Bundle dari hasil ini</h3>${run.bundles.map(b=>`<article class="material-event"><strong>${e(b.reference)} · ${n(b.quantity)} pcs</strong><p>${e(b.sku)} · ${e(b.size)} · ${b.status==='active'?'Aktif':'Sudah dikoreksi'}</p><button data-action="bundle" data-id="${e(b.id)}" aria-label="Rincian ${e(b.reference)}">Rincian bundle</button></article>`).join('')}`:''}
       ${run.reversal?`<article class="material-event"><h3>Hasil cutting dikoreksi</h3><p class="reason">${e(run.reversal.reason)}</p><p class="hint">${e(run.reversal.actor_name)} · ${purchaseStamp(run.reversal.created_at)}</p></article>`:''}
       <div class="actions"><button id="cutting-order">Buka order produksi</button><button data-action="material-batch" data-id="${e(run.batch_id)}">Batch bahan asal</button>

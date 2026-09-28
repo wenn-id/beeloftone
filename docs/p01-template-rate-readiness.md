@@ -6,7 +6,7 @@ v0.97.0/schema 55. **BLOCKED_M01_M02: belum implementasi atau business accepted.
 
 > **Status 28 September 2026 — implementasi P01 sudah mendarat.** M01 #43 dan M02 #44
 > merged (PR #113/#115), sehingga gerbang dependensi terbuka. Implementasi memakai
-> **migrasi schema 58** (`beeloft/service_templates.sql`) dan mempublikasikan kontrak
+> **migrasi schema 60** (`beeloft/service_templates.sql`) dan mempublikasikan kontrak
 > resolver/snapshot di [p01-rate-resolver.md](p01-rate-resolver.md). Kesiapan teknis
 > bukan business accepted: D04/D05/D17 masih OPEN, jadi basis tarif, tanggal acuan,
 > presisi/pembulatan dan hak akses nominal yang dipakai sekarang berlabel
@@ -106,7 +106,7 @@ revision guard, transaksi atomik dan audit. Uji dua penyimpan bersamaan, retry
 key sama/berbeda, revision basi, rollback kegagalan audit serta akses terlarang.
 UI perlu pemilihan SKU/pekerjaan yang jelas, riwayat efektif, loading/kosong/error,
 retry, keyboard dan pesan tarif hilang/nonaktif. Nomor migrasi sudah dipesan:
-**58** (`beeloft/service_templates.sql`); uji DB baru, upgrade dari schema 57, rerun, FK/integrity,
+**60** (`beeloft/service_templates.sql`); uji DB baru, upgrade dari schema 57, rerun, FK/integrity,
 control totals qty/uang dan backup/restore sintetis. Jangan mengubah ID/FK,
 cost job atau ledger lama untuk memasukkan asumsi tarif.
 

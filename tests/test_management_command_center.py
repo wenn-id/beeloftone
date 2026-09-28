@@ -16,6 +16,7 @@ class ManagementCommandCenterTest(TestCase):
     setup_stock = quality_tests.ProductionQualityInsightsTest.setup_stock
     prepare = quality_tests.ProductionQualityInsightsTest.prepare
     cut = quality_tests.ProductionQualityInsightsTest.cut
+    approve_cutting_plan=quality_tests.ProductionQualityInsightsTest.approve_cutting_plan
     create_bundle = quality_tests.ProductionQualityInsightsTest.create_bundle
     setup_bundle = quality_tests.ProductionQualityInsightsTest.setup_bundle
     setup_quality = quality_tests.ProductionQualityInsightsTest.setup_quality

@@ -159,7 +159,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 /* Focus is immediate and follows each control's shape without changing its radius. */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 input,select,textarea{
-  width:100%;min-height:var(--control-height);padding:.5rem var(--control-padding-x);
+  width:100%;min-width:0;min-height:var(--control-height);padding:.5rem var(--control-padding-x);
   border:1px solid var(--control-line);border-radius:var(--control-radius);
   background:var(--surface);color:var(--ink);font-size:var(--type-control);
 }
@@ -1425,6 +1425,7 @@ label>input,label>select,label>textarea{margin-top:6px}
    narrow viewport. A6.0's `pointer:coarse` step is ADDITIVE to that policy, not a replacement
    for it: this page may not lose a target size it already guaranteed. */
 @media(max-width:980px){
+  #detail-content .detail-field>dt{min-width:0;overflow-wrap:anywhere}
   #board-view button,#detail-view button,
   #board-view .command-filter,#board-view .command-filter>select,
   #board-view .command-search input{min-height:var(--touch-target-min)}

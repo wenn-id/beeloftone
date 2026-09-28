@@ -17,6 +17,10 @@ table,bundles,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/bundles.sql
 table,colors,A1,M01,A2,beeloft/master_catalog.sql
 table,cutting_run_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
 table,cutting_runs,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/cutting.sql
+table,cutting_run_details,A1,P02,A2,beeloft/planning_cutting.sql
+table,cutting_run_output_params,A1,P02,A2,beeloft/planning_cutting.sql
+table,cutting_run_rolls,A1,P02,A2,beeloft/planning_cutting.sql
+table,production_plans,A1,P02,A2,beeloft/planning_cutting.sql
 table,final_qc_record_reversals,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
 table,final_qc_records,A1,M01/P01/P02/P03/H01/H02,A2,beeloft/final_qc.sql
 table,finished_goods_adjustment_reversals,A2,M02/I01/B01/B02/S01/S02/A01/A02,A1,beeloft/returns_adjustments.sql
@@ -258,6 +262,10 @@ endpoint,GET /api/material-batches/{batch_id}/label.svg,A2,I01,A1,beeloft/api.py
 endpoint,POST /api/material-reservations,A1,P02/P03,A2,beeloft/api.py#reserve_material
 endpoint,POST /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#create_cutting_run
 endpoint,GET /api/orders/{order_id}/cutting-runs,A1,P02,A2,beeloft/api.py#cutting_runs
+endpoint,GET /api/orders/{order_id}/plan,A1,P02,A2,beeloft/api.py#production_plan
+endpoint,POST /api/orders/{order_id}/plan/approve,A1,P02,A2,beeloft/api.py#approve_production_plan
+endpoint,POST /api/orders/{order_id}/plan/close,A1,P02,A2,beeloft/api.py#close_production_plan
+endpoint,GET /api/orders/{order_id}/cutting-runs/export.csv,A1,P02,A2,beeloft/api.py#export_cutting_runs
 endpoint,GET /api/cutting-runs/{run_id},A1,P02,A2,beeloft/api.py#cutting_run
 endpoint,POST /api/cutting-runs/{run_id}/reverse,A1,P02,A2,beeloft/api.py#reverse_cutting_run
 endpoint,POST /api/cutting-runs/{run_id}/bundles,A1,P02/P03,A2,beeloft/api.py#create_bundle
@@ -431,6 +439,27 @@ endpoint,POST /api/bom-templates/{template_id}/changes,A1,M01,A2,beeloft/api.py#
 endpoint,POST /api/bom-templates/{template_id}/apply,A1,M01,A2,beeloft/api.py#apply_bom_template
 endpoint,POST /api/products/{product_id}/changes,A1,M01,A2,beeloft/api.py#change_product
 endpoint,POST /api/materials/{material_id}/changes,A1,M01,A2,beeloft/api.py#change_material
+table,coa_accounts,A1,A01,A0,beeloft/financial_ledger.sql
+table,accounting_periods,A1,A01,A0,beeloft/financial_ledger.sql
+table,journals,A1,A01,A0,beeloft/financial_ledger.sql
+table,journal_lines,A1,A01,A0,beeloft/financial_ledger.sql
+endpoint,GET /api/coa-accounts,A1,A01,A0,beeloft/api.py#list_coa_accounts
+endpoint,POST /api/coa-accounts,A1,A01,A0,beeloft/api.py#create_coa_account
+endpoint,POST /api/coa-accounts/seed-demo,A1,A01,A0,beeloft/api.py#seed_demo_coa
+endpoint,GET /api/coa-accounts/{account_id},A1,A01,A0,beeloft/api.py#get_coa_account
+endpoint,POST /api/coa-accounts/{account_id}/deactivate,A1,A01,A0,beeloft/api.py#deactivate_coa_account
+endpoint,POST /api/coa-accounts/{account_id}/activate,A1,A01,A0,beeloft/api.py#activate_coa_account
+endpoint,GET /api/accounting-periods,A1,A01,A0,beeloft/api.py#list_accounting_periods
+endpoint,POST /api/accounting-periods,A1,A01,A0,beeloft/api.py#create_accounting_period
+endpoint,GET /api/accounting-periods/{period_id},A1,A01,A0,beeloft/api.py#get_accounting_period
+endpoint,POST /api/accounting-periods/{period_id}/close,A1,A01,A0,beeloft/api.py#close_accounting_period
+endpoint,POST /api/accounting-periods/{period_id}/reopen,A1,A01,A0,beeloft/api.py#reopen_accounting_period
+endpoint,GET /api/journals,A1,A01,A0,beeloft/api.py#list_journals
+endpoint,POST /api/journals,A1,A01,A0,beeloft/api.py#post_journal
+endpoint,GET /api/journals/{journal_id},A1,A01,A0,beeloft/api.py#get_journal
+endpoint,POST /api/journals/{journal_id}/reverse,A1,A01,A0,beeloft/api.py#reverse_journal
+endpoint,POST /api/purchase-orders/{order_id}/receipt-journal,A1,A01,A0,beeloft/api.py#post_po_receipt_journal
+endpoint,GET /api/trial-balance,A1,A01,A0,beeloft/api.py#get_trial_balance
 table,service_group_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql
 table,service_groups,A1,P01/P03/H01,A2,beeloft/service_templates.sql
 table,service_rate_events,A1,P01/P03/H01,A2,beeloft/service_templates.sql

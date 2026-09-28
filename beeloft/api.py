@@ -5,6 +5,7 @@ import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -18,16 +19,18 @@ from beeloft.models import MaterialUpdate, ProductUpdate
 from beeloft.models import MasterCreate, MasterUpdate, UomCreate, UomUpdate, ProductCategoryCreate, ProductCategoryUpdate, ProductSubcategoryCreate, ProductSubcategoryUpdate, ProductTypeCreate, ProductTypeUpdate, ProductSeriesCreate, ProductSeriesUpdate, ColorCreate, ColorUpdate, SizeCreate, SizeUpdate, MaterialClassCreate, MaterialClassUpdate
 from beeloft.models import BomTemplateCreate, BomTemplateUpdate, BomTemplateApply
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
-from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
+from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
 from beeloft.models import ServiceGroupChange, ServiceGroupCreate, ServiceRateDeactivate, ServiceRateSave, ServiceTemplateApply, ServiceTemplateChange, ServiceTemplateCreate, WorkTypeChange, WorkTypeCreate
+from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
+                            PeriodDecision, PoReceiptJournalCreate)
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
 from beeloft.labels import bundle_label_svg, finished_goods_label_svg, material_batch_label_svg
 from beeloft.oidc import OidcClient, OidcConfig, OidcError
-from beeloft.reports import activity_csv
+from beeloft.reports import activity_csv, cutting_runs_csv
 
 ActivityKind = Literal["all", "movement", "reversal", "issue_opened", "issue_resolved", "order_created", "order_changed"]
 MAX_EXPORT_ROWS = 10_000
@@ -74,7 +77,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.117.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.118.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -1047,6 +1050,28 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def reverse_cutting_run(run_id: str, body: ReversalCreate, user: Actor, key: RequestKey):
         return store.reverse_cutting_run(run_id, body.model_dump(mode='json'), user, key)
 
+    @app.get('/api/orders/{order_id}/plan', tags=['Planning'])
+    def production_plan(order_id: str, user: Actor):
+        return store.plan(order_id)
+
+    @app.post('/api/orders/{order_id}/plan/approve', status_code=201, tags=['Planning'])
+    def approve_production_plan(order_id: str, body: PlanDecision, user: Actor, key: RequestKey):
+        return store.approve_plan(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/orders/{order_id}/plan/close', status_code=201, tags=['Planning'])
+    def close_production_plan(order_id: str, body: PlanDecision, user: Actor, key: RequestKey):
+        return store.close_plan(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/orders/{order_id}/cutting-runs/export.csv', tags=['Cutting'], response_class=Response,
+             responses={200: {"content": {"text/csv": {}},
+                              "description": "CSV UTF-8 detail hasil cutting: parameter, satuan, referensi, estimasi."}})
+    def export_cutting_runs(order_id: str, user: Actor):
+        plan_code, runs = store.cutting_runs_export(order_id)
+        filename = f'beeloft-cutting-{plan_code}.csv'
+        return Response(cutting_runs_csv(plan_code, runs), media_type="text/csv", headers={
+            "Content-Disposition": 'attachment; filename="beeloft-cutting.csv"; '
+                                   f"filename*=UTF-8''{quote(filename, safe='')}", "Cache-Control": "no-store"})
+
     @app.post('/api/cutting-runs/{run_id}/bundles', status_code=201, tags=['Bundling'])
     def create_bundle(run_id: str, body: BundleCreate, user: Actor, key: RequestKey):
         return store.create_bundle(run_id, body.model_dump(mode='json'), user, key)
@@ -1854,5 +1879,89 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     @app.get('/api/storage-location-mappings/summary', tags=['Business Masters'])
     def location_mapping_summary(user: Actor):
         return store.location_mapping_summary()
+
+    # ------------------------------------------------------------------
+    # A01 (#46): Ledger keuangan dan kontrak posting.
+    # Seluruh mutasi (tulis) hanya untuk admin; baca untuk semua peran login.
+    # ------------------------------------------------------------------
+    @app.get('/api/coa-accounts', tags=['Finance'])
+    def coa_accounts(user: Actor, status: Literal['all', 'active', 'inactive'] = 'all',
+                     type: Literal['all', 'asset', 'liability', 'equity', 'revenue',
+                                   'expense'] = 'all',
+                     q: Annotated[str, Query(max_length=160)] = '',
+                     limit: Limit = 100, offset: Offset = 0):
+        return store.coa_accounts(status, '' if type == 'all' else type, q, limit, offset)
+
+    @app.post('/api/coa-accounts', status_code=201, tags=['Finance'])
+    def create_coa_account(body: CoaAccountCreate, user: Actor, key: RequestKey):
+        return store.create_account(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/coa-accounts/seed-demo', status_code=201, tags=['Finance'])
+    def seed_demo_coa(user: Actor, key: RequestKey):
+        return store.seed_demo_coa(user, key)
+
+    @app.get('/api/coa-accounts/{account_id}', tags=['Finance'])
+    def coa_account(account_id: str, user: Actor):
+        return store.coa_account(account_id)
+
+    @app.post('/api/coa-accounts/{account_id}/deactivate', status_code=200, tags=['Finance'])
+    def deactivate_coa_account(account_id: str, user: Actor, key: RequestKey):
+        return store.set_account_active(account_id, False, user, key)
+
+    @app.post('/api/coa-accounts/{account_id}/activate', status_code=200, tags=['Finance'])
+    def activate_coa_account(account_id: str, user: Actor, key: RequestKey):
+        return store.set_account_active(account_id, True, user, key)
+
+    @app.get('/api/accounting-periods', tags=['Finance'])
+    def accounting_periods(user: Actor, status: Literal['all', 'open', 'closed'] = 'all',
+                           limit: Limit = 100, offset: Offset = 0):
+        return store.accounting_periods(status, limit, offset)
+
+    @app.post('/api/accounting-periods', status_code=201, tags=['Finance'])
+    def create_accounting_period(body: AccountingPeriodCreate, user: Actor, key: RequestKey):
+        return store.create_period(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/accounting-periods/{period_id}', tags=['Finance'])
+    def accounting_period(period_id: str, user: Actor):
+        return store.accounting_period(period_id)
+
+    @app.post('/api/accounting-periods/{period_id}/close', status_code=200, tags=['Finance'])
+    def close_accounting_period(period_id: str, body: PeriodDecision, user: Actor, key: RequestKey):
+        return store.close_period(period_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/accounting-periods/{period_id}/reopen', status_code=200, tags=['Finance'])
+    def reopen_accounting_period(period_id: str, body: PeriodDecision, user: Actor, key: RequestKey):
+        return store.reopen_period(period_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/journals', tags=['Finance'])
+    def journals(user: Actor, period_id: Annotated[str, Query(max_length=160)] = '',
+                 account_code: Annotated[str, Query(max_length=20)] = '',
+                 q: Annotated[str, Query(max_length=160)] = '',
+                 limit: Limit = 100, offset: Offset = 0):
+        return store.journals(period_id, account_code, q, limit, offset)
+
+    @app.post('/api/journals', status_code=201, tags=['Finance'])
+    def post_journal(body: JournalCreate, user: Actor, key: RequestKey):
+        return store.post_journal(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/journals/{journal_id}', tags=['Finance'])
+    def journal(journal_id: str, user: Actor):
+        return store.journal(journal_id)
+
+    @app.post('/api/journals/{journal_id}/reverse', status_code=201, tags=['Finance'])
+    def reverse_journal(journal_id: str, body: JournalReverse, user: Actor, key: RequestKey):
+        return store.reverse_journal(journal_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/purchase-orders/{order_id}/receipt-journal', status_code=201,
+              tags=['Finance'])
+    def post_po_receipt_journal(order_id: str, body: PoReceiptJournalCreate,
+                                user: Actor, key: RequestKey):
+        return store.post_po_receipt_journal(order_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/trial-balance', tags=['Finance'])
+    def trial_balance(user: Actor,
+                      period_id: Annotated[str, Query(max_length=160)] = '',
+                      business_unit_id: Annotated[str, Query(max_length=160)] = ''):
+        return store.trial_balance(period_id, business_unit_id)
 
     return app

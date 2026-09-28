@@ -196,6 +196,6 @@ BEGIN SELECT RAISE(ABORT,'service_template_applications history is immutable'); 
 CREATE TRIGGER IF NOT EXISTS service_template_applications_no_delete BEFORE DELETE ON service_template_applications
 BEGIN SELECT RAISE(ABORT,'service_template_applications history is immutable'); END;
 
-PRAGMA user_version = 58;
+PRAGMA user_version = 60;
 
 COMMIT;

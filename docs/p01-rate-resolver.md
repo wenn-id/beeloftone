@@ -12,7 +12,7 @@ slip gaji atau posting jurnal; P01 hanya menyediakan resolver, snapshot, dan his
 
 ## Aturan pemilihan tarif
 
-Scope tarif pada schema 58 adalah **jenis pekerjaan** (`service_work_types`). Scope product/employee
+Scope tarif pada schema 60 adalah **jenis pekerjaan** (`service_work_types`). Scope product/employee
 menunggu D04; lihat `docs/f01-owner-decisions.md` D04.
 
 1. Tanggal acuan adalah **tanggal pengerjaan** (business date ISO `YYYY-MM-DD`, zona `Asia/Jakarta`).

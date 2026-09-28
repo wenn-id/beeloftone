@@ -127,13 +127,18 @@ MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-vi
                      'activity-view', 'audit-view', 'backup-view',
                      'purchase-requests-view', 'marketing-budgets-view', 'approvals-view',
                      'master-catalog-view',          # M01 (#43): the master-catalog workspace
-                     'masters-view')                 # M02 (#44): the business-masters workspace
+                     'masters-view',                # M02 (#44): the business-masters workspace
+                     'finance-view')                 # A01 (#46): the finance workspace
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
     'loadBoard',      # the board: heading, metric strip, command bar, data surface
     'renderDetail', 'renderHistory', 'renderIssues',
     'orderForm',      # the create-order form's own fields
+    # ---- P02 (issue #49): the planning section inside the Produksi order detail ----
+    # renderDetail is an A6.1 migrated renderer; the plan section is its subsection, so
+    # it speaks the same primitive language instead of inventing a second one.
+    'planSection',
     # ---- A6.2: Bahan baku ----
     'reasonField',    # the shared A6 reason textarea the migrated forms consume
     'loadMaterials',  # the batch inventory surface, its states and its pagination label
@@ -247,11 +252,13 @@ MIGRATED_RENDERERS = frozenset({
     'masterFormField',
     'masterEditForm',                 # the create/change forms are formDialog() shells
     'masterHistoryDialog',
-    # ---- P01 (issue #48): Master jasa, template jasa, tarif upah berversi ----
-    'serviceGroupForm', 'workTypeForm', 'serviceComponentRow', 'serviceTemplateForm',
-    'workTypeRateDialog', 'serviceRateForm', 'deactivateServiceRateForm',
-    'serviceRatePreviewDialog', 'serviceTemplateHistoryDialog', 'applyServiceTemplateForm',
-    'productServiceDialog', 'productServicePreviewDialog',
+    # ---- A01: Keuangan (issue #46) ----
+    # The finance roster (COA/periods/journals/trial balance) built from the same A6.0
+    # record-list shapes; plus the journal posting form and its detail/reversal dialogs.
+    'paintFinance',
+    'financeAction',
+    'financeForm',
+    'journalForm',
 })
 
 
@@ -813,7 +820,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.117.0')
+        self.assertEqual(version, '0.118.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -823,7 +830,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 58, 'A6.0 is presentation only')
+        self.assertEqual(max(versions), 60, 'A01 adds schema 60 (P02 has 58)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -837,7 +844,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 270)
+        self.assertEqual(len(contract['paths']), 288, 'endpoints')
 
 
 if __name__ == '__main__':

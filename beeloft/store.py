@@ -227,7 +227,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -435,11 +435,37 @@ WHEN NEW.code<>OLD.code OR NEW.name<>OLD.name
     OR NEW.created_at<>OLD.created_at
 BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status aktif.'); END""")
             if version < 58:
+                with db:
+                    db.executescript(Path(__file__).with_name('planning_cutting.sql').read_text(encoding='utf-8'))
+                    # Database aplikasi normal selalu memiliki orders. Beberapa regression test
+                    # sengaja membangun partial legacy schema untuk menguji migrasi domain lain;
+                    # pada fixture itu P02 tetap membuat tabelnya tetapi tidak punya order untuk
+                    # dibackfill.
+                    has_orders = db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='orders'"
+                    ).fetchone()
+                    if has_orders:
+                        db.execute("""INSERT INTO production_plans(
+                            order_id,note,status,revision,created_by,created_at)
+                            SELECT o.id,
+                                   'Grandfathered: dibuat sebelum migrasi P02 (status planning belum ada).',
+                                   'approved',0,o.created_by,o.created_at
+                            FROM orders o
+                            WHERE NOT EXISTS(
+                                SELECT 1 FROM production_plans p WHERE p.order_id=o.id)""")
+
+            if version < 59:
+                # A01 (#46): ledger keuangan native — COA, periode akuntansi,
+                # journal header/lines, identitas sumber terstruktur, dan
+                # guardrail imutabilitas jurnal. Terpisah dari ledger
+                # kuantitas/operasional existing (movements/balances).
+                db.executescript(Path(__file__).with_name('financial_ledger.sql').read_text(encoding='utf-8'))
+            if version < 60:
                 # P01 (#48): jenis pekerjaan, kelompok jasa, template jasa
                 # berversi, tarif upah berversi dengan tanggal berlaku, plus
-                # histori penerapan template ke SKU. Semua tabel baru; tidak
-                # ada kolom existing yang diubah dan tidak ada ledger bahan
-                # kedua (sisi bahan tetap memakai bom_revisions #43).
+                # histori penerapan template ke SKU. Nomor 58/59 sudah dipakai
+                # P02 (#49) dan A01 (#46), jadi P01 memakai 60. Semua tabel
+                # baru; sisi bahan tetap memakai bom_revisions (#43).
                 db.executescript(Path(__file__).with_name('service_templates.sql').read_text(encoding='utf-8'))
 
     def connect(self):
@@ -700,7 +726,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         if isinstance(result,dict):
             subject_id=str(result.get('id') or '')
             subject_reference=str(result.get('reference') or result.get('bundle_reference')
-                                  or result.get('sku') or result.get('code') or '')
+                                  or result.get('sku') or result.get('code') or result.get('plan_code') or '')
         if not subject_id and ':' in operation:
             subject_id=operation.split(':',1)[1]
         changes=json.dumps(audit_value(payload),ensure_ascii=False,separators=(',',':'),default=str)
@@ -3110,6 +3136,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             FROM movements m JOIN order_lines l ON l.id=m.line_id JOIN products p ON p.id=l.product_id
             WHERE m.id IN (SELECT value FROM json_each(?)) ORDER BY p.sku''',(record.pop('movement_ids'),))]
         record['total_output']=sum(row['quantity'] for row in record['outputs'])
+        record['detail']=self._cutting_run_detail(db,run_id,record)
         if include_bundles:
             record['bundles']=[self._bundle(db,row['id']) for row in db.execute(
                 'SELECT id FROM bundles WHERE cutting_run_id=? ORDER BY sequence DESC',(run_id,))]
@@ -3131,6 +3158,79 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         record['reversal']=dict(reversal) if reversal else None
         return record
 
+    def _cutting_run_detail(self, db, run_id, record):
+        # P02 (issue #49): parameter operasional + estimasi berlabel + rekonsiliasi.
+        # Run lama (sebelum migrasi 57) tidak punya detail -> None, tetap terbaca.
+        row = db.execute("SELECT * FROM cutting_run_details WHERE run_id=?", (run_id,)).fetchone()
+        if not row:
+            return None
+        detail = dict(row)
+        detail["weight_kg"] = (self._decimal3_from_milli(detail.pop("weight_kg_milli"))
+                               if detail["weight_kg_milli"] is not None else None)
+        detail["rolls"] = []
+        for item in db.execute("SELECT * FROM cutting_run_rolls WHERE run_id=? ORDER BY roll_no", (run_id,)):
+            roll = dict(item)
+            roll["weight_kg"] = (self._decimal3_from_milli(roll.pop("weight_kg_milli"))
+                                 if roll["weight_kg_milli"] is not None else None)
+            detail["rolls"].append(roll)
+        detail["roll_count"] = len(detail["rolls"])
+        detail["total_sheets"] = sum(roll["sheets"] for roll in detail["rolls"] if roll["sheets"])
+        detail["sheets_complete"] = bool(detail["rolls"]) and all(
+            roll["sheets"] is not None for roll in detail["rolls"])
+        weights = [roll["weight_kg"] for roll in detail["rolls"] if roll["weight_kg"] is not None]
+        detail["total_roll_weight_kg"] = format(sum(Decimal(w) for w in weights), ".3f") if weights else None
+        detail["roll_weight_complete"] = bool(detail["rolls"]) and all(
+            roll["weight_kg"] is not None for roll in detail["rolls"])
+        if detail["po_reference"]:
+            po = db.execute("""SELECT p.id, p.reference,
+                EXISTS(SELECT 1 FROM purchase_order_cancellations c WHERE c.order_id=p.id) AS cancelled
+                FROM purchase_orders p WHERE p.reference=? COLLATE NOCASE""", (detail["po_reference"],)).fetchone()
+            detail["purchase_order"] = ({"id": po["id"], "reference": po["reference"],
+                                         "cancelled": bool(po["cancelled"])} if po else None)
+        else:
+            detail["purchase_order"] = None
+        # Rekonsiliasi bahan tingkat issue: issued = used + waste + unreported.
+        # Angka run (used/waste) adalah SATU event di dalamnya; tidak dijumlah
+        # ganda dengan snapshot.
+        detail["material_issue"] = self._issue_consumption(db, record["issue_id"])
+        params = {item["movement_id"]: dict(item) for item in db.execute(
+            "SELECT * FROM cutting_run_output_params WHERE run_id=?", (run_id,))}
+        for output in record["outputs"]:
+            line = db.execute("SELECT quantity FROM order_lines WHERE id=?", (output["line_id"],)).fetchone()
+            realized = self._line_realized(db, output["line_id"])
+            output["target_quantity"] = line["quantity"]
+            output["line_realized_quantity"] = realized
+            output["line_remaining_target"] = line["quantity"] - realized
+            output["estimate_policy_ref"] = detail["calculation_policy_ref"]
+            param = params.get(output["id"])
+            if not param:
+                output["setelan_per_lembar"] = output["product_weight_gram"] = None
+                output["material_used_gram"] = output["estimated_output_pcs"] = None
+                output["estimated_material_gram"] = output["estimate_basis"] = None
+                continue
+            output["setelan_per_lembar"] = param["setelan_per_lembar"]
+            output["product_weight_gram"] = (self._decimal3_from_milli(param["product_weight_gram_milli"])
+                if param["product_weight_gram_milli"] is not None else None)
+            output["material_used_gram"] = (self._decimal3_from_milli(param["material_used_gram_milli"])
+                if param["material_used_gram_milli"] is not None else None)
+            # ESTIMASI berlabel asumsi (D03 PROPOSED): lembar x setelan per
+            # lembar. Bukan angka aktual, bukan konsumsi, bukan waste.
+            if param["setelan_per_lembar"] and detail["sheets_complete"]:
+                estimated = detail["total_sheets"] * param["setelan_per_lembar"]
+                output["estimated_output_pcs"] = estimated
+                output["estimate_basis"] = (
+                    f"estimasi: {detail['total_sheets']} lembar x {param['setelan_per_lembar']} "
+                    f"setelan/lembar [{detail['calculation_policy_ref']}]")
+                if param["product_weight_gram_milli"]:
+                    output["estimated_material_gram"] = format(
+                        Decimal(estimated) * Decimal(param["product_weight_gram_milli"]) / 1000, ".3f")
+                else:
+                    output["estimated_material_gram"] = None
+            else:
+                output["estimated_output_pcs"] = output["estimated_material_gram"] = None
+                output["estimate_basis"] = None
+        return detail
+
     def cutting_run(self, run_id):
         with self.transaction() as db:
             return self._cutting_run(db,run_id)
@@ -3142,6 +3242,14 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             ids=db.execute('''SELECT id FROM cutting_runs WHERE order_id=? AND (? IS NULL OR sequence<?)
                 ORDER BY sequence DESC LIMIT ?''',(order_id,before,before,limit)).fetchall()
             return [self._cutting_run(db,row[0],False) for row in ids]
+
+    def cutting_runs_export(self, order_id):
+        with self.transaction() as db:
+            order = self._order(db, order_id)
+            ids = db.execute("SELECT id FROM cutting_runs WHERE order_id=? ORDER BY sequence",
+                             (order_id,)).fetchall()
+            runs = [self._cutting_run(db, row[0], False) for row in ids]
+            return order["reference"], runs
 
     def _bundle(self, db, bundle_id):
         row=db.execute('''SELECT b.*,r.reference AS cutting_reference,r.order_id,o.reference AS order_reference,
@@ -6461,9 +6569,37 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             return self._finished_goods_stock_count(db,count_id)
         return self._write(actor,('admin',),key,'finished-goods-stock-count-reverse:'+count_id,payload,perform)
 
+    @staticmethod
+    def _milli_from_decimal3(value):
+        # String desimal ternormalisasi '.3f' (validasi di models.py) -> integer
+        # milli. Tidak ada float pada jalur ini.
+        return int(Decimal(value) * 1000)
+
+    @staticmethod
+    def _decimal3_from_milli(milli):
+        return format(Decimal(milli) / 1000, '.3f')
+
+    def _resolve_cutting_po(self, db, po_reference):
+        # Referensi PO opsional; bila diisi harus merujuk PO yang ada dan aktif.
+        # Validasi di store (bukan trigger) agar pesan 404/422 eksplisit.
+        if not po_reference:
+            return None
+        row = db.execute("""SELECT p.id, p.reference,
+            EXISTS(SELECT 1 FROM purchase_order_cancellations c WHERE c.order_id=p.id) AS cancelled
+            FROM purchase_orders p WHERE p.reference=? COLLATE NOCASE""", (po_reference,)).fetchone()
+        if not row:
+            raise DomainError(404, f"PO {po_reference!r} tidak ditemukan.")
+        if row["cancelled"]:
+            raise DomainError(422, f"PO {row['reference']} sudah dibatalkan; pilih PO yang masih aktif.")
+        return row["reference"]
+
     def create_cutting_run(self, order_id, payload, actor, key):
         def perform(db):
             order=self._order(db,order_id)
+            plan=self._plan_row(db,order_id)
+            if plan["status"]!="approved":
+                raise DomainError(422,"Rencana cutting belum disetujui "
+                                     f"(status: {plan['status']}). Setujui rencana sebelum mencatat hasil cutting.")
             issue=self._issue_consumption(db,payload['issue_id'])
             if issue['order_id']!=order_id:
                 raise DomainError(422,'Pengeluaran bahan harus berasal dari order hasil cutting ini.')
@@ -6477,6 +6613,26 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             db.execute('''INSERT INTO cutting_runs(id,reference,order_id,consumption_id,movement_ids,reason,actor_id,created_at)
                 VALUES(?,?,?,?,?,?,?,?)''',(run_id,payload['reference'],order_id,consumption['id'],json.dumps(outputs),
                                           payload['reason'],actor['id'],now()))
+            # P02: parameter operasional dicatat atomik bersama run (satu
+            # transaksi _write). Bukan stok kedua: angka aktual tetap lewat
+            # consumption + movements di atas.
+            po_reference=self._resolve_cutting_po(db,payload.get('po_reference'))
+            db.execute('''INSERT INTO cutting_run_details(run_id,cut_date,po_reference,weight_kg_milli,created_at)
+                VALUES(?,?,?,?,?)''',(run_id,payload['cut_date'],po_reference,
+                self._milli_from_decimal3(payload['weight_kg']) if payload.get('weight_kg') else None,now()))
+            for roll in payload.get('rolls') or []:
+                db.execute('''INSERT INTO cutting_run_rolls(id,run_id,roll_no,weight_kg_milli,sheets,note,created_at)
+                    VALUES(?,?,?,?,?,?,?)''',(str(uuid4()),run_id,roll['roll_no'],
+                    self._milli_from_decimal3(roll['weight_kg']) if roll.get('weight_kg') else None,
+                    roll.get('sheets'),(roll.get('note') or '').strip(),now()))
+            movement_by_line={row['line_id']:movement_id for row,movement_id in zip(payload['outputs'],outputs)}
+            for param in payload.get('output_params') or []:
+                db.execute('''INSERT INTO cutting_run_output_params
+                    (run_id,movement_id,setelan_per_lembar,product_weight_gram_milli,material_used_gram_milli)
+                    VALUES(?,?,?,?,?)''',(run_id,movement_by_line[param['line_id']],
+                    param.get('setelan_per_lembar'),
+                    self._milli_from_decimal3(param['product_weight_gram']) if param.get('product_weight_gram') else None,
+                    self._milli_from_decimal3(param['material_used_gram']) if param.get('material_used_gram') else None))
             return self._cutting_run(db,run_id)
         return self._write(actor,('admin','operator'),key,'cutting-run:'+order_id,payload,perform)
 
@@ -7155,6 +7311,12 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             db.execute("INSERT INTO order_lines VALUES(?,?,?,?)", (line, record["id"], item["product_id"], item["quantity"]))
             db.executemany("INSERT INTO balances VALUES(?,?,?)", [
                 (line, stage, item["quantity"] if stage == "planned" else 0) for stage in STAGES])
+        # P02 (issue #49): setiap order membawa satu rencana cutting. Kode rencana
+        # = reference order; status awal draft; approval lewat approve_plan.
+        db.execute("""INSERT INTO production_plans(order_id, note, start_date, status, revision, created_by, created_at)
+            VALUES(?, ?, ?, 'draft', 0, ?, ?)""",
+            (record["id"], (payload.get("plan_note") or "").strip() or "",
+             payload.get("plan_start_date"), actor["id"], now()))
         return self._order(db, record["id"])
 
     def create_order(self, payload, actor, key):
@@ -7221,6 +7383,104 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 JOIN users a ON a.id=c.actor_id JOIN users old ON old.id=c.old_owner_id
                 JOIN users new ON new.id=c.new_owner_id WHERE c.order_id=? AND (? IS NULL OR c.sequence<?)
                 ORDER BY c.sequence DESC LIMIT ?""", (order_id, before, before, limit))]
+
+    # ------------------------------------------------------------------
+    # P02: production plans (rencana cutting) — issue #49
+    #
+    # Satu order = satu rencana. Kode rencana = reference order (lihat
+    # mapping FM-05). Target = order_lines.quantity (immutable); realisasi =
+    # movements cutting->sewing net (dihitung, tidak disimpan); kuantitas
+    # layak bayar BUKAN domain P02 dan tidak dihitung di sini.
+    # DEMO_ASSUMPTION (D02 PROPOSED): hasil cutting hanya untuk rencana
+    # berstatus approved; approval single-step oleh admin.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _line_realized(db, line_id):
+        # Realisasi = arus bersih cutting->sewing. Koreksi run cutting membuat
+        # movement penyeimbang sewing->cutting; keduanya dihitung sekali
+        # (movement aslinya TIDAK ditandai reversal_of, jadi tidak boleh
+        # difilter — yang benar adalah netting).
+        row = db.execute("""SELECT COALESCE(SUM(CASE
+                WHEN from_stage='cutting' AND to_stage='sewing' THEN quantity
+                WHEN from_stage='sewing' AND to_stage='cutting' THEN -quantity
+                ELSE 0 END),0) FROM movements WHERE line_id=?""", (line_id,)).fetchone()
+        return row[0]
+
+    def _plan_row(self, db, order_id):
+        row = db.execute("SELECT * FROM production_plans WHERE order_id=?", (order_id,)).fetchone()
+        if not row:
+            # Order selalu dibuat bersama rencana (lihat _create_order dan
+            # backfill migrasi 57); baris hilang = data tidak konsisten.
+            self._order(db, order_id)
+            raise DomainError(500, "Rencana cutting order ini tidak ditemukan.")
+        return row
+
+    def _plan(self, db, order_id):
+        order = self._order(db, order_id)
+        row = self._plan_row(db, order_id)
+        plan = dict(row)
+        plan["plan_code"] = order["reference"]
+        plan["order_title"] = order["title"]
+        if plan["approved_by"]:
+            approver = db.execute("SELECT name FROM users WHERE id=?", (plan["approved_by"],)).fetchone()
+            plan["approver_name"] = approver["name"] if approver else None
+        else:
+            plan["approver_name"] = None
+        plan["lines"] = []
+        for line in order["lines"]:
+            realized = self._line_realized(db, line["id"])
+            plan["lines"].append({
+                "line_id": line["id"], "product_id": line["product_id"], "sku": line["sku"],
+                "name": line["name"], "color": line["color"], "size": line["size"],
+                "target_quantity": line["quantity"],
+                "realized_quantity": realized,
+                "remaining_target": line["quantity"] - realized,
+            })
+        plan["target_quantity"] = order["target_quantity"]
+        plan["realized_quantity"] = sum(item["realized_quantity"] for item in plan["lines"])
+        plan["remaining_target"] = sum(item["remaining_target"] for item in plan["lines"])
+        plan["cutting_runs"] = [dict(run) for run in db.execute(
+            "SELECT id,reference,created_at FROM cutting_runs WHERE order_id=? ORDER BY sequence DESC",
+            (order_id,))]
+        plan["history"] = [self._audit_event(event) for event in db.execute(
+            """SELECT * FROM audit_events WHERE subject_id=? AND operation LIKE 'plan-%'
+               ORDER BY sequence DESC""", (order_id,))]
+        return plan
+
+    def plan(self, order_id):
+        with self.transaction() as db:
+            return self._plan(db, order_id)
+
+    def _plan_transition(self, db, order_id, payload, actor, to_status, operation):
+        row = self._plan_row(db, order_id)
+        if row["status"] == "closed":
+            raise DomainError(409, "Rencana sudah ditutup; tidak dapat diubah lagi.")
+        if to_status == "approved" and row["status"] != "draft":
+            raise DomainError(409, "Rencana hanya dapat disetujui dari status draft.")
+        if payload["revision"] != row["revision"]:
+            raise DomainError(409, "Revisi rencana sudah berubah. Muat ulang rencana sebelum melanjutkan.")
+        if to_status == "approved":
+            updated = db.execute("""UPDATE production_plans SET status='approved', revision=revision+1,
+                approved_by=?, approved_at=? WHERE order_id=? AND revision=? AND status='draft'""",
+                (actor["id"], now(), order_id, row["revision"]))
+        else:
+            updated = db.execute("""UPDATE production_plans SET status='closed', revision=revision+1,
+                closed_reason=? WHERE order_id=? AND revision=? AND status IN ('draft','approved')""",
+                (payload["reason"], order_id, row["revision"]))
+        if updated.rowcount != 1:
+            # Guard atomik: perubahan bersamaan pada revisi yang sama hanya
+            # dimenangkan satu penulis (BEGIN IMMEDIATE + predicate revision).
+            raise DomainError(409, "Rencana berubah saat diproses. Muat ulang rencana sebelum melanjutkan.")
+        return self._plan(db, order_id)
+
+    def approve_plan(self, order_id, payload, actor, key):
+        return self._write(actor, ("admin",), key, "plan-approve:" + order_id, payload,
+                           lambda db: self._plan_transition(db, order_id, payload, actor, "approved", "approve"))
+
+    def close_plan(self, order_id, payload, actor, key):
+        return self._write(actor, ("admin",), key, "plan-close:" + order_id, payload,
+                           lambda db: self._plan_transition(db, order_id, payload, actor, "closed", "close"))
 
     def _production_change_request(self, db, request_id):
         row = db.execute("""SELECT r.*,o.reference AS order_reference,o.title AS order_title,
@@ -8827,6 +9087,506 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             raise DomainError(422, f'{label} nonaktif tidak dapat dipakai untuk transaksi baru.')
         return record
 
+    # =====================================================================
+    # A01 (#46): Ledger keuangan dan kontrak posting
+    #
+    # Buku besar keuangan NATIVE. Terpisah dari ledger kuantitas/operasional
+    # existing (movements/balances): jurnal mencatat NILAI uang integer minor
+    # (kontrak F02), bukan pcs/stok fisik. COA sintetis demo BUKAN kebijakan
+    # resmi Beeloft (D14 DETAIL_OPEN); kebijakan demo berversi
+    # DEMO-POST-20260928-1, selalu dilabeli DEMO_ASSUMPTION.
+    # =====================================================================
+
+    # --- Chart of Accounts ----------------------------------------------
+
+    def _coa_account(self, db, account_id):
+        row = db.execute('SELECT * FROM coa_accounts WHERE id=?', (account_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Akun COA tidak ditemukan.')
+        return dict(row)
+
+    def create_account(self, payload, actor, key):
+        def perform(db):
+            code = str(payload.get('code', '')).strip()
+            name = str(payload.get('name', '')).strip()
+            account_type = str(payload.get('type', '')).strip()
+            if account_type not in ('asset', 'liability', 'equity', 'revenue', 'expense'):
+                raise DomainError(422, 'Jenis akun harus asset/liability/equity/revenue/expense.')
+            account_id = str(uuid4())
+            try:
+                db.execute('''INSERT INTO coa_accounts(id,code,name,type,active,created_by,created_at)
+                    VALUES(?,?,?,?,1,?,?)''',
+                    (account_id, code, name, account_type, actor['id'], now()))
+            except sqlite3.IntegrityError as exc:
+                raise DomainError(409, f'Kode akun sudah dipakai: {exc}')
+            return self._coa_account(db, account_id)
+        return self._write(actor, ('admin',), key, 'coa-account:create', payload, perform)
+
+    def set_account_active(self, account_id, active, actor, key):
+        def perform(db):
+            account = self._coa_account(db, account_id)
+            db.execute('UPDATE coa_accounts SET active=? WHERE id=?', (1 if active else 0, account_id))
+            return self._coa_account(db, account_id)
+        action = 'activate' if active else 'deactivate'
+        return self._write(actor, ('admin',), key, f'coa-account:{action}:{account_id}',
+                           {'active': bool(active)}, perform)
+
+    def coa_accounts(self, status='all', account_type='', query='', limit=100, offset=0):
+        params = {'status': status, 'active': 1 if status == 'active' else 0,
+                  'type': account_type, 'query': query.strip().casefold()}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT * FROM coa_accounts
+                WHERE (:status='all' OR active=:active)
+                  AND (:type='' OR type=:type)
+                  AND (:query='' OR instr(lower(code),:query)>0 OR instr(lower(name),:query)>0)
+                ORDER BY code''', params).fetchall()
+            total = len(rows)
+            return {'total': total, 'limit': limit, 'offset': offset,
+                    'items': [dict(r) for r in rows[offset:offset + limit]]}
+
+    def coa_account(self, account_id):
+        with self.transaction() as db:
+            return self._coa_account(db, account_id)
+
+    def seed_demo_coa(self, actor, key):
+        """Buat 13 akun COA sintetis demo. Idempoten: kode yang sudah ada dilewati."""
+        from beeloft.posting_rules import DEMO_COA, DEMO_POSTING_POLICY_REF
+        def perform(db):
+            created, skipped = [], []
+            for spec in DEMO_COA:
+                existing = db.execute('SELECT id FROM coa_accounts WHERE code=?',
+                                      (spec.code,)).fetchone()
+                if existing:
+                    skipped.append(spec.code)
+                    continue
+                account_id = str(uuid4())
+                db.execute('''INSERT INTO coa_accounts(id,code,name,type,active,created_by,created_at)
+                    VALUES(?,?,?,?,1,?,?)''',
+                    (account_id, spec.code, spec.name, spec.type, actor['id'], now()))
+                created.append(spec.code)
+            return {'created': created, 'skipped': skipped,
+                    'policy_ref': DEMO_POSTING_POLICY_REF,
+                    'demo_assumption': True}
+        return self._write(actor, ('admin',), key, 'coa-account:seed-demo', {}, perform)
+
+    # --- Periode akuntansi -----------------------------------------------
+
+    def _accounting_period(self, db, period_id):
+        row = db.execute('SELECT * FROM accounting_periods WHERE id=?', (period_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Periode akuntansi tidak ditemukan.')
+        return dict(row)
+
+    def create_period(self, payload, actor, key):
+        def perform(db):
+            code = str(payload.get('code', '')).strip()
+            start_date = str(payload.get('start_date', '')).strip()
+            end_date = str(payload.get('end_date', '')).strip()
+            import re as _re
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', start_date) or not _re.match(r'^\d{4}-\d{2}-\d{2}$', end_date):
+                raise DomainError(422, 'Tanggal periode harus format YYYY-MM-DD.')
+            if start_date > end_date:
+                raise DomainError(422, 'Tanggal mulai periode tidak boleh setelah tanggal akhir.')
+            overlap = db.execute('''SELECT code FROM accounting_periods
+                WHERE NOT (end_date < ? OR start_date > ?) LIMIT 1''',
+                (start_date, end_date)).fetchone()
+            if overlap:
+                raise DomainError(409, f"Periode tumpang tindih dengan {overlap['code']}.")
+            period_id = str(uuid4())
+            try:
+                db.execute('''INSERT INTO accounting_periods
+                    (id,code,start_date,end_date,status,revision,reason,created_by,created_at)
+                    VALUES(?,?,?,?,'open',1,'',?,?)''',
+                    (period_id, code, start_date, end_date, actor['id'], now()))
+            except sqlite3.IntegrityError as exc:
+                raise DomainError(409, f'Kode periode sudah dipakai: {exc}')
+            return self._accounting_period(db, period_id)
+        return self._write(actor, ('admin',), key, 'accounting-period:create', payload, perform)
+
+    def accounting_periods(self, status='all', limit=100, offset=0):
+        with self.transaction() as db:
+            rows = db.execute('''SELECT * FROM accounting_periods
+                WHERE (:status='all' OR status=:status)
+                ORDER BY start_date DESC''', {'status': status}).fetchall()
+            total = len(rows)
+            return {'total': total, 'limit': limit, 'offset': offset,
+                    'items': [dict(r) for r in rows[offset:offset + limit]]}
+
+    def accounting_period(self, period_id):
+        with self.transaction() as db:
+            return self._accounting_period(db, period_id)
+
+    def close_period(self, period_id, payload, actor, key):
+        def perform(db):
+            period = self._accounting_period(db, period_id)
+            expected = payload.get('expected_revision')
+            if expected is not None and int(expected) != period['revision']:
+                raise DomainError(409, 'Periode sudah berubah. Muat ulang sebelum menutup.')
+            if period['status'] == 'closed':
+                raise DomainError(409, 'Periode sudah tertutup.')
+            reason = str(payload.get('reason', '')).strip()
+            if not reason:
+                raise DomainError(422, 'Alasan penutupan periode wajib diisi.')
+            timestamp = now()
+            cursor = db.execute('''UPDATE accounting_periods
+                SET status='closed', revision=revision+1, reason=?, closed_by=?, closed_at=?
+                WHERE id=? AND revision=?''',
+                (reason, actor['id'], timestamp, period_id, period['revision']))
+            if cursor.rowcount != 1:
+                # Revision berubah bersamaan (race close-vs-close): tolak.
+                raise DomainError(409, 'Periode berubah bersamaan. Muat ulang dan coba lagi.')
+            return self._accounting_period(db, period_id)
+        return self._write(actor, ('admin',), key, f'accounting-period:close:{period_id}',
+                           payload, perform)
+
+    def reopen_period(self, period_id, payload, actor, key):
+        def perform(db):
+            period = self._accounting_period(db, period_id)
+            expected = payload.get('expected_revision')
+            if expected is not None and int(expected) != period['revision']:
+                raise DomainError(409, 'Periode sudah berubah. Muat ulang sebelum membuka kembali.')
+            if period['status'] == 'open':
+                raise DomainError(409, 'Periode masih terbuka.')
+            reason = str(payload.get('reason', '')).strip()
+            if not reason:
+                raise DomainError(422, 'Alasan pembukaan kembali periode wajib diisi.')
+            timestamp = now()
+            db.execute('''UPDATE accounting_periods
+                SET status='open', revision=revision+1, reason=?, closed_by=NULL, closed_at=NULL
+                WHERE id=? AND revision=?''',
+                (reason, period_id, period['revision']))
+            return self._accounting_period(db, period_id)
+        return self._write(actor, ('admin',), key, f'accounting-period:reopen:{period_id}',
+                           payload, perform)
+
+    # --- Jurnal ------------------------------------------------------------
+
+    def _journal_row(self, db, journal_id):
+        row = db.execute('''SELECT j.*, p.code AS period_code
+            FROM journals j JOIN accounting_periods p ON p.id=j.period_id
+            WHERE j.id=?''', (journal_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Jurnal tidak ditemukan.')
+        record = dict(row)
+        record['lines'] = [dict(line) for line in db.execute('''SELECT l.*, a.code AS account_code,
+                a.name AS account_name, a.type AS account_type
+            FROM journal_lines l JOIN coa_accounts a ON a.id=l.account_id
+            WHERE l.journal_id=? ORDER BY l.line_no''', (journal_id,))]
+        record['total_debit_minor'] = sum(line['debit_minor'] for line in record['lines'])
+        record['total_credit_minor'] = sum(line['credit_minor'] for line in record['lines'])
+        if record['reversal_of']:
+            record['reversal_of'] = self._journal_codes(db, [record['reversal_of']])[0]
+        rev = db.execute('SELECT id FROM journals WHERE reversal_of=?', (journal_id,)).fetchone()
+        record['reversed_by_id'] = rev['id'] if rev else None
+        return record
+
+    @staticmethod
+    def _journal_codes(db, journal_ids):
+        rows = db.execute(
+            f"SELECT id, code FROM journals WHERE id IN ({','.join('?' * len(journal_ids))})",
+            journal_ids).fetchall()
+        by_id = {row['id']: row['code'] for row in rows}
+        return [by_id.get(journal_id) for journal_id in journal_ids]
+
+    def _next_journal_code(self, db, journal_date):
+        prefix = 'JR-' + journal_date.replace('-', '')
+        row = db.execute('''SELECT COALESCE(MAX(CAST(substr(code, 13) AS INTEGER)), 0) AS last_seq
+            FROM journals WHERE code LIKE ?''', (prefix + '-%',)).fetchone()
+        return f"{prefix}-{int(row['last_seq']) + 1:04d}"
+
+    def _validate_posting_lines(self, db, lines):
+        """Validasi baris: akun ada+aktif, nominal integer minor valid, tepat satu sisi."""
+        if not isinstance(lines, list) or len(lines) < 2:
+            raise DomainError(422, 'Jurnal minimal memiliki 2 baris.')
+        validated, total_debit, total_credit = [], 0, 0
+        for index, raw in enumerate(lines, start=1):
+            if not isinstance(raw, dict):
+                raise DomainError(422, f'Baris {index}: format tidak valid.')
+            account_ref = str(raw.get('account_code') or raw.get('account_id') or '').strip()
+            if not account_ref:
+                raise DomainError(422, f'Baris {index}: account_code/account_id wajib diisi.')
+            account = db.execute('SELECT * FROM coa_accounts WHERE id=? OR code=?',
+                                 (account_ref, account_ref)).fetchone()
+            if not account:
+                raise DomainError(422, f'Baris {index}: akun {account_ref} tidak ditemukan.')
+            if not account['active']:
+                raise DomainError(422, f'Baris {index}: akun {account["code"]} nonaktif.')
+            try:
+                debit = money_to_minor(parse_money(str(raw.get('debit', '0'))))
+                credit = money_to_minor(parse_money(str(raw.get('credit', '0'))))
+            except (ValueError, TypeError) as exc:
+                raise DomainError(422, f'Baris {index}: nominal tidak valid: {exc}')
+            if (debit > 0) == (credit > 0):
+                raise DomainError(422, f'Baris {index}: tepat satu sisi debit/kredit harus positif.')
+            description = str(raw.get('description', '')).strip()
+            total_debit += debit
+            total_credit += credit
+            validated.append({'account_id': account['id'], 'debit_minor': debit,
+                              'credit_minor': credit, 'description': description})
+        if total_debit != total_credit:
+            raise DomainError(422,
+                f'Jurnal tidak seimbang: debit {total_debit} != kredit {total_credit} (minor).')
+        if total_debit <= 0:
+            raise DomainError(422, 'Jurnal harus memiliki total positif.')
+        return validated
+
+    def _check_open_period(self, db, period_id, journal_date):
+        """Status/revision periode diperiksa dalam transaksi yang SAMA dengan posting."""
+        period = self._accounting_period(db, period_id)
+        if period['status'] != 'open':
+            raise DomainError(409, f"Periode {period['code']} tertutup; posting ditolak.")
+        if not (period['start_date'] <= journal_date <= period['end_date']):
+            raise DomainError(422,
+                f"Tanggal jurnal {journal_date} di luar periode {period['code']}.")
+        return period
+
+    def _source_key_tuple(self, source):
+        if not isinstance(source, dict):
+            raise DomainError(422, 'source identitas wajib objek.')
+        system = str(source.get('system', '')).strip()
+        account = str(source.get('account', '')).strip()
+        entity_type = str(source.get('entity_type', '')).strip()
+        source_id = str(source.get('id', '')).strip()
+        line_id = str(source.get('line_id', '') or '').strip()
+        revision = source.get('revision', 1)
+        for label, value in (('system', system), ('account', account),
+                             ('entity_type', entity_type), ('id', source_id)):
+            if not value or len(value) > 160:
+                raise DomainError(422, f'source.{label} wajib 1-160 karakter.')
+        try:
+            revision = int(revision)
+        except (TypeError, ValueError):
+            raise DomainError(422, 'source.revision harus integer positif.')
+        if revision <= 0:
+            raise DomainError(422, 'source.revision harus integer positif.')
+        return system, account, entity_type, source_id, line_id, revision
+
+    def _find_journal_by_source(self, db, source_tuple):
+        row = db.execute('''SELECT id FROM journals WHERE source_system=? AND source_account=?
+            AND source_entity_type=? AND source_id=? AND source_line_id=? AND source_revision=?''',
+            source_tuple).fetchone()
+        return row['id'] if row else None
+
+    def post_journal(self, payload, actor, key):
+        def perform(db):
+            period_id = str(payload.get('period_id', '')).strip()
+            journal_date = str(payload.get('journal_date', '')).strip()
+            description = str(payload.get('description', '')).strip()
+            if not description or len(description) > 1000:
+                raise DomainError(422, 'Deskripsi jurnal wajib 1-1000 karakter.')
+            import re as _re
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', journal_date):
+                raise DomainError(422, 'journal_date harus format YYYY-MM-DD.')
+            # Periode dicek dalam transaksi yang sama — cegah race post-vs-close.
+            period = self._check_open_period(db, period_id, journal_date)
+            business_unit_id = (str(payload.get('business_unit_id') or '').strip() or None)
+            if business_unit_id and not db.execute(
+                    'SELECT 1 FROM business_units WHERE id=?', (business_unit_id,)).fetchone():
+                raise DomainError(422, 'Unit usaha tidak ditemukan.')
+            policy_ref = str(payload.get('policy_ref', '')).strip()
+            if not policy_ref or len(policy_ref) > 80:
+                raise DomainError(422, 'policy_ref wajib 1-80 karakter (aturan posting berversi).')
+            source_tuple = self._source_key_tuple(payload.get('source'))
+            validated = self._validate_posting_lines(db, payload.get('lines'))
+            # Satu identitas sumber hanya boleh terposting sekali.
+            existing_id = self._find_journal_by_source(db, source_tuple)
+            if existing_id:
+                existing = self._journal_row(db, existing_id)
+                new_sig = [(v['account_id'], v['debit_minor'], v['credit_minor'])
+                           for v in validated]
+                old_sig = [(line['account_id'], line['debit_minor'], line['credit_minor'])
+                           for line in existing['lines']]
+                if new_sig == old_sig and existing['description'] == description:
+                    return existing  # replay identik -> hasil sama
+                raise DomainError(409,
+                    'Identitas sumber sudah terposting dengan isi berbeda (konflik sumber). '
+                    'Gunakan koreksi/reversal, bukan posting ulang.')
+            journal_id, timestamp = str(uuid4()), now()
+            code = self._next_journal_code(db, journal_date)
+            (system, account, entity_type, source_id, line_id, revision) = source_tuple
+            try:
+                db.execute('''INSERT INTO journals(id,code,period_id,journal_date,description,
+                    business_unit_id,source_system,source_account,source_entity_type,source_id,
+                    source_line_id,source_revision,policy_ref,created_by,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (journal_id, code, period['id'], journal_date, description, business_unit_id,
+                     system, account, entity_type, source_id, line_id, revision,
+                     policy_ref, actor['id'], timestamp))
+            except sqlite3.IntegrityError as exc:
+                # Race: dua penulis bersamaan untuk sumber sama — satu menang.
+                if 'UNIQUE' in str(exc):
+                    winner = self._find_journal_by_source(db, source_tuple)
+                    if winner:
+                        return self._journal_row(db, winner)
+                raise DomainError(409, f'Jurnal gagal dicatat: {exc}')
+            for line_no, line in enumerate(validated, start=1):
+                db.execute('''INSERT INTO journal_lines(id,journal_id,line_no,account_id,
+                    debit_minor,credit_minor,description) VALUES(?,?,?,?,?,?,?)''',
+                    (str(uuid4()), journal_id, line_no, line['account_id'],
+                     line['debit_minor'], line['credit_minor'], line['description']))
+            return self._journal_row(db, journal_id)
+        return self._write(actor, ('admin',), key, 'journal:post', payload, perform)
+
+    def post_po_receipt_journal(self, purchase_order_id, payload, actor, key):
+        """Adapter NYATA: terima PO existing -> posting jurnal penerimaan bahan.
+
+        Membaca PO dan penerimaan dari record existing, membangun baris lewat
+        posting_rules.adapt_po_receipt, lalu memposting atomik. Idempotency
+        ganda: request key (HTTP) + identitas sumber (PO receipt).
+        """
+        from beeloft.posting_rules import adapt_po_receipt, DEMO_POSTING_POLICY_REF
+        def perform(db):
+            po = self._purchase_order(db, purchase_order_id)
+            receipts = payload.get('receipts')
+            if not isinstance(receipts, list) or not receipts:
+                raise DomainError(422, 'receipts wajib daftar penerimaan tidak kosong.')
+            lines = adapt_po_receipt(po=po, receipts=receipts)
+            journal_payload = {
+                'period_id': payload['period_id'],
+                'journal_date': payload['journal_date'],
+                'description': f"Penerimaan bahan {po.get('reference')}",
+                'business_unit_id': po.get('business_unit_id'),
+                'policy_ref': DEMO_POSTING_POLICY_REF,
+                'source': {'system': 'beeloft', 'account': 'purchasing',
+                           'entity_type': 'po_receipt', 'id': purchase_order_id,
+                           'line_id': '', 'revision': 1},
+                'lines': [{'account_code': line['account_code'],
+                           'debit': format(Decimal(line['debit_minor']) / 100, '.2f'),
+                           'credit': format(Decimal(line['credit_minor']) / 100, '.2f'),
+                           'description': line['description']} for line in lines],
+            }
+            return self._post_journal_inner(db, journal_payload, actor)
+        return self._write(actor, ('admin',), key,
+                           f'journal:post-po-receipt:{purchase_order_id}', payload, perform)
+
+    def _post_journal_inner(self, db, journal_payload, actor):
+        """Inti posting tanpa _write wrapper — dipakai adapter dalam transaksi sama."""
+        period_id = str(journal_payload.get('period_id', '')).strip()
+        journal_date = str(journal_payload.get('journal_date', '')).strip()
+        description = str(journal_payload.get('description', '')).strip()
+        period = self._check_open_period(db, period_id, journal_date)
+        business_unit_id = (str(journal_payload.get('business_unit_id') or '').strip() or None)
+        policy_ref = str(journal_payload.get('policy_ref', '')).strip()
+        source_tuple = self._source_key_tuple(journal_payload.get('source'))
+        validated = self._validate_posting_lines(db, journal_payload.get('lines'))
+        existing_id = self._find_journal_by_source(db, source_tuple)
+        if existing_id:
+            return self._journal_row(db, existing_id)
+        journal_id, timestamp = str(uuid4()), now()
+        code = self._next_journal_code(db, journal_date)
+        (system, account, entity_type, source_id, line_id, revision) = source_tuple
+        try:
+            db.execute('''INSERT INTO journals(id,code,period_id,journal_date,description,
+                business_unit_id,source_system,source_account,source_entity_type,source_id,
+                source_line_id,source_revision,policy_ref,created_by,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (journal_id, code, period['id'], journal_date, description, business_unit_id,
+                 system, account, entity_type, source_id, line_id, revision,
+                 policy_ref, actor['id'], timestamp))
+        except sqlite3.IntegrityError:
+            winner = self._find_journal_by_source(db, source_tuple)
+            if winner:
+                return self._journal_row(db, winner)
+            raise
+        for line_no, line in enumerate(validated, start=1):
+            db.execute('''INSERT INTO journal_lines(id,journal_id,line_no,account_id,
+                debit_minor,credit_minor,description) VALUES(?,?,?,?,?,?,?)''',
+                (str(uuid4()), journal_id, line_no, line['account_id'],
+                 line['debit_minor'], line['credit_minor'], line['description']))
+        return self._journal_row(db, journal_id)
+
+    def reverse_journal(self, journal_id, payload, actor, key):
+        def perform(db):
+            original = self._journal_row(db, journal_id)
+            if original['reversed_by_id']:
+                raise DomainError(409, 'Jurnal sudah memiliki reversal.')
+            if original['reversal_of']:
+                raise DomainError(409, 'Jurnal reversal tidak dapat di-reversal lagi.')
+            reason = str(payload.get('reason', '')).strip()
+            if not reason:
+                raise DomainError(422, 'Alasan reversal wajib diisi.')
+            # Periode reversal dipilih eksplisit; tidak pernah membuka periode otomatis.
+            period_id = str(payload.get('period_id', '')).strip()
+            journal_date = str(payload.get('journal_date', '')).strip()
+            import re as _re
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', journal_date):
+                raise DomainError(422, 'journal_date harus format YYYY-MM-DD.')
+            period = self._check_open_period(db, period_id, journal_date)
+            reversed_lines = [{
+                'account_code': line['account_code'],
+                'debit': format(Decimal(line['credit_minor']) / 100, '.2f'),
+                'credit': format(Decimal(line['debit_minor']) / 100, '.2f'),
+                'description': f"Reversal {original['code']}: {line['description']}".strip(),
+            } for line in original['lines']]
+            reversal_payload = {
+                'period_id': period['id'],
+                'journal_date': journal_date,
+                'description': f"Reversal {original['code']}: {reason}",
+                'business_unit_id': original['business_unit_id'],
+                'policy_ref': original['policy_ref'],
+                'source': {'system': 'beeloft', 'account': 'finance',
+                           'entity_type': 'journal_reversal', 'id': original['id'],
+                           'line_id': '', 'revision': 1},
+                'lines': reversed_lines,
+            }
+            reversal = self._post_journal_inner(db, reversal_payload, actor)
+            # Penautan reversal: trigger journals_no_update mengizinkan
+            # pengisian reversal_of sekali (NULL -> id asal) tepat setelah
+            # jurnal reversal dibuat; isi jurnal asal tetap tak tersentuh.
+            db.execute('UPDATE journals SET reversal_of=?, reversal_reason=? WHERE id=?',
+                       (original['id'], reason, reversal['id']))
+            return self._journal_row(db, reversal['id'])
+        return self._write(actor, ('admin',), key, f'journal:reverse:{journal_id}',
+                           payload, perform)
+
+    def journals(self, period_id='', account_code='', query='', limit=100, offset=0):
+        params = {'period': period_id, 'account': account_code, 'query': query.strip().casefold()}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT DISTINCT j.id FROM journals j
+                JOIN accounting_periods p ON p.id=j.period_id
+                LEFT JOIN journal_lines l ON l.journal_id=j.id
+                LEFT JOIN coa_accounts a ON a.id=l.account_id
+                WHERE (:period='' OR j.period_id=:period)
+                  AND (:account='' OR a.code=:account)
+                  AND (:query='' OR instr(lower(j.code),:query)>0
+                       OR instr(lower(j.description),:query)>0)
+                ORDER BY j.journal_date DESC, j.code DESC''', params).fetchall()
+            ids = [row['id'] for row in rows]
+            return {'total': len(ids), 'limit': limit, 'offset': offset,
+                    'items': [self._journal_row(db, journal_id)
+                              for journal_id in ids[offset:offset + limit]]}
+
+    def journal(self, journal_id):
+        with self.transaction() as db:
+            return self._journal_row(db, journal_id)
+
+    def trial_balance(self, period_id='', business_unit_id=''):
+        """Neraca saldo: agregat debit/kredit per akun dari jurnal posted."""
+        with self.transaction() as db:
+            if period_id:
+                self._accounting_period(db, period_id)
+            rows = db.execute('''SELECT a.id, a.code, a.name, a.type,
+                    COALESCE(SUM(l.debit_minor), 0) AS debit_minor,
+                    COALESCE(SUM(l.credit_minor), 0) AS credit_minor
+                FROM coa_accounts a
+                LEFT JOIN journal_lines l ON l.account_id=a.id
+                LEFT JOIN journals j ON j.id=l.journal_id
+                    AND (:period='' OR j.period_id=:period)
+                    AND (:unit='' OR COALESCE(j.business_unit_id,'')=:unit)
+                GROUP BY a.id ORDER BY a.code''',
+                {'period': period_id, 'unit': business_unit_id or ''}).fetchall()
+            items, total_debit, total_credit = [], 0, 0
+            for row in rows:
+                record = dict(row)
+                balance = record['debit_minor'] - record['credit_minor']
+                record['balance_minor'] = balance
+                items.append(record)
+                total_debit += record['debit_minor']
+                total_credit += record['credit_minor']
+            return {'period_id': period_id or None, 'business_unit_id': business_unit_id or None,
+                    'items': items, 'total_debit_minor': total_debit,
+                    'total_credit_minor': total_credit,
+                    'balanced': total_debit == total_credit}
     # ------------------------------------------------------------------
     # P01 (#48): jenis pekerjaan, kelompok jasa, template jasa berversi,
     # tarif upah berversi dengan tanggal berlaku, penerapan template ke SKU,

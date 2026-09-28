@@ -16,6 +16,7 @@ class InventoryReconciliationTest(TestCase):
     setup_stock=returns_tests.ReturnsAdjustmentsTest.setup_stock
     prepare=returns_tests.ReturnsAdjustmentsTest.prepare
     cut=returns_tests.ReturnsAdjustmentsTest.cut
+    approve_cutting_plan=returns_tests.ReturnsAdjustmentsTest.approve_cutting_plan
     create_bundle=returns_tests.ReturnsAdjustmentsTest.create_bundle
     setup_bundle=returns_tests.ReturnsAdjustmentsTest.setup_bundle
     create_job=returns_tests.ReturnsAdjustmentsTest.create_job
@@ -124,6 +125,6 @@ class InventoryReconciliationTest(TestCase):
             db.execute('PRAGMA user_version=24');db.commit()
         Store(fresh)
         with closing(sqlite3.connect(fresh)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],60)
             self.assertIn('stock_count_id',{row[1] for row in db.execute('PRAGMA table_info(finished_goods_adjustments)')})
             self.assertEqual(db.execute('SELECT COUNT(*) FROM finished_goods_stock_counts').fetchone()[0],0)

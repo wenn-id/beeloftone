@@ -21,6 +21,7 @@ class BundleHandoffTest(TestCase):
     setup_stock=bundle_tests.BundleTest.setup_stock
     prepare=bundle_tests.BundleTest.prepare
     cut=bundle_tests.BundleTest.cut
+    approve_cutting_plan=bundle_tests.BundleTest.approve_cutting_plan
     setup_run=bundle_tests.BundleTest.setup_run
     create_bundle=bundle_tests.BundleTest.create_bundle
 
@@ -128,5 +129,5 @@ class BundleHandoffTest(TestCase):
             db.execute('PRAGMA user_version=45');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],60)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM bundle_handoffs').fetchone()[0],0)

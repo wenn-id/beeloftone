@@ -18,8 +18,10 @@ module.exports=async({page,login,admin,operator,viewer,apiGet,work})=>{
   const batch=await post('/api/material-batches',{material_id:material.id,reference:'RWK-BATCH',supplier:'CONTOH pemasok',
     location:'Rak R',received_date:'2026-09-11',quantity:'5',reason:'CONTOH bahan'},'rwk-batch');
   const issue=await post('/api/material-issues',{batch_id:batch.id,order_id:order.id,quantity:'3',reason:'CONTOH bahan inspeksi ulang'},'rwk-issue');
-  const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'RWK-CUT',issue_id:issue.id,used:'2',waste:'0.25',
-    reason:'CONTOH cutting inspeksi ulang',outputs:[{line_id:line.id,quantity:20}]},'rwk-cut');
+    const plan=await apiGet('/api/orders/'+order.id+'/plan');
+  await post('/api/orders/'+order.id+'/plan/approve',{revision:plan.revision,reason:'CONTOH setuju rencana'},'rwk-plan-approve');
+const run=await post('/api/orders/'+order.id+'/cutting-runs',{reference:'RWK-CUT',issue_id:issue.id,used:'2',waste:'0.25',
+    reason:'CONTOH cutting inspeksi ulang',cut_date:'2026-09-27',outputs:[{line_id:line.id,quantity:20}]},'rwk-cut');
   const bundle=await post('/api/cutting-runs/'+run.id+'/bundles',{reference:'RWK-BDL',output_movement_id:run.outputs[0].id,
     quantity:20,reason:'CONTOH bundle inspeksi ulang'},'rwk-bundle');
   const job=await post('/api/bundles/'+bundle.id+'/sewing-jobs',{reference:'RWK-SEW',assignment_type:'internal',assignee:'Line Rework <A>',

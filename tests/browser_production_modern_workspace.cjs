@@ -542,7 +542,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
     const host = document.getElementById('detail-content');
     const facts = [...host.querySelectorAll(':scope>.detail-grid>.detail-field')];
     const groups = [...host.querySelectorAll('.panel-grid>.utility-panel')];
-    const balancePanel = host.querySelector('section .utility-panel .detail-grid-compact');
+    // Planning has its own compact metrics before the current stage balances.
+    const balanceSection = host.querySelector('section[aria-labelledby="stage-balance-heading"]');
+    const balancePanel = balanceSection.querySelector('.utility-panel .detail-grid-compact');
     return {
       eyebrow: host.querySelector('.workspace-eyebrow').textContent.trim(),
       title: host.querySelector('h1').textContent.trim(),
@@ -555,13 +557,13 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
       stages: [...balancePanel.querySelectorAll('.detail-field')]
         .map(f => [f.querySelector('dt').textContent.trim(),
           f.querySelector('dd').textContent.replace(/\s+/g, ' ').trim()]),
-      exceptions: [...host.querySelectorAll('.utility-panel')]
+      exceptions: [...balanceSection.querySelectorAll('.utility-panel')]
         .filter(p => (p.querySelector('.utility-panel-title') || {}).textContent === 'Saldo pengecualian')
         .flatMap(p => [...p.querySelectorAll('.detail-field')]
           .map(f => [f.querySelector('dt').textContent.trim(),
             f.querySelector('dd').textContent.replace(/\s+/g, ' ').trim()])),
-      totalNote: host.querySelector('.workspace-meta').textContent.trim(),
-      antiFunnel: host.querySelector('.info-panel').textContent,
+      totalNote: balanceSection.querySelector('.workspace-meta').textContent.trim(),
+      antiFunnel: balanceSection.querySelector('.info-panel').textContent,
       timeline: host.querySelectorAll('#history-list.timeline .timeline-item').length,
       issuesHeading: document.getElementById('issues-heading').textContent.trim(),
       onlyVisibleSection: [...document.querySelectorAll('.workspace-main > section')]
@@ -746,7 +748,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
     };
     return {
       position: visible('#stage-balance-heading'),
-      exceptions: visible('#detail-content .utility-panel .detail-grid-compact'),
+      exceptions: visible('#detail-content section[aria-labelledby="stage-balance-heading"] .detail-grid-compact'),
       skuHeading: visible('#sku-detail-heading'),
       skuBalances: visible('#detail-content .sku-record .detail-grid-compact'),
       actionsBelowFold: (document.querySelector('#order-actions-heading')
@@ -775,7 +777,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
     const host = document.getElementById('detail-content');
     const groups = [...host.querySelectorAll('.panel-grid>.utility-panel')]
       .map(panel => Math.round(panel.getBoundingClientRect().top));
-    const balances = [...host.querySelectorAll('section .utility-panel .detail-grid-compact')]
+    const balances = [...host.querySelectorAll('section[aria-labelledby="stage-balance-heading"] .detail-grid-compact')]
       .slice(0, 1).flatMap(grid => [...grid.querySelectorAll('.detail-field')]
         .map(field => Math.round(field.getBoundingClientRect().top)));
     return {
