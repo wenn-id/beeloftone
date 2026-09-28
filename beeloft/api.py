@@ -20,6 +20,7 @@ from beeloft.models import BomTemplateCreate, BomTemplateUpdate, BomTemplateAppl
 from beeloft.models import PurchaseRequestCreate, PurchaseRequestDecision
 from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, FinishedGoodsAdjustmentCreate, FinishedGoodsReceiptCreate, FinishedGoodsStockCountCreate, FinishingRecordCreate, MarketplacePackCreate, MarketplacePickCreate, MarketplaceReservationCreate, MarketplaceReservationRelease, MarketplaceReturnCreate, MarketplaceSaleSettlementCreate, MarketplaceShipmentCreate, PlanDecision, ReworkCompletionCreate, SewingJobComplete, SewingJobCreate, WarehouseMovementCreate
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
+from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
 from beeloft.store import DomainError, Store
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
@@ -72,7 +73,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.116.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.117.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -778,12 +779,18 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return store.production_cost(order_id)
 
     @app.get('/api/suppliers', tags=['Purchasing'])
-    def suppliers(user: Actor, limit: Limit = 100, offset: Offset = 0):
-        return store.suppliers(limit, offset)
+    def suppliers(user: Actor, status: Literal['all','active','inactive'] = 'all',
+                  q: Annotated[str, Query(max_length=160)] = '',
+                  limit: Limit = 100, offset: Offset = 0):
+        return store.suppliers(status,q,limit,offset)
 
     @app.post('/api/suppliers', status_code=201, tags=['Purchasing'])
     def create_supplier(body: SupplierCreate, user: Actor, key: RequestKey):
         return store.create_supplier(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/suppliers/{supplier_id}/changes', status_code=201, tags=['Purchasing'])
+    def change_supplier(supplier_id: str, body: SupplierChange, user: Actor, key: RequestKey):
+        return store.change_supplier(supplier_id, body.model_dump(mode='json'), user, key)
 
     @app.get('/api/purchase-orders', tags=['Purchasing'])
     def purchase_orders(user: Actor, limit: Limit = 100, before: Before = None,
@@ -1602,5 +1609,172 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
         return Response(content, media_type="application/vnd.sqlite3", headers={
             "Content-Disposition": f'attachment; filename="beeloft-backup-{stamp}.sqlite3"',
             "Cache-Control": "no-store"})
+
+    # ------------------------------------------------------------------
+    # M02 — Master: unit usaha, lokasi, pelanggan, jabatan, metode
+    # pembayaran, status pemasok, mapping ID employee legacy, dan pemetaan
+    # lokasi teks ke identitas storage.
+    # ------------------------------------------------------------------
+
+    @app.get('/api/business-units', tags=['Business Masters'])
+    def business_units(user: Actor, status: Literal['all','active','inactive'] = 'all',
+                       q: Annotated[str, Query(max_length=160)] = '',
+                       limit: Limit = 100, offset: Offset = 0):
+        return store.business_units(status, q, limit, offset)
+
+    @app.get('/api/business-units/{unit_id}', tags=['Business Masters'])
+    def business_unit(unit_id: str, user: Actor):
+        return store.business_unit(unit_id)
+
+    @app.get('/api/business-units/{unit_id}/history', tags=['Business Masters'])
+    def business_unit_history(unit_id: str, user: Actor, limit: Limit = 100,
+                             before: Before = None):
+        return store.business_unit_history(unit_id, limit, before)
+
+    @app.post('/api/business-units', status_code=201, tags=['Business Masters'])
+    def create_business_unit(body: BusinessUnitCreate, user: Actor, key: RequestKey):
+        return store.create_business_unit(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/business-units/{unit_id}/changes', status_code=201,
+              tags=['Business Masters'])
+    def change_business_unit(unit_id: str, body: BusinessUnitChange,
+                             user: Actor, key: RequestKey):
+        return store.change_business_unit(unit_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/storages', tags=['Business Masters'])
+    def storages(user: Actor, business_unit_id: Annotated[str, Query(max_length=160)] = '',
+                 status: Literal['all','active','inactive'] = 'all',
+                 q: Annotated[str, Query(max_length=160)] = '',
+                 limit: Limit = 100, offset: Offset = 0):
+        return store.storages(business_unit_id, status, q, limit, offset)
+
+    @app.get('/api/storages/{storage_id}', tags=['Business Masters'])
+    def storage(storage_id: str, user: Actor):
+        return store.storage(storage_id)
+
+    @app.get('/api/storages/{storage_id}/history', tags=['Business Masters'])
+    def storage_history(storage_id: str, user: Actor, limit: Limit = 100,
+                        before: Before = None):
+        return store.storage_history(storage_id, limit, before)
+
+    @app.post('/api/storages', status_code=201, tags=['Business Masters'])
+    def create_storage(body: StorageCreate, user: Actor, key: RequestKey):
+        return store.create_storage(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/storages/{storage_id}/changes', status_code=201,
+              tags=['Business Masters'])
+    def change_storage(storage_id: str, body: StorageChange, user: Actor, key: RequestKey):
+        return store.change_storage(storage_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/customers', tags=['Business Masters'])
+    def customers(user: Actor, status: Literal['all','active','inactive'] = 'all',
+                  q: Annotated[str, Query(max_length=160)] = '',
+                  limit: Limit = 100, offset: Offset = 0):
+        return store.customers(status, q, limit, offset)
+
+    @app.get('/api/customers/{customer_id}', tags=['Business Masters'])
+    def customer(customer_id: str, user: Actor):
+        return store.customer(customer_id)
+
+    @app.get('/api/customers/{customer_id}/history', tags=['Business Masters'])
+    def customer_history(customer_id: str, user: Actor, limit: Limit = 100,
+                         before: Before = None):
+        return store.customer_history(customer_id, limit, before)
+
+    @app.post('/api/customers', status_code=201, tags=['Business Masters'])
+    def create_customer(body: CustomerCreate, user: Actor, key: RequestKey):
+        return store.create_customer(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/customers/{customer_id}/changes', status_code=201,
+              tags=['Business Masters'])
+    def change_customer(customer_id: str, body: CustomerChange, user: Actor, key: RequestKey):
+        return store.change_customer(customer_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/positions', tags=['Business Masters'])
+    def positions(user: Actor, status: Literal['all','active','inactive'] = 'all',
+                  q: Annotated[str, Query(max_length=160)] = '',
+                  limit: Limit = 100, offset: Offset = 0):
+        return store.positions(status, q, limit, offset)
+
+    @app.get('/api/positions/{position_id}', tags=['Business Masters'])
+    def position(position_id: str, user: Actor):
+        return store.position(position_id)
+
+    @app.get('/api/positions/{position_id}/history', tags=['Business Masters'])
+    def position_history(position_id: str, user: Actor, limit: Limit = 100,
+                         before: Before = None):
+        return store.position_history(position_id, limit, before)
+
+    @app.post('/api/positions', status_code=201, tags=['Business Masters'])
+    def create_position(body: PositionCreate, user: Actor, key: RequestKey):
+        return store.create_position(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/positions/{position_id}/changes', status_code=201,
+              tags=['Business Masters'])
+    def change_position(position_id: str, body: PositionChange, user: Actor, key: RequestKey):
+        return store.change_position(position_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/payment-methods', tags=['Business Masters'])
+    def payment_methods(user: Actor, status: Literal['all','active','inactive'] = 'all',
+                        q: Annotated[str, Query(max_length=160)] = '',
+                        limit: Limit = 100, offset: Offset = 0):
+        return store.payment_methods(status, q, limit, offset)
+
+    @app.get('/api/payment-methods/{payment_method_id}', tags=['Business Masters'])
+    def payment_method(payment_method_id: str, user: Actor):
+        return store.payment_method(payment_method_id)
+
+    @app.get('/api/payment-methods/{payment_method_id}/history', tags=['Business Masters'])
+    def payment_method_history(payment_method_id: str, user: Actor, limit: Limit = 100,
+                               before: Before = None):
+        return store.payment_method_history(payment_method_id, limit, before)
+
+    @app.post('/api/payment-methods', status_code=201, tags=['Business Masters'])
+    def create_payment_method(body: PaymentMethodCreate, user: Actor, key: RequestKey):
+        return store.create_payment_method(body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/payment-methods/{payment_method_id}/changes', status_code=201,
+              tags=['Business Masters'])
+    def change_payment_method(payment_method_id: str, body: PaymentMethodChange,
+                              user: Actor, key: RequestKey):
+        return store.change_payment_method(payment_method_id, body.model_dump(mode='json'),
+                                            user, key)
+
+    @app.get('/api/workforce/employees/{employee_id}/legacy-ids', tags=['People'])
+    def employee_legacy_ids(employee_id: str, user: Actor,
+                            limit: Limit = 100, offset: Offset = 0):
+        return store.employee_legacy_ids(employee_id, limit, offset)
+
+    @app.post('/api/workforce/employees/{employee_id}/legacy-ids', status_code=201,
+              tags=['People'])
+    def create_employee_legacy_id(employee_id: str, body: EmployeeLegacyIdCreate,
+                                  user: Actor, key: RequestKey):
+        payload = body.model_dump(mode='json')
+        payload['employee_id'] = employee_id
+        return store.create_employee_legacy_id(payload, user, key)
+
+    @app.post('/api/storage-location-mappings/recompute', status_code=201,
+              tags=['Business Masters'])
+    def recompute_location_mappings(user: Actor, key: RequestKey):
+        return store.recompute_location_mappings(user, key)
+
+    @app.get('/api/storage-location-mappings', tags=['Business Masters'])
+    def storage_location_mappings(user: Actor,
+                                  match_status: Literal['all','pending','confirmed','ambiguous']
+                                  = 'all',
+                                  storage_id: Annotated[str, Query(max_length=160)] = '',
+                                  q: Annotated[str, Query(max_length=160)] = '',
+                                  limit: Limit = 100, offset: Offset = 0):
+        return store.storage_location_mappings(match_status, storage_id, q, limit, offset)
+
+    @app.post('/api/storage-location-mappings/{mapping_id}/mappings', status_code=201,
+              tags=['Business Masters'])
+    def map_storage_location(mapping_id: str, body: StorageLocationMapping,
+                             user: Actor, key: RequestKey):
+        return store.map_storage_location(mapping_id, body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/storage-location-mappings/summary', tags=['Business Masters'])
+    def location_mapping_summary(user: Actor):
+        return store.location_mapping_summary()
 
     return app

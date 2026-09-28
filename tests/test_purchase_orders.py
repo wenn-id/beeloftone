@@ -179,10 +179,17 @@ class PurchaseOrderTest(TestCase):
         self.assertEqual(self.client.get('/api/purchase-orders?before='+str(page[0]['sequence'])).json()[0]['id'],a['id'])
         self.assertEqual(len(self.client.get('/api/purchase-orders?status=issued&request_id='+pr['id']).json()),1)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
             for table in ['suppliers','purchase_orders','purchase_order_cancellations']:
-                for sql in ['DELETE FROM '+table,'UPDATE '+table+' SET reason=reason']:
-                    with self.assertRaises(sqlite3.IntegrityError):db.execute(sql)
+                with self.assertRaises(sqlite3.IntegrityError):db.execute('DELETE FROM '+table)
+            for table in ['purchase_orders','purchase_order_cancellations']:
+                with self.assertRaises(sqlite3.IntegrityError):db.execute('UPDATE '+table+' SET reason=reason')
+            # M02 (#44): identitas pemasok tetap terkunci, tetapi `active` kini bisa
+            # diubah supaya pemasok dapat dinonaktifkan tanpa dihapus. Histori PO
+            # tetap terbaca karena barisnya tidak hilang.
+            with self.assertRaises(sqlite3.IntegrityError):db.execute('UPDATE suppliers SET code=code||? ',('x',))
+            db.execute('UPDATE suppliers SET active=0')
+            self.assertEqual(db.execute('SELECT active FROM suppliers LIMIT 1').fetchone()[0],0)
         backup=self.path.parent/'po-backup.sqlite3'
         self.app.state.store.backup(backup)
         self.assertEqual(Store(backup).purchase_order(b['id']),self.detail(b))

@@ -242,7 +242,7 @@ agar konsumen tahu asumsi mana yang dipakai.
 | DA-06 | Cutting baru hanya boleh dicatat saat rencana cutting order berstatus `approved`; persetujuan satu langkah oleh admin dengan revision guard (tidak ada approval berlapis) | #49 |
 | DA-07 | Estimasi hasil = total lembar × setelan per lembar per SKU; hanya estimasi berlabel `policy_ref="DEMO-20260928-1"`, bukan aktual dan bukan konsumsi | #49 |
 | DA-08 | `setelan_per_lembar` berarti jumlah potongan (pcs) per lembar; berat produk dan berat bahan disimpan integer milli-unit; tidak ada konversi kg↔meter | #49 |
-| DA-09 | Order lama (pra-migrasi 57) di-backfill sebagai rencana `approved` agar histori cutting tetap valid; order baru mulai dari `draft` | #49 |
+| DA-09 | Order lama (pra-migrasi 58) di-backfill sebagai rencana `approved` agar histori cutting tetap valid; order baru mulai dari `draft` | #49 |
 
 Asumsi ini **bukan** fakta legacy dan **bukan** kebijakan produksi yang
 disetujui. Nilai pada fixture/skenario demo tidak boleh dijadikan fallback
@@ -283,7 +283,7 @@ konflik dan memeriksa baseline lagi sebelum integrasi.
 Tabel ini urutan parsial dependensi, bukan izin menjalankan seluruh migrasi
 gelombang serentak; ikuti juga dependensi tiap issue paket. **Tidak ada nomor
 migrasi yang dipesan F02.** Schema main saat ini 56. Branch P02 (#49) memakai
-**57 secara provisional** untuk tabel `production_plans`/`cutting_run_*`;
+**58** untuk tabel `production_plans`/`cutting_run_*`;
 penomoran final dikoordinasikan dengan #44 dan A0 saat rebase sebelum merge
 (jika bentrok, migrasi P02 di-renumber). Upgrade wajib
 mempertahankan ID/source, jumlah dan nilai, status serta audit/reversal; backfill

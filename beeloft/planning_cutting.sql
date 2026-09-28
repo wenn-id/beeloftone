@@ -1,5 +1,5 @@
 BEGIN IMMEDIATE;
--- Migrasi 57 — P02 parity planning dan cutting (issue #49).
+-- Migrasi 58 — P02 parity planning dan cutting (issue #49).
 --
 -- Prinsip yang dijaga:
 -- * SATU ledger: output aktual dan konsumsi aktual tetap dicatat lewat
@@ -115,5 +115,5 @@ SELECT o.id,
        'approved', 0, o.created_by, o.created_at
 FROM orders o WHERE NOT EXISTS(SELECT 1 FROM production_plans p WHERE p.order_id = o.id);
 
-PRAGMA user_version = 57;
+PRAGMA user_version = 58;
 COMMIT;

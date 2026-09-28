@@ -272,7 +272,7 @@ class PlanningCuttingTest(TestCase):
             db.commit()
         Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 57)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],58)
         plan = self.plan(order)
         self.assertEqual(plan['status'], 'approved')  # grandfathered: histori lama tidak rusak
         self.assertEqual(plan['revision'], 0)

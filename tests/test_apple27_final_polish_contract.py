@@ -448,14 +448,14 @@ class BudgetTest(unittest.TestCase):
 class VersionTest(unittest.TestCase):
     def test_version_schema_and_contract(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.116.0', 'A6.8 is the final Apple-27 milestone')
+        self.assertEqual(version, '0.117.0', 'M02 (#44) menambah master bisnis di atas Apple-27')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 232, 'P02 adds 4 planning/cutting endpoints')
+        self.assertEqual(len(contract['paths']), 258, 'M02 (#44) menambah endpoint master bisnis')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 57)
+        self.assertEqual(max(versions), 58)
 
     def test_documentation(self):
         text = (ROOT / 'docs' / 'apple27-final-consistency-polish.md').read_text(encoding='utf-8')

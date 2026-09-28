@@ -24,25 +24,31 @@ class Migration56Test(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         store = Store(str(Path(folder.name) / "m01.sqlite3"))
-        store.connect()
+        db = store.connect()
+        # WAL sidecar harus di-checkpoint dan koneksi ditutup sebelum folder
+        # sementara dihapus, kalau tidak Windows mengunci -wal/-shm.
+        self.addCleanup(db.close)
+        self.addCleanup(lambda: db.execute("PRAGMA wal_checkpoint(TRUNCATE)"))
         return store
 
     def db_version(self, store):
         with store.transaction() as db:
             return db.execute("PRAGMA user_version").fetchone()[0]
 
-    def test_fresh_db_reaches_latest_schema_with_uom_seeds(self):
+    def test_fresh_db_reaches_schema_56_with_uom_seeds(self):
         store = self.fresh_store()
-        self.assertEqual(self.db_version(store), 57)
+        self.assertEqual(self.db_version(store), 58)
         with store.transaction() as db:
             codes = [r[0] for r in db.execute("SELECT code FROM uoms ORDER BY code")]
         self.assertEqual(codes, ["KG", "LSN", "M", "PCS"])
 
-    def test_upgrade_55_to_latest_preserves_identity_and_history(self):
+    def test_upgrade_55_to_56_preserves_identity_and_history(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         path = str(Path(folder.name) / "legacy.sqlite3")
         # Bangun DB skema-55 langsung via sqlite3 tanpa menjalankan migrasi store.
+        # Tabel yang di-ALTER migrasi berikutnya (suppliers/workforce/sewing/PO) harus
+        # ada, sebagaimana pada DB skema-55 sungguhan; sisnya tetap minimal.
         raw = sqlite3.connect(path)
         raw.executescript("""
             CREATE TABLE users(id TEXT PRIMARY KEY);
@@ -52,8 +58,15 @@ class Migration56Test(unittest.TestCase):
             CREATE TABLE materials(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 name TEXT NOT NULL, unit TEXT NOT NULL CHECK(unit IN ('m','kg','pcs')),
                 created_by TEXT, created_at TEXT NOT NULL);
-            CREATE TABLE orders(id TEXT PRIMARY KEY, reference TEXT NOT NULL,
-                created_by TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE suppliers(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL, contact TEXT NOT NULL, address TEXT NOT NULL,
+                reason TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL);
+            CREATE TABLE workforce_employees(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE);
+            CREATE TABLE workforce_employee_events(id TEXT PRIMARY KEY, employee_id TEXT NOT NULL);
+            CREATE TABLE sewing_jobs(id TEXT PRIMARY KEY);
+            CREATE TABLE purchase_orders(id TEXT PRIMARY KEY);
+            CREATE TABLE positions(id TEXT PRIMARY KEY);
+            CREATE TABLE business_units(id TEXT PRIMARY KEY);
         """)
         raw.execute("PRAGMA user_version = 55")
         raw.execute(
@@ -66,8 +79,10 @@ class Migration56Test(unittest.TestCase):
         raw.close()
 
         upgraded = Store(path)
-        upgraded.connect()
-        self.assertEqual(self.db_version(upgraded), 57)
+        conn = upgraded.connect()
+        self.addCleanup(conn.close)
+        self.addCleanup(lambda: conn.execute("PRAGMA wal_checkpoint(TRUNCATE)"))
+        self.assertEqual(self.db_version(upgraded), 58)
         with upgraded.transaction() as db:
             prod = db.execute("SELECT sku,name,color,size,uom_code,active FROM products WHERE id='p-legacy'").fetchone()
             mat = db.execute(

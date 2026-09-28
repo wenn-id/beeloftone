@@ -38,6 +38,7 @@ const entryFrames = new WeakMap(), entryTimers = new WeakMap();
 let enteredSection = '';
 let materialsRequest = 0, materialsOffset = 0;
 let peopleRequest = 0, productsRequest = 0, productsCache = [];
+let mastersRequest = 0, mastersTab = 'unit', mastersCache = [];
 let dialogReturnFocus = null;
 // Satu penutupan beranimasi pada satu waktu. dialogCloseTimer juga penanda bahwa keluar sedang
 // berjalan, supaya klik kedua pada tombol tutup tidak menumpuk timer; listener-nya dipegang di
@@ -417,6 +418,7 @@ const workspaceDestinations={
   'approvals':'approvals-view',
   'purchase-requests':'purchase-requests-view',
   'marketing-budgets':'marketing-budgets-view',
+  'business-masters':'masters-view',
   'scan-bundle':'bundle-scan-view',
   'scan-finished-goods':'finished-goods-scan-view',
   'backup':'backup-view'
@@ -442,6 +444,7 @@ const workspaceSections=[
   {id:'approvals-view',view:'approvals',invalidate(){approvalsRequest++;}},
   {id:'purchase-requests-view',view:'purchase-requests',invalidate(){purchaseRequestsRequest++;}},
   {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}},
+  {id:'masters-view',view:'masters',invalidate(){mastersRequest++;}},
   {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
   {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
@@ -1739,6 +1742,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (view === 'approvals') reloadApprovals();
       if (view === 'purchase-requests') reloadPurchaseRequests();
       if (view === 'marketing-budgets') reloadMarketingBudgets();
+      if (view === 'masters') loadMasters();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -2146,11 +2150,241 @@ async function orderForm() {
     $('add-line').onclick = addLine; addLine();
   } catch (error) { if (version === epoch && modalVersion === dialogVersion && $('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p><button data-action="new-order">Coba lagi</button>`; }
 }
+$('products').onclick = showProducts; $('new-order').onclick = orderForm;
+$('business-masters').onclick = showMasters;
+$('masters-back').onclick = showBoard;
+$('masters-refresh').onclick = loadMasters;
+$('new-master').onclick = () => { if (mastersTab === 'mapping') recomputeMappings(); else masterForm(); };
+$('masters-search-form').addEventListener('submit', event => event.preventDefault());
+$('masters-search').addEventListener('input', () => { if (view === 'masters') paintMasters(); });
+$('masters-clear').onclick = () => { $('masters-search').value = ''; paintMasters(); $('masters-search').focus(); };
+document.querySelectorAll('[data-master-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    mastersTab = button.dataset.masterTab;
+    document.querySelectorAll('[data-master-tab]').forEach(tab =>
+      tab.setAttribute('aria-selected', String(tab === button)));
+    $('masters-search').value = '';
+    if (view === 'masters') loadMasters(); else showMasters();
+  });
+});
+
 $('products').onclick = showProducts; $('master-catalog').onclick = showMasterCatalog; $('new-order').onclick = orderForm;
 $('audit-trail').onclick = showAuditEvents;
 $('workforce').onclick = showPeople;
 $('scan-bundle').onclick = () => showScanner('bundle');
 $('scan-finished-goods').onclick = () => showScanner('finished-goods');
+// ---------------------------------------------------------------------------
+// Master bisnis (M02): unit usaha, lokasi, pelanggan, jabatan, metode
+// pembayaran, dan pemetaan lokasi teks -> identitas storage. Tab memilih jenis
+// master; daftar memakai pola record-list yang sama dengan Master SKU.
+// ---------------------------------------------------------------------------
+const MASTER_SPECS = {
+  'unit': {label:'Unit usaha', noun:'unit', path:'/api/business-units', icon:'building',
+           create:{code:'Kode unit', name:'Nama unit usaha'},
+           change:{name:'Nama unit usaha'}},
+  'storage': {label:'Lokasi', noun:'lokasi', path:'/api/storages', icon:'box',
+              create:{code:'Kode lokasi', name:'Nama lokasi', kind:'Jenis', business_unit_id:'Unit usaha'},
+              change:{name:'Nama lokasi', kind:'Jenis'}},
+  'customer': {label:'Pelanggan', noun:'pelanggan', path:'/api/customers', icon:'tag',
+               create:{code:'Kode pelanggan', name:'Nama pelanggan', contact:'Kontak', address:'Alamat'},
+               change:{name:'Nama pelanggan', contact:'Kontak', address:'Alamat'}},
+  'position': {label:'Jabatan', noun:'jabatan', path:'/api/positions', icon:'users',
+               create:{code:'Kode jabatan', name:'Nama jabatan'},
+               change:{name:'Nama jabatan'}},
+  'payment-method': {label:'Metode pembayaran', noun:'metode pembayaran', path:'/api/payment-methods', icon:'wallet',
+                     create:{code:'Kode metode', name:'Nama metode', kind:'Jenis'},
+                     change:{name:'Nama metode', kind:'Jenis'}},
+};
+const MASTER_KINDS = {storage:['warehouse','retail','production','other'],
+                      'payment-method':['cash','bank_transfer','qris','ewallet','other']};
+const MASTER_KIND_LABELS = {warehouse:'Gudang',retail:'Retail',production:'Produksi',other:'Lainnya',
+                            cash:'Tunai',bank_transfer:'Transfer bank',qris:'QRIS',ewallet:'E-wallet',other:'Lainnya'};
+let masterUnits = [], masterStorageOptions = [];
+
+function showMasters() {
+  activateWorkspace('business-masters');
+  selected = null;
+  $('new-master').hidden = user.role !== 'admin';
+  loadMasters();
+}
+function mastersQueryParams() {
+  return mastersTab === 'mapping' ? {match_status:'all'} : {};
+}
+async function loadMasters() {
+  const version = epoch, request = ++mastersRequest;
+  const search = $('masters-search'), clear = $('masters-clear');
+  search.disabled = true; clear.disabled = true;
+  if (!markRefreshing('master-list')) { pageState('masters-message','loading','Memuat daftar master…'); $('master-list').replaceChildren(); }
+  try {
+    // Opsi unit/storage dipakai form dialog; tidak ada permintaan tambahan bila tab tidak memerlukan.
+    const [units, storages] = mastersTab === 'mapping'
+      ? [await allRows('/api/business-units',{status:'active'}), await allRows('/api/storages',{status:'active'})]
+      : mastersTab === 'storage' ? [await allRows('/api/business-units',{status:'active'}), []] : [[],[]];
+    if (version !== epoch || request !== mastersRequest || view !== 'masters') return;
+    masterUnits = units; masterStorageOptions = storages;
+    const rows = mastersTab === 'mapping'
+      ? await allRows('/api/storage-location-mappings', mastersQueryParams())
+      : await allRows(MASTER_SPECS[mastersTab].path, {status:'all'});
+    if (version !== epoch || request !== mastersRequest || view !== 'masters') return;
+    settleRefreshing('master-list');
+    mastersCache = rows;
+    paintMasters();
+    search.disabled = false; clear.disabled = false;
+  } catch (error) {
+    if (version !== epoch && request !== mastersRequest && view !== 'masters') return;
+    settleRefreshing('master-list');
+    if (error.status === 401) fail(error,'masters-message');
+    else pageState('masters-message','error','Daftar master gagal dimuat.',error.message,
+      '<button id="masters-retry" type="button" class="action-secondary">Coba lagi</button>');
+    if ($('masters-retry')) $('masters-retry').onclick = loadMasters;
+  }
+}
+function masterSecondary(row) {
+  // Baris master memunculkan identitas, status aktif, dan meta pemilik.
+  if (mastersTab === 'storage') return `${e(row.label || row.name)} · ${MASTER_KIND_LABELS[row.kind] || row.kind}`;
+  if (mastersTab === 'payment-method') return `${MASTER_KIND_LABELS[row.kind] || row.kind}`;
+  if (mastersTab === 'customer') return [row.contact, row.address].filter(Boolean).map(e).join(' · ');
+  return '';
+}
+function paintMasters() {
+  const spec = MASTER_SPECS[mastersTab];
+  $('masters-catalog-heading').textContent = mastersTab === 'mapping' ? 'Pemetaan lokasi' : spec.label;
+  $('new-master').textContent = mastersTab === 'mapping' ? 'Hitung ulang pemetaan' : `Tambah ${spec.noun}`;
+  const q = $('masters-search').value.trim().toLowerCase();
+  const rows = mastersTab === 'mapping'
+    ? mastersCache.filter(row => [row.raw_text, row.storage_code, row.unit_code].filter(Boolean).some(value => value.toLowerCase().includes(q)))
+    : mastersCache.filter(row => [row.code, row.name].filter(Boolean).some(value => value.toLowerCase().includes(q)));
+  $('masters-count').textContent = !mastersCache.length ? ''
+    : q ? `${n(rows.length)} dari ${n(mastersCache.length)}`
+    : `${n(mastersCache.length)} ${mastersTab === 'mapping' ? 'pemetaan' : spec.noun}`;
+  if (rows.length) pageState('masters-message','');
+  else if (mastersCache.length) pageState('masters-message','empty','Tidak ada yang cocok dengan pencarian ini.',
+    'Periksa ejaan kode atau nama.',
+    '<button type="button" class="action-secondary" data-action="reset-master-search">Reset pencarian</button>');
+  else pageState('masters-message','empty', mastersTab === 'mapping' ? 'Belum ada pemetaan lokasi.' : `Belum ada ${spec.noun}.`,
+    mastersTab === 'mapping' ? 'Penerimaan bahan menyimpan teks lokasi. Jalankan hitung ulang untuk memetakan teks ke identitas lokasi.'
+      : `Tambahkan ${spec.noun} pertama untuk mulai mencatat transaksi.`,
+    user.role === 'admin' ? `<button type="button" class="action-primary" data-action="new-master">Tambah ${spec.noun} pertama</button>` : '');
+  if (mastersTab === 'mapping') { paintLocationMappings(rows); return; }
+  $('master-list').innerHTML = `<ul class="record-list">${rows.map(row => {
+    const active = row.active !== false;
+    const state = active
+      ? '<span class="status-chip status-chip-success"><span class="status-dot" aria-hidden="true"></span>Aktif</span>'
+      : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>';
+    return `<li class="record-row" data-master-row="${e(row.id)}">`
+      + `<span class="metric-icon">${svgIcon(spec.icon,'icon-sm')}</span>`
+      + '<span class="record-row-copy">'
+      + `<span class="data-primary">${e(row.code)}</span>`
+      + `<span class="data-secondary">${e(row.name)}</span>`
+      + (masterSecondary(row) ? `<span class="data-meta">${masterSecondary(row)}</span>` : '')
+      + `<span class="chip-row">${state}<span class="data-meta">Revisi ${n(row.revision)} · ${e(row.actor_name || '')}</span></span>`
+      + '</span>'
+      + '<span class="record-row-aside">'
+      + `<button type="button" class="action-secondary" data-action="master-history" data-id="${e(row.id)}" aria-label="Riwayat ${e(row.code)}">Riwayat</button>`
+      + (user.role === 'admin'
+        ? `<button type="button" class="action-secondary" data-action="edit-master" data-id="${e(row.id)}" aria-label="Ubah ${e(row.code)}">Ubah</button>`
+        : '')
+      + '</span></li>';
+  }).join('')}</ul>`;
+}
+function paintLocationMappings(rows) {
+  const statusChip = {pending:['neutral','Menunggu'],confirmed:['success','Terkonfirmasi'],ambiguous:['warn','Ambigu']};
+  $('master-list').innerHTML = `<ul class="record-list">${rows.map(row => {
+    const [tone, label] = statusChip[row.match_status] || ['neutral', row.match_status];
+    return `<li class="record-row" data-master-row="${e(row.id)}">`
+      + `<span class="metric-icon">${svgIcon('box','icon-sm')}</span>`
+      + '<span class="record-row-copy">'
+      + `<span class="data-primary">${e(row.raw_text)}</span>`
+      + `<span class="data-secondary">${row.storage_code ? `${e(row.storage_code)} · ${e(row.storage_name || '')}` : 'Belum dipetakan'}</span>`
+      + (row.unit_code ? `<span class="data-meta">Unit: ${e(row.unit_code)}</span>` : '')
+      + `<span class="chip-row"><span class="status-chip status-chip-${tone}"><span class="status-dot" aria-hidden="true"></span>${label}</span>`
+      + `<span class="data-meta">${e(row.source_table)}.${e(row.source_column)}</span></span>`
+      + '</span>'
+      + '<span class="record-row-aside">'
+      + (user.role === 'admin' && row.match_status !== 'confirmed'
+        ? `<button type="button" class="action-secondary" data-action="map-location" data-id="${e(row.id)}" aria-label="Petakan ${e(row.raw_text)}">Petakan</button>`
+        : '')
+      + '</span></li>';
+  }).join('')}</ul>`;
+}
+function masterFormField(name, label, value = '') {
+  const id = `master-${name}`;
+  if (name === 'kind') {
+    const kinds = MASTER_KINDS[mastersTab] || [];
+    return `<div class="field"><label class="field-label" for="${id}">${label}</label><select id="${id}" name="${name}" required>${kinds.map(kind => option(kind, MASTER_KIND_LABELS[kind] || kind)).join('')}</select></div>`;
+  }
+  if (name === 'business_unit_id') {
+    return `<div class="field"><label class="field-label" for="${id}">${label}</label><select id="${id}" name="${name}" required>${masterUnits.map(unit => option(unit.id, `${unit.code} · ${unit.name}`)).join('')}</select></div>`;
+  }
+  const multi = name === 'address' ? '<textarea' : '<input';
+  const tail = name === 'address' ? ' rows="2"></textarea>' : ' type="text" maxlength="160">';
+  return `<div class="field"><label class="field-label" for="${id}">${label}</label>${multi} id="${id}" name="${name}" required${value ? ` value="${e(value)}"` : ''}${tail}</div>`;
+}
+function masterForm() {
+  if (guardPending()) return;
+  const spec = MASTER_SPECS[mastersTab];
+  const fields = Object.entries(spec.create).map(([name, label]) => masterFormField(name, label)).join('');
+  formDialog(`Tambah ${spec.noun}`, fields,
+    form => Object.fromEntries(new FormData(form)), spec.path,
+    `Kode ${spec.noun} tidak dapat diubah setelah dibuat. Nonaktifkan, jangan hapus, agar histori tetap terbaca.`);
+}
+function masterEditForm(masterId) {
+  if (guardPending()) return;
+  const spec = MASTER_SPECS[mastersTab];
+  const row = mastersCache.find(item => item.id === masterId);
+  if (!row) return;
+  const fields = Object.entries(spec.change).map(([name, label]) => masterFormField(name, label, row[name] || '')).join('')
+    + '<div class="field"><label class="field-label" for="master-active">Status</label><select id="master-active" name="active" required>'
+    + `<option value="true"${row.active ? ' selected' : ''}>Aktif</option>`
+    + `<option value="false"${row.active ? '' : ' selected'}>Nonaktif</option></select></div>`;
+  formDialog(`Ubah ${spec.noun}`, fields,
+    form => Object.assign(Object.fromEntries(new FormData(form)), {expected_revision: row.revision}),
+    `${spec.path}/${encodeURIComponent(masterId)}/changes`,
+    `Kode ${spec.noun} tidak dapat diubah. Nonaktifkan, jangan hapus, agar histori tetap terbaca.`);
+}
+async function masterHistoryDialog(masterId) {
+  if (guardPending()) return;
+  const spec = MASTER_SPECS[mastersTab];
+  openDialog(`Riwayat ${spec.noun}`, '<p class="state">Memuat riwayat…</p>');
+  const modal = dialogVersion;
+  try {
+    const rows = await allRows(`${spec.path}/${encodeURIComponent(masterId)}/history`);
+    if (modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = !rows.length ? '<p class="state">Belum ada riwayat.</p>'
+      : `<ol class="timeline">${rows.map(item => `<li class="timeline-item">`
+        + `<span class="data-primary">${item.active ? 'Aktif' : 'Nonaktif'} · revisi ${n(item.revision)}</span>`
+        + `<span class="data-secondary">${e(item.name)}</span>`
+        + `<span class="data-meta">${e(item.actor_name || '')} · ${e(item.reason || '')}</span></li>`).join('')}</ol>`;
+  } catch (error) {
+    if (modal === dialogVersion && $('dialog').open)
+      $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p>`;
+  }
+}
+async function recomputeMappings() {
+  if (guardPending()) return;
+  openDialog('Hitung ulang pemetaan lokasi', '<p class="state">Menghitung ulang…</p>');
+  try {
+    const result = await api.post('/api/storage-location-mappings/recompute', {});
+    closeDialog();
+    const {confirmed=0, pending=0, ambiguous=0, preserved=0, rows=0} = result || {};
+    notify(`Pemetaan dihitung ulang: ${n(rows)} baris · ${n(confirmed)} terkonfirmasi · ${n(pending)} menunggu · ${n(ambiguous)} ambigu · ${n(preserved)} eksplisit dipertahankan.`);
+    loadMasters();
+  } catch (error) {
+    if ($('dialog').open) $('dialog-content').innerHTML = `<p class="error">${e(error.message)}</p>`;
+  }
+}
+function mapLocationForm(mappingId) {
+  if (guardPending()) return;
+  const row = mastersCache.find(item => item.id === mappingId);
+  if (!row) return;
+  formDialog('Petakan lokasi teks',
+    masterFormField('storage_id', 'Lokasi (storage)')
+    + reasonField(),
+    form => ({storage_id: new FormData(form).get('storage_id'),
+              reason: new FormData(form).get('reason') || 'Pemetaan eksplisit oleh admin.'}),
+    `/api/storage-location-mappings/${encodeURIComponent(mappingId)}/mappings`,
+    `Teks asli "${row.raw_text}" tidak berubah. Hanya identitas storage yang ditautkan.`);
+}
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
   const id = button.dataset.id, output = button.dataset.output, kind = button.dataset.kind;
@@ -2256,6 +2490,11 @@ document.addEventListener('click', event => {
     'workforce-request-decision':()=>workforceRequestDecisionForm(id,button.dataset.status),
     'capacity-plan':showCapacityPlan,'production-quality-insights':showProductionQualityInsights,
     'new-work-center':()=>capacityWorkCenterForm(),
+    'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,
+    'new-master':()=>{ if (mastersTab === 'mapping') recomputeMappings(); else masterForm(); },
+    'edit-master':()=>masterEditForm(id),'master-history':()=>masterHistoryDialog(id),
+    'map-location':()=>mapLocationForm(id),'reset-master-search':()=>{ $('masters-search').value=''; paintMasters(); $('masters-search').focus(); },
+
     'edit-work-center':()=>capacityWorkCenterForm(id),'new-product':productForm,'edit-product':()=>productEditForm(id),
     'new-order':orderForm,'cancel-form':closeDialog};
   actions[button.dataset.action]?.();

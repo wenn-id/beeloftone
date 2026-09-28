@@ -350,14 +350,14 @@ class GlobalTest(unittest.TestCase):
 
     def test_version_schema_and_routes(self):
         version = re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.116.0', 'P02 menambah endpoint planning/cutting')
+        self.assertEqual(version, '0.117.0', 'A6.7 is the visible workspace milestone')
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 232, 'A6.6 is presentation only')
+        self.assertEqual(len(contract['paths']), 258, 'A6.6 is presentation only')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 57)
+        self.assertEqual(max(versions), 58)
 
     def test_documentation_exists(self):
         text = (ROOT / 'docs' / 'apple27-activity-audit-backup-modern-workspaces.md').read_text(encoding='utf-8')

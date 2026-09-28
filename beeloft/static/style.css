@@ -1425,6 +1425,7 @@ label>input,label>select,label>textarea{margin-top:6px}
    narrow viewport. A6.0's `pointer:coarse` step is ADDITIVE to that policy, not a replacement
    for it: this page may not lose a target size it already guaranteed. */
 @media(max-width:980px){
+  #detail-content .detail-field>dt{min-width:0;overflow-wrap:anywhere}
   #board-view button,#detail-view button,
   #board-view .command-filter,#board-view .command-filter>select,
   #board-view .command-search input{min-height:var(--touch-target-min)}

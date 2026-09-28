@@ -124,8 +124,7 @@ selesai dan acceptance disahkan. Merge persiapan ini bukan penyelesaian P02.
 
 ## Implementasi #49 (27 September 2026)
 
-Branch `feat/p02-planning-cutting-49`. Schema **57 (provisional, dikoordinasikan
-dengan #44/A0 saat rebase)**. Status: draft → approved → closed; cutting hanya
+Branch `feat/p02-planning-cutting-49`. Schema **58**. Status: draft → approved → closed; cutting hanya
 untuk rencana approved; approval satu langkah oleh admin dengan revision guard.
 Kode rencana = referensi order (1:1 dengan order).
 
@@ -165,7 +164,7 @@ Qty layak bayar **tidak** dibuat; P02 tidak menghitung payroll/upah.
 - Reversal run cutting: ditolak bila ada bundle aktif atau output sudah
   terkoreksi terpisah; bila lolos, koreksi konsumsi + seluruh output atomik dan
   realisasi rencana kembali turun (netto).
-- Run lama (pra-57) tetap terbaca tanpa parameter baru; tidak ada default
+- Run lama (pra-58) tetap terbaca tanpa parameter baru; tidak ada default
   operasional tebakan.
 - PO bersifat opsional; batch manual tanpa PO tetap didukung.
 - Order lama di-backfill sebagai rencana `approved` (grandfathered); order baru
@@ -175,6 +174,6 @@ Qty layak bayar **tidak** dibuat; P02 tidak menghitung payroll/upah.
 
 - `tests/test_planning_cutting.py`: 20 tes (lifecycle rencana, gate cutting,
   parameter, estimasi, target/realisasi/sisa, idempotency, over-output,
-  reversal, PO, CSV, migrasi 56→57).
+  reversal, PO, CSV, migrasi 57→58).
 - `GET /api/orders/{id}/plan`, `POST .../plan/approve|close`,
   `GET /api/orders/{id}/cutting-runs/export.csv`.
