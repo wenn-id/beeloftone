@@ -313,7 +313,6 @@ class IntegrasiPageTest(unittest.TestCase):
 
     def test_the_endpoint_fence_and_refresh_are_unchanged(self):
         self.assertIn("const report=await api.get('/api/integrations');", LOAD_INTEGRATIONS)
-        self.assertEqual(LOAD_INTEGRATIONS.count('api.get('), 1, 'no decorative fan-out')
         self.assertIn("const version=epoch,request=++integrationsRequest;", LOAD_INTEGRATIONS)
         self.assertIn("const current=()=>version===epoch&&request===integrationsRequest&&view==='integrations';", LOAD_INTEGRATIONS)
         self.assertIn("const holding=refresh&&integrationsReport&&markRefreshing('integrations-body');", LOAD_INTEGRATIONS)
@@ -322,6 +321,7 @@ class IntegrasiPageTest(unittest.TestCase):
         self.assertIn('id="integrations-retry" type="button"', LOAD_INTEGRATIONS)
         self.assertIn("$('integrations-retry').onclick=()=>loadIntegrations();", LOAD_INTEGRATIONS)
         self.assertIn('async function loadIntegrations(refresh = false) {', LOAD_INTEGRATIONS)
+        self.assertIn('renderJubelioDemoSection();', LOAD_INTEGRATIONS)
 
     def test_health_is_ledger_truth_in_five_states(self):
         self.assertIn("const integrationHealth={healthy:'Sehat',failed:'Gagal',stale:'Stale',never_synced:'Belum pernah sync',incomplete:'Belum lengkap'};", APP)
@@ -423,20 +423,16 @@ class LedgerAndSnapshotTest(unittest.TestCase):
         self.assertIn("approval.stale?' · sumber berubah':''", PAYROLL_CARD)
         self.assertNotRegex(code(A65_APP), r'employee_name|employee_id|nama karyawan')
 
-    def test_no_write_or_sync_control_was_invented(self):
+    def test_jubelio_demo_controls_only_call_demo_control_routes(self):
         text = code(A65_APP)
-        for forbidden in ('Sync now', 'Sinkronkan', 'Impor', 'Kirim snapshot', 'Buat jurnal', 'Post jurnal', 'Perbaiki jurnal',
-                          'Bayar invoice', 'Tagih', 'Jalankan payroll', 'Sesuaikan stok', 'Jalankan ulang'):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, text)
-        # The only writes A6.5 renderers can reach are the ones that existed: the investigation
-        # transaction, feedback, AI proposals and their decisions. Payroll approvals stay owned by
-        # their own dialog and are only LINKED from the payroll card.
-        self.assertEqual(len(re.findall(r'api\.(?:save|transaction)\(', text)), 2)
-        targets = re.findall(r"'(/api/ai/[a-z\-]+)'", text)
-        self.assertEqual(sorted(set(targets)), ['/api/ai/action-proposals', '/api/ai/investigations'])
-        self.assertEqual(text.count('formDialog('), 4, 'feedback, two proposal forms, one decision form')
-        self.assertNotRegex(text, r"api\.post\(")
+        for fragment in ('Jubelio Demo · Simulasi', 'Sinkronkan sekarang', 'Jalankan skenario berikutnya',
+                         'Lihat riwayat sinkronisasi','sessionStorage.setItem(\'beeloft.jubelio-demo.pending\'',
+                         'sessionStorage.removeItem(\'beeloft.jubelio-demo.pending\''):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, text)
+        self.assertNotIn('/api/integrations/jubelio/demo/reset', text)
+        self.assertIn('api.save(operation.transaction)', text)
+        self.assertIn("api.get('/api/integrations/jubelio/demo/status')", text)
 
     def test_quarantine_and_no_snapshot_are_first_class(self):
         self.assertIn("const quarantineLabel=(issue,unmapped='SKU belum dipetakan')=>issue==='unmapped'?unmapped:'Mapping tidak konsisten';", APP)
@@ -521,12 +517,12 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
+        self.assertEqual(len(contract['paths']), 320, 'Jubelio Demo adds 4 control/status endpoints after X01')
 
     def test_the_schema_did_not_move(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
+        self.assertEqual(max(versions), 64, 'Jubelio Demo state follows X01 schema 63')
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory

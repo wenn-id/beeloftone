@@ -121,6 +121,7 @@ LEGACY_VOCABULARY = (
 # supplier returns, closure, supplier payments), the production change request and the payroll
 # approval request the Inbox opens, the order-scoped "PR untuk order ini" dialog (an A6.1 production
 # child dialog), and `formDialog()`'s own chrome.
+# Jubelio Demo augments Integrasi with one card and its status chip; only that renderer owns its A6 markup.
 MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-view',
                      'people-view', 'bundle-scan-view', 'finished-goods-scan-view',
                      'analytics-view', 'ai-view', 'integrations-view',
@@ -193,7 +194,7 @@ MIGRATED_RENDERERS = frozenset({
     'aiInvestigationDetailDialog', 'aiActionProposalForm', 'aiActionProposalDialog',
     'aiProposalField', 'aiProposalContext',
     # ---- A6.5: Integrasi, its run ledger, and the snapshot / reconciliation dialogs ----
-    'showIntegrations', 'loadIntegrations', 'integrationSystem',
+    'showIntegrations', 'loadIntegrations', 'integrationSystem', 'renderJubelioDemoSection', 'bindJubelioDemoControls',
     'integrationRunsDialog', 'integrationRunDialog',
     'jubelioStockReconciliationDialog', 'jubelioStockSnapshotsDialog', 'jubelioStockSnapshotDialog',
     'jubelioOrderSummaryDialog', 'jubelioOrderSnapshotsDialog', 'jubelioOrderSnapshotDialog',
@@ -863,7 +864,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
+        self.assertEqual(max(versions), 64, 'Jubelio Demo state follows X01 schema 63')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -877,7 +878,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
+        self.assertEqual(len(contract['paths']), 320, 'Jubelio Demo adds 4 control/status endpoints after X01')
 
 
 if __name__ == '__main__':

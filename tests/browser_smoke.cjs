@@ -414,6 +414,7 @@ const admin = creds.users[0].api_key, operator = creds.users[1].api_key, viewer 
   await runModule('./browser_jubelio_order_snapshots.cjs');
   await runModule('./browser_jubelio_return_snapshots.cjs');
   await runModule('./browser_jubelio_listing_snapshots.cjs');
+  await runModule('./browser_jubelio_demo.cjs');
   await runModule('./browser_mekari_finance_snapshots.cjs');
   await runModule('./browser_mekari_payable_snapshots.cjs');
   await runModule('./browser_mekari_receivable_snapshots.cjs');

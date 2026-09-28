@@ -392,7 +392,7 @@ class EmployeeJobTest(test_production.ProductionTest):
             tables = {row[0] for row in db.execute(
                 "SELECT name FROM sqlite_schema WHERE type='table' "
                 "AND name LIKE 'p03_%'")}
-        self.assertEqual(version, 63)
+        self.assertEqual(version, 64)
         self.assertIn('p03_jobs', tables)
         self.assertIn('p03_job_realizations', tables)
         self.assertIn('p03_service_charges', tables)
@@ -419,7 +419,7 @@ class EmployeeJobTest(test_production.ProductionTest):
             self.assertEqual(self.charge_row(charge['id']), expected_charge)
             self.assertEqual(self.charge_count(job['id'], realization['id']), 1)
             with store2.transaction() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 63)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 64)
                 self.assertEqual([tuple(row) for row in db.execute(
                     "SELECT type,name,sql FROM sqlite_schema "
                     "WHERE tbl_name IN ('p03_jobs','p03_job_realizations',"

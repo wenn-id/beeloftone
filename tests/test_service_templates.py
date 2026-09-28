@@ -390,7 +390,7 @@ class ServiceTemplateTest(test_production.ProductionTest):
             version = db.execute('PRAGMA user_version').fetchone()[0]
             tables = {r[0] for r in db.execute(
                 "SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE 'service_%'")}
-        self.assertEqual(version, 63)
+        self.assertEqual(version, 64)
         self.assertIn('service_work_types', tables)
         self.assertIn('service_rate_events', tables)
         self.assertIn('service_template_applications', tables)

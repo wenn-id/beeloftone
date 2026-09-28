@@ -193,16 +193,21 @@ class ImportStoreTest(TestCase):
         self.store = Store(self.db)
         self.admin = self.store.provision_user("Administrator", "admin")
         self.actor = {"id": self.admin["id"]}
+        self._connections = []
 
     def tearDown(self):
+        for connection in self._connections:
+            connection.close()
         self.tmp.cleanup()
 
     def _con(self):
-        return sqlite3.connect(self.db)
+        connection = sqlite3.connect(self.db)
+        self._connections.append(connection)
+        return connection
 
-    def test_schema_63_and_import_permission_insertable(self):
+    def test_schema_64_and_import_permission_insertable(self):
         version = self._con().execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 63)
+        self.assertEqual(version, 64)
         # permission baru lolos CHECK constraint hasil rebuild
         self.store.set_user_permissions(self.admin["id"], ["read_operational",
                                                            "import_data"],

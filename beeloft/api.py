@@ -534,10 +534,6 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def jubelio_demo_next_scenario(user: Actor, key: RequestKey):
         return store.jubelio_demo_next_scenario(user, key)
 
-    @app.post('/api/integrations/jubelio/demo/reset', status_code=200, tags=['Integrations'])
-    def jubelio_demo_reset(user: Actor, key: RequestKey):
-        return store.jubelio_demo_reset(user, key)
-
     @app.post('/api/integrations/mekari/finance-snapshots', status_code=201, tags=['Integrations'])
     def import_mekari_finance_snapshot(body: MekariFinanceSnapshotImport, user: Actor, key: RequestKey):
         return store.import_mekari_finance_snapshot(body.model_dump(mode='json'),user,key)

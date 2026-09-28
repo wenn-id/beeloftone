@@ -234,7 +234,7 @@ class Store:
         self._tx_local = threading.local()
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -528,6 +528,9 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 # untuk izin baru 'import_data'. Perubahan data domain tetap
                 # hanya lewat fungsi service saat apply eksplisit.
                 db.executescript(Path(__file__).with_name('import_jobs.sql').read_text(encoding='utf-8'))
+            if version < 64:
+                # Jubelio Demo commerce connector state and durable scope retry receipts.
+                db.executescript(Path(__file__).with_name('jubelio_demo.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -1744,28 +1747,23 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 raise DomainError(403, "Hanya admin yang dapat mengelola mode Jubelio Demo.")
 
     def jubelio_demo_status(self):
-        from beeloft.jubelio_demo import JubelioDemoManager
+        from beeloft.jubelio_demo_manager import JubelioDemoManager
         return JubelioDemoManager(self).get_status()
 
     def jubelio_demo_activate(self, actor, key):
         self._guard_jubelio_demo_admin(actor)
-        from beeloft.jubelio_demo import JubelioDemoManager
+        from beeloft.jubelio_demo_manager import JubelioDemoManager
         return JubelioDemoManager(self).activate(actor, key)
 
-    def jubelio_demo_sync(self, actor, key, scenario=None):
+    def jubelio_demo_sync(self, actor, key):
         self._guard_jubelio_demo_admin(actor)
-        from beeloft.jubelio_demo import JubelioDemoManager
-        return JubelioDemoManager(self).sync(actor, key, scenario)
+        from beeloft.jubelio_demo_manager import JubelioDemoManager
+        return JubelioDemoManager(self).sync(actor, key)
 
     def jubelio_demo_next_scenario(self, actor, key):
         self._guard_jubelio_demo_admin(actor)
-        from beeloft.jubelio_demo import JubelioDemoManager
+        from beeloft.jubelio_demo_manager import JubelioDemoManager
         return JubelioDemoManager(self).next_scenario(actor, key)
-
-    def jubelio_demo_reset(self, actor, key):
-        self._guard_jubelio_demo_admin(actor)
-        from beeloft.jubelio_demo import JubelioDemoManager
-        return JubelioDemoManager(self).reset_demo(actor, key)
 
     @staticmethod
     def _mekari_finance_period(row):

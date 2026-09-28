@@ -1103,13 +1103,13 @@ class VersionAndSchemaTest(unittest.TestCase):
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
+        self.assertEqual(len(contract['paths']), 320, 'Jubelio Demo adds 4 control/status endpoints after X01')
 
     def test_the_schema_did_not_move_and_no_migration_was_added(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
+        self.assertEqual(max(versions), 64, 'Jubelio Demo state follows X01 schema 63')
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory
