@@ -29,6 +29,9 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, openSideb
     {name: 'Produksi', nav: 'board-home', section: 'board-view', heading: 'Produksi'},
     {name: 'Bahan baku', nav: 'materials', section: 'materials-view', heading: 'Bahan baku'},
     {name: 'People', nav: 'workforce', section: 'people-view', heading: 'People', content: '#workforce-list .record-row'},
+    // P03 (#52): Job borongan karyawan adalah halaman workspace sendiri, bukan
+    // bagian analytics, jadi masuk ke matriks utama, bukan analyticsChildren.
+    {name: 'Pekerjaan', nav: 'jobs', section: 'jobs-view', heading: 'Pekerjaan', content: '#jobs-list'},
     {name: 'Master SKU', nav: 'products', section: 'products-view', heading: 'Master SKU', content: '#product-list .record-row'},
     {name: 'Master katalog', nav: 'master-catalog', section: 'master-catalog-view', heading: 'Master katalog', content: '#master-catalog-list .record-row'},
     {name: 'Master bisnis', nav: 'business-masters', section: 'masters-view', heading: 'Master bisnis', content: '#masters-search-form'},

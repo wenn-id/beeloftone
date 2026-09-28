@@ -98,6 +98,7 @@
             <p class="nav-section-label">Operasional</p>
             <button id="materials" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-box"/></svg>Bahan baku</button>
             <button id="workforce" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg>People</button>
+            <button id="jobs" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clipboard"/></svg>Pekerjaan</button>
             <button id="scan-bundle" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scan"/></svg>Scan bundle</button>
             <button id="scan-finished-goods" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-barcode"/></svg>Scan barang jadi</button>
             <button id="products" class="nav-item" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-tag"/></svg>Master SKU</button>
@@ -264,6 +265,19 @@
         <div class="workspace-subhead"><h2 id="finance-heading" class="workspace-section-title">COA</h2><span id="finance-count" class="workspace-meta"></span></div>
         <p id="finance-message" class="state" role="status" hidden></p>
         <div id="finance-list" class="list-host"></div>
+      </section>
+      <section id="jobs-view" class="workspace-page" hidden>
+        <button id="jobs-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>
+        <div class="workspace-heading"><div class="workspace-heading-copy"><h1 class="workspace-title">Pekerjaan</h1><p class="workspace-subtitle">Job borongan karyawan: target, realisasi, approval, dan service charge upah.</p></div><div class="workspace-actions"><button id="jobs-refresh" type="button" class="action-secondary">Muat ulang</button><button id="jobs-new" class="action-primary" type="button" hidden>Job Baru</button></div></div>
+        <div id="jobs-tabs" class="command-bar filter-row" role="tablist" aria-label="Area pekerjaan">
+          <button type="button" class="filter-chip" role="tab" data-jobs-tab="list" aria-selected="true">Daftar Job</button>
+          <button type="button" class="filter-chip" role="tab" data-jobs-tab="detail" aria-selected="false">Detail Job</button>
+          <button type="button" class="filter-chip" role="tab" data-jobs-tab="approval" aria-selected="false">Approval</button>
+          <button type="button" class="filter-chip" role="tab" data-jobs-tab="charges" aria-selected="false">Charge</button>
+        </div>
+        <div class="workspace-subhead"><h2 id="jobs-heading" class="workspace-section-title">Daftar Job</h2><span id="jobs-count" class="workspace-meta"></span></div>
+        <p id="jobs-message" class="state" role="status" hidden></p>
+        <div id="jobs-list" class="list-host"></div>
       </section>
       <section id="master-catalog-view" class="workspace-page" hidden>
         <button id="master-catalog-back" class="quiet back" type="button"><svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Papan produksi</button>

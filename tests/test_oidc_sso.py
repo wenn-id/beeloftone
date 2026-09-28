@@ -309,7 +309,7 @@ class OidcSsoTest(TestCase):
             db.execute('PRAGMA user_version=43');db.commit()
         Store(self.path);Store(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],60)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],61)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM oidc_identities').fetchone()[0],0)
 
     def test_identity_values_are_stored_and_compared_exactly(self):

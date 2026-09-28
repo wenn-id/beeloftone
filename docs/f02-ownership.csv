@@ -502,3 +502,19 @@ endpoint,POST /api/work-types,A1,P01,A2,beeloft/api.py#create_work_type
 endpoint,POST /api/work-types/{work_type_id}/changes,A1,P01,A2,beeloft/api.py#change_work_type
 endpoint,POST /api/work-types/{work_type_id}/rates,A1,P01,A2,beeloft/api.py#save_service_rate
 endpoint,POST /api/work-types/{work_type_id}/rates/deactivate,A1,P01,A2,beeloft/api.py#deactivate_service_rate
+table,p03_jobs,A1,P03,A2,beeloft/employee_jobs.sql
+table,p03_job_realizations,A1,P03,A2,beeloft/employee_jobs.sql
+table,p03_service_charges,A1,P03/P05/P03B,A2,beeloft/employee_jobs.sql
+endpoint,POST /api/employee-jobs,A1,P03,A2,beeloft/api.py#create_employee_job
+endpoint,GET /api/employee-jobs,A1,P03,A2,beeloft/api.py#list_employee_jobs
+endpoint,GET /api/employee-jobs/{job_id},A1,P03,A2,beeloft/api.py#get_employee_job
+endpoint,PATCH /api/employee-jobs/{job_id},A1,P03,A2,beeloft/api.py#update_employee_job
+endpoint,POST /api/employee-jobs/{job_id}/realizations,A1,P03,A2,beeloft/api.py#create_job_realization
+endpoint,PATCH /api/employee-jobs/{job_id}/realizations/{rid},A1,P03,A2,beeloft/api.py#update_job_realization
+endpoint,POST /api/employee-jobs/{job_id}/realizations/{rid}/submit,A1,P03,A2,beeloft/api.py#submit_job_realization
+endpoint,POST /api/employee-jobs/{job_id}/realizations/{rid}/approve,A1,P03,A2,beeloft/api.py#approve_job_realization
+endpoint,POST /api/employee-jobs/{job_id}/realizations/{rid}/reject,A1,P03,A2,beeloft/api.py#reject_job_realization
+endpoint,POST /api/service-charges/{charge_id}/reverse,A1,P03,A2,beeloft/api.py#reverse_service_charge
+endpoint,GET /api/service-charges,A1,P03/P05/P03B,A2,beeloft/api.py#list_service_charges
+endpoint,GET /api/service-charges/{charge_id},A1,P03/P05/P03B,A2,beeloft/api.py#get_service_charge
+endpoint,GET /api/service-charges/by-source,A1,P03/P05/P03B,A2,beeloft/api.py#find_charge_by_source

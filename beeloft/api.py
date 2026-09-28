@@ -23,6 +23,7 @@ from beeloft.models import BundleCreate, CuttingRunCreate, FinalQcRecordCreate, 
 from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, PurchaseOrderCreate, PurchaseOrderReceipt, QualityDecision, SupplierPaymentRequestCreate, SupplierReturn
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
 from beeloft.models import ServiceGroupChange, ServiceGroupCreate, ServiceRateDeactivate, ServiceRateSave, ServiceTemplateApply, ServiceTemplateChange, ServiceTemplateCreate, WorkTypeChange, WorkTypeCreate
+from beeloft.models import EmployeeJobCreate, EmployeeJobUpdate, JobRealizationCreate, JobRealizationUpdate, RealizationReject, ChargeReverse
 from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
                             PeriodDecision, PoReceiptJournalCreate)
 from beeloft.models import UserCreate, UserPermissionsSet, UserPresetSet, UserUnitsSet
@@ -79,7 +80,7 @@ def jakarta_today():
 
 
 def create_app(database_path, oidc_config=None, oidc_transport=None):
-    app = FastAPI(title="Beeloft One · Production API", version="0.118.0",
+    app = FastAPI(title="Beeloft One · Production API", version="0.119.0",
                   description="Produksi dalam pcs; bahan baku dalam satuan master (m/kg/pcs). Gunakan Authorize untuk API key pengguna.")
     store = Store(database_path)
     oidc_config = oidc_config or OidcConfig.from_env()
@@ -2038,5 +2039,93 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                       period_id: Annotated[str, Query(max_length=160)] = '',
                       business_unit_id: Annotated[str, Query(max_length=160)] = ''):
         return store.trial_balance(period_id, business_unit_id)
+
+    # P03 (#52): employee jobs — penugasan kerja karyawan, realisasi,
+    # persetujuan realisasi, dan service charges upah.
+    @app.post('/api/employee-jobs', status_code=201, tags=['Employee Jobs'])
+    def create_employee_job(body: EmployeeJobCreate, user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.create_employee_job(body.model_dump(mode='json'), user, key)
+
+    @app.get('/api/employee-jobs', tags=['Employee Jobs'])
+    def employee_jobs(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                      employee_id: Annotated[str, Query(max_length=64)] = '',
+                      status: Annotated[str, Query(max_length=32)] = '',
+                      unit_id: Annotated[str, Query(max_length=64)] = ''):
+        return store.list_employee_jobs(
+            {'employee_id': employee_id, 'status': status, 'unit_id': unit_id,
+             'limit': limit, 'offset': offset}, user)
+
+    @app.get('/api/employee-jobs/{job_id}', tags=['Employee Jobs'])
+    def employee_job(job_id: str, user: Actor):
+        return store.get_employee_job(job_id, user)
+
+    @app.patch('/api/employee-jobs/{job_id}', tags=['Employee Jobs'])
+    def update_employee_job(job_id: str, body: EmployeeJobUpdate,
+                            user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.update_employee_job(job_id, body.model_dump(mode='json'), user, key)
+
+    @app.post('/api/employee-jobs/{job_id}/realizations', status_code=201,
+              tags=['Employee Jobs'])
+    def create_job_realization(job_id: str, body: JobRealizationCreate,
+                               user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.create_job_realization(job_id, body.model_dump(mode='json'), user, key)
+
+    @app.patch('/api/employee-jobs/{job_id}/realizations/{rid}', tags=['Employee Jobs'])
+    def update_job_realization(job_id: str, rid: str, body: JobRealizationUpdate,
+                               user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.update_job_realization(job_id, rid, body.model_dump(mode='json'),
+                                            user, key)
+
+    @app.post('/api/employee-jobs/{job_id}/realizations/{rid}/submit',
+              tags=['Employee Jobs'])
+    def submit_job_realization(job_id: str, rid: str, user: Actor, key: RequestKey):
+        require_permission(user, "create_transaction")
+        return store.submit_job_realization(job_id, rid, user, key)
+
+    @app.post('/api/employee-jobs/{job_id}/realizations/{rid}/approve',
+              tags=['Employee Jobs'])
+    def approve_job_realization(job_id: str, rid: str, user: Actor, key: RequestKey):
+        require_permission(user, "approve_transaction")
+        return store.approve_job_realization(job_id, rid, user, key)
+
+    @app.post('/api/employee-jobs/{job_id}/realizations/{rid}/reject',
+              tags=['Employee Jobs'])
+    def reject_job_realization(job_id: str, rid: str, body: RealizationReject,
+                               user: Actor, key: RequestKey):
+        require_permission(user, "approve_transaction")
+        return store.reject_job_realization(job_id, rid, body.model_dump(mode='json'),
+                                            user, key)
+
+    @app.post('/api/service-charges/{charge_id}/reverse', tags=['Employee Jobs'])
+    def reverse_service_charge(charge_id: str, body: ChargeReverse,
+                               user: Actor, key: RequestKey):
+        require_permission(user, "approve_transaction")
+        return store.reverse_service_charge(charge_id, body.model_dump(mode='json'),
+                                            user, key)
+
+    @app.get('/api/service-charges', tags=['Employee Jobs'])
+    def service_charges(user: Actor, limit: Limit = 100, offset: Offset = 0,
+                        employee_id: Annotated[str, Query(max_length=64)] = '',
+                        job_id: Annotated[str, Query(max_length=64)] = ''):
+        return store.list_service_charges(
+            {'employee_id': employee_id, 'job_id': job_id,
+             'limit': limit, 'offset': offset}, user)
+
+    # Wajib didaftarkan SEBELUM /api/service-charges/{charge_id} agar tidak
+    # tertangkap sebagai path param.
+    @app.get('/api/service-charges/by-source', tags=['Employee Jobs'])
+    def service_charge_by_source(user: Actor,
+                                 namespace: Annotated[str, Query(max_length=64)],
+                                 source_id: Annotated[str, Query(max_length=64)],
+                                 source_line_id: Annotated[str, Query(max_length=64)]):
+        return store.find_charge_by_source(namespace, source_id, source_line_id, user)
+
+    @app.get('/api/service-charges/{charge_id}', tags=['Employee Jobs'])
+    def service_charge(charge_id: str, user: Actor):
+        return store.get_service_charge(charge_id, user)
 
     return app

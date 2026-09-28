@@ -227,7 +227,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -492,6 +492,13 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                     db.execute('''INSERT OR IGNORE INTO user_access_profiles
                         (user_id,all_units,preset,no_self_approval,updated_by,updated_at)
                         VALUES(?,1,NULL,0,?,?)''',(legacy_user['id'],legacy_user['id'],now()))
+
+            if version < 61:
+                # P03 (#52): job karyawan dan realisasi — penugasan kerja,
+                # realisasi kuantitas untuk upah, dan service charge sebagai
+                # sumber nilai tunggal untuk payroll (#55) dan costing (#53).
+                # Tidak menyentuh pencatatan produksi (sewing_jobs) maupun stok.
+                db.executescript(Path(__file__).with_name('employee_jobs.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -10445,3 +10452,400 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if not row:
                 return None
             return self._service_application(db, row[0])
+
+    # ------------------------------------------------------------------
+    # P03 (#52): Job karyawan dan realisasi
+    # ------------------------------------------------------------------
+    # Job = penugasan kerja ke karyawan. Bukan pencatatan produksi kedua:
+    # tidak menyentuh sewing_jobs, movements, atau stok. Realisasi mencatat
+    # kuantitas kerja untuk upah; approval menghasilkan service charge yang
+    # menjadi satu-satunya sumber nilai untuk payroll (#55) dan costing (#53).
+    P03_SOURCE_NAMESPACE = 'p03.service_charge'
+    P03_DEMO_POLICY_REF = 'DEMO-P03-20260928-1'
+
+    def _p03_employee_active(self, db, employee_id):
+        emp = self._employee(db, employee_id)
+        if not emp['active']:
+            raise DomainError(422, f'Karyawan "{emp["code"]}" nonaktif; '
+                                   'tidak dapat diberi penugasan baru.')
+        return emp
+
+    def _p03_work_type(self, db, work_type_id):
+        wt = db.execute('SELECT id, code FROM service_work_types WHERE id=?',
+                        (work_type_id,)).fetchone()
+        if not wt:
+            raise DomainError(404, 'Jenis pekerjaan tidak ditemukan.')
+        return wt
+
+    def _p03_bundle_valid(self, db, bundle_id):
+        if not bundle_id:
+            return None
+        b = db.execute('SELECT id FROM bundles WHERE id=?', (bundle_id,)).fetchone()
+        if not b:
+            raise DomainError(404, 'Bundle tidak ditemukan.')
+        return b
+
+    def _p03_job(self, db, job_id):
+        row = db.execute('SELECT * FROM p03_jobs WHERE id=?', (job_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Job karyawan tidak ditemukan.')
+        return dict(row)
+
+    def _p03_realization(self, db, job_id, rid):
+        row = db.execute('SELECT * FROM p03_job_realizations WHERE id=? AND job_id=?',
+                         (rid, job_id)).fetchone()
+        if not row:
+            raise DomainError(404, 'Realisasi tidak ditemukan.')
+        return dict(row)
+
+    def _p03_remaining_pcs(self, db, job_id):
+        """Sisa kuantitas yang boleh direalisasikan (derived, bukan kolom)."""
+        job = self._p03_job(db, job_id)
+        used = db.execute('''SELECT COALESCE(SUM(qty_pcs),0) FROM p03_job_realizations
+            WHERE job_id=? AND status IN ('approved','submitted')''', (job_id,)).fetchone()[0]
+        return job['target_qty_pcs'] - used
+
+    def _p03_job_view(self, db, job, actor):
+        from beeloft.permissions import require_unit_access
+        if job.get('unit_id'):
+            require_unit_access(actor, job['unit_id'])
+        realizations = [dict(r) for r in db.execute(
+            'SELECT * FROM p03_job_realizations WHERE job_id=? ORDER BY created_at', (job['id'],))]
+        view = dict(job)
+        view['realizations'] = realizations
+        view['approved_qty_pcs'] = sum(r['qty_pcs'] for r in realizations if r['status'] == 'approved')
+        view['remaining_qty_pcs'] = self._p03_remaining_pcs(db, job['id'])
+        return view
+
+    def create_employee_job(self, payload, actor, key):
+        def perform(db):
+            from beeloft.permissions import require_unit_access
+            employee_id = (payload.get('employee_id') or '').strip()
+            sku = (payload.get('sku') or '').strip()
+            work_type_id = (payload.get('work_type_id') or '').strip()
+            bundle_id = (payload.get('bundle_id') or '').strip() or None
+            target_qty = payload.get('target_qty_pcs')
+            work_date = (payload.get('work_date') or '').strip()
+            unit_id = (payload.get('unit_id') or '').strip() or None
+            notes = (payload.get('notes') or '').strip() or None
+            if not employee_id or not sku or not work_type_id:
+                raise DomainError(422, 'employee_id, sku, dan work_type_id wajib diisi.')
+            if not isinstance(target_qty, int) or target_qty <= 0:
+                raise DomainError(422, 'target_qty_pcs harus integer positif.')
+            if not work_date:
+                raise DomainError(422, 'work_date wajib diisi (YYYY-MM-DD).')
+            self._p03_employee_active(db, employee_id)
+            self._p03_work_type(db, work_type_id)
+            self._p03_bundle_valid(db, bundle_id)
+            if unit_id:
+                require_unit_access(actor, unit_id)
+                unit = db.execute('SELECT id FROM business_units WHERE id=?', (unit_id,)).fetchone()
+                if not unit:
+                    raise DomainError(404, 'Unit usaha tidak ditemukan.')
+            job_id = f"JOB-{uuid4().hex[:12].upper()}"
+            db.execute('''INSERT INTO p03_jobs
+                (id,employee_id,sku,work_type_id,bundle_id,target_qty_pcs,work_date,
+                 status,notes,unit_id,revision,actor_id)
+                VALUES(?,?,?,?,?,?,?,'open',?,?,1,?)''',
+                (job_id, employee_id, sku, work_type_id, bundle_id, target_qty,
+                 work_date, notes, unit_id, actor['id']))
+            return self._p03_job_view(db, self._p03_job(db, job_id), actor)
+        return self._write(actor, ('admin', 'operator'), key, 'p03-job-create', payload, perform)
+
+    def list_employee_jobs(self, filters, actor):
+        from beeloft.permissions import require_unit_access
+        with self.transaction() as db:
+            where = ['1=1']
+            params = []
+            if filters.get('employee_id'):
+                where.append('employee_id=?'); params.append(filters['employee_id'])
+            if filters.get('status'):
+                where.append('status=?'); params.append(filters['status'])
+            if filters.get('unit_id'):
+                require_unit_access(actor, filters['unit_id'])
+                where.append('unit_id=?'); params.append(filters['unit_id'])
+            limit = min(int(filters.get('limit', 100)), 500)
+            offset = int(filters.get('offset', 0))
+            rows = db.execute(
+                f"SELECT * FROM p03_jobs WHERE {' AND '.join(where)} "
+                f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset)).fetchall()
+            jobs = []
+            for row in rows:
+                job = dict(row)
+                # Unit scope: lewati job di luar akses user
+                try:
+                    jobs.append(self._p03_job_view(db, job, actor))
+                except DomainError:
+                    continue
+            return {'jobs': jobs, 'limit': limit, 'offset': offset}
+
+    def get_employee_job(self, job_id, actor):
+        with self.transaction() as db:
+            return self._p03_job_view(db, self._p03_job(db, job_id), actor)
+
+    def update_employee_job(self, job_id, payload, actor, key):
+        def perform(db):
+            job = self._p03_job(db, job_id)
+            if job['status'] not in ('open', 'in_progress'):
+                raise DomainError(409, 'Job yang sudah selesai/dibatalkan tidak dapat diubah.')
+            expected = payload.get('expected_revision')
+            if expected != job['revision']:
+                raise DomainError(409, 'Revisi job berubah; muat ulang dan coba lagi.')
+            fields = {}
+            if 'target_qty_pcs' in payload:
+                v = payload['target_qty_pcs']
+                if not isinstance(v, int) or v <= 0:
+                    raise DomainError(422, 'target_qty_pcs harus integer positif.')
+                used = job['target_qty_pcs'] - self._p03_remaining_pcs(db, job_id)
+                if v < used:
+                    raise DomainError(422, 'Target tidak boleh lebih kecil dari realisasi yang sudah ada.')
+                fields['target_qty_pcs'] = v
+            if 'status' in payload:
+                if payload['status'] not in ('open', 'in_progress', 'done', 'cancelled'):
+                    raise DomainError(422, 'Status job tidak valid.')
+                fields['status'] = payload['status']
+            if 'notes' in payload:
+                fields['notes'] = (payload['notes'] or '').strip() or None
+            if not fields:
+                raise DomainError(422, 'Tidak ada field yang diubah.')
+            fields['revision'] = job['revision'] + 1
+            sets = ', '.join(f'{k}=?' for k in fields)
+            db.execute(f'UPDATE p03_jobs SET {sets} WHERE id=? AND revision=?',
+                       (*fields.values(), job_id, job['revision']))
+            if db.total_changes == 0:
+                raise DomainError(409, 'Revisi job berubah; muat ulang dan coba lagi.')
+            return self._p03_job_view(db, self._p03_job(db, job_id), actor)
+        return self._write(actor, ('admin', 'operator'), key, 'p03-job-update', payload, perform)
+
+    def create_job_realization(self, job_id, payload, actor, key):
+        def perform(db):
+            job = self._p03_job(db, job_id)
+            if job['status'] in ('done', 'cancelled'):
+                raise DomainError(409, 'Job sudah selesai/dibatalkan; tidak dapat menambah realisasi.')
+            qty = payload.get('qty_pcs')
+            work_date = (payload.get('work_date') or job['work_date']).strip()
+            notes = (payload.get('notes') or '').strip() or None
+            if not isinstance(qty, int) or qty <= 0:
+                raise DomainError(422, 'qty_pcs harus integer positif.')
+            remaining = self._p03_remaining_pcs(db, job_id)
+            if qty > remaining:
+                raise DomainError(422, f'Kuantitas {qty} pcs melebihi sisa {remaining} pcs.')
+            rid = f"RLZ-{uuid4().hex[:12].upper()}"
+            db.execute('''INSERT INTO p03_job_realizations
+                (id,job_id,qty_pcs,work_date,status,notes,revision,actor_id)
+                VALUES(?,? ,?,?,'draft',?,1,?)''',
+                (rid, job_id, qty, work_date, notes, actor['id']))
+            row = self._p03_realization(db, job_id, rid)
+            row['remaining_qty_pcs'] = self._p03_remaining_pcs(db, job_id)
+            return row
+        return self._write(actor, ('admin', 'operator'), key, 'p03-realization-create', payload, perform)
+
+    def update_job_realization(self, job_id, rid, payload, actor, key):
+        def perform(db):
+            r = self._p03_realization(db, job_id, rid)
+            if r['status'] not in ('draft', 'submitted'):
+                raise DomainError(409, 'Realisasi yang sudah final tidak dapat diubah.')
+            if payload.get('expected_revision') != r['revision']:
+                raise DomainError(409, 'Revisi realisasi berubah; muat ulang dan coba lagi.')
+            fields = {}
+            if 'qty_pcs' in payload:
+                v = payload['qty_pcs']
+                if not isinstance(v, int) or v <= 0:
+                    raise DomainError(422, 'qty_pcs harus integer positif.')
+                # Sisa dihitung tanpa realisasi ini
+                job = self._p03_job(db, job_id)
+                used_others = db.execute('''SELECT COALESCE(SUM(qty_pcs),0)
+                    FROM p03_job_realizations
+                    WHERE job_id=? AND id<>? AND status IN ('approved','submitted')''',
+                    (job_id, rid)).fetchone()[0]
+                if v > job['target_qty_pcs'] - used_others:
+                    raise DomainError(422, 'Kuantitas melebihi sisa target job.')
+                fields['qty_pcs'] = v
+            if 'notes' in payload:
+                fields['notes'] = (payload['notes'] or '').strip() or None
+            if 'work_date' in payload:
+                fields['work_date'] = payload['work_date']
+            if not fields:
+                raise DomainError(422, 'Tidak ada field yang diubah.')
+            fields['revision'] = r['revision'] + 1
+            sets = ', '.join(f'{k}=?' for k in fields)
+            db.execute(f'UPDATE p03_job_realizations SET {sets} WHERE id=? AND revision=?',
+                       (*fields.values(), rid, r['revision']))
+            return self._p03_realization(db, job_id, rid)
+        return self._write(actor, ('admin', 'operator'), key, 'p03-realization-update', payload, perform)
+
+    def submit_job_realization(self, job_id, rid, actor, key):
+        def perform(db):
+            r = self._p03_realization(db, job_id, rid)
+            if r['status'] != 'draft':
+                raise DomainError(409, 'Hanya realisasi draft yang dapat diajukan.')
+            db.execute("UPDATE p03_job_realizations SET status='submitted', revision=revision+1 WHERE id=?",
+                       (rid,))
+            return self._p03_realization(db, job_id, rid)
+        return self._write(actor, ('admin', 'operator'), key, 'p03-realization-submit', {}, perform)
+
+    def approve_job_realization(self, job_id, rid, actor, key):
+        from beeloft import contracts
+        def perform(db):
+            r = self._p03_realization(db, job_id, rid)
+            if r['status'] != 'submitted':
+                raise DomainError(409, 'Hanya realisasi yang diajukan dapat disetujui.')
+            job = self._p03_job(db, job_id)
+            # SoD: tidak boleh menyetujui pengajuan sendiri
+            self._guard_self_approval(db, actor, r['actor_id'])
+            # Idempotency event: charge untuk sumber ini sudah ada? kembalikan.
+            existing = db.execute('''SELECT id FROM p03_service_charges
+                WHERE source_namespace=? AND source_id=? AND source_line_id=?''',
+                (self.P03_SOURCE_NAMESPACE, job_id, rid)).fetchone()
+            if existing:
+                db.execute("UPDATE p03_job_realizations SET status='approved', revision=revision+1,"
+                           "approved_by=?, approved_at=? WHERE id=? AND status='submitted'",
+                           (actor['id'], now(), rid))
+                return self._p03_charge_view(db, existing['id'])
+            # Snapshot tarif pada tanggal pengerjaan (DEMO_ASSUMPTION: work_date, Asia/Jakarta)
+            snapshot = self._resolve_rate_event(db, job['work_type_id'], r['work_date'])
+            snapshot['snapshot_at'] = now()
+            # DEMO_ASSUMPTION (DEMO-P03-20260928-1): realisasi approved dibayar penuh
+            # pada payable_qty = qty_pcs; reject = tidak dibayar (tanpa charge).
+            payable = r['qty_pcs']
+            wage = contracts.wage_for_realization(
+                pcs=payable,
+                rate_per_lusin_minor=snapshot['rate_per_lusin_minor'],
+                rate_revision=snapshot['rate_revision'],
+                policy=contracts.DEMO_POLICY,
+            )
+            charge_id = f"CHG-{uuid4().hex[:12].upper()}"
+            approved_at = now()
+            try:
+                db.execute('''INSERT INTO p03_service_charges
+                    (id,source_namespace,source_id,source_line_id,employee_id,sku,
+                     work_type_id,job_id,realization_id,payable_qty_pcs,rate_snapshot,
+                     template_version,calculation_policy_ref,final_amount_minor,
+                     approved_at,approved_by)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (charge_id, self.P03_SOURCE_NAMESPACE, job_id, rid,
+                     job['employee_id'], job['sku'], job['work_type_id'], job_id, rid,
+                     payable, json.dumps(snapshot), None,
+                     self.P03_DEMO_POLICY_REF, wage['wage_minor'],
+                     approved_at, actor['id']))
+            except sqlite3.IntegrityError:
+                # Race: approval concurrent untuk sumber sama — kembalikan existing
+                existing = db.execute('''SELECT id FROM p03_service_charges
+                    WHERE source_namespace=? AND source_id=? AND source_line_id=?''',
+                    (self.P03_SOURCE_NAMESPACE, job_id, rid)).fetchone()
+                if existing:
+                    db.execute("UPDATE p03_job_realizations SET status='approved', revision=revision+1,"
+                               "approved_by=?, approved_at=? WHERE id=? AND status='submitted'",
+                               (actor['id'], approved_at, rid))
+                    return self._p03_charge_view(db, existing['id'])
+                raise
+            db.execute("UPDATE p03_job_realizations SET status='approved', revision=revision+1,"
+                       "approved_by=?, approved_at=? WHERE id=?",
+                       (actor['id'], approved_at, rid))
+            return self._p03_charge_view(db, charge_id)
+        return self._write(actor, ('admin',), key, 'p03-realization-approve', {}, perform)
+
+    def reject_job_realization(self, job_id, rid, payload, actor, key):
+        def perform(db):
+            r = self._p03_realization(db, job_id, rid)
+            if r['status'] != 'submitted':
+                raise DomainError(409, 'Hanya realisasi yang diajukan dapat ditolak.')
+            self._guard_self_approval(db, actor, r['actor_id'])
+            reason = (payload.get('reason') or '').strip()
+            if not reason:
+                raise DomainError(422, 'Alasan penolakan wajib diisi.')
+            # DEMO_ASSUMPTION (DEMO-P03-20260928-1): reject = tidak dibayar,
+            # tidak membuat charge. Bukan aturan bisnis final.
+            db.execute("UPDATE p03_job_realizations SET status='rejected', revision=revision+1,"
+                       "reject_reason=? WHERE id=?", (reason, rid))
+            return self._p03_realization(db, job_id, rid)
+        return self._write(actor, ('admin',), key, 'p03-realization-reject', payload, perform)
+
+    def reverse_service_charge(self, charge_id, payload, actor, key):
+        def perform(db):
+            ch = db.execute('SELECT * FROM p03_service_charges WHERE id=?', (charge_id,)).fetchone()
+            if not ch:
+                raise DomainError(404, 'Service charge tidak ditemukan.')
+            ch = dict(ch)
+            already = db.execute('''SELECT id FROM p03_service_charges
+                WHERE reversal_of_charge_id=?''', (charge_id,)).fetchone()
+            if already:
+                raise DomainError(409, 'Charge ini sudah pernah di-reversal.')
+            if ch['reversal_of_charge_id']:
+                raise DomainError(409, 'Charge reversal tidak dapat di-reversal lagi.')
+            if ch['consumed_by']:
+                raise DomainError(409,
+                    f"Charge sudah dikonsumsi oleh {ch['consumed_by']}; "
+                    'koreksi belum didukung — gunakan mekanisme reversal konsumen.')
+            reason = (payload.get('reason') or '').strip()
+            if not reason:
+                raise DomainError(422, 'Alasan reversal wajib diisi.')
+            reversal_id = f"CHG-{uuid4().hex[:12].upper()}"
+            snapshot = json.loads(ch['rate_snapshot'])
+            snapshot['reversal_of'] = ch['id']
+            snapshot['reversal_reason'] = reason
+            db.execute('''INSERT INTO p03_service_charges
+                (id,source_namespace,source_id,source_line_id,employee_id,sku,
+                 work_type_id,job_id,realization_id,payable_qty_pcs,rate_snapshot,
+                 template_version,calculation_policy_ref,final_amount_minor,
+                 approved_at,approved_by,reversal_of_charge_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?)''',
+                (reversal_id, ch['source_namespace'] + '.reversal', ch['source_id'],
+                 ch['source_line_id'], ch['employee_id'], ch['sku'], ch['work_type_id'],
+                 ch['job_id'], ch['realization_id'], -ch['payable_qty_pcs'],
+                 json.dumps(snapshot), ch['template_version'], ch['calculation_policy_ref'],
+                 -ch['final_amount_minor'], now(), actor['id'], ch['id']))
+            return self._p03_charge_view(db, reversal_id)
+        return self._write(actor, ('admin',), key, 'p03-charge-reverse', payload, perform)
+
+    def _p03_charge_view(self, db, charge_id):
+        from beeloft.permissions import require_permission
+        # Nominal upah hanya untuk yang punya view_salary; selainnya disembunyikan
+        row = db.execute('SELECT * FROM p03_service_charges WHERE id=?', (charge_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Service charge tidak ditemukan.')
+        return dict(row)
+
+    def list_service_charges(self, filters, actor):
+        with self.transaction() as db:
+            where = ['1=1']
+            params = []
+            if filters.get('employee_id'):
+                where.append('employee_id=?'); params.append(filters['employee_id'])
+            if filters.get('job_id'):
+                where.append('job_id=?'); params.append(filters['job_id'])
+            limit = min(int(filters.get('limit', 100)), 500)
+            offset = int(filters.get('offset', 0))
+            rows = db.execute(
+                f"SELECT * FROM p03_service_charges WHERE {' AND '.join(where)} "
+                f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset)).fetchall()
+            return {'charges': [self._p03_charge_mask(dict(r), actor) for r in rows],
+                    'limit': limit, 'offset': offset}
+
+    def get_service_charge(self, charge_id, actor):
+        with self.transaction() as db:
+            return self._p03_charge_mask(self._p03_charge_view(db, charge_id), actor)
+
+    def find_charge_by_source(self, namespace, source_id, source_line_id, actor):
+        with self.transaction() as db:
+            row = db.execute('''SELECT * FROM p03_service_charges
+                WHERE source_namespace=? AND source_id=? AND source_line_id=?''',
+                (namespace, source_id, source_line_id)).fetchone()
+            if not row:
+                raise DomainError(404, 'Charge untuk source identity tersebut tidak ditemukan.')
+            return self._p03_charge_mask(dict(row), actor)
+
+    def _p03_charge_mask(self, charge, actor):
+        """Pisahkan akses nominal: tanpa view_salary, nominal disembunyikan."""
+        from beeloft.permissions import has_permission
+        try:
+            can_see = has_permission(actor, 'view_salary')
+        except Exception:
+            can_see = False
+        if not can_see:
+            charge = dict(charge)
+            charge['rate_snapshot'] = None
+            charge['final_amount_minor'] = None
+        return charge

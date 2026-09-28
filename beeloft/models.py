@@ -1998,3 +1998,44 @@ class ServiceTemplateApply(Input):
         if self.bom_template_id is not None and self.bom_expected_revision is None:
             raise ValueError('bom_expected_revision wajib saat bom_template_id diisi.')
         return self
+
+
+# P03 (#52): employee jobs — penugasan kerja karyawan per pcs, realisasi,
+# persetujuan realisasi, dan service charges upah.
+class EmployeeJobCreate(Input):
+    employee_id: Text
+    sku: Text
+    work_type_id: Text
+    bundle_id: Text | None = None
+    target_qty_pcs: Annotated[int, Field(strict=True, gt=0)]
+    work_date: DateText
+    notes: str | None = Field(default=None, max_length=1000)
+    unit_id: Text | None = None
+
+
+class EmployeeJobUpdate(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    target_qty_pcs: Annotated[int, Field(strict=True, gt=0)] | None = None
+    status: str | None = Field(default=None, max_length=32)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class JobRealizationCreate(Input):
+    qty_pcs: Annotated[int, Field(strict=True, gt=0)]
+    work_date: DateText | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class JobRealizationUpdate(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    qty_pcs: Annotated[int, Field(strict=True, gt=0)] | None = None
+    work_date: DateText | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class RealizationReject(Input):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class ChargeReverse(Input):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
