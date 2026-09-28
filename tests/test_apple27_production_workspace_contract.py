@@ -807,7 +807,7 @@ class VersionAndBackendTest(unittest.TestCase):
             live = create_app(Path(folder) / 'contract.sqlite3').openapi()
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
-        self.assertEqual(len(contract['paths']), 288, 'A01 adds 14 finance endpoints (P02 has 4)')
+        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
         # The board still reads the same endpoint, and the renderers invented no field.
         self.assertIn("api.get('/api/production-board?' + query)", APP)
 

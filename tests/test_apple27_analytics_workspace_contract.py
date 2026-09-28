@@ -1103,7 +1103,7 @@ class VersionAndSchemaTest(unittest.TestCase):
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 288, 'A6.4 is presentation only')
+        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
 
     def test_the_schema_did_not_move_and_no_migration_was_added(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')

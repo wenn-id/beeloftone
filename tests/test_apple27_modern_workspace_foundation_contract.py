@@ -852,7 +852,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 288, 'endpoints')
+        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
 
 
 if __name__ == '__main__':
