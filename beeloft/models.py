@@ -1660,3 +1660,148 @@ class BomTemplateApply(Input):
     product_id: Text
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
+
+
+# ---------------------------------------------------------------------------
+# P01 (#48): jenis pekerjaan, kelompok jasa, template jasa berversi, tarif
+# upah berversi dengan tanggal berlaku, dan penerapan template ke SKU.
+#
+# Kontrak resolver tarif dan snapshot: docs/p01-rate-resolver.md. Aritmatika
+# uang/qty eksak memakai beeloft.contracts (minor integer + Fraction); nominal
+# tarif disimpan SATU kali (amount + rate_basis) dan nilai lawan selalu derived.
+# Menit standar (RoutingStandardSave) tetap terpisah dari tarif upah.
+# ---------------------------------------------------------------------------
+
+class WorkTypeCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    # Kelompok jasa opsional; None = tanpa kelompok.
+    service_group_id: Text | None = None
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class WorkTypeChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    # None = lepaskan dari kelompok; kirim id untuk menetapkan/memindahkan.
+    service_group_id: Text | None = None
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class ServiceGroupCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+
+class ServiceGroupChange(Input):
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    active: Annotated[bool, Field(strict=True)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class ServiceComponent(Input):
+    work_type_id: Text
+
+
+class ServiceTemplateCreate(Input):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: Text
+    note: str = Field(default="", max_length=1000)
+    components: list[ServiceComponent] = Field(min_length=1, max_length=100)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value):
+        return value.upper()
+
+    @field_validator('components')
+    @classmethod
+    def unique_work_types(cls, components):
+        if len({c.work_type_id for c in components}) != len(components):
+            raise ValueError('Gabungkan jenis pekerjaan yang sama menjadi satu baris template.')
+        return sorted(components, key=lambda c: c.work_type_id)
+
+
+class ServiceTemplateChange(Input):
+    # Revisi template menyimpan state lengkap (append-only): UI mengirim nama,
+    # catatan, status aktif dan komponen penuh. Revisi lama tidak diubah.
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    name: Text
+    note: str = Field(default="", max_length=1000)
+    active: Annotated[bool, Field(strict=True)]
+    components: list[ServiceComponent] = Field(min_length=1, max_length=100)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('components')
+    @classmethod
+    def unique_work_types(cls, components):
+        if len({c.work_type_id for c in components}) != len(components):
+            raise ValueError('Gabungkan jenis pekerjaan yang sama menjadi satu baris template.')
+        return sorted(components, key=lambda c: c.work_type_id)
+
+
+class ServiceRateSave(Input):
+    # expected_revision = revisi tarif saat ini untuk work type ini; 0 jika
+    # belum ada tarif sama sekali. Guard mencegah dua penyimpan paralel.
+    expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    rate_basis: Literal['lusin', 'pcs']
+    # SATU nominal authoritative sesuai rate_basis; mengirim nominal pcs dan
+    # lusin sekaligus dilarang (extra="forbid"). Nilai lawan derived eksak.
+    amount: Annotated[str, StringConstraints(pattern=r"^[0-9]{1,13}(\.[0-9]{1,2})?$", max_length=16)]
+    effective_from: date
+    # NULL/None = interval terbuka [effective_from, tak terhingga).
+    effective_to: date | None = None
+    active: bool = True
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @field_validator('amount')
+    @classmethod
+    def normalize_amount(cls, value):
+        amount = Decimal(value)
+        if not 0 < amount <= 1_000_000_000:
+            raise ValueError('nominal tarif harus lebih besar dari 0 dan maksimal 1.000.000.000.')
+        return format(amount, '.2f')
+
+    @model_validator(mode='after')
+    def effective_order(self):
+        if self.effective_to is not None and self.effective_from >= self.effective_to:
+            raise ValueError('tanggal berakhir harus setelah tanggal mulai berlaku.')
+        return self
+
+
+class ServiceRateDeactivate(Input):
+    # Nonaktifkan tarif: revisi baru active=0 dengan interval yang sama persis
+    # dengan revisi aktif saat ini, sehingga resolve pada tanggal yang dicakup
+    # melaporkan "tarif nonaktif" alih-alih memakai fallback.
+    expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class ServiceTemplateApply(Input):
+    product_id: Text
+    # Template bahan opsional (#43): diterapkan dalam transaksi yang sama dan
+    # revisi BOM yang diterbitkannya ditautkan ke penerapan ini. Tidak membuat
+    # ledger bahan kedua.
+    bom_template_id: Text | None = None
+    bom_expected_revision: Annotated[int, Field(strict=True, ge=0)] | None = None
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+    @model_validator(mode='after')
+    def bom_revision_required(self):
+        if self.bom_template_id is not None and self.bom_expected_revision is None:
+            raise ValueError('bom_expected_revision wajib saat bom_template_id diisi.')
+        return self

@@ -5,12 +5,14 @@ import sqlite3
 from contextlib import closing, contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, localcontext, ROUND_CEILING, ROUND_HALF_UP
+from fractions import Fraction
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 from beeloft.models import STAGES, TRANSITIONS, UserCreate
-from beeloft.contracts import money_to_minor, parse_money
+from beeloft.contracts import (DEMO_POLICY, money_to_minor, minor_to_money, parse_money,
+                              minor_fraction_to_money, wage_for_realization)
 from beeloft.labels import bundle_scan_code, finished_goods_scan_code, material_batch_scan_code
 
 ACTIVITY_SQL = Path(__file__).with_name("activity.sql").read_text(encoding="utf-8")
@@ -181,6 +183,10 @@ def audit_category(operation):
         return 'master_data'
     if root in ('uom', 'color', 'size'):
         return 'master_data'
+    if root in ('service-work-type', 'service-group', 'service-template', 'service-rate'):
+        return 'master_data'
+    if root == 'service-template-apply':
+        return 'production'
     return 'production'
 
 
@@ -221,7 +227,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -428,6 +434,13 @@ WHEN NEW.code<>OLD.code OR NEW.name<>OLD.name
     OR NEW.reason<>OLD.reason OR NEW.actor_id<>OLD.actor_id
     OR NEW.created_at<>OLD.created_at
 BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status aktif.'); END""")
+            if version < 58:
+                # P01 (#48): jenis pekerjaan, kelompok jasa, template jasa
+                # berversi, tarif upah berversi dengan tanggal berlaku, plus
+                # histori penerapan template ke SKU. Semua tabel baru; tidak
+                # ada kolom existing yang diubah dan tidak ada ledger bahan
+                # kedua (sisi bahan tetap memakai bom_revisions #43).
+                db.executescript(Path(__file__).with_name('service_templates.sql').read_text(encoding='utf-8'))
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -2587,25 +2600,34 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
 
     def apply_bom_template(self, template_id, payload, actor, key):
         def perform(db):
-            template = db.execute('SELECT * FROM bom_templates WHERE id=?', (template_id,)).fetchone()
-            if not template:
-                raise DomainError(404, 'Template BOM tidak ditemukan.')
-            template = dict(template)
-            if not template['active']:
-                raise DomainError(422, f'Template "{template["code"]}" nonaktif.')
-            product = db.execute('SELECT sku,active,type_id FROM products WHERE id=?', (payload['product_id'],)).fetchone()
-            if not product:
-                raise DomainError(404, 'SKU tidak ditemukan.')
-            if not product['active']:
-                raise DomainError(422, f'SKU {product["sku"]} nonaktif; BOM tidak dapat diubah.')
-            if template['product_type_id'] and template['product_type_id'] != product['type_id']:
-                raise DomainError(422, f'Template "{template["code"]}" terikat ke tipe produk lain; tidak dapat diterapkan ke SKU {product["sku"]}.')
-            components = json.loads(template['components'])
-            reason = f'[Template {template["code"]}] {payload["reason"]}'
-            return self._save_bom_revision(db, payload['product_id'],
-                                           {'expected_revision': payload['expected_revision'],
-                                            'reason': reason, 'components': components}, actor)
+            return self._apply_bom_template_internal(db, template_id, payload['product_id'],
+                                                     payload['expected_revision'], payload['reason'], actor)[1]
         return self._write(actor, ('admin',), key, 'bom-template-apply:' + template_id, payload, perform)
+
+    def _apply_bom_template_internal(self, db, template_id, product_id, expected_revision, reason, actor):
+        """Terbitkan revisi BOM baru dari template bahan (#43). Mengembalikan
+        (template, bom_revision). Dipakai kedua-duanya oleh apply BOM template
+        biasa dan oleh penerapan template jasa yang membawa template bahan
+        (P01 #48) dalam satu transaksi atomik."""
+        template = db.execute('SELECT * FROM bom_templates WHERE id=?', (template_id,)).fetchone()
+        if not template:
+            raise DomainError(404, 'Template BOM tidak ditemukan.')
+        template = dict(template)
+        if not template['active']:
+            raise DomainError(422, f'Template "{template["code"]}" nonaktif.')
+        product = db.execute('SELECT sku,active,type_id FROM products WHERE id=?', (product_id,)).fetchone()
+        if not product:
+            raise DomainError(404, 'SKU tidak ditemukan.')
+        if not product['active']:
+            raise DomainError(422, f'SKU {product["sku"]} nonaktif; BOM tidak dapat diubah.')
+        if template['product_type_id'] and template['product_type_id'] != product['type_id']:
+            raise DomainError(422, f'Template "{template["code"]}" terikat ke tipe produk lain; tidak dapat diterapkan ke SKU {product["sku"]}.')
+        components = json.loads(template['components'])
+        bom = self._save_bom_revision(db, product_id,
+                                      {'expected_revision': expected_revision,
+                                       'reason': f'[Template {template["code"]}] {reason}',
+                                       'components': components}, actor)
+        return template, bom['revision']
 
     def _material_batch(self, db, batch_id, order_id=None):
         row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
@@ -8803,3 +8825,660 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         if not record['active']:
             raise DomainError(422, f'{label} nonaktif tidak dapat dipakai untuk transaksi baru.')
         return record
+
+    # ------------------------------------------------------------------
+    # P01 (#48): jenis pekerjaan, kelompok jasa, template jasa berversi,
+    # tarif upah berversi dengan tanggal berlaku, penerapan template ke SKU,
+    # resolver tarif dan snapshot. Kontrak: docs/p01-rate-resolver.md
+    # ------------------------------------------------------------------
+
+    #: DEMO_ASSUMPTION (D04 belum final): zona tanggal bisnis pemilihan tarif.
+    RATE_TIMEZONE = 'Asia/Jakarta'
+
+    def _service_work_type(self, db, work_type_id):
+        row = db.execute('''SELECT wt.id, wt.code, wt.created_by, wt.created_at,
+            e.sequence, e.revision, e.name, e.service_group_id, e.active, e.reason,
+            e.actor_id, e.created_at AS event_at
+            FROM service_work_types wt
+            LEFT JOIN service_work_type_events e ON e.sequence=(
+                SELECT MAX(s.sequence) FROM service_work_type_events s WHERE s.work_type_id=wt.id)
+            WHERE wt.id=?''', (work_type_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Jenis pekerjaan tidak ditemukan.')
+        record = dict(row)
+        record['active'] = bool(record['active'])
+        return record
+
+    def _service_group(self, db, group_id):
+        row = db.execute('''SELECT g.id, g.code, g.created_by, g.created_at,
+            e.sequence, e.revision, e.name, e.active, e.reason, e.actor_id,
+            e.created_at AS event_at
+            FROM service_groups g
+            LEFT JOIN service_group_events e ON e.sequence=(
+                SELECT MAX(s.sequence) FROM service_group_events s WHERE s.group_id=g.id)
+            WHERE g.id=?''', (group_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Kelompok jasa tidak ditemukan.')
+        record = dict(row)
+        record['active'] = bool(record['active'])
+        return record
+
+    def _service_template(self, db, template_id, revision=None):
+        columns = '''t.id, t.code, t.created_by, t.created_at,
+            e.sequence, e.revision, e.name, e.note, e.components, e.active,
+            e.reason, e.actor_id, e.created_at AS event_at'''
+        if revision is None:
+            row = db.execute(f'''SELECT {columns}
+                FROM service_templates t
+                LEFT JOIN service_template_events e ON e.sequence=(
+                    SELECT MAX(s.sequence) FROM service_template_events s WHERE s.template_id=t.id)
+                WHERE t.id=?''', (template_id,)).fetchone()
+        else:
+            row = db.execute(f'''SELECT {columns}
+                FROM service_templates t JOIN service_template_events e ON e.template_id=t.id
+                WHERE t.id=? AND e.revision=?''', (template_id, revision)).fetchone()
+        if not row:
+            raise DomainError(404, 'Template jasa tidak ditemukan.')
+        record = dict(row)
+        record['active'] = bool(record['active'])
+        record['components'] = json.loads(record['components'])
+        return record
+
+    def _service_rate(self, db, work_type_id):
+        row = db.execute('''SELECT r.id AS rate_id, r.work_type_id,
+            e.sequence, e.revision, e.rate_basis, e.amount_minor, e.currency,
+            e.effective_from, e.effective_to, e.active, e.calculation_policy_ref,
+            e.reason, e.actor_id, e.created_at AS event_at
+            FROM service_rates r
+            LEFT JOIN service_rate_events e ON e.sequence=(
+                SELECT MAX(s.sequence) FROM service_rate_events s WHERE s.rate_id=r.id)
+            WHERE r.work_type_id=?''', (work_type_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Tarif tidak ditemukan; jenis pekerjaan belum memiliki rentang tarif.')
+        record = dict(row)
+        record['active'] = bool(record['active'])
+        return self._rate_derived(record)
+
+    def _rate_derived(self, record):
+        """Tambahkan konversi eksak (derived) ke record tarif. Satu nominal
+        authoritative (amount_minor + rate_basis); nilai lawan selalu hasil
+        konversi, tidak pernah angka bebas kedua."""
+        amount_minor = record['amount_minor']
+        if record['rate_basis'] == 'lusin':
+            per_lusin = amount_minor
+            per_pcs = Fraction(amount_minor, 12)
+        else:
+            per_lusin = amount_minor * 12
+            per_pcs = Fraction(amount_minor)
+        record['rate_per_lusin_minor'] = per_lusin
+        record['rate_per_lusin_money'] = format(minor_to_money(per_lusin), '.2f')
+        record['rate_per_pcs_exact'] = str(per_pcs)
+        record['rate_per_pcs_money'] = minor_fraction_to_money(per_pcs)
+        return record
+
+    def _rate_date(self, value):
+        """Normalisasi tanggal bisnis ISO YYYY-MM-DD; tolak format lain."""
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
+        if isinstance(value, str) and value.strip():
+            try:
+                return date.fromisoformat(value.strip()).isoformat()
+            except ValueError:
+                raise DomainError(422, f'Tanggal tidak valid: {value!r}.') from None
+        raise DomainError(422, 'Tanggal wajib diisi (format ISO YYYY-MM-DD).')
+
+    def _rate_snapshot(self, work_type, event, asof):
+        record = {
+            'work_type_id': work_type['id'],
+            'work_type_code': work_type['code'],
+            'work_type_name': work_type['name'],
+            'work_type_active': work_type['active'],
+            'rate_revision': f"{work_type['code']}#{event['revision']}",
+            'rate_revision_number': event['revision'],
+            'rate_basis': event['rate_basis'],
+            'amount_minor': event['amount_minor'],
+            'currency': event['currency'],
+            'effective_from': event['effective_from'],
+            'effective_to': event['effective_to'],
+            'active': bool(event['active']),
+            'calculation_policy_ref': event['calculation_policy_ref'],
+            'effective_date': asof,
+            'timezone': self.RATE_TIMEZONE,
+            'source_table': 'service_rate_events',
+        }
+        return self._rate_derived(record)
+
+    def _resolve_rate_event(self, db, work_type_id, effective_date):
+        """Resolver tarif: tepat satu tarif aktif yang intervalnya mencakup
+        tanggal acuan. Tidak ada fallback diam-diam ke tarif terbaru atau nol."""
+        work_type = self._service_work_type(db, work_type_id)
+        asof = self._rate_date(effective_date)
+        rate = db.execute('SELECT id FROM service_rates WHERE work_type_id=?', (work_type_id,)).fetchone()
+        if not rate:
+            raise DomainError(422, f'Tarif "{work_type["code"]}" belum pernah dibuat; '
+                                   f'tidak ada tarif yang berlaku pada {asof}.')
+        # Revisi tarif yang berbagi interval persis adalah versi baru dari
+        # schedule yang sama. Ambil revisi tertinggi per (from,to); interval
+        # berbeda yang aktif pada tanggal sama adalah overlap yang invalid.
+        raw_matching = db.execute('''SELECT e.* FROM service_rate_events e
+            WHERE e.rate_id=:rate_id
+              AND e.effective_from <= :asof AND (e.effective_to IS NULL OR :asof < e.effective_to)
+            ORDER BY e.revision DESC''', {'rate_id': rate['id'], 'asof': asof}).fetchall()
+        slots = {}
+        for event in raw_matching:
+            slot = (event['effective_from'], event['effective_to'])
+            slots.setdefault(slot, event)
+        matching = list(slots.values())
+        active = [event for event in matching if event['active']]
+        if len(active) > 1:
+            revisions = ', '.join(
+                f"revisi {r['revision']} [{r['effective_from']} sampai {r['effective_to'] or 'terbuka'})"
+                for r in active)
+            raise DomainError(409, f'Dua tarif aktif "{work_type["code"]}" saling tumpang tindih '
+                                   f'pada {asof} ({revisions}); perbaiki interval efektifnya.')
+        if not active:
+            if matching:
+                raise DomainError(422, f'Tarif "{work_type["code"]}" nonaktif pada {asof}; '
+                                       'tidak ada tarif aktif yang berlaku.')
+            raise DomainError(422, f'Tarif "{work_type["code"]}" tidak ditemukan pada {asof}; '
+                                   'tidak ada interval efektif yang mencakup tanggal ini.')
+        return self._rate_snapshot(work_type, dict(active[0]), asof)
+
+    def resolve_service_rate(self, work_type_id, effective_date):
+        with self.transaction() as db:
+            return self._resolve_rate_event(db, work_type_id, effective_date)
+
+    def snapshot_service_rate(self, work_type_id, effective_date):
+        """Bentuk snapshot tarif yang dibekukan untuk konsumen downstream
+        (P03/H01/I01). Konsumen menyimpan hasil ini saat finalisasi; perubahan
+        master setelahnya tidak menghitung ulang transaksi yang sudah disahkan."""
+        snapshot = self.resolve_service_rate(work_type_id, effective_date)
+        snapshot['snapshot_at'] = now()
+        return snapshot
+
+    def resolve_product_services(self, product_id, effective_date):
+        """Penerapan template terakhir pada SKU plus tarif tiap komponen
+        pekerjaan pada tanggal acuan. Gagal seluruhnya bila satu pun tarif tidak
+        valid; tidak pernah mengembalikan tarif parsial atau nominal nol."""
+        with self.transaction() as db:
+            product = db.execute('SELECT id,sku,active FROM products WHERE id=?', (product_id,)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            asof = self._rate_date(effective_date)
+            application = db.execute('''SELECT a.* FROM service_template_applications a
+                WHERE a.product_id=? ORDER BY a.sequence DESC LIMIT 1''', (product_id,)).fetchone()
+            if not application:
+                raise DomainError(404, f'SKU {product["sku"]} belum pernah diterapkan template jasa.')
+            application = dict(application)
+            application['components'] = json.loads(application['components'])
+            template = self._service_template(db, application['template_id'])
+            services = [self._resolve_rate_event(db, component['work_type_id'], asof)
+                        for component in application['components']]
+            actor = db.execute('SELECT name FROM users WHERE id=?', (application['actor_id'],)).fetchone()
+            return {
+                'product_id': product['id'],
+                'sku': product['sku'],
+                'application_id': application['id'],
+                'template_id': application['template_id'],
+                'template_code': template['code'],
+                'template_revision': application['template_revision'],
+                'applied_at': application['created_at'],
+                'applied_by': actor['name'] if actor else None,
+                'bom_revision': application['bom_revision'],
+                'services': services,
+                'calculation_policy_ref': DEMO_POLICY.policy_ref,
+                'effective_date': asof,
+                'timezone': self.RATE_TIMEZONE,
+            }
+
+    def preview_service_wage(self, work_type_id, pcs, effective_date):
+        """Preview demo: snapshot tarif + wage_for_realization (kontrak F02).
+        Tidak membuat charge, slip gaji atau posting jurnal."""
+        snapshot = self.snapshot_service_rate(work_type_id, effective_date)
+        wage = wage_for_realization(pcs=pcs,
+                                    rate_per_lusin_minor=snapshot['rate_per_lusin_minor'],
+                                    rate_revision=snapshot['rate_revision'])
+        result = {**snapshot, **wage}
+        result['wage_money'] = format(minor_to_money(wage['wage_minor']), '.2f')
+        return result
+
+    def _validate_service_components(self, db, components):
+        validated, seen = [], set()
+        for component in components:
+            work_type_id = component['work_type_id']
+            if work_type_id in seen:
+                raise DomainError(422, 'Gabungkan jenis pekerjaan yang sama menjadi satu baris template.')
+            seen.add(work_type_id)
+            work_type = db.execute('''SELECT wt.code,
+                (SELECT e.active FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS active
+                FROM service_work_types wt WHERE wt.id=?''', (work_type_id,)).fetchone()
+            if not work_type:
+                raise DomainError(404, 'Jenis pekerjaan template tidak ditemukan.')
+            if not work_type['active']:
+                raise DomainError(422, f'Jenis pekerjaan {work_type["code"]} nonaktif; '
+                                       'tidak dapat dipakai pada template baru.')
+            validated.append({'work_type_id': work_type_id, 'work_type_code': work_type['code']})
+        return sorted(validated, key=lambda c: c['work_type_id'])
+
+    def _group_id(self, db, value):
+        group_id = (value or '').strip() or None
+        if group_id:
+            group = self._service_group(db, group_id)
+            if not group['active']:
+                raise DomainError(422, f'Kelompok jasa "{group["code"]}" nonaktif; '
+                                       'tidak dapat dipakai untuk data baru.')
+        return group_id
+
+    def create_work_type(self, payload, actor, key):
+        def perform(db):
+            group_id = self._group_id(db, payload.get('service_group_id'))
+            work_type_id = str(uuid4())
+            try:
+                db.execute('INSERT INTO service_work_types(id,code,created_by,created_at) VALUES(?,?,?,?)',
+                           (work_type_id, payload['code'], actor['id'], now()))
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode jenis pekerjaan "{payload["code"]}" sudah dipakai.') from exc
+                raise
+            db.execute('''INSERT INTO service_work_type_events
+                (id,work_type_id,revision,name,service_group_id,active,reason,actor_id,created_at)
+                VALUES(?,?,1,?,?,1,?,?,?)''',
+                (str(uuid4()), work_type_id, payload['name'], group_id,
+                 payload['reason'], actor['id'], now()))
+            return self._service_work_type(db, work_type_id)
+        return self._write(actor, ('admin',), key, 'service-work-type', payload, perform)
+
+    def change_work_type(self, work_type_id, payload, actor, key):
+        def perform(db):
+            current = self._service_work_type(db, work_type_id)
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'Jenis pekerjaan sudah berubah. Muat ulang data terbaru sebelum menyimpan.')
+            group_id = self._group_id(db, payload.get('service_group_id'))
+            if (current['name'] == payload['name'] and current['service_group_id'] == group_id
+                    and current['active'] == payload['active']):
+                raise DomainError(409, 'Jenis pekerjaan tidak berubah.')
+            db.execute('''INSERT INTO service_work_type_events
+                (id,work_type_id,revision,name,service_group_id,active,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()), work_type_id, current['revision'] + 1, payload['name'], group_id,
+                 1 if payload['active'] else 0, payload['reason'], actor['id'], now()))
+            return self._service_work_type(db, work_type_id)
+        return self._write(actor, ('admin',), key, 'service-work-type:' + work_type_id, payload, perform)
+
+    def service_work_types(self, q='', status='all', limit=100, offset=0):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT wt.id, wt.code,
+                (SELECT e.revision FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS revision,
+                (SELECT e.name FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS name,
+                (SELECT e.service_group_id FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS service_group_id,
+                (SELECT e.active FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS active,
+                g.code AS service_group_code,
+                (SELECT ge.name FROM service_group_events ge WHERE ge.group_id=(
+                    SELECT e.service_group_id FROM service_work_type_events e
+                    WHERE e.work_type_id=wt.id ORDER BY e.sequence DESC LIMIT 1)
+                    ORDER BY ge.sequence DESC LIMIT 1) AS service_group_name
+                FROM service_work_types wt
+                LEFT JOIN service_groups g ON g.id=(
+                    SELECT e.service_group_id FROM service_work_type_events e
+                    WHERE e.work_type_id=wt.id ORDER BY e.sequence DESC LIMIT 1)
+                WHERE (:status='all' OR (:status='active' AND
+                            COALESCE((SELECT e.active FROM service_work_type_events e
+                                WHERE e.work_type_id=wt.id ORDER BY e.sequence DESC LIMIT 1),0)=1)
+                       OR (:status='inactive' AND
+                            COALESCE((SELECT e.active FROM service_work_type_events e
+                                WHERE e.work_type_id=wt.id ORDER BY e.sequence DESC LIMIT 1),0)=0))
+                  AND (:q='' OR instr(lower(wt.code||' '||COALESCE((
+                        SELECT e.name FROM service_work_type_events e WHERE e.work_type_id=wt.id
+                        ORDER BY e.sequence DESC LIMIT 1),'')),:q)>0)
+                ORDER BY wt.code LIMIT :limit OFFSET :offset''', params)
+            return [dict(r, active=bool(r['active'])) for r in rows]
+
+    def create_service_group(self, payload, actor, key):
+        def perform(db):
+            group_id = str(uuid4())
+            try:
+                db.execute('INSERT INTO service_groups(id,code,created_by,created_at) VALUES(?,?,?,?)',
+                           (group_id, payload['code'], actor['id'], now()))
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode kelompok jasa "{payload["code"]}" sudah dipakai.') from exc
+                raise
+            db.execute('''INSERT INTO service_group_events
+                (id,group_id,revision,name,active,reason,actor_id,created_at)
+                VALUES(?,?,1,?,1,?,?,?)''',
+                (str(uuid4()), group_id, payload['name'], payload['reason'], actor['id'], now()))
+            return self._service_group(db, group_id)
+        return self._write(actor, ('admin',), key, 'service-group', payload, perform)
+
+    def change_service_group(self, group_id, payload, actor, key):
+        def perform(db):
+            current = self._service_group(db, group_id)
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'Kelompok jasa sudah berubah. Muat ulang data terbaru sebelum menyimpan.')
+            if current['name'] == payload['name'] and current['active'] == payload['active']:
+                raise DomainError(409, 'Kelompok jasa tidak berubah.')
+            db.execute('''INSERT INTO service_group_events
+                (id,group_id,revision,name,active,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?)''',
+                (str(uuid4()), group_id, current['revision'] + 1, payload['name'],
+                 1 if payload['active'] else 0, payload['reason'], actor['id'], now()))
+            return self._service_group(db, group_id)
+        return self._write(actor, ('admin',), key, 'service-group:' + group_id, payload, perform)
+
+    def service_groups(self, q='', status='all', limit=100, offset=0):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT g.id, g.code,
+                (SELECT e.revision FROM service_group_events e WHERE e.group_id=g.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS revision,
+                (SELECT e.name FROM service_group_events e WHERE e.group_id=g.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS name,
+                (SELECT e.active FROM service_group_events e WHERE e.group_id=g.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS active,
+                (SELECT COUNT(*) FROM service_work_type_events we
+                    WHERE we.service_group_id=g.id
+                      AND we.sequence=(SELECT MAX(s.sequence) FROM service_work_type_events s
+                        WHERE s.work_type_id=we.work_type_id)) AS work_type_count
+                FROM service_groups g
+                WHERE (:status='all' OR (:status='active' AND
+                            COALESCE((SELECT e.active FROM service_group_events e
+                                WHERE e.group_id=g.id ORDER BY e.sequence DESC LIMIT 1),0)=1)
+                       OR (:status='inactive' AND
+                            COALESCE((SELECT e.active FROM service_group_events e
+                                WHERE e.group_id=g.id ORDER BY e.sequence DESC LIMIT 1),0)=0))
+                  AND (:q='' OR instr(lower(g.code||' '||COALESCE((
+                        SELECT e.name FROM service_group_events e WHERE e.group_id=g.id
+                        ORDER BY e.sequence DESC LIMIT 1),'')),:q)>0)
+                ORDER BY g.code LIMIT :limit OFFSET :offset''', params)
+            return [dict(r, active=bool(r['active'])) for r in rows]
+
+    def create_service_template(self, payload, actor, key):
+        def perform(db):
+            components = self._validate_service_components(db, payload['components'])
+            template_id = str(uuid4())
+            try:
+                db.execute('INSERT INTO service_templates(id,code,created_by,created_at) VALUES(?,?,?,?)',
+                           (template_id, payload['code'], actor['id'], now()))
+            except sqlite3.IntegrityError as exc:
+                if 'UNIQUE' in str(exc).upper():
+                    raise DomainError(409, f'Kode template jasa "{payload["code"]}" sudah dipakai.') from exc
+                raise
+            db.execute('''INSERT INTO service_template_events
+                (id,template_id,revision,name,note,components,active,reason,actor_id,created_at)
+                VALUES(?,?,1,?,?,?,1,?,?,?)''',
+                (str(uuid4()), template_id, payload['name'], payload['note'],
+                 json.dumps(components), payload['reason'], actor['id'], now()))
+            return self._service_template(db, template_id)
+        return self._write(actor, ('admin',), key, 'service-template', payload, perform)
+
+    def change_service_template(self, template_id, payload, actor, key):
+        def perform(db):
+            current = self._service_template(db, template_id)
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'Template jasa sudah berubah. Tutup form, muat ulang, '
+                                       'lalu periksa versi terbaru.')
+            components = self._validate_service_components(db, payload['components'])
+            if (current['name'] == payload['name'] and current['note'] == payload['note']
+                    and current['active'] == payload['active'] and current['components'] == components):
+                raise DomainError(409, 'Template jasa tidak berubah. Ubah nama, catatan, status atau komponen.')
+            db.execute('''INSERT INTO service_template_events
+                (id,template_id,revision,name,note,components,active,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()), template_id, current['revision'] + 1, payload['name'], payload['note'],
+                 json.dumps(components), 1 if payload['active'] else 0, payload['reason'],
+                 actor['id'], now()))
+            return self._service_template(db, template_id)
+        return self._write(actor, ('admin',), key, 'service-template:' + template_id, payload, perform)
+
+    def service_templates(self, q='', status='all', limit=100, offset=0):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT t.id, t.code,
+                (SELECT e.revision FROM service_template_events e WHERE e.template_id=t.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS revision,
+                (SELECT e.name FROM service_template_events e WHERE e.template_id=t.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS name,
+                (SELECT e.note FROM service_template_events e WHERE e.template_id=t.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS note,
+                (SELECT e.components FROM service_template_events e WHERE e.template_id=t.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS components,
+                (SELECT e.active FROM service_template_events e WHERE e.template_id=t.id
+                    ORDER BY e.sequence DESC LIMIT 1) AS active
+                FROM service_templates t
+                WHERE (:status='all' OR (:status='active' AND
+                            COALESCE((SELECT e.active FROM service_template_events e
+                                WHERE e.template_id=t.id ORDER BY e.sequence DESC LIMIT 1),0)=1)
+                       OR (:status='inactive' AND
+                            COALESCE((SELECT e.active FROM service_template_events e
+                                WHERE e.template_id=t.id ORDER BY e.sequence DESC LIMIT 1),0)=0))
+                  AND (:q='' OR instr(lower(t.code||' '||COALESCE((
+                        SELECT e.name FROM service_template_events e WHERE e.template_id=t.id
+                        ORDER BY e.sequence DESC LIMIT 1),'')),:q)>0)
+                ORDER BY t.code LIMIT :limit OFFSET :offset''', params)
+            records = []
+            for row in rows:
+                record = dict(row, active=bool(row['active']))
+                record['components'] = json.loads(record['components'])
+                records.append(record)
+            return records
+
+    def service_template_history(self, template_id, before=None, limit=10):
+        if limit < 1 or limit > 100:
+            raise DomainError(422, 'Limit harus 1..100.')
+        with self.transaction() as db:
+            rows = db.execute('''SELECT revision FROM service_template_events
+                WHERE template_id=? AND (:before IS NULL OR revision<:before)
+                ORDER BY revision DESC LIMIT ?''', (template_id, before, limit)).fetchall()
+            return [self._service_template(db, template_id, row[0]) for row in rows]
+
+    def save_service_rate(self, work_type_id, payload, actor, key):
+        def perform(db):
+            work_type = self._service_work_type(db, work_type_id)
+            if not work_type['active']:
+                raise DomainError(422, f'Jenis pekerjaan "{work_type["code"]}" nonaktif; '
+                                       'tidak dapat menambah tarif baru.')
+            rate = db.execute('SELECT id FROM service_rates WHERE work_type_id=?',
+                              (work_type_id,)).fetchone()
+            if not rate:
+                rate_id = str(uuid4())
+                db.execute('INSERT INTO service_rates(id,work_type_id,created_by,created_at) VALUES(?,?,?,?)',
+                           (rate_id, work_type_id, actor['id'], now()))
+                current_revision = 0
+            else:
+                rate_id = rate['id']
+                latest = db.execute('SELECT revision FROM service_rate_events WHERE rate_id=? '
+                                    'ORDER BY sequence DESC LIMIT 1', (rate_id,)).fetchone()
+                current_revision = latest['revision'] if latest else 0
+            if current_revision != payload['expected_revision']:
+                raise DomainError(409, 'Tarif sudah berubah. Muat ulang tarif terbaru '
+                                       'sebelum menyimpan revisi baru.')
+            effective_from = self._rate_date(payload['effective_from'])
+            effective_to = self._rate_date(payload['effective_to']) if payload['effective_to'] else None
+            # Overlap hanya diperiksa antara revisi yang MASIH aktif (belum
+            # ditutup/disupersede oleh revisi penonaktifan atau revisi baru).
+            overlapping = []
+            if payload['active']:
+                candidates = db.execute('''SELECT revision, effective_from, effective_to
+                    FROM service_rate_events
+                    WHERE rate_id=:rate_id AND active=1
+                      AND (effective_to IS NULL OR :from < effective_to)
+                      AND (:to IS NULL OR effective_from < :to)
+                    ORDER BY revision''', {'rate_id': rate_id, 'from': effective_from, 'to': effective_to}).fetchall()
+                for cand in candidates:
+                    superseded = db.execute('''SELECT 1 FROM service_rate_events
+                        WHERE rate_id=:rate_id AND revision > :cand_rev
+                          AND effective_from <= :cand_from
+                          AND (:cand_to IS NULL OR (effective_to IS NULL OR :cand_to <= effective_to))
+                        LIMIT 1''', {'rate_id': rate_id, 'cand_rev': cand['revision'],
+                                     'cand_from': cand['effective_from'], 'cand_to': cand['effective_to']}).fetchone()
+                    if not superseded:
+                        overlapping.append(cand)
+            if overlapping and payload['active']:
+                detail = ', '.join(f"revisi {r['revision']} [{r['effective_from']} sampai "
+                                   f"{r['effective_to'] or 'terbuka'})" for r in overlapping)
+                raise DomainError(409, f'Interval tarif baru tumpang tindih dengan tarif aktif '
+                                       f'yang ada ({detail}); nonaktifkan tarif lama terlebih dahulu.')
+            db.execute('''INSERT INTO service_rate_events
+                (id,rate_id,revision,rate_basis,amount_minor,currency,effective_from,effective_to,
+                 active,calculation_policy_ref,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (str(uuid4()), rate_id, current_revision + 1, payload['rate_basis'],
+                 money_to_minor(parse_money(payload['amount'])), 'IDR', effective_from, effective_to,
+                 1 if payload['active'] else 0, DEMO_POLICY.policy_ref, payload['reason'],
+                 actor['id'], now()))
+            return self._service_rate(db, work_type_id)
+        return self._write(actor, ('admin',), key, 'service-rate:' + work_type_id, payload, perform)
+
+    def deactivate_service_rate(self, work_type_id, payload, actor, key):
+        def perform(db):
+            work_type = self._service_work_type(db, work_type_id)
+            if not work_type['active']:
+                raise DomainError(422, f'Jenis pekerjaan "{work_type["code"]}" nonaktif; '
+                                       'tarif tidak dapat diubah.')
+            current = self._service_rate(db, work_type_id)
+            if not current['active']:
+                raise DomainError(422, f'Tarif "{work_type["code"]}" sudah nonaktif.')
+            if current['revision'] != payload['expected_revision']:
+                raise DomainError(409, 'Tarif sudah berubah. Muat ulang tarif terbaru sebelum menonaktifkan.')
+            # Revisi penonaktifan menyalin interval dan nominal yang sama persis;
+            # resolver melaporkan "tarif nonaktif" untuk tanggal yang dicakup.
+            db.execute('''INSERT INTO service_rate_events
+                (id,rate_id,revision,rate_basis,amount_minor,currency,effective_from,effective_to,
+                 active,calculation_policy_ref,reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,0,?,?,?,?)''',
+                (str(uuid4()), current['rate_id'], current['revision'] + 1, current['rate_basis'],
+                 current['amount_minor'], current['currency'], current['effective_from'],
+                 current['effective_to'], DEMO_POLICY.policy_ref, payload['reason'],
+                 actor['id'], now()))
+            return self._service_rate(db, work_type_id)
+        return self._write(actor, ('admin',), key, 'service-rate-deactivate:' + work_type_id, payload, perform)
+
+    def service_rates(self, q='', status='all', limit=100, offset=0):
+        if status not in ('all', 'active', 'inactive'):
+            raise DomainError(422, 'Status filter tidak valid.')
+        params = {'q': q.strip().casefold(), 'status': status, 'limit': limit, 'offset': offset}
+        with self.transaction() as db:
+            rows = db.execute('''SELECT r.work_type_id, wt.code AS work_type_code,
+                (SELECT e.name FROM service_work_type_events e WHERE e.work_type_id=r.work_type_id
+                    ORDER BY e.sequence DESC LIMIT 1) AS work_type_name,
+                e.revision, e.rate_basis, e.amount_minor, e.currency,
+                e.effective_from, e.effective_to, e.active, e.calculation_policy_ref,
+                e.created_at AS event_at
+                FROM service_rates r
+                JOIN service_work_types wt ON wt.id=r.work_type_id
+                LEFT JOIN service_rate_events e ON e.sequence=(
+                    SELECT MAX(s.sequence) FROM service_rate_events s WHERE s.rate_id=r.id)
+                WHERE (:status='all' OR (:status='active' AND COALESCE(e.active,0)=1)
+                       OR (:status='inactive' AND COALESCE(e.active,0)=0))
+                  AND (:q='' OR instr(lower(wt.code||' '||COALESCE((
+                        SELECT e2.name FROM service_work_type_events e2
+                        WHERE e2.work_type_id=r.work_type_id
+                        ORDER BY e2.sequence DESC LIMIT 1),'')),:q)>0)
+                ORDER BY wt.code LIMIT :limit OFFSET :offset''', params)
+            return [self._rate_derived(dict(r, active=bool(r['active']))) for r in rows]
+
+    def service_rate_history(self, work_type_id, before=None, limit=10):
+        if limit < 1 or limit > 100:
+            raise DomainError(422, 'Limit harus 1..100.')
+        with self.transaction() as db:
+            rate = db.execute('SELECT id FROM service_rates WHERE work_type_id=?',
+                              (work_type_id,)).fetchone()
+            if not rate:
+                return []
+            rows = db.execute('''SELECT revision FROM service_rate_events WHERE rate_id=?
+                AND (:before IS NULL OR revision<:before) ORDER BY revision DESC LIMIT ?''',
+                (rate['id'], before, limit)).fetchall()
+            records = []
+            for row in rows:
+                record = dict(db.execute('SELECT * FROM service_rate_events WHERE rate_id=? AND revision=?',
+                                         (rate['id'], row[0])).fetchone())
+                records.append(self._rate_derived(record))
+            return records
+
+    def apply_service_template(self, template_id, payload, actor, key):
+        def perform(db):
+            template = self._service_template(db, template_id)
+            if not template['active']:
+                raise DomainError(422, f'Template jasa "{template["code"]}" nonaktif; '
+                                       'tidak dapat diterapkan ke SKU baru.')
+            product = db.execute('SELECT id,sku,active FROM products WHERE id=?',
+                                 (payload['product_id'],)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            if not product['active']:
+                raise DomainError(422, f'SKU {product["sku"]} nonaktif; template jasa tidak dapat diterapkan.')
+            components = self._validate_service_components(db, template['components'])
+            bom_revision = None
+            bom_template_id = (payload.get('bom_template_id') or '').strip() or None
+            if bom_template_id:
+                # Sisi bahan: terbitkan revisi BOM berversi (#43) dalam transaksi
+                # yang sama. Tidak membuat ledger bahan kedua.
+                _, bom_revision = self._apply_bom_template_internal(
+                    db, bom_template_id, payload['product_id'],
+                    payload['bom_expected_revision'], payload['reason'], actor)
+            application_id = str(uuid4())
+            db.execute('''INSERT INTO service_template_applications
+                (id,product_id,template_id,template_revision,components,bom_template_id,bom_revision,
+                 reason,actor_id,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                (application_id, payload['product_id'], template_id, template['revision'],
+                 json.dumps(components), bom_template_id, bom_revision, payload['reason'],
+                 actor['id'], now()))
+            return self._service_application(db, application_id)
+        return self._write(actor, ('admin',), key, 'service-template-apply:' + template_id, payload, perform)
+
+    def _service_application(self, db, application_id):
+        row = db.execute('''SELECT a.*,
+            t.code AS template_code,
+            (SELECT te.name FROM service_template_events te WHERE te.template_id=a.template_id
+                AND te.revision=a.template_revision) AS template_name,
+            p.sku AS sku,
+            u.name AS actor_name
+            FROM service_template_applications a
+            JOIN service_templates t ON t.id=a.template_id
+            JOIN products p ON p.id=a.product_id
+            LEFT JOIN users u ON u.id=a.actor_id
+            WHERE a.id=?''', (application_id,)).fetchone()
+        if not row:
+            raise DomainError(404, 'Penerapan template jasa tidak ditemukan.')
+        record = dict(row)
+        record['components'] = json.loads(record['components'])
+        return record
+
+    def service_template_applications(self, product_id, before=None, limit=10):
+        if limit < 1 or limit > 100:
+            raise DomainError(422, 'Limit harus 1..100.')
+        with self.transaction() as db:
+            product = db.execute('SELECT sku FROM products WHERE id=?', (product_id,)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            rows = db.execute('''SELECT id FROM service_template_applications
+                WHERE product_id=? AND (:before IS NULL OR sequence<:before)
+                ORDER BY sequence DESC LIMIT ?''', (product_id, before, limit)).fetchall()
+            return [self._service_application(db, row[0]) for row in rows]
+
+    def product_service_application(self, product_id):
+        """Penerapan template jasa terakhir untuk SKU (state saat ini)."""
+        with self.transaction() as db:
+            product = db.execute('SELECT sku FROM products WHERE id=?', (product_id,)).fetchone()
+            if not product:
+                raise DomainError(404, 'SKU tidak ditemukan.')
+            row = db.execute('''SELECT id FROM service_template_applications
+                WHERE product_id=? ORDER BY sequence DESC LIMIT 1''', (product_id,)).fetchone()
+            if not row:
+                return None
+            return self._service_application(db, row[0])
