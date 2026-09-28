@@ -66,6 +66,31 @@ def main():
                 ("Admin Demo", "admin"), ("Produksi Demo", "operator"), ("Viewer Demo", "viewer")]]
             actor = store.authenticate(users[0]["api_key"])
             product = store.create_product(ProductCreate(sku="DEMO-LUNA-BLUE-M", name="Contoh Luna Blue", color="Blue", size="M").model_dump(), actor, "demo-product")
+            # P01 (#48): template jasa + tarif berversi untuk demo. Semua data
+            # sintetis; pemilihan memakai tanggal pengerjaan Asia/Jakarta dan
+            # kebijakan DEMO_ASSUMPTION DEMO-20260928-1.
+            group = store.create_service_group({"code": "DEMO-KERJA", "name": "Pekerjaan produksi",
+                "reason": "Data sintetis demo P01"}, actor, "demo-service-group")
+            jahit = store.create_work_type({"code": "DEMO-JAHIT", "name": "Jahit",
+                "service_group_id": group["id"], "reason": "Data sintetis demo P01"}, actor, "demo-work-type-sew")
+            label = store.create_work_type({"code": "DEMO-LABEL", "name": "Pasang label",
+                "service_group_id": group["id"], "reason": "Data sintetis demo P01"}, actor, "demo-work-type-label")
+            store.save_service_rate(jahit["id"], {"expected_revision": 0, "rate_basis": "lusin",
+                "amount": "120.00", "effective_from": "2026-09-01", "effective_to": "2026-09-16",
+                "active": True, "reason": "Tarif demo R1"}, actor, "demo-rate-jahit-1")
+            store.save_service_rate(jahit["id"], {"expected_revision": 1, "rate_basis": "lusin",
+                "amount": "144.00", "effective_from": "2026-09-16", "effective_to": None,
+                "active": True, "reason": "Tarif demo R2"}, actor, "demo-rate-jahit-2")
+            store.save_service_rate(label["id"], {"expected_revision": 0, "rate_basis": "pcs",
+                "amount": "10.00", "effective_from": "2026-09-01", "effective_to": None,
+                "active": True, "reason": "Tarif demo pasang label"}, actor, "demo-rate-label-1")
+            service_template = store.create_service_template({"code": "DEMO-TPL-JASA",
+                "name": "Template jasa Luna", "note": "Dua pekerjaan sintetis untuk demo P01",
+                "components": [{"work_type_id": jahit["id"]}, {"work_type_id": label["id"]}],
+                "reason": "Data sintetis demo P01"}, actor, "demo-service-template")
+            store.apply_service_template(service_template["id"], {"product_id": product["id"],
+                "bom_template_id": None, "bom_expected_revision": None,
+                "reason": "Penerapan sintetis demo P01"}, actor, "demo-service-apply")
             order = store.create_order(OrderCreate(reference="DEMO-PROD-001", title="CONTOH - Produksi internal 500 pcs",
                 owner_id=users[1]["id"], due_date=date.today() + timedelta(days=7),
                 lines=[{"product_id": product["id"], "quantity": 500}]).model_dump(mode="json"), actor, "demo-order")

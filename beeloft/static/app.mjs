@@ -1743,6 +1743,20 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
         if (parts[2] === 'catalog' && parts[3]) delete catalogCache[parts[3]];
         if (view === 'master-catalog') loadCatalogTab();
       }
+      // P01 (#48): penerapan template jasa membuka riwayat SKU; master/tarif
+      // memuat ulang tab aktif.
+      else if (/^\/api\/service-templates\/[^/]+\/apply$/.test(path)) {
+        if (view === 'products') loadProducts();
+        productServiceDialog(result.product_id);
+      }
+      else if (/^\/api\/work-types\/[^/]+\/rates(\/deactivate)?$/.test(path)) {
+        if (view === 'master-catalog') loadCatalogTab();
+        workTypeRateDialog(result.work_type_id);
+      }
+      else if (path.startsWith('/api/service-groups') || path.startsWith('/api/work-types')
+               || path.startsWith('/api/service-templates')) {
+        if (view === 'master-catalog') loadCatalogTab();
+      }
       else if (view === 'materials') loadMaterials();
       else if (view === 'people') loadPeople();
       else if (view === 'products') loadProducts();
@@ -1873,6 +1887,7 @@ function paintProducts() {
       + '<span class="record-row-aside">'
       + `<button type="button" class="action-secondary" data-action="product-mapping" data-id="${e(p.id)}" aria-label="Jubelio ${e(p.sku)}">Jubelio</button>`
       + `<button type="button" class="action-secondary" data-action="bom" data-id="${e(p.id)}" aria-label="BOM ${e(p.sku)}">BOM</button>`
+      + `<button type="button" class="action-secondary" data-action="product-service-template" data-id="${e(p.id)}" aria-label="Jasa dan tarif ${e(p.sku)}">Jasa</button>`
       + (user.role==='admin' ? `<button type="button" class="action-secondary" data-action="edit-product" data-id="${e(p.id)}" aria-label="Ubah ${e(p.sku)}">Ubah</button>` : '')
       + '</span></li>';
   }).join('')}</ul>`;
@@ -2357,9 +2372,23 @@ document.addEventListener('click', event => {
     // Reset dari keadaan kosong-tersaring memakai jalur yang sama dengan tombol di command bar.
     'reset-product-search':()=>{$('products-search').value='';paintProducts();$('products-search').focus();},
     'reset-catalog-search':()=>{$('master-catalog-search').value='';paintCatalogTab();$('master-catalog-search').focus();},
-    'edit-catalog':()=>catalogTab === 'bom_template' ? templateForm(id) : catalogRowForm(catalogTab,id),
-    'toggle-catalog':()=>catalogTab === 'bom_template' ? toggleTemplateRow(id) : toggleCatalogRow(catalogTab,id),
+    'edit-catalog':()=>catalogTab === 'bom_template' ? templateForm(id)
+      : catalogTab === 'service_template' ? serviceTemplateForm(id)
+      : catalogTab === 'service_group' ? serviceGroupForm(id)
+      : catalogTab === 'work_type' ? workTypeForm(id) : catalogRowForm(catalogTab,id),
+    'toggle-catalog':()=>catalogTab === 'bom_template' ? toggleTemplateRow(id)
+      : ['service_template','service_group','work_type'].includes(catalogTab) ? toggleServiceMaster(catalogTab,id)
+      : toggleCatalogRow(catalogTab,id),
     'apply-template':()=>applyTemplateForm(id),
+    'apply-service-template':()=>applyServiceTemplateForm(id),
+    'work-type-rate':()=>workTypeRateDialog(id),
+    'service-template-history':()=>serviceTemplateHistoryDialog(id),
+    'product-service-template':()=>productServiceDialog(id),
+    'service-rate-preview':()=>serviceRatePreviewDialog(id),
+    'new-service-rate':()=>serviceRateForm(id),
+    'deactivate-service-rate':()=>deactivateServiceRateForm(id),
+    'product-service-apply':()=>applyServiceTemplateForm(null,id,false),
+    'product-service-preview':()=>productServicePreviewDialog(id),
     'cutting-runs':()=>cuttingRunsDialog(id || selected?.id),'new-cutting':()=>cuttingForm(id),'cutting-run':()=>cuttingRunDialog(id),
     bundles:()=>bundlesDialog(id || selected?.id),'new-bundle':()=>bundleForm(id,output),bundle:()=>bundleDialog(id),'scan-bundle':()=>navigateFromDialog(()=>showScanner('bundle')),
     'bundle-handoffs':()=>bundleHandoffsDialog(id),'new-bundle-handoff':()=>bundleHandoffForm(id),
@@ -8029,14 +8058,27 @@ const CATALOG_TABS = [
   {kind: 'size', api: 'sizes', title: 'Ukuran'},
   {kind: 'material_class', api: 'material-classes', title: 'Klasifikasi bahan'},
   {kind: 'bom_template', api: null, title: 'Template BOM'},
+  // P01 (#48): master jasa, template jasa berversi dan tarif upah berversi.
+  {kind: 'service_group', api: null, title: 'Kelompok jasa'},
+  {kind: 'work_type', api: null, title: 'Jenis pekerjaan'},
+  {kind: 'service_template', api: null, title: 'Template jasa'},
 ];
+const SERVICE_TABS = {
+  service_group: '/api/service-groups',
+  work_type: '/api/work-types',
+  service_template: '/api/service-templates',
+};
 let catalogTab = 'uom';
 let catalogRowsCache = [];
 function showMasterCatalog() {
   activateWorkspace('master-catalog');
   $('master-catalog-back').onclick = showBoard;
   $('master-catalog-refresh').onclick = () => loadCatalogTab();
-  $('new-catalog-row').onclick = () => catalogTab === 'bom_template' ? templateForm() : catalogRowForm(catalogTab);
+  $('new-catalog-row').onclick = () => catalogTab === 'bom_template' ? templateForm()
+    : catalogTab === 'service_group' ? serviceGroupForm()
+    : catalogTab === 'work_type' ? workTypeForm()
+    : catalogTab === 'service_template' ? serviceTemplateForm()
+    : catalogRowForm(catalogTab);
   $('master-catalog-search').oninput = paintCatalogTab;
   $('master-catalog-clear').onclick = () => { $('master-catalog-search').value = ''; paintCatalogTab(); $('master-catalog-search').focus(); };
   $('master-catalog-search-form').onsubmit = event => event.preventDefault();
@@ -8063,7 +8105,9 @@ async function loadCatalogTab() {
     $('master-catalog-list').replaceChildren();
   }
   try {
-    const rows = tab.kind === 'bom_template' ? await allRows('/api/bom-templates') : await catalogRows(tab.api);
+    const rows = tab.kind === 'bom_template' ? await allRows('/api/bom-templates')
+      : SERVICE_TABS[tab.kind] ? await allRows(SERVICE_TABS[tab.kind])
+      : await catalogRows(tab.api);
     if (version !== epoch || request !== masterCatalogRequest || view !== 'master-catalog') return;
     settleRefreshing('master-catalog-list');
     catalogRowsCache = rows;
@@ -8090,14 +8134,33 @@ function catalogRowHtml(tab, r) {
     meta += `<span class="data-meta">${n(r.components.length)} bahan</span>`;
     if (r.product_type_name) meta += `<span class="data-meta">Tipe: ${e(r.product_type_name)}</span>`;
   }
+  // P01 (#48): kelompok jasa, jenis pekerjaan dan template jasa.
+  if (tab.kind === 'service_group') meta += `<span class="data-meta">${n(r.work_type_count || 0)} jenis pekerjaan</span>`;
+  if (tab.kind === 'work_type') {
+    meta += `<span class="data-meta">Revisi ${n(r.revision)}</span>`;
+    meta += r.service_group_code
+      ? `<span class="data-meta">Kelompok: ${e(r.service_group_code)} · ${e(r.service_group_name || '')}</span>`
+      : '<span class="data-meta">Tanpa kelompok</span>';
+  }
+  if (tab.kind === 'service_template') {
+    meta += `<span class="data-meta">Revisi ${n(r.revision)}</span>`
+      + `<span class="data-meta">${n(r.components.length)} pekerjaan</span>`;
+    if (r.note) meta += `<span class="data-meta">${e(r.note)}</span>`;
+  }
   const chip = r.active ? '' : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>';
   let actions = '';
+  // Tarif dan riwayat dapat dibaca semua role; hanya tulis yang admin-only.
+  if (tab.kind === 'work_type') actions += `<button type="button" class="action-secondary" data-action="work-type-rate" data-id="${e(r.id)}" aria-label="Tarif ${e(r.code)}">Tarif</button>`;
+  if (tab.kind === 'service_template') actions += `<button type="button" class="action-secondary" data-action="service-template-history" data-id="${e(r.id)}" aria-label="Riwayat ${e(r.code)}">Riwayat</button>`;
   if (user.role === 'admin') {
     if (tab.kind === 'bom_template') actions += `<button type="button" class="action-secondary" data-action="apply-template" data-id="${e(r.id)}">Terapkan</button>`;
+    if (tab.kind === 'service_template') actions += `<button type="button" class="action-secondary" data-action="apply-service-template" data-id="${e(r.id)}">Terapkan</button>`;
     actions += `<button type="button" class="action-secondary" data-action="edit-catalog" data-id="${e(r.id)}">Ubah</button>`
       + `<button type="button" class="action-quiet" data-action="toggle-catalog" data-id="${e(r.id)}">${r.active ? 'Nonaktifkan' : 'Aktifkan'}</button>`;
   }
-  return `<li class="record-row"><span class="metric-icon">${svgIcon(tab.kind === 'bom_template' ? 'layers' : 'tag', 'icon-sm')}</span>`
+  const icon = tab.kind === 'bom_template' || tab.kind === 'service_template' ? 'layers'
+    : tab.kind === 'work_type' || tab.kind === 'service_group' ? 'users' : 'tag';
+  return `<li class="record-row"><span class="metric-icon">${svgIcon(icon, 'icon-sm')}</span>`
     + `<span class="record-row-copy"><span class="data-primary">${e(r.code)}</span><span class="data-secondary">${e(r.name)}</span>${meta}<span class="chip-row">${chip}</span></span>`
     + (actions ? `<span class="record-row-aside">${actions}</span>` : '') + `</li>`;
 }
@@ -8502,3 +8565,496 @@ $('backup').onclick = () => {
     finally { if (current()) { button.disabled = false; button.textContent = 'Unduh cadangan database'; } }
   };
 };
+// -- P01 (#48) Master jasa, template jasa dan tarif upah berversi ------------
+// Nominal tarif punya satu basis authoritative; nilai lawan selalu hasil
+// konversi eksak dari server (rate_per_*), bukan hitungan ulang di klien.
+const RATE_BASIS_LABEL = {lusin: 'Per lusin', pcs: 'Per pcs'};
+const rateInterval = r => `${date(r.effective_from)} sampai ${r.effective_to ? date(r.effective_to) : 'seterusnya'}`;
+const todayJakarta = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+function serviceGroupForm(rowId = null) {
+  if (guardPending()) return;
+  const row = rowId ? catalogRowsCache.find(r => r.id === rowId) : null;
+  if (rowId && !row) return;
+  let fields = '';
+  if (!row) fields += '<div class="field"><label class="field-label" for="group-code">Kode kelompok</label><input id="group-code" name="code" type="text" required maxlength="40"><p class="field-help">Huruf besar otomatis; kode tidak dapat diubah setelah disimpan.</p></div>';
+  else fields += `<p class="form-info">Kode <strong>${e(row.code)}</strong> tidak dapat diubah.</p>`;
+  fields += `<div class="field"><label class="field-label" for="group-name">Nama kelompok</label><input id="group-name" name="name" type="text" required maxlength="160"${row ? ` value="${e(row.name)}"` : ''}></div>`;
+  if (row) fields += `<div class="field"><label class="field-label" for="group-active">Status</label><select id="group-active" name="active"><option value="1"${row.active ? ' selected' : ''}>Aktif</option><option value="0"${row.active ? '' : ' selected'}>Nonaktif</option></select><p class="field-help">Kelompok nonaktif ditolak untuk jenis pekerjaan baru; riwayat tetap utuh.</p></div>`;
+  fields += reasonField('Alasan pencatatan');
+  formDialog(row ? `Ubah ${row.code}` : 'Tambah kelompok jasa', fields,
+    form => {
+      const data = new FormData(form);
+      const payload = {name: String(data.get('name')).trim(), reason: String(data.get('reason')).trim()};
+      if (!row) payload.code = String(data.get('code')).trim();
+      else { payload.active = data.get('active') === '1'; payload.expected_revision = row.revision; }
+      return payload;
+    },
+    row ? `/api/service-groups/${encodeURIComponent(row.id)}/changes` : '/api/service-groups',
+    row ? `${row.code} · ${row.name} · revisi ${n(row.revision)}` : 'Kelompok jasa mengelompokkan jenis pekerjaan; kodenya unik dan tetap.');
+}
+
+async function workTypeForm(rowId = null) {
+  if (guardPending()) return;
+  const row = rowId ? catalogRowsCache.find(r => r.id === rowId) : null;
+  if (rowId && !row) return;
+  const version = epoch;
+  openDialog(row ? 'Ubah jenis pekerjaan' : 'Tambah jenis pekerjaan', '<p class="state">Memuat kelompok jasa…</p>');
+  const modal = dialogVersion;
+  try {
+    const groups = await allRows('/api/service-groups');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    let fields = '';
+    if (!row) fields += '<div class="field"><label class="field-label" for="wt-code">Kode pekerjaan</label><input id="wt-code" name="code" type="text" required maxlength="40"><p class="field-help">Huruf besar otomatis; kode stabil dan tidak dapat diubah.</p></div>';
+    else fields += `<p class="form-info">Kode <strong>${e(row.code)}</strong> tidak dapat diubah.</p>`;
+    fields += `<div class="field"><label class="field-label" for="wt-name">Nama pekerjaan</label><input id="wt-name" name="name" type="text" required maxlength="160"${row ? ` value="${e(row.name)}"` : ''}></div>`
+      + `<div class="field"><label class="field-label" for="wt-group">Kelompok jasa</label><select id="wt-group" name="service_group_id"><option value="">— Tanpa kelompok —</option>`
+      + groups.map(g => `<option value="${e(g.id)}"${String(g.id) === String(row?.service_group_id || '') ? ' selected' : ''}>${e(g.code)} · ${e(g.name)}${g.active ? '' : ' (nonaktif)'}</option>`).join('')
+      + `</select></div>`;
+    if (row) fields += `<div class="field"><label class="field-label" for="wt-active">Status</label><select id="wt-active" name="active"><option value="1"${row.active ? ' selected' : ''}>Aktif</option><option value="0"${row.active ? '' : ' selected'}>Nonaktif</option></select><p class="field-help">Pekerjaan nonaktif ditolak untuk template dan tarif baru; riwayat tetap utuh.</p></div>`;
+    fields += reasonField('Alasan pencatatan');
+    formDialog(row ? `Ubah ${row.code}` : 'Tambah jenis pekerjaan', fields,
+      form => {
+        const data = new FormData(form);
+        const payload = {name: String(data.get('name')).trim(),
+          service_group_id: String(data.get('service_group_id') || '').trim() || null,
+          reason: String(data.get('reason')).trim()};
+        if (!row) payload.code = String(data.get('code')).trim();
+        else { payload.active = data.get('active') === '1'; payload.expected_revision = row.revision; }
+        return payload;
+      },
+      row ? `/api/work-types/${encodeURIComponent(row.id)}/changes` : '/api/work-types',
+      row ? `${row.code} · ${row.name} · revisi ${n(row.revision)}`
+          : 'Tarif upah ditambahkan terpisah setelah jenis pekerjaan dibuat. Menit standar kapasitas tidak dipakai sebagai rumus upah.');
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form jenis pekerjaan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+  }
+}
+
+function serviceComponentRow(workTypes, component = {}) {
+  const rowId = 'svc-' + Math.random().toString(36).slice(2);
+  return `<div class="line-input" data-service-row>`
+    + `<div class="field"><label class="field-label" for="${rowId}-w">Jenis pekerjaan</label><select id="${rowId}-w" data-work-type required>`
+    + workTypes.map(w => `<option value="${e(w.id)}"${w.id === component.work_type_id ? ' selected' : ''}>${e(w.code)} · ${e(w.name)}${w.active ? '' : ' (nonaktif)'}</option>`).join('')
+    + `</select></div>`
+    + `<button type="button" class="action-quiet" data-remove-row aria-label="Hapus baris pekerjaan">Hapus</button></div>`;
+}
+
+async function serviceTemplateForm(rowId = null) {
+  if (guardPending()) return;
+  const row = rowId ? catalogRowsCache.find(r => r.id === rowId) : null;
+  if (rowId && !row) return;
+  const version = epoch;
+  openDialog(row ? 'Ubah template jasa' : 'Tambah template jasa', '<p class="state">Memuat jenis pekerjaan…</p>');
+  const modal = dialogVersion;
+  try {
+    const workTypes = await allRows('/api/work-types');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!workTypes.filter(w => w.active).length && !row) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada jenis pekerjaan aktif.</p><p class="empty-state-copy">Tambahkan jenis pekerjaan aktif terlebih dahulu.</p></div>`;
+      return;
+    }
+    let fields = '';
+    if (!row) fields += '<div class="field"><label class="field-label" for="stpl-code">Kode template</label><input id="stpl-code" name="code" type="text" required maxlength="40"><p class="field-help">Kode tidak dapat diubah setelah disimpan.</p></div>';
+    else fields += `<p class="form-info">Kode <strong>${e(row.code)}</strong> tidak dapat diubah. Revisi aktif ${n(row.revision)}.</p>`;
+    fields += `<div class="field"><label class="field-label" for="stpl-name">Nama template</label><input id="stpl-name" name="name" type="text" required maxlength="160"${row ? ` value="${e(row.name)}"` : ''}></div>`
+      + `<div class="field"><label class="field-label" for="stpl-note">Catatan</label><input id="stpl-note" name="note" type="text" maxlength="1000" value="${e(row?.note || '')}"></div>`
+      + '<div class="full field-wide"><h3 class="workspace-section-title">Komponen pekerjaan</h3><p class="field-help">Satu SKU boleh memakai beberapa pekerjaan. Tarif tiap pekerjaan dikelola terpisah dengan tanggal berlaku sendiri.</p><div id="stpl-components"></div>'
+      + '<div class="field-actions"><button type="button" id="stpl-add-row" class="action-secondary">Tambah baris pekerjaan</button></div></div>';
+    if (row) fields += `<div class="field"><label class="field-label" for="stpl-active">Status</label><select id="stpl-active" name="active"><option value="1"${row.active ? ' selected' : ''}>Aktif</option><option value="0"${row.active ? '' : ' selected'}>Nonaktif</option></select><p class="field-help">Template nonaktif tidak dapat diterapkan lagi; penerapan lama tetap tersimpan.</p></div>`;
+    fields += reasonField('Alasan pencatatan');
+    formDialog(row ? `Ubah ${row.code}` : 'Tambah template jasa', fields,
+      form => {
+        const data = new FormData(form);
+        const components = [...form.querySelectorAll('[data-service-row]')]
+          .map(el => ({work_type_id: el.querySelector('[data-work-type]').value}))
+          .filter(c => c.work_type_id);
+        if (new Set(components.map(c => c.work_type_id)).size !== components.length)
+          throw new Error('Gabungkan jenis pekerjaan yang sama menjadi satu baris template.');
+        const payload = {name: String(data.get('name')).trim(), note: String(data.get('note') || '').trim(),
+          components, reason: String(data.get('reason')).trim()};
+        if (!row) payload.code = String(data.get('code')).trim();
+        else { payload.active = data.get('active') === '1'; payload.expected_revision = row.revision; }
+        return payload;
+      },
+      row ? `/api/service-templates/${encodeURIComponent(row.id)}/changes` : '/api/service-templates',
+      'Perubahan template membuat revisi baru; penerapan lama ke SKU tetap memakai revisi saat diterapkan.');
+    const container = $('stpl-components');
+    const choices = workTypes.slice().sort((a, b) => a.code.localeCompare(b.code));
+    const addRow = (component = {}) => container.insertAdjacentHTML('beforeend', serviceComponentRow(choices, component));
+    (row?.components?.length ? row.components : [{}]).forEach(addRow);
+    $('stpl-add-row').onclick = () => addRow();
+    container.addEventListener('click', event => {
+      const remove = event.target.closest('[data-remove-row]');
+      if (remove && container.children.length > 1) remove.closest('[data-service-row]').remove();
+      else if (remove) notify('Template memerlukan minimal satu pekerjaan.');
+    });
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form template jasa gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+  }
+}
+
+function toggleServiceMaster(kind, rowId) {
+  const row = catalogRowsCache.find(r => r.id === rowId);
+  if (!row || guardPending()) return;
+  const paths = {service_group: '/api/service-groups', work_type: '/api/work-types', service_template: '/api/service-templates'};
+  const label = {service_group: 'Kelompok jasa', work_type: 'Jenis pekerjaan', service_template: 'Template jasa'}[kind];
+  formDialog(row.active ? `Nonaktifkan ${row.code}` : `Aktifkan ${row.code}`,
+    reasonField('Alasan perubahan status'),
+    form => {
+      const payload = {active: !row.active, reason: new FormData(form).get('reason').trim(),
+        expected_revision: row.revision, name: row.name};
+      if (kind === 'work_type') payload.service_group_id = row.service_group_id || null;
+      if (kind === 'service_template') { payload.note = row.note || ''; payload.components = row.components.map(c => ({work_type_id: c.work_type_id})); }
+      return payload;
+    },
+    `${paths[kind]}/${encodeURIComponent(rowId)}/changes`,
+    row.active
+      ? `${label} ${row.code} · ${row.name}\nEntri nonaktif ditolak untuk data baru; riwayat dan penerapan lama tetap utuh.`
+      : `${label} ${row.code} · ${row.name}`);
+}
+
+async function workTypeRateDialog(workTypeId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Tarif jenis pekerjaan', '<p class="state">Memuat tarif…</p>', 'wide');
+  const modal = dialogVersion;
+  try {
+    const [rates, history] = await Promise.all([
+      allRows('/api/service-rates'),
+      api.get(`/api/work-types/${encodeURIComponent(workTypeId)}/rate-history?limit=20`),
+    ]);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    const rate = rates.find(r => r.work_type_id === workTypeId);
+    const title = rate ? `${rate.work_type_code} · ${rate.work_type_name}` : 'Tarif jenis pekerjaan';
+    $('dialog-title').textContent = `Tarif ${title}`;
+    const admin = user.role === 'admin';
+    let body = `<div class="info-panel"><p>Nominal tersimpan satu kali pada basis authoritative; nilai lawan adalah konversi eksak 12 pcs = 1 lusin. Tanggal pemilihan tarif memakai tanggal pengerjaan, zona Asia/Jakarta (DEMO_ASSUMPTION, keputusan D04 belum final).</p></div>`;
+    if (!rate) {
+      body += `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada tarif.</p>`
+        + `<p class="empty-state-copy">${admin ? 'Tambahkan revisi tarif pertama beserta tanggal berlakunya.' : 'Minta admin menambahkan tarif.'}</p></div>`;
+    } else {
+      const chip = rate.active
+        ? '<span class="status-chip status-chip-success"><span class="status-dot" aria-hidden="true"></span>Aktif</span>'
+        : '<span class="status-chip status-chip-neutral"><span class="status-dot" aria-hidden="true"></span>Nonaktif</span>';
+      body += `<h3 class="workspace-section-title">Tarif aktif</h3><ul class="record-list"><li class="record-row">`
+        + `<span class="metric-icon">${svgIcon('tag', 'icon-sm')}</span><span class="record-row-copy">`
+        + `<span class="data-primary">${e(RATE_BASIS_LABEL[rate.rate_basis])} ${e(rate.rate_basis === 'lusin' ? rate.rate_per_lusin_money : rate.rate_per_pcs_money)}</span>`
+        + `<span class="data-secondary">Revisi ${n(rate.revision)} · ${e(rateInterval(rate))}</span>`
+        + `<span class="data-meta">Per lusin ${e(rate.rate_per_lusin_money)} · per pcs ${e(rate.rate_per_pcs_money)} (konversi tampilan)</span>`
+        + `<span class="data-meta">Kebijakan ${e(rate.calculation_policy_ref)}</span>`
+        + `<span class="chip-row">${chip}</span></span></li></ul>`;
+    }
+    body += `<h3 class="workspace-section-title">Riwayat tarif</h3>`;
+    body += !history.length ? `<p class="state">Belum ada riwayat tarif.</p>`
+      : `<ol class="timeline">${history.map(h => `<li class="timeline-item">`
+        + `<span class="data-primary">Revisi ${n(h.revision)} · ${e(RATE_BASIS_LABEL[h.rate_basis])} ${e(h.rate_basis === 'lusin' ? h.rate_per_lusin_money : h.rate_per_pcs_money)}</span>`
+        + `<span class="data-secondary">${e(rateInterval(h))}</span>`
+        + `<span class="data-meta">${h.active ? 'Aktif' : 'Nonaktif'} · per lusin ${e(h.rate_per_lusin_money)} · per pcs ${e(h.rate_per_pcs_money)}</span>`
+        + `<span class="data-meta">${e(h.reason)}</span></li>`).join('')}</ol>`;
+    let actions = `<button type="button" class="action-secondary" data-action="service-rate-preview" data-id="${e(workTypeId)}">Preview tarif per tanggal</button>`;
+    if (admin) {
+      actions += `<button type="button" class="action-primary" data-action="new-service-rate" data-id="${e(workTypeId)}">Tambah revisi tarif</button>`;
+      if (rate && rate.active) actions += `<button type="button" class="action-quiet" data-action="deactivate-service-rate" data-id="${e(workTypeId)}">Nonaktifkan tarif</button>`;
+    }
+    $('dialog-content').innerHTML = body + `<div class="field-actions">${actions}</div>`;
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Tarif gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p>`
+      + `<button type="button" class="action-secondary" data-action="work-type-rate" data-id="${e(workTypeId)}">Coba lagi</button></div>`;
+  }
+}
+
+async function serviceRateForm(workTypeId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Tambah revisi tarif', '<p class="state">Memuat tarif terakhir…</p>');
+  const modal = dialogVersion;
+  try {
+    const rates = await allRows('/api/service-rates');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    const current = rates.find(r => r.work_type_id === workTypeId);
+    const revision = current ? current.revision : 0;
+    formDialog('Tambah revisi tarif',
+      `<div class="field"><label class="field-label" for="rate-basis">Basis tarif</label><select id="rate-basis" name="rate_basis">`
+      + `<option value="lusin">Per lusin</option><option value="pcs">Per pcs</option></select>`
+      + `<p class="field-help">Pilih satu basis authoritative. Nilai satuan lain dihitung eksak oleh server, tidak disimpan sebagai angka kedua.</p></div>`
+      + `<div class="field"><label class="field-label" for="rate-amount">Nominal (Rp)</label><input id="rate-amount" name="amount" type="text" inputmode="decimal" required maxlength="16" placeholder="144.00"></div>`
+      + `<div class="field"><label class="field-label" for="rate-from">Mulai berlaku</label><input id="rate-from" name="effective_from" type="date" required value="${e(todayJakarta())}"></div>`
+      + `<div class="field"><label class="field-label" for="rate-to">Berakhir (opsional)</label><input id="rate-to" name="effective_to" type="date"><p class="field-help">Kosongkan untuk berlaku seterusnya. Interval bersifat [mulai, berakhir): tanggal berakhir tidak termasuk.</p></div>`
+      + `<input type="hidden" name="expected_revision" value="${n(revision)}">`
+      + reasonField('Alasan tarif baru'),
+      form => {
+        const data = new FormData(form);
+        return {expected_revision: Number(data.get('expected_revision')),
+          rate_basis: data.get('rate_basis'),
+          amount: String(data.get('amount')).trim(),
+          effective_from: data.get('effective_from'),
+          effective_to: String(data.get('effective_to') || '').trim() || null,
+          active: true,
+          reason: String(data.get('reason')).trim()};
+      },
+      `/api/work-types/${encodeURIComponent(workTypeId)}/rates`,
+      `Revisi tarif saat ini: ${n(revision)}.\nInterval yang tumpang tindih dengan tarif aktif ditolak; nonaktifkan tarif lama lebih dahulu.`);
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form tarif gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+  }
+}
+
+async function deactivateServiceRateForm(workTypeId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Nonaktifkan tarif', '<p class="state">Memuat tarif aktif…</p>');
+  const modal = dialogVersion;
+  try {
+    const rates = await allRows('/api/service-rates');
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    const current = rates.find(r => r.work_type_id === workTypeId);
+    if (!current) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada tarif.</p><p class="empty-state-copy">Tidak ada tarif yang dapat dinonaktifkan.</p></div>`;
+      return;
+    }
+    formDialog(`Nonaktifkan tarif ${current.work_type_code}`,
+      `<input type="hidden" name="expected_revision" value="${n(current.revision)}">` + reasonField('Alasan penonaktifan'),
+      form => ({expected_revision: Number(new FormData(form).get('expected_revision')),
+        reason: String(new FormData(form).get('reason')).trim()}),
+      `/api/work-types/${encodeURIComponent(workTypeId)}/rates/deactivate`,
+      `${current.work_type_code} · revisi ${n(current.revision)} · ${rateInterval(current)}\nSetelah nonaktif, pemilihan tarif pada tanggal tersebut melaporkan tarif nonaktif; tidak memakai tarif lain secara diam-diam. Snapshot transaksi lama tidak berubah.`);
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+  }
+}
+
+async function serviceRatePreviewDialog(workTypeId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Preview tarif per tanggal', '<p class="state">Menyiapkan preview…</p>');
+  const modal = dialogVersion;
+  $('dialog-content').innerHTML = `<div class="info-panel"><p>Preview memakai tanggal pengerjaan sebagai tanggal pemilihan tarif (zona Asia/Jakarta, DEMO_ASSUMPTION). Perhitungan upah memakai aritmatika eksak: pcs/12 sebagai rasional, pembulatan sekali di akhir.</p></div>`
+    + `<div class="form-grid">`
+    + `<div class="field"><label class="field-label" for="preview-date">Tanggal pengerjaan</label><input id="preview-date" type="date" value="${e(todayJakarta())}"></div>`
+    + `<div class="field"><label class="field-label" for="preview-pcs">Jumlah pcs (opsional)</label><input id="preview-pcs" type="number" min="1" max="1000000000" step="1" placeholder="13"></div>`
+    + `</div><div class="field-actions"><button type="button" id="preview-run" class="action-primary">Lihat tarif</button></div>`
+    + `<div id="preview-result" aria-live="polite"></div>`;
+  const run = async () => {
+    const day = $('preview-date').value, pcs = $('preview-pcs').value.trim();
+    if (!day) { $('preview-result').innerHTML = `<p class="error">Isi tanggal pengerjaan terlebih dahulu.</p>`; return; }
+    $('preview-result').innerHTML = '<p class="state">Memuat tarif…</p>';
+    try {
+      const query = `effective_date=${encodeURIComponent(day)}${pcs ? `&pcs=${encodeURIComponent(pcs)}` : ''}`;
+      const result = await api.get(`/api/work-types/${encodeURIComponent(workTypeId)}/rate-preview?${query}`);
+      if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+      let html = `<h3 class="workspace-section-title">Tarif terpilih</h3><ul class="record-list"><li class="record-row">`
+        + `<span class="metric-icon">${svgIcon('tag', 'icon-sm')}</span><span class="record-row-copy">`
+        + `<span class="data-primary">${e(result.rate_revision)} · ${e(RATE_BASIS_LABEL[result.rate_basis])}</span>`
+        + `<span class="data-secondary">Berlaku ${e(rateInterval(result))}</span>`
+        + `<span class="data-meta">Per lusin ${e(result.rate_per_lusin_money)} · per pcs ${e(result.rate_per_pcs_money)}</span>`
+        + `<span class="data-meta">Tanggal acuan ${e(result.effective_date)} · zona ${e(result.timezone)}</span>`
+        + `<span class="data-meta">Kebijakan ${e(result.calculation_policy_ref)}</span></span></li></ul>`;
+      if (result.wage_minor !== undefined) {
+        html += `<h3 class="workspace-section-title">Preview upah</h3><ul class="record-list"><li class="record-row">`
+          + `<span class="metric-icon">${svgIcon('clock', 'icon-sm')}</span><span class="record-row-copy">`
+          + `<span class="data-primary">Rp${e(result.wage_money)}</span>`
+          + `<span class="data-secondary">${n(result.pcs)} pcs = ${e(result.lusin_exact)} lusin (rasional eksak)</span>`
+          + `<span class="data-meta">Pembulatan ${e(result.rounding_mode)} kelipatan ${n(result.rounding_multiple_minor)} minor, tahap ${e(result.rounding_stage)}</span>`
+          + `<span class="data-meta">Preview saja: belum membuat charge, slip gaji atau jurnal.</span></span></li></ul>`;
+      }
+      $('preview-result').innerHTML = html;
+    } catch (error) {
+      if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+      $('preview-result').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Tarif tidak dapat dipakai pada tanggal itu.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+    }
+  };
+  $('preview-run').onclick = run;
+  await run();
+}
+
+async function serviceTemplateHistoryDialog(templateId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Riwayat revisi template jasa', '<p class="state">Memuat riwayat…</p>', 'wide');
+  const modal = dialogVersion;
+  try {
+    const history = await api.get(`/api/service-templates/${encodeURIComponent(templateId)}/history?limit=20`);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!history.length) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada riwayat.</p><p class="empty-state-copy">Template belum pernah diubah.</p></div>`;
+      return;
+    }
+    $('dialog-title').textContent = `Riwayat ${history[0].code}`;
+    $('dialog-content').innerHTML = `<div class="info-panel"><p>Setiap perubahan template menyimpan revisi baru. Penerapan lama ke SKU tetap memakai revisi saat diterapkan dan tidak berubah.</p></div>`
+      + `<ol class="timeline">${history.map(h => `<li class="timeline-item">`
+        + `<span class="data-primary">Revisi ${n(h.revision)} · ${e(h.name)}</span>`
+        + `<span class="data-secondary">${h.active ? 'Aktif' : 'Nonaktif'} · ${n(h.components.length)} pekerjaan</span>`
+        + `<span class="data-meta">${e(h.components.map(c => c.work_type_code).join(', '))}</span>`
+        + (h.note ? `<span class="data-meta">${e(h.note)}</span>` : '')
+        + `<span class="data-meta">${date(h.event_at)} · ${e(h.reason)}</span></li>`).join('')}</ol>`;
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Riwayat gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p>`
+      + `<button type="button" class="action-secondary" data-action="service-template-history" data-id="${e(templateId)}">Coba lagi</button></div>`;
+  }
+}
+
+async function applyServiceTemplateForm(templateId, productId = null, locked = templateId !== null) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Terapkan template jasa', '<p class="state">Memuat template dan SKU…</p>');
+  const modal = dialogVersion;
+  try {
+    const [templates, products, bomTemplates] = await Promise.all([
+      allRows('/api/service-templates', {status: 'active'}),
+      allRows('/api/products', {status: 'active'}),
+      allRows('/api/bom-templates', {status: 'active'}),
+    ]);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    if (!templates.length) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada template jasa aktif.</p><p class="empty-state-copy">Tambahkan atau aktifkan template jasa terlebih dahulu.</p></div>`;
+      return;
+    }
+    if (!products.length) {
+      $('dialog-content').innerHTML = `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">Belum ada SKU aktif.</p><p class="empty-state-copy">Aktifkan atau tambahkan SKU terlebih dahulu.</p></div>`;
+      return;
+    }
+    // Path apply memuat id template, dan formDialog mengikat path saat dipanggil.
+    // Template karena itu selalu konkret: bila belum dipilih, ambil yang pertama
+    // dan buka ulang form saat pilihan berubah supaya path ikut berpindah.
+    const template = (templateId ? templates.find(t => t.id === templateId) : null) || templates[0];
+    const fields =
+      (locked
+        ? `<p class="form-info">Template <strong>${e(template.code)}</strong> · ${e(template.name)} · revisi ${n(template.revision)} (${n(template.components.length)} pekerjaan).</p>`
+        : `<div class="field"><label class="field-label" for="apply-service-template">Template jasa</label><select id="apply-service-template">`
+          + templates.map(t => `<option value="${e(t.id)}"${t.id === template.id ? ' selected' : ''}>${e(t.code)} · ${e(t.name)} (revisi ${n(t.revision)})</option>`).join('')
+          + `</select><p class="field-help">${n(template.components.length)} pekerjaan pada revisi ${n(template.revision)}.</p></div>`)
+      + `<div class="field"><label class="field-label" for="apply-service-product">SKU tujuan</label><select id="apply-service-product" name="product_id" required>`
+      + products.map(p => `<option value="${e(p.id)}"${String(p.id) === String(productId || '') ? ' selected' : ''}>${e(p.sku)} · ${e(p.name)}</option>`).join('')
+      + `</select></div>`
+      + `<div class="field"><label class="field-label" for="apply-bom-template">Template bahan (opsional)</label><select id="apply-bom-template" name="bom_template_id"><option value="">— Tanpa perubahan BOM —</option>`
+      + bomTemplates.map(t => option(t.id, `${t.code} · ${t.name}`)).join('')
+      + `</select><p class="field-help">Bila dipilih, penerapan juga menerbitkan revisi BOM baru memakai mekanisme BOM berversi yang ada.</p></div>`
+      + `<p class="form-info" id="apply-service-bom-info" hidden>Memuat revisi BOM…</p>`
+      + `<input type="hidden" name="bom_expected_revision" id="apply-service-bom-revision" value="">`
+      + reasonField('Alasan penerapan template');
+    formDialog('Terapkan template jasa', fields,
+      form => {
+        const data = new FormData(form);
+        const bomTemplate = String(data.get('bom_template_id') || '').trim();
+        const payload = {product_id: data.get('product_id'), reason: String(data.get('reason')).trim()};
+        if (bomTemplate) {
+          payload.bom_template_id = bomTemplate;
+          payload.bom_expected_revision = Number(data.get('bom_expected_revision'));
+        }
+        return payload;
+      },
+      `/api/service-templates/${encodeURIComponent(template.id)}/apply`,
+      'Penerapan membekukan versi template, waktu, aktor dan referensi BOM. Perubahan template sesudahnya tidak mengubah penerapan ini.');
+    const templateSelect = $('apply-service-template');
+    const bomSelect = $('apply-bom-template'), bomInfo = $('apply-service-bom-info'), bomRevision = $('apply-service-bom-revision');
+    // Ganti template berarti ganti endpoint: buka ulang form pada template itu.
+    if (templateSelect) templateSelect.onchange = () => {
+      if (templateSelect.value !== template.id)
+        applyServiceTemplateForm(templateSelect.value, $('apply-service-product').value, false);
+    };
+    const updateBomRevision = async () => {
+      if (!bomSelect.value) { bomInfo.hidden = true; bomRevision.value = ''; return; }
+      bomInfo.hidden = false;
+      bomInfo.textContent = 'Memuat revisi BOM…';
+      try {
+        const bom = await api.get(`/api/products/${encodeURIComponent($('apply-service-product').value)}/bom`);
+        bomRevision.value = bom.revision;
+        bomInfo.textContent = `Revisi BOM saat ini: ${n(bom.revision)}. Penerapan menerbitkan revisi ${n(bom.revision + 1)}.`;
+      } catch (error) { bomInfo.textContent = `Revisi BOM gagal dimuat: ${error.message}`; }
+    };
+    bomSelect.onchange = updateBomRevision;
+    $('apply-service-product').onchange = updateBomRevision;
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Form penerapan gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+  }
+}
+
+async function productServiceDialog(productId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Jasa dan tarif SKU', '<p class="state">Memuat penerapan template jasa…</p>', 'wide');
+  const modal = dialogVersion;
+  try {
+    const [current, history] = await Promise.all([
+      api.get(`/api/products/${encodeURIComponent(productId)}/service-template`),
+      api.get(`/api/products/${encodeURIComponent(productId)}/service-template-history?limit=10`),
+    ]);
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    const admin = user.role === 'admin';
+    let body = `<div class="info-panel"><p>Penerapan template jasa menyimpan versi template, waktu, pelaku dan referensi BOM. Perubahan template atau tarif setelahnya tidak menghitung ulang pekerjaan yang sudah disahkan.</p></div>`;
+    if (!current) {
+      body += `<div class="empty-state">${svgIcon('inbox')}<p class="empty-state-title">SKU ini belum memakai template jasa.</p>`
+        + `<p class="empty-state-copy">${admin ? 'Terapkan template jasa untuk menetapkan pekerjaan dan tarifnya.' : 'Minta admin menerapkan template jasa.'}</p></div>`;
+    } else {
+      $('dialog-title').textContent = `Jasa dan tarif ${current.sku}`;
+      body += `<h3 class="workspace-section-title">Penerapan aktif</h3><ul class="record-list"><li class="record-row">`
+        + `<span class="metric-icon">${svgIcon('layers', 'icon-sm')}</span><span class="record-row-copy">`
+        + `<span class="data-primary">${e(current.template_code)} · ${e(current.template_name || '')}</span>`
+        + `<span class="data-secondary">Revisi template ${n(current.template_revision)} · ${n(current.components.length)} pekerjaan</span>`
+        + `<span class="data-meta">${e(current.components.map(c => c.work_type_code).join(', '))}</span>`
+        + (current.bom_revision ? `<span class="data-meta">Revisi BOM tertaut: ${n(current.bom_revision)}</span>` : '<span class="data-meta">Tanpa perubahan BOM</span>')
+        + `<span class="data-meta">${date(current.created_at)} · ${e(current.actor_name || '')}</span>`
+        + `<span class="data-meta">${e(current.reason)}</span></span></li></ul>`;
+      body += `<h3 class="workspace-section-title">Riwayat penerapan</h3>`
+        + `<ol class="timeline">${history.map(h => `<li class="timeline-item">`
+          + `<span class="data-primary">${e(h.template_code)} · revisi ${n(h.template_revision)}</span>`
+          + `<span class="data-secondary">${n(h.components.length)} pekerjaan${h.bom_revision ? ` · BOM revisi ${n(h.bom_revision)}` : ''}</span>`
+          + `<span class="data-meta">${date(h.created_at)} · ${e(h.actor_name || '')}</span>`
+          + `<span class="data-meta">${e(h.reason)}</span></li>`).join('')}</ol>`;
+    }
+    let actions = '';
+    if (current) actions += `<button type="button" class="action-secondary" data-action="product-service-preview" data-id="${e(productId)}">Preview tarif per tanggal</button>`;
+    if (admin) actions += `<button type="button" class="action-primary" data-action="product-service-apply" data-id="${e(productId)}">Terapkan template jasa</button>`;
+    $('dialog-content').innerHTML = body + (actions ? `<div class="field-actions">${actions}</div>` : '');
+  } catch (error) {
+    if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+    $('dialog-content').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Jasa dan tarif SKU gagal dimuat.</p><p class="error-state-copy">${e(error.message)}</p>`
+      + `<button type="button" class="action-secondary" data-action="product-service-template" data-id="${e(productId)}">Coba lagi</button></div>`;
+  }
+}
+
+async function productServicePreviewDialog(productId) {
+  if (guardPending()) return;
+  const version = epoch;
+  openDialog('Tarif SKU per tanggal', '<p class="state">Menyiapkan preview…</p>', 'wide');
+  const modal = dialogVersion;
+  $('dialog-content').innerHTML = `<div class="info-panel"><p>Tarif seluruh pekerjaan SKU pada tanggal pengerjaan (zona Asia/Jakarta, DEMO_ASSUMPTION). Bila satu pekerjaan tidak punya tarif valid, seluruh hasil ditolak dan tidak ada nominal nol yang ditampilkan.</p></div>`
+    + `<div class="form-grid"><div class="field"><label class="field-label" for="sku-preview-date">Tanggal pengerjaan</label><input id="sku-preview-date" type="date" value="${e(todayJakarta())}"></div></div>`
+    + `<div class="field-actions"><button type="button" id="sku-preview-run" class="action-primary">Lihat tarif</button></div>`
+    + `<div id="sku-preview-result" aria-live="polite"></div>`;
+  const run = async () => {
+    const day = $('sku-preview-date').value;
+    if (!day) { $('sku-preview-result').innerHTML = `<p class="error">Isi tanggal pengerjaan terlebih dahulu.</p>`; return; }
+    $('sku-preview-result').innerHTML = '<p class="state">Memuat tarif…</p>';
+    try {
+      const result = await api.get(`/api/products/${encodeURIComponent(productId)}/service-rates?effective_date=${encodeURIComponent(day)}`);
+      if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+      $('dialog-title').textContent = `Tarif ${result.sku} per tanggal`;
+      $('sku-preview-result').innerHTML = `<h3 class="workspace-section-title">${e(result.template_code)} · revisi ${n(result.template_revision)}</h3>`
+        + `<ul class="record-list">${result.services.map(s => `<li class="record-row">`
+          + `<span class="metric-icon">${svgIcon('tag', 'icon-sm')}</span><span class="record-row-copy">`
+          + `<span class="data-primary">${e(s.work_type_code)} · ${e(s.work_type_name)}</span>`
+          + `<span class="data-secondary">${e(s.rate_revision)} · ${e(RATE_BASIS_LABEL[s.rate_basis])}</span>`
+          + `<span class="data-meta">Per lusin ${e(s.rate_per_lusin_money)} · per pcs ${e(s.rate_per_pcs_money)}</span>`
+          + `<span class="data-meta">Berlaku ${e(rateInterval(s))}</span></span></li>`).join('')}</ul>`
+        + `<p class="field-help">Tanggal acuan ${e(result.effective_date)} · zona ${e(result.timezone)} · kebijakan ${e(result.calculation_policy_ref)}.</p>`;
+    } catch (error) {
+      if (version !== epoch || modal !== dialogVersion || !$('dialog').open) return;
+      $('sku-preview-result').innerHTML = `<div class="error-state">${svgIcon('alert-octagon')}<p class="error-state-title">Tarif SKU tidak lengkap pada tanggal itu.</p><p class="error-state-copy">${e(error.message)}</p></div>`;
+    }
+  };
+  $('sku-preview-run').onclick = run;
+  await run();
+}
+
+async function serviceRateHistoryDialog(workTypeId) {
+  return workTypeRateDialog(workTypeId);
+}

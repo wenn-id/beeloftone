@@ -2606,9 +2606,10 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
 
     def _apply_bom_template_internal(self, db, template_id, product_id, expected_revision, reason, actor):
         """Terbitkan revisi BOM baru dari template bahan (#43). Mengembalikan
-        (template, bom_revision). Dipakai kedua-duanya oleh apply BOM template
-        biasa dan oleh penerapan template jasa yang membawa template bahan
-        (P01 #48) dalam satu transaksi atomik."""
+        ``(template, bom)`` dengan ``bom`` berbentuk record BOM lengkap seperti
+        yang dikembalikan endpoint BOM. Dipakai kedua-duanya oleh apply BOM
+        template biasa dan oleh penerapan template jasa yang membawa template
+        bahan (P01 #48) dalam satu transaksi atomik."""
         template = db.execute('SELECT * FROM bom_templates WHERE id=?', (template_id,)).fetchone()
         if not template:
             raise DomainError(404, 'Template BOM tidak ditemukan.')
@@ -2627,7 +2628,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                                       {'expected_revision': expected_revision,
                                        'reason': f'[Template {template["code"]}] {reason}',
                                        'components': components}, actor)
-        return template, bom['revision']
+        return template, bom
 
     def _material_batch(self, db, batch_id, order_id=None):
         row = db.execute('''SELECT b.*,m.code,m.name,m.unit,
@@ -9044,7 +9045,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
         result['wage_money'] = format(minor_to_money(wage['wage_minor']), '.2f')
         return result
 
-    def _validate_service_components(self, db, components):
+    def _validate_service_components(self, db, components, allow_inactive=False):
         validated, seen = [], set()
         for component in components:
             work_type_id = component['work_type_id']
@@ -9057,7 +9058,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 FROM service_work_types wt WHERE wt.id=?''', (work_type_id,)).fetchone()
             if not work_type:
                 raise DomainError(404, 'Jenis pekerjaan template tidak ditemukan.')
-            if not work_type['active']:
+            if not work_type['active'] and not allow_inactive:
                 raise DomainError(422, f'Jenis pekerjaan {work_type["code"]} nonaktif; '
                                        'tidak dapat dipakai pada template baru.')
             validated.append({'work_type_id': work_type_id, 'work_type_code': work_type['code']})
@@ -9229,7 +9230,9 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if current['revision'] != payload['expected_revision']:
                 raise DomainError(409, 'Template jasa sudah berubah. Tutup form, muat ulang, '
                                        'lalu periksa versi terbaru.')
-            components = self._validate_service_components(db, payload['components'])
+            # Template history may retain a retired work type; creating or
+            # applying templates still requires active work types.
+            components = self._validate_service_components(db, payload['components'], allow_inactive=True)
             if (current['name'] == payload['name'] and current['note'] == payload['note']
                     and current['active'] == payload['active'] and current['components'] == components):
                 raise DomainError(409, 'Template jasa tidak berubah. Ubah nama, catatan, status atau komponen.')
@@ -9427,9 +9430,10 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if bom_template_id:
                 # Sisi bahan: terbitkan revisi BOM berversi (#43) dalam transaksi
                 # yang sama. Tidak membuat ledger bahan kedua.
-                _, bom_revision = self._apply_bom_template_internal(
+                _, bom = self._apply_bom_template_internal(
                     db, bom_template_id, payload['product_id'],
                     payload['bom_expected_revision'], payload['reason'], actor)
+                bom_revision = bom['revision']
             application_id = str(uuid4())
             db.execute('''INSERT INTO service_template_applications
                 (id,product_id,template_id,template_revision,components,bom_template_id,bom_revision,

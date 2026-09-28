@@ -270,6 +270,28 @@ class ServiceTemplateTest(test_production.ProductionTest):
 
     # -- Inactive template blocks new application --
 
+    def test_deactivated_work_type_does_not_break_template_history(self):
+        """Inactive work type can stay in old template revisions; no new apply."""
+        self.post(f'/api/service-templates/{self.template["id"]}/apply', {
+            'product_id': self.product['id'], 'reason': 'historical apply'})
+        self.post(f'/api/work-types/{self.wt_jahit["id"]}/changes', {
+            'expected_revision': 1, 'name': 'Jahit',
+            'service_group_id': self.group['id'], 'active': False, 'reason': 'retire'}, status=200)
+        changed = self.post(f'/api/service-templates/{self.template["id"]}/changes', {
+            'expected_revision': 1, 'name': 'Template Demo', 'note': 'retired',
+            'active': False,
+            'components': [
+                {'work_type_id': self.wt_jahit['id']},
+                {'work_type_id': self.wt_label['id']},
+            ], 'reason': 'retire template'}, status=200)
+        self.assertEqual(changed['revision'], 2)
+        applications = self.client.get(
+            f'/api/products/{self.product["id"]}/service-template-history').json()
+        self.assertEqual(applications[0]['template_revision'], 1)
+        self.assertEqual(len(applications[0]['components']), 2)
+        self.post(f'/api/service-templates/{self.template["id"]}/apply', {
+            'product_id': self.product['id'], 'reason': 'try inactive'}, status=422)
+
     def test_inactive_template_blocked(self):
         self.post(f'/api/service-templates/{self.template["id"]}/changes', {
             'expected_revision': 1, 'name': 'Template Demo', 'note': 'catatan',

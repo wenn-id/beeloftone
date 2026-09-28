@@ -4,6 +4,16 @@ Persiapan [#48](https://github.com/wenn-id/beeloftone/issues/48), diperiksa pada
 22 September 2026, commit `8a2e2ac46c71bf528180562688fb4d4adaf686f0`,
 v0.97.0/schema 55. **BLOCKED_M01_M02: belum implementasi atau business accepted.**
 
+> **Status 28 September 2026 — implementasi P01 sudah mendarat.** M01 #43 dan M02 #44
+> merged (PR #113/#115), sehingga gerbang dependensi terbuka. Implementasi memakai
+> **migrasi schema 58** (`beeloft/service_templates.sql`) dan mempublikasikan kontrak
+> resolver/snapshot di [p01-rate-resolver.md](p01-rate-resolver.md). Kesiapan teknis
+> bukan business accepted: D04/D05/D17 masih OPEN, jadi basis tarif, tanggal acuan,
+> presisi/pembulatan dan hak akses nominal yang dipakai sekarang berlabel
+> DEMO_ASSUMPTION (`DEMO-20260928-1`) dan diganti dengan menukar objek policy, bukan
+> dengan mengubah kontrak. Tabel gap di bawah tetap sebagai catatan baseline
+> sebelum implementasi.
+
 Issue #48 mensyaratkan penerimaan M01 #43 dan M02 #44 sebelum implementasi yang
 bergantung padanya. Keduanya masih terbuka; PR #79/#80 hanya menyerahkan
 [kesiapan M01](m01-master-readiness.md) dan [M02](m02-master-readiness.md).
@@ -95,8 +105,8 @@ Mutasi nanti harus mempertahankan `_write`, actor/role server, idempotency,
 revision guard, transaksi atomik dan audit. Uji dua penyimpan bersamaan, retry
 key sama/berbeda, revision basi, rollback kegagalan audit serta akses terlarang.
 UI perlu pemilihan SKU/pekerjaan yang jelas, riwayat efektif, loading/kosong/error,
-retry, keyboard dan pesan tarif hilang/nonaktif. Nomor migrasi belum dipesan;
-koordinasikan A0 lalu uji DB baru, upgrade schema 55, rerun, FK/integrity,
+retry, keyboard dan pesan tarif hilang/nonaktif. Nomor migrasi sudah dipesan:
+**58** (`beeloft/service_templates.sql`); uji DB baru, upgrade dari schema 57, rerun, FK/integrity,
 control totals qty/uang dan backup/restore sintetis. Jangan mengubah ID/FK,
 cost job atau ledger lama untuk memasukkan asumsi tarif.
 
