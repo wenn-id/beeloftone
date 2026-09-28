@@ -420,6 +420,7 @@ const workspaceDestinations={
   'marketing-budgets':'marketing-budgets-view',
   'business-masters':'masters-view',
   'finance':'finance-view',
+  'jobs':'jobs-view',
   'scan-bundle':'bundle-scan-view',
   'scan-finished-goods':'finished-goods-scan-view',
   'backup':'backup-view'
@@ -447,6 +448,7 @@ const workspaceSections=[
   {id:'marketing-budgets-view',view:'marketing-budgets',invalidate(){marketingBudgetsRequest++;}},
   {id:'masters-view',view:'masters',invalidate(){mastersRequest++;}},
   {id:'finance-view',view:'finance',invalidate(){financeRequest++;}},
+  {id:'jobs-view',view:'jobs',invalidate(){jobsRequest++;}},
   {id:'bundle-scan-view',view:'bundle-scan',invalidate(){scanRequest++;}},
   {id:'finished-goods-scan-view',view:'finished-goods-scan',invalidate(){scanRequest++;}},
   {id:'backup-view',view:'backup',invalidate(){backupRequest++;}}
@@ -1762,6 +1764,7 @@ function formDialog(title, fields, collect, path, info = '', initial = null) {
       if (view === 'marketing-budgets') reloadMarketingBudgets();
       if (view === 'masters') loadMasters();
       if (view === 'finance') loadFinance();
+      if (view === 'jobs') loadJobs();
       if (path === '/api/orders') openDetail(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/sale-settlements')) || path.startsWith('/api/marketplace-sale-settlements/')) marketplaceSaleSettlementDialog(result.id);
       else if ((path.startsWith('/api/marketplace-shipments/') && path.endsWith('/returns')) || path.startsWith('/api/marketplace-returns/')) marketplaceReturnDialog(result.id);
@@ -2673,6 +2676,333 @@ document.querySelectorAll('[data-finance-tab]').forEach(button => {
       : financeTab === 'periods' ? 'Tambah periode'
       : financeTab === 'journals' ? 'Posting jurnal' : 'Tambah';
     if (view === 'finance') loadFinance(); else showFinance();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Pekerjaan (P03): job borongan karyawan — target, realisasi, approval, dan
+// service charge upah. Struktur list endpoint: {jobs:[...]}, {charges:[...]}.
+// ---------------------------------------------------------------------------
+let jobsRequest = 0, jobsTab = 'list', jobsCache = [], jobsDetail = null, jobsSelectedId = null;
+let chargeCache = null, chargeError = '', chargePrefill = null;
+const JOBS_TABS = {list:'Daftar Job', detail:'Detail Job', approval:'Approval', charges:'Charge'};
+const JOB_STATUS = {open:'Terbuka', in_progress:'Berjalan', done:'Selesai', cancelled:'Dibatalkan'};
+const REALIZATION_STATUS = {draft:'Draft', submitted:'Diajukan', approved:'Disetujui', rejected:'Ditolak'};
+
+function showJobs() {
+  activateWorkspace('jobs');
+  loadJobs();
+}
+async function loadJobs() {
+  const request = ++jobsRequest;
+  const host = $('jobs-list');
+  if (!markRefreshing('jobs-list')) { pageState('jobs-message', 'loading', 'Memuat data pekerjaan…'); host.replaceChildren(); }
+  try {
+    if (jobsTab === 'detail' && jobsSelectedId) {
+      jobsDetail = await api.get(`/api/employee-jobs/${encodeURIComponent(jobsSelectedId)}`);
+    } else if (jobsTab === 'detail') {
+      jobsDetail = null;
+    } else if (jobsTab !== 'charges') {
+      const result = await api.get('/api/employee-jobs?limit=500');
+      jobsCache = result.jobs || [];
+    }
+    if (request !== jobsRequest || view !== 'jobs') return;
+    settleRefreshing('jobs-list');
+    paintJobs();
+  } catch (error) {
+    if (request !== jobsRequest || view !== 'jobs') return;
+    settleRefreshing('jobs-list');
+    pageState('jobs-message', 'error', 'Gagal memuat', error.message);
+  }
+}
+function paintJobs() {
+  $('jobs-heading').textContent = JOBS_TABS[jobsTab];
+  const host = $('jobs-list');
+  pageState('jobs-message', '');
+  $('jobs-new').hidden = user.role !== 'admin' || jobsTab !== 'list';
+  if (jobsTab === 'list') return paintJobsList(host);
+  if (jobsTab === 'detail') return paintJobDetail(host);
+  if (jobsTab === 'approval') return paintJobsApproval(host);
+  return paintJobCharges(host);
+}
+function jobsSelect(id) {
+  jobsSelectedId = id;
+  jobsTab = 'detail';
+  document.querySelectorAll('[data-jobs-tab]').forEach(tab =>
+    tab.setAttribute('aria-selected', String(tab.dataset.jobsTab === 'detail')));
+  if (view === 'jobs') loadJobs(); else showJobs();
+}
+function paintJobsList(host) {
+  $('jobs-count').textContent = `${jobsCache.length} job`;
+  if (!jobsCache.length) {
+    host.innerHTML = `<p class="state">Belum ada job.</p>` +
+      (user.role === 'admin' ? `<p><button type="button" class="primary" id="jobs-empty-new">Buat job pertama</button></p>` : '');
+    const empty = $('jobs-empty-new');
+    if (empty) empty.onclick = jobCreateForm;
+    return;
+  }
+  host.innerHTML = `<div class="record-list">${jobsCache.map(j => `
+    <article class="record-card" data-job-card="${e(j.id)}">
+      <div class="record-main"><h3 class="record-title">${e(j.id)}</h3>
+      <p class="record-meta">${e(j.employee_id)} · SKU ${e(j.sku)} · ${e(j.work_type_id)}</p>
+      <p class="record-meta">Target ${j.target_qty_pcs} pcs · Disetujui ${j.approved_qty_pcs} pcs · Sisa ${j.remaining_qty_pcs} pcs · ${JOB_STATUS[j.status] || e(j.status)}</p></div>
+      <div class="record-actions"><button type="button" data-job-open="${e(j.id)}">Buka</button></div>
+    </article>`).join('')}</div>`;
+  host.querySelectorAll('[data-job-open]').forEach(button => {
+    button.onclick = () => jobsSelect(button.dataset.jobOpen);
+  });
+  host.querySelectorAll('[data-job-card]').forEach(card => {
+    card.style.cursor = 'pointer';
+    card.onclick = event => { if (!event.target.closest('button')) jobsSelect(card.dataset.jobCard); };
+    card.onkeydown = event => { if (event.key === 'Enter') jobsSelect(card.dataset.jobCard); };
+    card.tabIndex = 0;
+  });
+}
+function jobCreateForm() {
+  if (guardPending()) return;
+  formDialog('Job baru',
+    field('employee_id','ID karyawan','text','required maxlength="64"') +
+    field('sku','SKU','text','required maxlength="64"') +
+    field('work_type_id','ID jenis kerja','text','required maxlength="64"') +
+    field('target_qty_pcs','Target (pcs)','number','required min="1" step="1"') +
+    field('work_date','Tanggal kerja','date',`required value="${jakartaToday()}"`) +
+    field('bundle_id','Bundle ID (opsional)','text','maxlength="64"') +
+    field('notes','Catatan (opsional)','text','maxlength="1000"'),
+    form => {
+      const data = new FormData(form);
+      const text = name => ((data.get(name) || '').toString().trim());
+      return {
+        employee_id: text('employee_id'), sku: text('sku'), work_type_id: text('work_type_id'),
+        target_qty_pcs: Number(data.get('target_qty_pcs')), work_date: data.get('work_date'),
+        bundle_id: text('bundle_id') || null, notes: text('notes') || null,
+      };
+    },
+    '/api/employee-jobs',
+    'Job borongan untuk karyawan. Realisasi dicatat dari tab Detail Job.');
+}
+function paintJobDetail(host) {
+  if (!jobsDetail) {
+    $('jobs-count').textContent = '';
+    pageState('jobs-message', 'empty', 'Belum ada job yang dipilih.',
+      'Buka daftar job lalu klik barisnya untuk melihat realisasi.',
+      `<button type="button" class="primary" id="jobs-goto-list">Buka daftar job</button>`);
+    const goto = $('jobs-goto-list');
+    if (goto) goto.onclick = () => document.querySelector('[data-jobs-tab="list"]').click();
+    return;
+  }
+  const j = jobsDetail;
+  $('jobs-count').textContent = j.id;
+  host.innerHTML = `
+    <div class="card"><div class="section-heading"><h2 class="workspace-section-title">${e(j.id)}</h2>
+    <span class="workspace-meta">${JOB_STATUS[j.status] || e(j.status)} · revisi ${j.revision}</span></div>
+    <dl class="summary">
+      <div><dt>Karyawan</dt><dd>${e(j.employee_id)}</dd></div>
+      <div><dt>SKU</dt><dd>${e(j.sku)}</dd></div>
+      <div><dt>Jenis kerja</dt><dd>${e(j.work_type_id)}</dd></div>
+      <div><dt>Tanggal kerja</dt><dd>${e(j.work_date)}</dd></div>
+      ${j.bundle_id ? `<div><dt>Bundle</dt><dd>${e(j.bundle_id)}</dd></div>` : ''}
+      <div><dt>Target</dt><dd>${j.target_qty_pcs} pcs</dd></div>
+      <div><dt>Disetujui</dt><dd>${j.approved_qty_pcs} pcs</dd></div>
+      <div><dt>Sisa realisasi</dt><dd><strong>${j.remaining_qty_pcs} pcs</strong></dd></div>
+      ${j.notes ? `<div><dt>Catatan</dt><dd>${e(j.notes)}</dd></div>` : ''}
+    </dl></div>
+    <div class="workspace-subhead"><h2 class="workspace-section-title">Realisasi</h2>
+    <span class="workspace-meta">${j.realizations.length} baris</span>
+    <div class="workspace-actions">${user.role === 'admin' ? `<button type="button" class="action-primary" id="jobs-new-realization">Input Realisasi</button>` : ''}</div></div>
+    <div class="record-list">${j.realizations.map(r => {
+      const actions = [];
+      if (r.status === 'draft' || r.status === 'submitted') {
+        actions.push(`<button type="button" data-jobs-action="realization-edit" data-job="${e(j.id)}" data-rid="${e(r.id)}" data-rev="${r.revision}" data-qty="${r.qty_pcs}" data-notes="${e(r.notes || '')}">Ubah</button>`);
+        if (r.status === 'draft') actions.push(`<button type="button" data-jobs-action="realization-submit" data-job="${e(j.id)}" data-rid="${e(r.id)}">Ajukan</button>`);
+        else {
+          actions.push(`<button type="button" data-jobs-action="realization-approve" data-job="${e(j.id)}" data-rid="${e(r.id)}">Setujui</button>`);
+          actions.push(`<button type="button" data-jobs-action="realization-reject" data-job="${e(j.id)}" data-rid="${e(r.id)}">Tolak</button>`);
+        }
+      } else if (r.status === 'approved') {
+        actions.push(`<button type="button" data-jobs-action="realization-charge" data-job="${e(j.id)}" data-rid="${e(r.id)}">Lihat charge</button>`);
+      }
+      return `<article class="record-card"><div class="record-main">
+        <h3 class="record-title">${e(r.id)} · ${r.qty_pcs} pcs · ${REALIZATION_STATUS[r.status] || e(r.status)}</h3>
+        <p class="record-meta">${e(r.work_date)}${r.approved_by ? ` · disetujui ${e(r.approved_by)}` : ''}</p>
+        ${r.notes ? `<p class="record-meta">${e(r.notes)}</p>` : ''}
+        ${r.status === 'rejected' && r.reject_reason ? `<p class="record-meta">Alasan tolak: ${e(r.reject_reason)}</p>` : ''}</div>
+        <div class="record-actions">${actions.join('')}</div></article>`;
+    }).join('') || '<p class="state">Belum ada realisasi.</p>'}</div>`;
+  const createButton = $('jobs-new-realization');
+  if (createButton) createButton.onclick = () => realizationCreateForm(j.id);
+  host.querySelectorAll('[data-jobs-action]').forEach(button => {
+    button.onclick = () => jobsRealizationAction(button.dataset.jobsAction, button.dataset);
+  });
+}
+function realizationCreateForm(jobId) {
+  if (guardPending()) return;
+  formDialog('Input realisasi',
+    field('qty_pcs','Kuantitas (pcs)','number','required min="1" step="1"') +
+    field('work_date','Tanggal pengerjaan','date',`value="${jakartaToday()}"`) +
+    field('notes','Catatan (opsional)','text','maxlength="1000"'),
+    form => {
+      const data = new FormData(form);
+      return {
+        qty_pcs: Number(data.get('qty_pcs')),
+        work_date: data.get('work_date') || null,
+        notes: ((data.get('notes') || '').toString().trim()) || null,
+      };
+    },
+    `/api/employee-jobs/${encodeURIComponent(jobId)}/realizations`,
+    'Realisasi masuk sebagai draft; ajukan agar bisa di-approve.');
+}
+function realizationConfirm(title, copy, path, payload, onOk) {
+  if (guardPending()) return;
+  openDialog(title,
+    `<p>${e(copy)}</p><div class="form-actions"><button type="button" data-action="cancel-form">Batal</button><button type="button" class="primary" id="jobs-confirm">Ya, lanjutkan</button></div>`,
+    'compact');
+  $('jobs-confirm').onclick = async () => {
+    try {
+      const result = await api.save(api.transaction(path, payload));
+      closeDialog(); notify('Pencatatan tersimpan.'); loadJobs();
+      if (onOk) onOk(result);
+    } catch (error) { notify(error.message); }
+  };
+}
+async function jobsRealizationAction(action, dataset) {
+  const jobId = dataset.job, rid = dataset.rid;
+  const base = `/api/employee-jobs/${encodeURIComponent(jobId)}/realizations/${encodeURIComponent(rid)}`;
+  if (action === 'realization-edit') {
+    if (guardPending()) return;
+    formDialog('Ubah realisasi',
+      field('qty_pcs','Kuantitas (pcs)','number',`required min="1" step="1" value="${Number(dataset.qty)}"`) +
+      field('notes','Catatan (opsional)','text',`maxlength="1000" value="${e(dataset.notes || '')}"`),
+      form => ({
+        expected_revision: Number(dataset.rev),
+        qty_pcs: Number(new FormData(form).get('qty_pcs')),
+        notes: ((new FormData(form).get('notes') || '').toString().trim()) || null,
+      }),
+      base, 'Hanya draft dan yang diajukan yang bisa diubah.');
+    return;
+  }
+  if (action === 'realization-submit') {
+    realizationConfirm('Ajukan realisasi', `Realisasi ${rid} diajukan untuk approval.`, `${base}/submit`, {});
+    return;
+  }
+  if (action === 'realization-approve') {
+    realizationConfirm('Setujui realisasi', `Realisasi ${rid} disetujui dan charge upah dibuat.`, `${base}/approve`, {},
+      result => notify(`Charge ${result.id} dibuat.`));
+    return;
+  }
+  if (action === 'realization-reject') {
+    if (guardPending()) return;
+    const reason = prompt('Alasan penolakan:');
+    if (reason === null) return;
+    if (!reason.trim()) { notify('Alasan penolakan wajib diisi.'); return; }
+    try {
+      await api.save(api.transaction(`${base}/reject`, {reason: reason.trim()}));
+      notify('Realisasi ditolak.'); loadJobs();
+    } catch (error) { notify(error.message); }
+    return;
+  }
+  if (action === 'realization-charge') {
+    chargePrefill = {namespace: 'p03.service_charge', source_id: jobId, source_line_id: rid};
+    jobsTab = 'charges';
+    document.querySelectorAll('[data-jobs-tab]').forEach(tab =>
+      tab.setAttribute('aria-selected', String(tab.dataset.jobsTab === 'charges')));
+    if (view === 'jobs') chargeBySource(chargePrefill.namespace, chargePrefill.source_id, chargePrefill.source_line_id);
+    else showJobs();
+    return;
+  }
+}
+function paintJobsApproval(host) {
+  const pending = [];
+  for (const j of jobsCache) for (const r of (j.realizations || [])) {
+    if (r.status === 'submitted') pending.push({job: j, r});
+  }
+  $('jobs-count').textContent = `${pending.length} menunggu`;
+  if (!pending.length) { host.innerHTML = `<p class="state">Tidak ada realisasi yang menunggu approval.</p>`; return; }
+  host.innerHTML = `<div class="record-list">${pending.map(({job, r}) => `
+    <article class="record-card"><div class="record-main">
+      <h3 class="record-title">${e(r.id)} · ${r.qty_pcs} pcs</h3>
+      <p class="record-meta">${e(job.id)} · ${e(job.employee_id)} · SKU ${e(job.sku)} · ${e(r.work_date)}</p>
+      ${r.notes ? `<p class="record-meta">${e(r.notes)}</p>` : ''}</div>
+      <div class="record-actions">
+        <button type="button" data-jobs-action="realization-approve" data-job="${e(job.id)}" data-rid="${e(r.id)}">Setujui</button>
+        <button type="button" data-jobs-action="realization-reject" data-job="${e(job.id)}" data-rid="${e(r.id)}">Tolak</button>
+      </div></article>`).join('')}</div>`;
+  host.querySelectorAll('[data-jobs-action]').forEach(button => {
+    button.onclick = () => jobsRealizationAction(button.dataset.jobsAction, button.dataset);
+  });
+}
+async function chargeBySource(ns, sid, slid) {
+  const request = ++jobsRequest;
+  if (!markRefreshing('jobs-list')) pageState('jobs-message', 'loading', 'Mencari charge…');
+  try {
+    const charge = await api.get(`/api/service-charges/by-source?namespace=${encodeURIComponent(ns)}&source_id=${encodeURIComponent(sid)}&source_line_id=${encodeURIComponent(slid)}`);
+    if (request !== jobsRequest || view !== 'jobs') return;
+    settleRefreshing('jobs-list');
+    chargeCache = charge; chargeError = '';
+    paintJobs();
+  } catch (error) {
+    if (request !== jobsRequest || view !== 'jobs') return;
+    settleRefreshing('jobs-list');
+    chargeCache = null; chargeError = error.message;
+    paintJobs();
+  }
+}
+function paintJobCharges(host) {
+  $('jobs-count').textContent = chargeCache ? '1 hasil' : '';
+  const pre = chargePrefill || {}; chargePrefill = null;
+  pageState('jobs-message', '');
+  host.innerHTML = `
+    <form id="jobs-charge-form" class="command-bar" aria-label="Cari charge">
+      <label>Namespace<input name="namespace" required maxlength="64" value="${e(pre.namespace || 'p03.service_charge')}"></label>
+      <label>Job ID<input name="source_id" required maxlength="64" placeholder="JOB-…" value="${e(pre.source_id || '')}"></label>
+      <label>Realisasi ID<input name="source_line_id" required maxlength="64" placeholder="RLZ-…" value="${e(pre.source_line_id || '')}"></label>
+      <div class="command-actions"><button type="submit" class="action-secondary">Cari charge</button></div>
+    </form>
+    <div id="jobs-charge-result"></div>`;
+  $('jobs-charge-form').onsubmit = event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    chargeBySource(data.get('namespace'), data.get('source_id'), data.get('source_line_id'));
+  };
+  const result = $('jobs-charge-result');
+  if (chargeError) { pageState('jobs-message', 'error', 'Charge tidak ditemukan', chargeError); return; }
+  if (!chargeCache) {
+    result.innerHTML = `<p class="state">Cari charge berdasarkan identitas sumber: namespace, job ID, dan realisasi ID.</p>`;
+    return;
+  }
+  const c = chargeCache;
+  result.innerHTML = `<div class="record-list"><article class="record-card"><div class="record-main">
+    <h3 class="record-title">${e(c.id)}</h3>
+    <p class="record-meta">${e(c.employee_id)} · SKU ${e(c.sku)} · ${e(c.work_type_id)}</p>
+    <p class="record-meta">Dibayar ${c.payable_qty_pcs} pcs · Disetujui ${e(c.approved_at || '—')}${c.reversal_of_charge_id ? ` · reversal dari ${e(c.reversal_of_charge_id)}` : ''}</p>
+    <p class="record-meta">Kebijakan ${e(c.calculation_policy_ref || '—')}</p></div>
+    <div class="record-amounts"><span>${c.final_amount_minor == null ? '—' : financeMoney(c.final_amount_minor)}</span></div>
+    <div class="record-actions">${user.role === 'admin' && !c.reversal_of_charge_id ? `<button type="button" id="jobs-charge-reverse">Reversal</button>` : ''}</div>
+  </article></div>`;
+  const reversal = $('jobs-charge-reverse');
+  if (reversal) reversal.onclick = async () => {
+    if (guardPending()) return;
+    const reason = prompt('Alasan reversal charge:');
+    if (reason === null) return;
+    if (!reason.trim()) { notify('Alasan reversal wajib diisi.'); return; }
+    try {
+      const reversalCharge = await api.save(api.transaction(`/api/service-charges/${encodeURIComponent(c.id)}/reverse`, {reason: reason.trim()}));
+      chargeCache = reversalCharge; chargeError = '';
+      notify(`Charge ${reversalCharge.id} dibuat sebagai reversal.`);
+      paintJobs();
+    } catch (error) { notify(error.message); }
+  };
+}
+$('jobs').onclick = showJobs;
+$('jobs-back').onclick = showBoard;
+$('jobs-refresh').onclick = loadJobs;
+$('jobs-new').onclick = jobCreateForm;
+document.querySelectorAll('[data-jobs-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    jobsTab = button.dataset.jobsTab;
+    document.querySelectorAll('[data-jobs-tab]').forEach(tab =>
+      tab.setAttribute('aria-selected', String(tab === button)));
+    if (view === 'jobs') loadJobs(); else showJobs();
   });
 });
 

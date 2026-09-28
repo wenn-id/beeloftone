@@ -898,7 +898,7 @@ class VersionAndBackendTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.118.0',
+        self.assertEqual(version, '0.119.0',
                          'A6.2 is a visible master-data workspace migration milestone')
         self.assertIn(f'version="{version}"', (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -908,7 +908,7 @@ class VersionAndBackendTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 60, 'A01 adds schema 60 (P02 has 58)')
+        self.assertEqual(max(versions), 61, 'P03 adds schema 61 (P01/O01 have 60)')
 
     def test_no_backend_route_was_added_or_changed(self):
         from tempfile import TemporaryDirectory

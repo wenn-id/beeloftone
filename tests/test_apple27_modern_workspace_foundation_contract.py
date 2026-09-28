@@ -128,7 +128,8 @@ MIGRATED_SECTIONS = ('board-view', 'detail-view', 'materials-view', 'products-vi
                      'purchase-requests-view', 'marketing-budgets-view', 'approvals-view',
                      'master-catalog-view',          # M01 (#43): the master-catalog workspace
                      'masters-view',                # M02 (#44): the business-masters workspace
-                     'finance-view')                 # A01 (#46): the finance workspace
+                     'finance-view',                 # A01 (#46): the finance workspace
+                     'jobs-view')                    # P03 (#52): the employee-jobs workspace
 MIGRATED_RENDERERS = frozenset({
     'pageState',      # the shared loading / empty / error surface, first consumed by Produksi
     'statusHTML', 'issueBadge',
@@ -259,6 +260,19 @@ MIGRATED_RENDERERS = frozenset({
     'financeAction',
     'financeForm',
     'journalForm',
+    # ---- P03: Pekerjaan karyawan (issue #52) ----
+    # The employee-job roster, its detail/realization workflow, the approval
+    # inbox, and the service-charge lookup — same A6.0 record-list shapes.
+    'showJobs',
+    'loadJobs',
+    'paintJobs',
+    'jobsSelect',
+    'paintJobsList',
+    'jobsRealizationAction',
+    'paintJobsApproval',
+    'paintJobDetail',
+    'paintJobCharges',
+    'chargeBySource',
     # ---- P01: Master jasa, template jasa, tarif upah berversi (issue #48) ----
     # The service masters and their versioned-rate workflow: the group / work-type / template
     # forms, the rate sheets and their previews, the template history, and the product-service
@@ -828,7 +842,7 @@ class VersionAndSchemaTest(unittest.TestCase):
     def test_version_is_aligned_across_every_source(self):
         version = re.search(r'^version = "([^"]+)"',
                             (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.M).group(1)
-        self.assertEqual(version, '0.118.0')
+        self.assertEqual(version, '0.119.0')
         self.assertIn(f'version="{version}"',
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
@@ -838,7 +852,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 60, 'A01 adds schema 60 (P02 has 58)')
+        self.assertEqual(max(versions), 61, 'P03 adds schema 61 (P01/O01 have 60)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -852,7 +866,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 297, 'O01 (#45) adds 9 access paths after P01')
+        self.assertEqual(len(contract['paths']), 308, 'P03 (#52) adds 11 employee-job paths after O01')
 
 
 if __name__ == '__main__':
