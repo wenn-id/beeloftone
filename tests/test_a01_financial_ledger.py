@@ -51,7 +51,8 @@ class A01MigrationTest(unittest.TestCase):
             store = make_store(directory)
             with store.transaction() as db:
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                self.assertEqual(version, 59)
+                # Database aplikasi baru berada pada schema 60 setelah migrasi O01 (#45)
+                self.assertEqual(version, 60)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 for expected in ('coa_accounts', 'accounting_periods',
@@ -66,7 +67,7 @@ class A01MigrationTest(unittest.TestCase):
                 db.execute('PRAGMA user_version=58')
             store2 = Store(path)
             with store2.transaction() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 59)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 60)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 self.assertIn('journals', tables)

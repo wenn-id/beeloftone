@@ -985,7 +985,7 @@ class VersionAndBackendTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 59, 'A01 adds schema 59 (P02 has 58)')
+        self.assertEqual(max(versions), 60, 'O01 adds schema 60 (A01 has 59)')
 
     def test_no_backend_route_was_added_for_a_visual(self):
         api = (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8')

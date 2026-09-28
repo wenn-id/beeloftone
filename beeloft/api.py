@@ -24,7 +24,9 @@ from beeloft.models import MarketingBudgetRequestCreate, SupplierCreate, Purchas
 from beeloft.models import BusinessUnitChange, BusinessUnitCreate, CustomerChange, CustomerCreate, EmployeeLegacyIdCreate, PaymentMethodChange, PaymentMethodCreate, PositionChange, PositionCreate, StorageChange, StorageCreate, StorageLocationMapping, SupplierChange
 from beeloft.models import (AccountingPeriodCreate, CoaAccountCreate, JournalCreate, JournalReverse,
                             PeriodDecision, PoReceiptJournalCreate)
+from beeloft.models import UserCreate, UserPermissionsSet, UserPresetSet, UserUnitsSet
 from beeloft.store import DomainError, Store
+from beeloft.permissions import require_permission, has_permission, check_self_approval
 from beeloft.brain import investigate
 from beeloft.command_center import build_command_center
 from beeloft.labels import bundle_label_svg, finished_goods_label_svg, material_batch_label_svg
@@ -242,11 +244,79 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get("/api/me", tags=["Access"])
     def me(user: Actor):
-        return user
+        # Kontrak identitas tetap tiga kunci. Izin dijawab terpisah di /api/me/access
+        # supaya klien lama tidak melihat bentuk payload baru (O01 / #45).
+        return {name: user[name] for name in ('id', 'name', 'role')}
+
+    @app.get("/api/me/access", tags=["Access"])
+    def my_access(user: Actor):
+        return {name: user[name] for name in
+                ('permissions', 'business_units', 'all_units', 'preset', 'no_self_approval')}
 
     @app.get("/api/users", tags=["Access"])
     def users(user: Actor):
+        require_permission(user, "manage_access")
         return store.users()
+
+    @app.post("/api/users", status_code=201, tags=["Access"])
+    def create_user(body: UserCreate, user: Actor):
+        require_permission(user, "manage_access")
+        # Caller cannot use body-supplied permissions/units as escalation. Access changes
+        # happen through the audited routes below, with server-authenticated actor identity.
+        if body.permissions is not None or body.business_units is not None or body.all_units is not None:
+            raise DomainError(422, "Izin dan cakupan unit ditetapkan melalui endpoint akses terpisah.")
+        return store.provision_user(body.name, body.role, body.preset, user["id"])
+
+    @app.get("/api/permissions", tags=["Access"])
+    def permissions_catalog(user: Actor):
+        require_permission(user, "manage_access")
+        from beeloft.permissions import DEMO_PRESET_VERSION, PERMISSIONS
+        return {"permissions": PERMISSIONS, "demo_preset_version": DEMO_PRESET_VERSION}
+
+    @app.get("/api/presets", tags=["Access"])
+    def access_presets(user: Actor):
+        require_permission(user, "manage_access")
+        from beeloft.permissions import DEMO_PRESET_VERSION, PRESETS
+        return {"version": DEMO_PRESET_VERSION, "presets": PRESETS,
+                "notice": "Preset hanya konfigurasi demo, bukan klaim struktur jabatan atau kebijakan resmi Beeloft."}
+
+    @app.get("/api/users/{user_id}", tags=["Access"])
+    def user_access(user_id: str, user: Actor):
+        require_permission(user, "manage_access")
+        with store.transaction() as db:
+            row = db.execute("SELECT id,name,role,active FROM users WHERE id=?", (user_id,)).fetchone()
+            if not row:
+                raise DomainError(404, "Pengguna tidak ditemukan.")
+            return dict(row) | store._user_access(db, user_id)
+
+    @app.put("/api/users/{user_id}/permissions", tags=["Access"])
+    def replace_user_permissions(user_id: str, body: UserPermissionsSet, user: Actor):
+        require_permission(user, "manage_access")
+        return store.set_user_permissions(user_id, body.permissions, user["id"], body.reason)
+
+    @app.put("/api/users/{user_id}/preset", tags=["Access"])
+    def apply_user_preset(user_id: str, body: UserPresetSet, user: Actor):
+        require_permission(user, "manage_access")
+        return store.set_user_preset(user_id, body.preset, user["id"], body.reason)
+
+    @app.put("/api/users/{user_id}/units", tags=["Access"])
+    def replace_user_units(user_id: str, body: UserUnitsSet, user: Actor):
+        require_permission(user, "manage_access")
+        return store.set_user_units(user_id, body.business_unit_ids, body.all_units,
+                                    user["id"], body.reason)
+
+    @app.get("/api/users/{user_id}/access-events", tags=["Access"])
+    def user_access_events(user_id: str, user: Actor, limit: Limit = 100, before: Before = None):
+        require_permission(user, "manage_access")
+        return store.user_access_events(user_id, limit, before)
+
+    @app.post("/api/users/{user_id}/disable", tags=["Access"])
+    def disable_user(user_id: str, user: Actor):
+        require_permission(user, "manage_access")
+        if user_id == user["id"]:
+            raise DomainError(409, "Pengguna tidak dapat menonaktifkan akunnya sendiri.")
+        store.disable_user(user_id, actor_id=user["id"], reason="Dinonaktifkan melalui panel akses")
+        return {"disabled_user": user_id}
 
     @app.get('/api/command-center', tags=['Management'])
     def command_center(user: Actor):
@@ -511,6 +581,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/integrations/mekari/payroll-summary', tags=['Integrations'])
     def mekari_payroll_summary(user: Actor):
+        require_permission(user, "view_salary")
         return store.mekari_payroll_summary()
 
     @app.post('/api/integrations/mekari/payroll-periods/{period_id}/approval-requests',
@@ -539,6 +610,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
     def payroll_payment_reconciliation(user: Actor, limit: Limit = 100, offset: Offset = 0,
                                        status: Literal['all','awaiting_payment','paid','exception'] = 'all',
                                        q: Annotated[str, Query(max_length=160)] = ''):
+        require_permission(user, "view_salary")
         return store.payroll_payment_reconciliation(status,q,limit,offset)
 
     @app.get('/api/payroll-accounting-reconciliation', tags=['People','Finance'])
@@ -546,6 +618,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
                                           status: Literal['all','waiting_payment','awaiting_posting',
                                                           'posted','exception'] = 'all',
                                           q: Annotated[str, Query(max_length=160)] = ''):
+        require_permission(user, "view_salary")
         return store.payroll_accounting_reconciliation(status,q,limit,offset)
 
     @app.post("/api/products", status_code=201, tags=["Products"])
@@ -1255,6 +1328,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
 
     @app.get('/api/orders/{order_id}/contribution-margin', tags=['Economics'])
     def contribution_margin(order_id: str, user: Actor):
+        require_permission(user, "view_margin_profit")
         return store.contribution_margin(order_id)
 
     @app.get('/api/demand-forecast', tags=['Economics'])
@@ -1590,6 +1664,7 @@ def create_app(database_path, oidc_config=None, oidc_transport=None):
              responses={200: {"content": {"text/csv": {}}, "description": "CSV UTF-8, seluruh hasil filter (maksimal 10.000 catatan)."}})
     def export_activity(user: Actor, day: date | None = None, kind: ActivityKind = "all",
                         start_date: date | None = None, end_date: date | None = None):
+        require_permission(user, "export_data")
         report = store.activity(day, kind, MAX_EXPORT_ROWS, start_date=start_date, end_date=end_date)
         if report["next_before"]:
             raise DomainError(422, "Hasil melebihi 10.000 catatan. Persempit tanggal atau jenis aktivitas, lalu unduh lagi.")

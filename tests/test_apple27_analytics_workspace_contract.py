@@ -1103,13 +1103,13 @@ class VersionAndSchemaTest(unittest.TestCase):
                       (ROOT / 'beeloft' / 'api.py').read_text(encoding='utf-8'))
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 272, 'A6.4 is presentation only')
+        self.assertEqual(len(contract['paths']), 281, 'A6.4 is presentation only')
 
     def test_the_schema_did_not_move_and_no_migration_was_added(self):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 59, 'A01 adds schema 59 (P02 has 58)')
+        self.assertEqual(max(versions), 60, 'O01 adds schema 60 (A01 has 59)')
 
     def test_no_backend_route_changed(self):
         from tempfile import TemporaryDirectory

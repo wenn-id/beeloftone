@@ -221,7 +221,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60):
                 raise RuntimeError(f"Unsupported database schema version: {version}")
             db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
@@ -455,6 +455,31 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 # kuantitas/operasional existing (movements/balances).
                 db.executescript(Path(__file__).with_name('financial_ledger.sql').read_text(encoding='utf-8'))
 
+            if version < 60:
+                # O01 (#45): izin per fungsi, unit scope, preset berversi, dan audit akses.
+                db.executescript(Path(__file__).with_name('permissions.sql').read_text(encoding='utf-8'))
+                # Hanya jalankan jika tabel orders sudah ada (pada migrasi bertahap, orders baru dibuat kemudian)
+                existing_tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if 'orders' in existing_tables:
+                    order_cols = {row['name'] for row in db.execute('PRAGMA table_info(orders)')}
+                    if 'business_unit_id' not in order_cols:
+                        db.execute('ALTER TABLE orders ADD COLUMN business_unit_id TEXT REFERENCES business_units(id)')
+                from beeloft.permissions import LEGACY_COMPATIBILITY_PERMISSIONS
+                user_cols = {row['name'] for row in db.execute('PRAGMA table_info(users)')}
+                for legacy_user in (db.execute('SELECT id,role FROM users').fetchall()
+                                    if 'role' in user_cols else []):
+                    # Sebelum #45, semua user aktif-terautentikasi bisa mengakses seluruh
+                    # endpoint. Jangan cabut hak existing berdasar role tanpa review/record.
+                    # Pembatasan granular berlaku pada user baru atau setelah admin mengganti
+                    # profil secara eksplisit dan tercatat.
+                    for permission in LEGACY_COMPATIBILITY_PERMISSIONS:
+                        db.execute('''INSERT OR IGNORE INTO user_permissions
+                            (user_id,permission,granted_by,granted_at) VALUES(?,?,?,?)''',
+                            (legacy_user['id'],permission,legacy_user['id'],now()))
+                    db.execute('''INSERT OR IGNORE INTO user_access_profiles
+                        (user_id,all_units,preset,no_self_approval,updated_by,updated_at)
+                        VALUES(?,1,NULL,0,?,?)''',(legacy_user['id'],legacy_user['id'],now()))
+
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         db.row_factory = sqlite3.Row
@@ -473,14 +498,166 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 db.rollback()
                 raise
 
-    def provision_user(self, name, role):
-        user = UserCreate(name=name, role=role)
+    def _user_access(self, db, user_id):
+        """Izin, cakupan unit, dan kebijakan SoD pengguna dari server (O01 / #45).
+
+        Dibaca ulang pada setiap request. Session browser yang masih aktif karena itu
+        langsung mengikuti pencabutan hak tanpa perlu login ulang.
+
+        `permissions=None` berarti pengguna belum punya baris izin granular sama sekali;
+        pemetaan role existing dipakai sebagai fallback supaya akun lama tidak terkunci
+        dan tidak pula diam-diam mendapat hak baru.
+        """
+        rows = db.execute('SELECT permission FROM user_permissions WHERE user_id=? ORDER BY permission',
+                          (user_id,)).fetchall()
+        units = [row['business_unit_id'] for row in db.execute(
+            'SELECT business_unit_id FROM user_business_units WHERE user_id=? ORDER BY business_unit_id',
+            (user_id,))]
+        profile = db.execute('''SELECT all_units,preset,no_self_approval FROM user_access_profiles
+            WHERE user_id=?''', (user_id,)).fetchone()
+        return {'permissions': [row['permission'] for row in rows] if rows else None,
+                'business_units': units,
+                'all_units': bool(profile['all_units']) if profile else True,
+                'preset': profile['preset'] if profile else None,
+                'no_self_approval': bool(profile['no_self_approval']) if profile else False}
+
+    def _guard_self_approval(self, db, actor, creator_id):
+        """SoD (#45): pemutus tidak boleh menyetujui pengajuannya sendiri.
+
+        Identitas pembuat diambil dari record server (`actor_id` tersimpan), bukan payload,
+        dan kebijakan `no_self_approval` dibaca ulang dari profil akses pada request ini.
+        """
+        from beeloft.permissions import check_self_approval
+        check_self_approval(dict(actor) | self._user_access(db, actor['id']), creator_id)
+
+    def _record_access_event(self, db, user_id, action, target_type, target_value,
+                             before_value, after_value, actor_id, reason):
+        db.execute('''INSERT INTO user_access_events(id,user_id,action,target_type,target_value,
+            before_value,after_value,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+            (str(uuid4()), user_id, action, target_type, target_value, before_value, after_value,
+             reason, actor_id, now()))
+
+    def _apply_access_profile(self, db, user_id, permissions, units, all_units, preset,
+                              no_self_approval, actor_id):
+        db.execute('DELETE FROM user_permissions WHERE user_id=?', (user_id,))
+        for permission in sorted(set(permissions)):
+            db.execute('''INSERT INTO user_permissions(user_id,permission,granted_by,granted_at)
+                VALUES(?,?,?,?)''', (user_id, permission, actor_id, now()))
+        if units is not None:
+            db.execute('DELETE FROM user_business_units WHERE user_id=?', (user_id,))
+            for unit_id in sorted(set(units)):
+                db.execute('''INSERT INTO user_business_units(user_id,business_unit_id,granted_by,granted_at)
+                    VALUES(?,?,?,?)''', (user_id, unit_id, actor_id, now()))
+        db.execute('''INSERT INTO user_access_profiles
+            (user_id,all_units,preset,no_self_approval,updated_by,updated_at) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET all_units=excluded.all_units,preset=excluded.preset,
+            no_self_approval=excluded.no_self_approval,updated_by=excluded.updated_by,
+            updated_at=excluded.updated_at''',
+            (user_id, 1 if all_units else 0, preset, 1 if no_self_approval else 0, actor_id, now()))
+
+    def provision_user(self, name, role, preset=None, actor_id=None):
+        # Tanpa preset: pakai kompatibilitas pra-O01 supaya jalur provisioning existing
+        # (dan seluruh pemanggilnya) tidak kehilangan akses secara diam-diam. Pengetatan
+        # granular dilakukan eksplisit lewat preset atau set_user_permissions, dan tercatat.
+        from beeloft.permissions import PRESETS, LEGACY_COMPATIBILITY_PERMISSIONS
+        user = UserCreate(name=name, role=role, preset=preset)
+        if preset is not None and preset not in PRESETS:
+            raise DomainError(422, 'Preset izin tidak dikenal.')
         key = secrets.token_urlsafe(32)
         record = {"id": str(uuid4()), "name": user.name, "role": user.role, "created_at": now()}
+        profile = PRESETS[preset] if preset else None
+        permissions = profile['permissions'] if profile else LEGACY_COMPATIBILITY_PERMISSIONS
         with self.transaction(write=True) as db:
             db.execute("INSERT INTO users(id,name,role,key_hash,created_at) VALUES(?,?,?,?,?)",
                        (record["id"], record["name"], record["role"], hashlib.sha256(key.encode()).hexdigest(), record["created_at"]))
-        return record | {"api_key": key}
+            self._apply_access_profile(db, record['id'], permissions, [],
+                                       profile['all_units'] if profile else True, preset,
+                                       profile['no_self_approval'] if profile else False,
+                                       actor_id or record['id'])
+            self._record_access_event(db, record['id'], 'set_permissions', 'permissions',
+                                      ','.join(sorted(permissions)), None,
+                                      ','.join(sorted(permissions)), actor_id or record['id'],
+                                      f'Provisioning akun dengan role {user.role}'
+                                      + (f' dan preset {preset}' if preset else ''))
+        return record | {"api_key": key, "preset": preset, "permissions": sorted(permissions)}
+
+    def set_user_permissions(self, user_id, permissions, actor_id, reason):
+        """Menetapkan izin granular pengguna dan mencatat auditnya (O01 / #45)."""
+        from beeloft.permissions import PERMISSIONS
+        unknown = sorted(set(permissions) - set(PERMISSIONS))
+        if unknown:
+            raise DomainError(422, f'Izin tidak dikenal: {", ".join(unknown)}.')
+        with self.transaction(write=True) as db:
+            if not db.execute('SELECT 1 FROM users WHERE id=?', (user_id,)).fetchone():
+                raise DomainError(404, 'Pengguna tidak ditemukan.')
+            before = self._user_access(db, user_id)
+            db.execute('DELETE FROM user_permissions WHERE user_id=?', (user_id,))
+            for permission in sorted(set(permissions)):
+                db.execute('''INSERT INTO user_permissions(user_id,permission,granted_by,granted_at)
+                    VALUES(?,?,?,?)''', (user_id, permission, actor_id, now()))
+            self._record_access_event(db, user_id, 'set_permissions', 'permissions', user_id,
+                                      ','.join(before['permissions'] or []),
+                                      ','.join(sorted(set(permissions))), actor_id, reason)
+            return self._user_access(db, user_id)
+
+    def set_user_preset(self, user_id, preset, actor_id, reason):
+        """Menerapkan preset izin demo berversi; bukan klaim struktur jabatan resmi."""
+        from beeloft.permissions import PRESETS
+        if preset not in PRESETS:
+            raise DomainError(422, 'Preset izin tidak dikenal.')
+        profile = PRESETS[preset]
+        with self.transaction(write=True) as db:
+            if not db.execute('SELECT 1 FROM users WHERE id=?', (user_id,)).fetchone():
+                raise DomainError(404, 'Pengguna tidak ditemukan.')
+            before = self._user_access(db, user_id)
+            self._apply_access_profile(db, user_id, profile['permissions'], None,
+                                       profile['all_units'], preset, profile['no_self_approval'],
+                                       actor_id)
+            self._record_access_event(db, user_id, 'set_preset', 'preset', preset,
+                                      before['preset'], preset, actor_id, reason)
+            return self._user_access(db, user_id)
+
+    def set_user_units(self, user_id, unit_ids, all_units, actor_id, reason):
+        """Menetapkan cakupan unit usaha pengguna (identitas unit dari #44)."""
+        with self.transaction(write=True) as db:
+            if not db.execute('SELECT 1 FROM users WHERE id=?', (user_id,)).fetchone():
+                raise DomainError(404, 'Pengguna tidak ditemukan.')
+            for unit_id in set(unit_ids):
+                if not db.execute('SELECT 1 FROM business_units WHERE id=?', (unit_id,)).fetchone():
+                    raise DomainError(404, f'Unit usaha {unit_id} tidak ditemukan.')
+            before = self._user_access(db, user_id)
+            db.execute('DELETE FROM user_business_units WHERE user_id=?', (user_id,))
+            for unit_id in sorted(set(unit_ids)):
+                db.execute('''INSERT INTO user_business_units(user_id,business_unit_id,granted_by,granted_at)
+                    VALUES(?,?,?,?)''', (user_id, unit_id, actor_id, now()))
+            db.execute('''INSERT INTO user_access_profiles
+                (user_id,all_units,preset,no_self_approval,updated_by,updated_at) VALUES(?,?,?,?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET all_units=excluded.all_units,
+                updated_by=excluded.updated_by,updated_at=excluded.updated_at''',
+                (user_id, 1 if all_units else 0, before['preset'],
+                 1 if before['no_self_approval'] else 0, actor_id, now()))
+            self._record_access_event(db, user_id, 'set_units', 'units',
+                                      ','.join(sorted(set(unit_ids))) or 'none',
+                                      ','.join(before['business_units']),
+                                      ','.join(sorted(set(unit_ids))), actor_id, reason)
+            self._record_access_event(db, user_id, 'set_all_units', 'all_units',
+                                      str(bool(all_units)).lower(),
+                                      str(before['all_units']).lower(),
+                                      str(bool(all_units)).lower(), actor_id, reason)
+            return self._user_access(db, user_id)
+
+    def user_access_events(self, user_id=None, limit=100, before=None):
+        with self.transaction() as db:
+            sql = ['SELECT * FROM user_access_events WHERE 1=1']
+            params = []
+            if user_id:
+                sql.append('AND user_id=?'); params.append(user_id)
+            if before:
+                sql.append('AND sequence<?'); params.append(before)
+            sql.append('ORDER BY sequence DESC LIMIT ?'); params.append(limit)
+            items = [dict(row) for row in db.execute(' '.join(sql), params)]
+            return {'items': items,
+                    'next_before': items[-1]['sequence'] if len(items) == limit else None}
 
     def authenticate(self, key):
         with self.transaction() as db:
@@ -488,7 +665,7 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                               (hashlib.sha256(key.encode()).hexdigest(),)).fetchone()
             if not user:
                 raise DomainError(401, "API key tidak valid atau akun nonaktif.")
-            return dict(user)
+            return dict(user) | self._user_access(db, user['id'])
 
     def _create_browser_session(self, db, user_id, lifetime_hours):
         token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
@@ -526,7 +703,9 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 supplied=hashlib.sha256((csrf_token or '').encode()).hexdigest()
                 if not secrets.compare_digest(supplied,row['csrf_hash']):
                     raise DomainError(403,'Token keamanan browser tidak valid.')
-            return {name:row[name] for name in ('id','name','role')}
+            # Izin dibaca dari DB pada tiap request, bukan disimpan di session: pencabutan hak
+            # berlaku pada request berikutnya walau cookie session masih hidup (O01 / #45).
+            return {name:row[name] for name in ('id','name','role')} | self._user_access(db,row['id'])
 
     def revoke_browser_session(self, token):
         with self.transaction(write=True) as db:
@@ -601,11 +780,14 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 raise DomainError(401,'State login OIDC tidak valid atau kedaluwarsa.')
             return dict(row)
 
-    def disable_user(self, user_id):
+    def disable_user(self, user_id, actor_id=None, reason='Akun dinonaktifkan'):
         with self.transaction(write=True) as db:
             updated = db.execute("UPDATE users SET active=0 WHERE id=?", (user_id,))
             if updated.rowcount != 1:
                 raise DomainError(404, "Pengguna tidak ditemukan.")
+            # Penonaktifan akun adalah perubahan akses, jadi tercatat di jejak yang sama (#45).
+            self._record_access_event(db, user_id, 'disable_user', 'status', 'inactive',
+                                     'active', 'inactive', actor_id or user_id, reason)
 
     def users(self):
         with self.transaction() as db:
@@ -1956,6 +2138,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 role=='operator' and payload['status']=='cancelled' and request['actor_id']==actor['id'])
             if not allowed:
                 raise DomainError(403,'Hanya admin memutuskan payroll; operator pemohon boleh membatalkan pengajuannya.')
+            if payload['status'] in ('approved','rejected'):
+                self._guard_self_approval(db, actor, request['actor_id'])
             if request['revision']!=payload['expected_revision']:
                 raise DomainError(409,'Permintaan approval payroll sudah berubah. Buka ulang rincian terbaru.')
             if request['status']!='submitted':
@@ -6702,6 +6886,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             if role != 'admin' and not (payload['status']=='cancelled' and
                     current['status']=='submitted' and current['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan PR; pemohon boleh membatalkan pengajuannya yang belum diputuskan.')
+            if payload['status']=='approved':
+                self._guard_self_approval(db, actor, current['actor_id'])
             if current['revision'] != payload['expected_revision']:
                 raise DomainError(409, 'PR sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
             if current['status'] not in ('submitted','approved') or (current['status']=='approved' and payload['status']!='cancelled'):
@@ -6865,6 +7051,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
             if role != 'admin' and not (payload['status']=='cancelled' and po['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan PO; pembuat boleh membatalkan pengajuannya.')
+            if payload['status']=='approved':
+                self._guard_self_approval(db, actor, po['actor_id'])
             if po['revision'] != payload['expected_revision']:
                 raise DomainError(409, 'Approval PO sudah berubah. Buka ulang rincian dan periksa keputusan terbaru.')
             if po['approval_status'] != 'submitted':
@@ -6974,6 +7162,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
             if role!='admin' and not (payload['status']=='cancelled' and request['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan pembayaran; pemohon boleh membatalkan pengajuannya.')
+            if payload['status']=='approved':
+                self._guard_self_approval(db, actor, request['actor_id'])
             if request['revision']!=payload['expected_revision']:
                 raise DomainError(409, 'Permintaan pembayaran sudah berubah. Buka ulang rincian keputusan terbaru.')
             if request['status']!='submitted':
@@ -7032,6 +7222,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             role = db.execute('SELECT role FROM users WHERE id=?', (actor['id'],)).fetchone()[0]
             if role!='admin' and not (payload['status']=='cancelled' and request['actor_id']==actor['id']):
                 raise DomainError(403, 'Hanya admin memutuskan budget; pemohon boleh membatalkan pengajuannya.')
+            if payload['status']=='approved':
+                self._guard_self_approval(db, actor, request['actor_id'])
             if request['revision']!=payload['expected_revision']:
                 raise DomainError(409, 'Permintaan budget sudah berubah. Buka ulang rincian keputusan terbaru.')
             if request['status']!='submitted':
@@ -7277,7 +7469,10 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             raise DomainError(422, "PIC harus akun admin/operator yang aktif.")
         record = {"id": str(uuid4()), **{k: v for k, v in payload.items() if k != "lines"},
                   "created_by": actor["id"], "created_at": now()}
-        db.execute("INSERT INTO orders VALUES(:id,:reference,:title,:owner_id,:due_date,:created_by,:created_at)", record)
+        # Kolom disebut eksplisit: migrasi v58 menambah `business_unit_id`, dan INSERT posisional
+        # akan pecah setiap kali tabel orders bertambah kolom.
+        db.execute("""INSERT INTO orders(id,reference,title,owner_id,due_date,created_by,created_at)
+            VALUES(:id,:reference,:title,:owner_id,:due_date,:created_by,:created_at)""", record)
         for item in payload["lines"]:
             product = db.execute("SELECT sku,active FROM products WHERE id=?", (item["product_id"],)).fetchone()
             if not product:
@@ -7718,6 +7913,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
             role=db.execute('SELECT role FROM users WHERE id=?',(actor['id'],)).fetchone()[0]
             if role!='admin' and not (payload['status']=='cancelled' and proposal['actor_id']==actor['id']):
                 raise DomainError(403,'Hanya admin memutuskan proposal AI; pemohon boleh membatalkan proposalnya.')
+            if payload['status']=='approved':
+                self._guard_self_approval(db, actor, proposal['actor_id'])
             if proposal['revision']!=payload['expected_revision'] or proposal['status']!='submitted':
                 raise DomainError(409,'Proposal tindakan AI sudah diputuskan. Buka ulang rinciannya.')
             executed_type=executed_id=None
@@ -8495,6 +8692,8 @@ BEGIN SELECT RAISE(ABORT,'Identitas pemasok tidak dapat diubah. Hanya status akt
                 request['actor_id']==actor['id'])
             if not allowed:
                 raise DomainError(403,'Hanya admin memutuskan permintaan; pemohon boleh membatalkan pengajuannya.')
+            if payload['status'] in ('approved','rejected'):
+                self._guard_self_approval(db, actor, request['actor_id'])
             if request['revision']!=payload['expected_revision']:
                 raise DomainError(409,'Permintaan People sudah berubah. Buka ulang rincian keputusan terbaru.')
             if request['status']!='submitted':

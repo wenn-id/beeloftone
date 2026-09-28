@@ -766,6 +766,8 @@ function clearWorkspace() {
   message('backup-message','');
   $('backup').hidden = true;
   $('audit-trail').hidden = true;
+  // Penyembunyian berbasis izin milik akun sebelumnya tidak boleh tertinggal untuk akun berikutnya.
+  $('activity-export').hidden = false;
   $('board-owner').innerHTML = '<option value="">Semua PIC</option>'; $('board-stage').value = 'all';
   activityRequest++; activityRows = []; activityCursor = null; activityQuery = null;
   $('activity-list').replaceChildren(); $('activity-summary').replaceChildren(); $('activity-range').textContent = ''; $('activity-day').value = ''; $('activity-end').value = ''; $('activity-export').disabled = true; $('activity-kind').value = 'all';
@@ -881,6 +883,20 @@ function enterWorkspace(me,workflow) {
   $('menu-toggle').hidden=false;
   $('new-order').hidden=me.role!=='admin';$('backup').hidden=me.role!=='admin';$('audit-trail').hidden=me.role!=='admin';offset=0;showBoard();
   const pending=readPending();if(pending)recover(pending);
+  applyUserAccess(me);
+}
+// Izin granular O01 (#45) dibaca terpisah dari identitas supaya kontrak /api/me tetap tiga kunci.
+// Penyembunyian di sini hanya kosmetik: server tetap menolak fungsi yang tidak diizinkan, jadi
+// kegagalan permintaan akses tidak boleh membuka apa pun yang sebelumnya tersembunyi.
+async function applyUserAccess(me) {
+  const access = await api.get('/api/me/access').catch(() => null);
+  if (!access || user !== me) return;
+  user.permissions = access.permissions; user.preset = access.preset;
+  user.business_units = access.business_units; user.all_units = access.all_units;
+  const allowed = name => access.permissions.includes(name);
+  if (!allowed('manage_access')) { $('audit-trail').hidden = true; $('backup').hidden = true; }
+  if (!allowed('create_transaction')) $('new-order').hidden = true;
+  if (!allowed('export_data')) $('activity-export').hidden = true;
 }
 // Satu login lokal dalam penerbangan pada satu waktu, seperti logoutRequest: submit kedua selama
 // percobaan pertama berjalan tidak boleh mengirim penukaran session kedua yang berlomba

@@ -830,7 +830,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)',
                                             path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 59, 'A01 adds schema 59 (P02 has 58)')
+        self.assertEqual(max(versions), 60, 'O01 adds schema 60 (A01 has 59)')
 
     def test_no_backend_route_changed(self):
         """The committed contract still describes exactly the routes the application declares."""
@@ -844,7 +844,7 @@ class VersionAndSchemaTest(unittest.TestCase):
         self.assertEqual(contract['paths'], live['paths'])
         self.assertEqual(contract.get('components'), live.get('components'))
         # The A6.0 surface area is CSS and one markup line; it adds no endpoint.
-        self.assertEqual(len(contract['paths']), 272, 'endpoints')
+        self.assertEqual(len(contract['paths']), 281, 'endpoints')
 
 
 if __name__ == '__main__':
