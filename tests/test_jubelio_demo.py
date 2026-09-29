@@ -169,11 +169,16 @@ class JubelioDemoManagerTest(unittest.TestCase):
                 return error.status
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: advance(), range(2)))
-        self.assertEqual(sum(isinstance(x, dict) for x in results), 1)
-        self.assertEqual(sum(x == 409 for x in results), 1)
+        # Kunci yang sama: pemanggil kedua mendapat 409 bila datang saat lease masih
+        # dipegang, atau replay receipt bila datang setelah selesai. Keduanya sah;
+        # yang tidak boleh terjadi adalah skenario maju dua kali.
+        dicts = [x for x in results if isinstance(x, dict)]
+        self.assertGreaterEqual(len(dicts), 1)
+        self.assertTrue(all(isinstance(x, dict) or x == 409 for x in results), results)
+        first = dicts[0]
+        self.assertTrue(all(x == first for x in dicts))
         self.assertEqual(self.manager.get_status()['current_scenario'], 2)
         self.assertEqual(len(self.store.jubelio_order_snapshots(limit=10)), 2)
-        first = next(x for x in results if isinstance(x, dict))
         self.assertFalse(first['is_locked'])
         replay = self.manager.next_scenario(self.admin, 'next-shared-key')
         self.assertEqual(replay, first)
