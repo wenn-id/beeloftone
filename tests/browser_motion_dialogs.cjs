@@ -91,6 +91,11 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
     entries.some(entry => entry.type === type && entry.name === 'opacity' && entry.pseudo === '');
   const markedClosing = entries => entries.filter(entry => String(entry.classes || '').includes('is-closing'));
   const closeEvents = entries => entries.filter(entry => entry.type === 'close').length;
+  // The entry is 260ms, but a loaded runner can drop frames well past a fixed sleep. Wait for the
+  // entry's own animationend (bounded) instead, so "the entry runs to completion" is observed, not
+  // raced; a surface that never finishes its entry still fails once the bound expires.
+  const entrySettled = () => page.waitForFunction(() => window.dialogLog.some(entry =>
+    entry.type === 'animationend' && entry.name === 'dialog-enter'), null, {timeout: 5000}).catch(() => {});
 
   // A real animated exit: the closing state was installed on a still-open dialog, that dialog was
   // inert and non-interactive from the same task, and a genuine opacity transition was created
@@ -141,6 +146,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await trigger.click();
   await page.locator('dialog[open]').waitFor();
   await page.waitForTimeout(400);
+  await entrySettled();
   const entryLog = await dialogLog();
   assert.ok(sawAnimation(entryLog, 'animationstart', 'dialog-enter'), 'the dialog plays its entry');
   assert.ok(sawAnimation(entryLog, 'animationend', 'dialog-enter'), 'the entry runs to completion');
@@ -462,6 +468,7 @@ module.exports = async ({page, login, openSidebarDestination, admin, apiGet}) =>
   await trigger.click();
   await page.locator('dialog[open]').waitFor();
   await page.waitForTimeout(400);
+  await entrySettled();
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark',
     'the dark-theme entry is checked while the dark theme is applied');
   assert.ok(sawAnimation(await dialogLog(), 'animationend', 'dialog-enter'), 'the entry plays in dark theme');

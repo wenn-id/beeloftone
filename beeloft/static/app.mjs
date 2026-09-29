@@ -1712,6 +1712,11 @@ $('dialog').addEventListener('cancel', event => {
   dialogVersion++; closeDialogAnimated();
 });
 $('dialog').addEventListener('close',()=>{
+  // Event close dikirim pada task berikutnya. Jalur close() lalu openDialog() dalam satu task
+  // (mis. scan batch → riwayat batch) sudah membuka dialog lagi dan openDialog sudah membersihkan
+  // keadaan geraknya; event basi itu tidak boleh menghapus penutupan beranimasi yang sudah
+  // dimulai pada dialog baru (timer, kelas, inert) atau mencuri fokus dari dialog baru.
+  if($('dialog').open)return;
   // Setiap jalur tutup — helper beranimasi, tombol di dalam isi dialog, dan teardown sesi —
   // melewati listener ini, jadi keadaan gerak selalu dibersihkan di satu tempat.
   resetDialogMotionState();

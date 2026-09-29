@@ -105,8 +105,12 @@ module.exports = async ({page, login, admin, operator, viewer, apiGet, work}) =>
     assert.equal(await noDocumentOverflow(), true, `document overflow: ${where}`);
     assert.deepEqual(await sectionOverflow(sectionId), [], `content crosses its section: ${where}`);
   };
-  const dialogGeometry = () => page.evaluate(() => {
-    const d = document.getElementById('dialog'), rect = d.getBoundingClientRect(), style = getComputedStyle(d);
+  // The sheet is measured at rest: `dialog-enter` starts at scale(.975), so reading the box while a
+  // slow frame is still mid-entry reports a sheet 2.5% narrower than the one the reader sees.
+  const dialogGeometry = () => page.evaluate(async () => {
+    const d = document.getElementById('dialog');
+    await Promise.all(d.getAnimations().map(animation => animation.finished.catch(() => {})));
+    const rect = d.getBoundingClientRect(), style = getComputedStyle(d);
     const heading = d.querySelector('.dialog-heading');
     const edge = rect.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
     const offenders = d.scrollWidth <= d.clientWidth ? [] : [...d.querySelectorAll('*')].filter(node => node.getClientRects().length

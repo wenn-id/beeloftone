@@ -86,7 +86,12 @@ module.exports = async ({page, login, admin, viewer, apiGet, apiPost, openSideba
     await page.getByLabel('Alasan mapping', {exact: true}).fill('Pemetaan demo perbaikan karantina');
     await page.getByRole('button', {name: 'Simpan pencatatan', exact: true}).click();
     await page.getByRole('heading', {name: 'Mapping SKU Jubelio', exact: true}).waitFor();
+    // The saved form closes and the mapping dialog reopens with a loading body; wait for the
+    // loaded mapping, then make sure the dialog is really gone before the next row is clicked,
+    // otherwise the still-open dialog intercepts that click.
+    await page.locator('#dialog-content .status-chip').filter({hasText: 'Terhubung'}).waitFor();
     await page.keyboard.press('Escape');
+    await page.locator('#dialog').waitFor({state: 'hidden'});
   }
 
   await goto('Integrasi');

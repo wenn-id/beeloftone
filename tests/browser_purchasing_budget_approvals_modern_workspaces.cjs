@@ -407,6 +407,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
   // ---- Master pemasok and Tambah pemasok ----
   await prView.getByRole('button', {name: 'Master pemasok', exact: true}).click();
   await page.getByRole('heading', {name: 'Master pemasok', exact: true}).waitFor();
+  // The dialog title is painted with a loading body first; the list only replaces it once
+  // GET /api/suppliers resolves, so wait for the loaded sub-head before reading any row.
+  await dialog.locator('#dialog-content .workspace-subhead .workspace-meta').waitFor();
   const suppliers = await apiGet('/api/suppliers?limit=500');
   const supplierRows = () => page.locator('#dialog-content .record-list .record-row').evaluateAll(rows => rows.map(row => ({
     primary: row.querySelector('h3').textContent, secondary: row.querySelector('.data-secondary').textContent,
