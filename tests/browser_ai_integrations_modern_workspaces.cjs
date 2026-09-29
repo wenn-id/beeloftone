@@ -20,7 +20,8 @@ const path = require('node:path');
 //   Integrasi - identity, ledger-truth context, all five health values, source of truth, refresh
 //   that keeps content, a failed load that is not treated as current, a stale response that cannot
 //   repaint, all direct actions, the 50/before run ledger, run detail, snapshot histories at
-//   limit=100, payroll reconciliations at 25/offset, the no-snapshot state, and no write controls.
+//   limit=100, payroll reconciliations at 25/offset, the no-snapshot state, and write controls
+//   restricted to the explicitly labelled Jubelio Demo panel.
 //
 // It also writes the deterministic A6.5 visual-review set. Pixel widths are never asserted; the
 // subject is always a label, a figure, a request parameter or a document overflow.
@@ -316,7 +317,9 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
   await body.getByText(/^Batas stale \d+ jam · diperiksa /).waitFor();
   for (const system of ['jubelio', 'mekari']) {
     const surface = body.locator(`[data-integration-system="${system}"]`);
-    assert.ok(await surface.locator('.integration-system-head .status-chip').count() === 1, `${system} states its health with a chip`);
+    const health = surface.locator('.integration-system-head .status-chip:not(.demo-chip)');
+    assert.equal(await health.count(), 1, `${system} states its health with one chip distinct from the demo badge`);
+    assert.match(await health.innerText(), /^(Sehat|Gagal|Stale|Belum pernah sync|Belum lengkap)$/);
     const scopes = surface.locator('[data-integration-scope]');
     assert.ok(await scopes.count() > 0);
     for (let index = 0; index < await scopes.count(); index++)
@@ -326,7 +329,11 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
   for (const label of ['Buka Master SKU', 'Order & penjualan Jubelio', 'Retur Jubelio', 'Listing Jubelio', 'Rekonsiliasi stok Jubelio',
     'Keuangan Mekari', 'Utang Mekari', 'Piutang Mekari', 'Payroll Mekari', 'Pembayaran payroll', 'Akuntansi payroll'])
     assert.equal(await body.getByRole('button', {name: label, exact: true}).count(), 1, label);
-  assert.equal(await integrations.getByRole('button', {name: writeControls}).count(), 0, 'no write or sync control on the page');
+  const demoPanel = body.locator('[data-integration-system="jubelio"] .jubelio-demo-controls');
+  await demoPanel.getByRole('button', {name: 'Sinkronkan sekarang', exact: true}).waitFor();
+  assert.equal(await body.locator('.integration-system-head .demo-chip').innerText(), 'Jubelio Demo · Simulasi');
+  assert.equal(await demoPanel.getByRole('button', {name: writeControls}).count(), 1, 'the demo panel offers its sync control');
+  assert.equal(await integrations.getByRole('button', {name: writeControls}).count(), 1, 'no write or sync control outside the demo panel');
   await theme('light');
   await toTop();
   await shot('11-integrations-1440-light');
@@ -526,6 +533,6 @@ module.exports = async ({page, login, openSidebarDestination, admin, operator, v
     + 'unchanged constraints and no as_of max, answer-first evidence hierarchy, unexecuted recommendations, two supported '
     + 'proposal kinds, viewer gate, admin execution, append-only feedback, 50/before history with stale fence, uncertain save '
     + 'with one key; ledger-truth health in five states, source of truth, held refresh, failed-load replacement, stale '
-    + 'repaint fence, run ledger 50/before, snapshot 100, payroll 25/offset, no-snapshot state, no write controls, '
+    + 'repaint fence, run ledger 50/before, snapshot 100, payroll 25/offset, no-snapshot state, demo-only sync control, '
     + '390/320@200%, dark, 28 review screenshots.');
 };
