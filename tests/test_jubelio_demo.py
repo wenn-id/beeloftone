@@ -169,16 +169,16 @@ class JubelioDemoManagerTest(unittest.TestCase):
                 return error.status
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: advance(), range(2)))
-        # The loser either overlaps the winner's lease (409) or arrives after it finished and
-        # replays the stored response for the same key. Both are correct; what must never
-        # happen is a second application of the scenario.
-        responses = [x for x in results if isinstance(x, dict)]
+        # Kunci yang sama: pemanggil kedua mendapat 409 bila datang saat lease masih
+        # dipegang, atau replay receipt bila datang setelah selesai. Keduanya sah;
+        # yang tidak boleh terjadi adalah skenario maju dua kali.
+        dicts = [x for x in results if isinstance(x, dict)]
+        self.assertGreaterEqual(len(dicts), 1)
         self.assertTrue(all(isinstance(x, dict) or x == 409 for x in results), results)
-        self.assertGreaterEqual(len(responses), 1)
-        self.assertTrue(all(x == responses[0] for x in responses))
+        first = dicts[0]
+        self.assertTrue(all(x == first for x in dicts))
         self.assertEqual(self.manager.get_status()['current_scenario'], 2)
         self.assertEqual(len(self.store.jubelio_order_snapshots(limit=10)), 2)
-        first = responses[0]
         self.assertFalse(first['is_locked'])
         replay = self.manager.next_scenario(self.admin, 'next-shared-key')
         self.assertEqual(replay, first)
