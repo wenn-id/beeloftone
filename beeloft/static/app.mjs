@@ -5146,6 +5146,88 @@ function integrationSystem(system,age) {
     +mapping+`<ul class="integration-scopes" aria-label="Scope ${e(system.label)}">${scopes}</ul>`
     +(utilities?`<div class="integration-utilities">${utilities}</div>`:'')+'</section>';
 }
+function bindJubelioDemoControls() {
+  const panel=$('integrations-body')?.querySelector('.jubelio-demo-controls');
+  if(!panel)return;
+  const errorEl=panel.querySelector('[data-demo-error]');
+  const priorBusy=$('main').hasAttribute('aria-busy');
+  let operation=null;
+  try{operation=JSON.parse(sessionStorage.getItem('beeloft.jubelio-demo.pending')||'null');}catch{sessionStorage.removeItem('beeloft.jubelio-demo.pending');}
+  const setBusy=busy=>{
+    panel.querySelectorAll('button').forEach(btn=>btn.disabled=busy);
+    if(busy)$('main').setAttribute('aria-busy','true');
+    else if(!priorBusy)$('main').removeAttribute('aria-busy');
+  };
+  const endpoints={
+    activate:'/api/integrations/jubelio/demo/activate',
+    sync:'/api/integrations/jubelio/demo/sync',
+    next:'/api/integrations/jubelio/demo/next-scenario'
+  };
+  panel.querySelectorAll('button[data-demo-action]').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const action=btn.getAttribute('data-demo-action');
+      if(action==='history'){integrationRunsDialog();return;}
+      let pending=null;
+      try{pending=JSON.parse(sessionStorage.getItem('beeloft.jubelio-demo.pending')||'null');}catch{sessionStorage.removeItem('beeloft.jubelio-demo.pending');}
+      if(pending&&pending.action!==action){
+        if(errorEl){errorEl.textContent='Selesaikan retry aksi sebelumnya sebelum memulai aksi demo baru.';errorEl.hidden=false;}
+        return;
+      }
+      if(operation&&operation.action!==action)return;
+      if(errorEl)errorEl.hidden=true;
+      const uncertain=Boolean(pending||operation);
+      if(!uncertain){operation={action,transaction:api.transaction(endpoints[action],{})};sessionStorage.setItem('beeloft.jubelio-demo.pending',JSON.stringify(operation));}
+      else if(!operation)operation=pending;
+      setBusy(true);
+      try{
+        const result=await api.save(operation.transaction);
+        operation=null;sessionStorage.removeItem('beeloft.jubelio-demo.pending');
+        commandCenterRequest++;productsRequest++;
+        await loadIntegrations(true);
+        return result;
+      }catch(err){
+        if(errorEl){errorEl.textContent=err.message||'Tindakan demo gagal dijalankan.';errorEl.hidden=false;}
+        if(err.uncertain){operation=operation||{action,transaction:pending?.transaction};}
+        else{operation=null;sessionStorage.removeItem('beeloft.jubelio-demo.pending');}
+      }finally{
+        setBusy(false);
+      }
+    };
+  });
+}
+async function renderJubelioDemoSection() {
+  const container=$('integrations-body')?.querySelector('[data-integration-system="jubelio"]');
+  if(!container)return;
+  try{
+    const demo=await api.get('/api/integrations/jubelio/demo/status');
+    if(!demo||!demo.is_demo_database)return;
+    const pendingRaw=sessionStorage.getItem('beeloft.jubelio-demo.pending');
+    const pending=pendingRaw?JSON.parse(pendingRaw):null;
+    const operation=pending;
+    if(pending?.transaction&&user?.role==='admin'){
+      const scopeError=new Error('Hasil aksi sebelumnya belum terkonfirmasi. Coba tombol lagi untuk mengirim ulang request yang sama.');
+      scopeError.uncertain=true;
+    }
+    const existing=container.querySelector('.jubelio-demo-controls');
+    if(existing)existing.remove();
+    const head=container.querySelector('.integration-system-head');
+    if(head&&!head.querySelector('.demo-chip')){
+      head.insertAdjacentHTML('beforeend','<span class="status-chip neutral demo-chip">Jubelio Demo · Simulasi</span>');
+    }
+    const html=`<div class="integration-utility jubelio-demo-controls"><p class="utility-panel-title">Kontrol Jubelio Demo</p>`
+      +`<p class="workspace-meta">${demo.is_active?`Skenario ${n(demo.current_scenario)} · ${e(demo.last_status)}${demo.last_synced_at?` · ${e(purchaseStamp(demo.last_synced_at))}`:''}`:'Database demo siap diaktifkan.'}</p>`
+      +(demo.last_error?`<p class="field-error" style="display:block;margin:0.25rem 0;">${e(demo.last_error)}</p>`:'')
+      +`<p class="field-error" role="status" data-demo-error hidden></p><div class="action-row">`
+      +(user?.role==='admin'&&!demo.is_active?'<button type="button" class="action-primary" data-demo-action="activate">Aktifkan demo</button>':'')
+      +(user?.role==='admin'?`<button type="button" class="action-secondary" data-demo-action="sync" ${demo.is_locked||!demo.is_active?'disabled':''}>${operation?.action==='sync'?'Ulangi sinkronisasi':'Sinkronkan sekarang'}</button>`:'')
+      +(user?.role==='admin'?`<button type="button" class="action-secondary" data-demo-action="next" ${demo.is_locked||!demo.is_active||demo.current_scenario>=2?'disabled':''}>Jalankan skenario berikutnya</button>`:'')+'</div>'
+      +(demo.last_summary?.scopes?`<ul class="integration-scopes" aria-label="Hasil sinkronisasi demo">${Object.entries(demo.last_summary.scopes).map(([scope,result])=>`<li class="record-row"><span class="data-primary">${e(scope)}</span><span class="data-secondary">${e(result.status)} · ${n(result.accepted||0)} diterima · ${n(result.quarantined||0)} karantina${result.error?` · ${e(result.error)}`:''}</span></li>`).join('')}</ul>`:'')
+      +'<button type="button" class="action-quiet" data-demo-action="history">Lihat riwayat sinkronisasi</button></div>';
+    const scopesList=container.querySelector('.integration-scopes');
+    if(scopesList){scopesList.insertAdjacentHTML('beforebegin',html);}else{container.insertAdjacentHTML('beforeend',html);}
+    bindJubelioDemoControls();
+  }catch(_){}
+}
 // Milestone D: kesehatan integrasi, source of truth, dan run terbaru hidup di halaman.
 // Rincian run dan rekonsiliasi tetap dialog terfokus.
 async function loadIntegrations(refresh = false) {
@@ -5165,6 +5247,7 @@ async function loadIntegrations(refresh = false) {
     $('integrations-body').innerHTML=`<div class="integration-context">${evidenceNote('Status berasal dari ledger run aktual. Scope tanpa catatan tetap ditandai belum pernah sync; sistem tidak menganggap koneksi vendor aktif hanya karena kontraknya tersedia.','shield')}`
       +`<p class="workspace-meta">Batas stale ${n(report.stale_after_minutes/60)} jam · diperiksa ${purchaseStamp(report.generated_at)}</p></div>`
       +`<div class="integration-systems">${report.systems.map(system=>integrationSystem(system,age)).join('')}</div>`;
+    renderJubelioDemoSection();
   }catch(error){
     // Kesalahan selalu muncul seketika dan tanpa peredupan: peredupan dilepas lebih dahulu, dan
     // laporan lama tidak lagi dianggap terkini (integrationsReport=false).

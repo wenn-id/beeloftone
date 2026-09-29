@@ -531,3 +531,11 @@ endpoint,GET /api/import/jobs,A1,X01,A0,beeloft/api.py#import_jobs
 endpoint,GET /api/import/jobs/{job_id},A1,X01,A0,beeloft/api.py#import_job
 endpoint,POST /api/import/jobs/{job_id}/apply,A1,X01,A0,beeloft/api.py#import_job_apply
 endpoint,POST /api/import/jobs/{job_id}/resume,A1,X01,A0,beeloft/api.py#import_job_resume
+
+table,jubelio_demo_state,A3,JUBELIO_DEMO,A1,beeloft/jubelio_demo.sql
+table,jubelio_demo_operations,A3,JUBELIO_DEMO,A1,beeloft/jubelio_demo.sql
+table,jubelio_demo_operation_scopes,A3,JUBELIO_DEMO,A1,beeloft/jubelio_demo.sql
+endpoint,GET /api/integrations/jubelio/demo/status,A3,JUBELIO_DEMO,A1,beeloft/api.py#jubelio_demo_status
+endpoint,POST /api/integrations/jubelio/demo/activate,A3,JUBELIO_DEMO,A1,beeloft/api.py#jubelio_demo_activate
+endpoint,POST /api/integrations/jubelio/demo/sync,A3,JUBELIO_DEMO,A1,beeloft/api.py#jubelio_demo_sync
+endpoint,POST /api/integrations/jubelio/demo/next-scenario,A3,JUBELIO_DEMO,A1,beeloft/api.py#jubelio_demo_next_scenario

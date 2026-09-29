@@ -354,10 +354,10 @@ class GlobalTest(unittest.TestCase):
         self.assertIn(f'version="{version}"', API)
         contract = json.loads((ROOT / 'docs' / 'openapi.json').read_text(encoding='utf-8'))
         self.assertEqual(contract['info']['version'], version)
-        self.assertEqual(len(contract['paths']), 316, 'B01 (#50) adds 2 invoice paths; X01 (#51) adds 6 import paths')
+        self.assertEqual(len(contract['paths']), 320, 'Jubelio Demo adds 4 control/status endpoints after X01')
         versions = [int(value) for path in (ROOT / 'beeloft').glob('*.sql')
                     for value in re.findall(r'PRAGMA user_version\s*=\s*(\d+)', path.read_text(encoding='utf-8'))]
-        self.assertEqual(max(versions), 63, 'X01 adds schema 63 (P03 has 61)')
+        self.assertEqual(max(versions), 64, 'Jubelio Demo state follows X01 schema 63')
 
     def test_documentation_exists(self):
         text = (ROOT / 'docs' / 'apple27-activity-audit-backup-modern-workspaces.md').read_text(encoding='utf-8')

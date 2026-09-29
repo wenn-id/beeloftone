@@ -51,14 +51,14 @@ class A01MigrationTest(unittest.TestCase):
             store = make_store(directory)
             with store.transaction() as db:
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                self.assertEqual(version, 63)
+                self.assertEqual(version, 64)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 for expected in ('coa_accounts', 'accounting_periods',
                                  'journals', 'journal_lines'):
                     self.assertIn(expected, tables)
 
-    def test_upgrade_58_to_63(self):
+    def test_upgrade_58_to_64(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'upgrade.sqlite3'
             store = Store(path)
@@ -66,7 +66,7 @@ class A01MigrationTest(unittest.TestCase):
                 db.execute('PRAGMA user_version=58')
             store2 = Store(path)
             with store2.transaction() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 63)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 64)
                 tables = {row[0] for row in db.execute(
                     "SELECT name FROM sqlite_schema WHERE type='table'")}
                 self.assertIn('journals', tables)

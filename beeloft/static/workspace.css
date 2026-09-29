@@ -176,6 +176,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .marketplace-day{position:relative;flex:1;display:flex;align-items:end;justify-content:center;min-width:0}
 .marketplace-bar{width:65%;max-width:15px;border-radius:3px 3px 0 0;background:linear-gradient(#2584ff,#6aa9ff);box-shadow:inset 0 1px 0 #ffffff40}
 .marketplace-bars.is-dense .marketplace-day:not(:first-child):not(:last-child) .marketplace-date{display:none}
+.marketplace-bars.is-dense{position:relative}.marketplace-bars.is-dense .marketplace-day{position:static}
+.marketplace-bars.is-dense .marketplace-day:first-child .marketplace-date{left:0}.marketplace-bars.is-dense .marketplace-day:last-child .marketplace-date{right:0}
 .marketplace-date{position:absolute;bottom:-19px;white-space:nowrap;font-size:.5625rem;color:var(--muted)}
 .marketplace-channels{display:flex;flex-direction:column;justify-content:center;gap:16px;min-width:0;max-height:154px;overflow:auto}
 .marketplace-channel{display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:4px 8px;min-width:0}

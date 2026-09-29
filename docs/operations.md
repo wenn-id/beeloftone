@@ -151,6 +151,14 @@ Penghubung dashboard: `GET /api/production-board?q=luna&status=active&limit=25&o
 
 Kontrak request tersedia di `docs/openapi.json` dan `/openapi.json`. Skema respons belum diberi model OpenAPI khusus; contoh dan acceptance test menjadi acuan struktur respons versi ini.
 
+## Mode Jubelio Demo (Simulasi)
+
+Untuk presentasi dan demonstrasi sebelum kredensial API Jubelio resmi aktif, Beeloft One menyediakan mode simulasi Jubelio deterministik:
+- Menggunakan dataset pakaian anak (~30 SKU, 120 pesanan baseline, stok, listing, dan retur).
+- Mengalir langsung ke endpoint ingestion existing (`/api/integrations/jubelio/*-snapshots`) dan mengisi Command Center serta dashboard.
+- Dilengkapi skenario pembaruan bertahap dan simulasi karantina SKU unmapped.
+- Petunjuk lengkap dan urutan presentasi 5 menit tersedia di [panduan Jubelio Demo](jubelio-demo-guide.md).
+
 ## Backup dan pemulihan
 
 ```powershell

@@ -29,9 +29,15 @@ def main():
         result = subprocess.run([sys.executable, '-m', 'beeloft', '--db', str(database), 'demo'],
                                 cwd=project, capture_output=True, text=True, check=True)
         credentials = json.loads(result.stdout)
+        credentials['database'] = str(database)
         (work / 'credentials.json').write_text(json.dumps(credentials), encoding='utf-8')
         store = Store(database)
         actor = store.authenticate(credentials['users'][0]['api_key'])
+        from beeloft.jubelio_demo_manager import JubelioDemoManager
+        demo = JubelioDemoManager(store)
+        demo.mark_as_demo_database(True)
+        credentials['jubelio_demo'] = demo.get_status()
+        (work / 'credentials.json').write_text(json.dumps(credentials), encoding='utf-8')
         product = store.products()[0]
         for ref, qty, days in [('DEMO-PROD-002', 300, -2), ('DEMO-PROD-003', 200, 12)]:
             order = store.create_order(OrderCreate(reference=ref, title='CONTOH - ' + ref,

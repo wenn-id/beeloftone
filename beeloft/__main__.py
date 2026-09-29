@@ -99,8 +99,12 @@ def main():
                 ("finishing", "qc", 100), ("qc", "warehouse", 80)]):
                 store.move(MovementCreate(line_id=order["lines"][0]["id"], from_stage=source, to_stage=target,
                     quantity=quantity, reason="Contoh jahitan perlu diperbaiki" if target == "rework" else "Data contoh").model_dump(), actor, f"demo-move-{index}")
-            result = {"notice": "DATA CONTOH. Simpan API key; hanya ditampilkan saat dibuat.",
-                      "database": str(path), "users": users, "order_id": order["id"]}
+            from beeloft.jubelio_demo_manager import JubelioDemoManager
+            demo = JubelioDemoManager(store)
+            demo.mark_as_demo_database(True)
+            result = {"notice": "DATA CONTOH. Database ditandai untuk Jubelio Demo; aktifkan konektor dari dashboard.",
+                      "database": str(path), "users": users, "order_id": order["id"],
+                      "jubelio_demo": demo.get_status()}
         print(json.dumps(result, indent=2, ensure_ascii=True))
     except (DomainError, OSError, sqlite3.Error, ValidationError) as exc:
         parser.exit(1, f"Gagal: {exc}\n")
