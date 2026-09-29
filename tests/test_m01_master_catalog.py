@@ -37,7 +37,7 @@ class Migration56Test(unittest.TestCase):
 
     def test_fresh_db_reaches_schema_56_with_uom_seeds(self):
         store = self.fresh_store()
-        self.assertEqual(self.db_version(store), 63)
+        self.assertEqual(self.db_version(store), 64)
         with store.transaction() as db:
             codes = [r[0] for r in db.execute("SELECT code FROM uoms ORDER BY code")]
         self.assertEqual(codes, ["KG", "LSN", "M", "PCS"])
@@ -141,7 +141,7 @@ class Migration56Test(unittest.TestCase):
         conn = upgraded.connect()
         self.addCleanup(conn.close)
         self.addCleanup(lambda: conn.execute("PRAGMA wal_checkpoint(TRUNCATE)"))
-        self.assertEqual(self.db_version(upgraded), 63)
+        self.assertEqual(self.db_version(upgraded), 64)
         with upgraded.transaction() as db:
             prod = db.execute("SELECT sku,name,color,size,uom_code,active FROM products WHERE id='p-legacy'").fetchone()
             mat = db.execute(

@@ -2,7 +2,7 @@
 
 Workspace operasional internal Beeloft. Satu aplikasi dan satu database lokal menyatukan performa
 marketplace, produksi, pembelian, bahan baku, gudang, kualitas, people, visibilitas keuangan,
-approval, serta analitik dan AI. Versi aplikasi 0.121.0, schema database 63.
+approval, serta analitik dan AI. Versi aplikasi 0.121.0, schema database 64.
 
 [![CI](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml/badge.svg)](https://github.com/wenn-id/beeloftone/actions/workflows/ci.yml)
 
@@ -142,4 +142,128 @@ Versi diumumkan di tiga tempat dan harus dinaikkan bersama: `version` di `pyproj
 `tests/test_openapi_contract.py` mengikat ketiganya ke satu nilai, karena menaikkan hanya
 versi paket pernah lolos tanpa terdeteksi dan membuat kontrak API tertinggal satu minor.
 
-Suite Python berisi 1410 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+Suite Python berisi 1427 test yang memakai database sementara serta API/CLI sungguhan; mencakup
+konservasi jumlah, transfer bersamaan, retry ganda, rollback kegagalan penyimpanan, izin per role,
+input tidak sah, guard bisnis, pembalikan, migrasi, backup, serta Jubelio Demo (dataset deterministik,
+skenario, idempotensi, karantina, restart, dan concurrency). Tidak ada data bisnis nyata di dalam
+test. Runner browser membuat database dan server sementara, menjalankan seluruh modul acceptance
+melalui browser sungguhan, lalu menghentikan server dan membersihkan data. Playwright adalah alat QA,
+bukan dependency aplikasi; default channel lokal `msedge`, gunakan `--channel chrome` untuk Chrome.
+
+[GitHub Actions](.github/workflows/ci.yml) berjalan pada pull request ke `main` dan push ke `main`,
+di Ubuntu, dengan dua job berurutan:
+
+| Job | Isi |
+|---|---|
+| `core` | Python 3.12 dan Node.js 22: instalasi dependencies, `unittest discover`, `pip check`, `compileall` paket `beeloft`, `node --check` untuk `app.mjs` dan `client.mjs`, serta `tests/test_client.mjs` |
+| `browser` | Berjalan setelah `core` lulus: instalasi aplikasi yang sama, Playwright versi terpin, Chromium beserta dependency sistem Linux, lalu `tests/run_browser.py` dengan `--channel chromium` |
+
+## Integrasi
+
+Layar **Integrasi** menampilkan peta source of truth, kesehatan setiap scope sinkronisasi
+(**Belum pernah sinkron**, **Sehat**, **Terlambat**, **Gagal**), jumlah record dibaca/ditulis/ditolak,
+cursor sumber, pelaku, dan error terakhir. Snapshot Jubelio dan Mekari dikirim oleh admin melalui
+endpoint ingestion, dicatat atomik dan immutable, dan otomatis membentuk run sinkronisasi. Record yang
+identifiernya tidak cocok dengan mapping aktif masuk karantina dan tidak ikut dihitung.
+
+**Batas integrasi saat ini:** Beeloft One mengonsumsi data Jubelio dan Mekari melalui endpoint
+ingestion snapshot. **Connector worker langsung ke API vendor dan sinkronisasi terjadwal belum
+diimplementasikan.** Aplikasi belum menyimpan credential vendor, belum memanggil API Jubelio/Mekari,
+dan belum menjalankan scheduler. Karena itu tidak ada sinkronisasi real-time: seluruh angka vendor
+adalah snapshot pada waktu tertentu, dan kesegarannya bergantung pada kapan snapshot terakhir dikirim.
+
+## Integritas data dan keamanan
+
+- **Ledger append-only.** Transaksi bisnis dan keputusan approval tidak diedit atau dihapus. Koreksi
+  dicatat sebagai event baru yang menunjuk transaksi asal, lengkap dengan alasan dan pelaku.
+- **Idempotency.** Setiap POST `/api/*` wajib membawa `Idempotency-Key`. Satu key mengikat satu
+  transaksi logis pada seluruh database dan hanya boleh diselesaikan oleh akun pencatat aslinya.
+  Retry dengan key dan payload yang sama mengembalikan respons pertama tanpa pencatatan ganda; key
+  sama dengan payload berbeda ditolak 409; key milik akun lain ditolak 403 tanpa mutasi.
+- **Binding aktor.** Setiap pencatatan dari dashboard menyatakan akun yang menyusunnya. Server
+  menolak 403 sebelum mutasi dijalankan bila session browser ternyata sudah berpindah ke akun lain,
+  sehingga form yang dibuka satu akun tidak dapat menghasilkan catatan milik akun lain.
+- **Revision guard.** Perubahan data bersaldo memakai revisi yang diharapkan, sehingga dua pengguna
+  tidak saling menimpa secara diam-diam.
+- **Guard bisnis di database.** Konservasi jumlah, saldo tahap, alokasi bundle, stok reserved,
+  kecocokan scan terhadap receipt, dan penutupan PO dijaga dalam satu transaksi.
+- **Role.** `admin`, `operator`, dan `viewer`. Command center dan layar analitik read-only untuk semua
+  role aktif; hak mencatat dan memutuskan tetap diperiksa oleh endpoint domain.
+- **Autentikasi.** API key hanya disimpan sebagai hash dan tidak dapat ditampilkan kembali. Dashboard
+  menukar key dengan session browser delapan jam: cookie `HttpOnly` `SameSite=Strict`, cookie CSRF
+  untuk request yang mengubah data, dan atribut `Secure` saat dilayani melalui HTTPS. Login OIDC/SSO
+  tersedia bila konfigurasi provider lengkap.
+- **Audit trail.** Global audit trail menyimpan operasi, objek, referensi, pelaku, waktu, dan alasan
+  untuk perubahan bisnis manual, impor snapshot, dan keputusan approval.
+- **Penanganan data sensitif.** Snapshot payroll disimpan agregat per periode tanpa identitas atau
+  gaji per karyawan, dan tanpa data rekening. Nilai uang dibandingkan sebagai exact decimal.
+- **Backup.** `python -m beeloft backup` memakai SQLite backup API sehingga konsisten meski server
+  berjalan, dan tidak menimpa file tujuan. Backup memuat hash API key, jadi simpan dengan akses
+  terbatas.
+- **Data contoh.** Seluruh data demo diberi nama DEMO/CONTOH agar tidak tertukar dengan data nyata.
+
+## Dokumentasi
+
+- [Register proses bisnis F01](docs/f01-process-register.md),
+  [keputusan, bukti, serta gerbang sign-off](docs/f01-decisions-evidence.md),
+  [bukti legacy dan sampling](docs/f01-legacy-evidence.md),
+  [peta field legacy](docs/f01-field-map.csv),
+  [kasus sintetis](docs/f01-legacy-cases.json),
+  [paket review pemilik](docs/f01-owner-decisions.md),
+  [handoff F02](docs/f01-f02-handoff.md), dan
+  [verifikasi](docs/f01-verification.md) untuk
+  roadmap penggantian backoffice #40. Status: discovery in progress; bukti transaksi belum lengkap; belum business accepted.
+- [Kontrak transaksi dan data bersama F02](docs/f02-shared-contracts.md), dengan
+  fixture sintetis dan inventaris pemilik tabel/endpoint untuk #41. Draft persiapan;
+  penerimaan kontrak menunggu keputusan F01 dan sign-off A1/A2/A3 serta A0/pemilik bisnis.
+- [Handoff audit teknis F03](docs/f03-technical-audit.md) — status #26–#37,
+  commit perbaikan, regresi scope AI, bukti uji dan batas penerimaan #42.
+- [Kesiapan master produk, bahan dan satuan M01](docs/m01-master-readiness.md)
+  untuk #43: gap terhadap HEAD dan bukti baseline; implementasi menunggu penerimaan F02.
+- [Kesiapan unit usaha, lokasi, pihak dan employee M02](docs/m02-master-readiness.md)
+  untuk #44: pemetaan gap identitas dan migrasi; implementasi menunggu penerimaan F02.
+- [Kesiapan izin per fungsi O01](docs/o01-permission-readiness.md) untuk #45:
+  akses baseline, jalur data sensitif dan kebutuhan keputusan F02/M02/D17.
+- [Kesiapan ledger keuangan A01](docs/a01-ledger-readiness.md) untuk #46:
+  sumber transaksi, batas snapshot/posting native dan keputusan accounting yang diperlukan.
+- [Drill pemulihan dan runbook O02](docs/o02-recovery-readiness.md) untuk #47:
+  restore lokal terisolasi, batas bukti dan kebutuhan deployment/RPO/RTO.
+- [Kesiapan template bahan/jasa dan tarif P01](docs/p01-template-rate-readiness.md)
+  untuk #48: batas BOM/biaya/kapasitas dan skenario tarif; menunggu M01/M02 serta keputusan D04.
+- [Kesiapan parity planning dan cutting P02](docs/p02-planning-cutting-readiness.md)
+  untuk #49: rekonsiliasi cutting campuran dan gap parameter/ekspor; menunggu M01/F02 serta D02/D03.
+- [Kesiapan validasi parity pembelian B01](docs/b01-purchasing-parity-readiness.md)
+  untuk #50: rekonsiliasi receipt/retur/close dan pengajuan pembayaran; menunggu M01/M02/F02 serta D12.
+- [Panduan operasional](docs/operations.md) — pemakaian dashboard, kontrak API, akun, backup, pengujian.
+- [Riwayat versi v0.3–v0.85](docs/version-history.md) — riwayat implementasi per milestone beserta
+  riwayat migrasi schema.
+- [Desain produk dan modul](docs/design.md) — keputusan desain domain.
+- [Spesifikasi antarmuka](DESIGN.md) — sistem visual, grid, tipografi, dan aturan Command Center.
+- [Command Center Apple-27 A5](docs/apple27-command-center-golden.md) — komposisi, sumber data,
+  batas material, aksesibilitas, dan bukti validasi lokal versi 0.118.0.
+- [Rencana implementasi](docs/implementation-plan.md) — status dan urutan pengerjaan.
+- [Kontrak OpenAPI](docs/openapi.json) — juga tersedia dari server berjalan di `/openapi.json`.
+  Regenerasi dengan `python scripts/regenerate_openapi.py` setiap kali endpoint atau versi
+  berubah; `tests/test_openapi_contract.py` memblokir kontrak tertinggal dari runtime.
+- [Tangkapan layar](docs/screenshots) — Command Center desktop, mobile, dan zoom teks 200%.
+- Rencana dan bukti pengujian per milestone tersimpan sebagai `docs/*-plan.md` dan
+  `docs/*-verification.md`, dan ditautkan dari riwayat versi.
+
+## Batas saat ini dan arah selanjutnya
+
+- Server hanya mendengarkan localhost. Rilis ini untuk pengembangan dan uji lokal, belum deployment
+  bersama untuk tim.
+- Connector worker Jubelio/Mekari dan sinkronisasi terjadwal belum ada; data vendor masuk lewat
+  ingestion snapshot.
+- Belum ada pembaruan otomatis antar perangkat pada dashboard; muat ulang untuk mengambil data terbaru.
+- Belum mencakup partial cancellation, perubahan jumlah target setelah order dibuat, dan attachment
+  pada kendala.
+- Feedback investigasi AI belum melatih model atau mengubah aturan rekomendasi secara otomatis.
+- Parameter agregasi replenishment di Command Center masih default operasional dan belum dapat diubah
+  dari layar tersebut.
+- Sebelum dipakai banyak perangkat: siapkan HTTPS, penyedia identitas/SSO, kebijakan akses yang lebih
+  rinci, backup terjadwal dengan uji restore, dan validasi alur di lapangan.
+- SQLite cukup untuk uji lokal. Evaluasi PostgreSQL saat perlu beberapa instance aplikasi atau
+  penulisan bersamaan yang lebih tinggi.
+- Buat backup dengan versi aplikasi lama sebelum upgrade; setiap migrasi berjalan dalam satu transaksi
+  tanpa mengubah catatan produksi lama.
